@@ -31,3 +31,14 @@
 
 ### Problems Encountered
 - None so far
+
+## Session 4 — Feature 3: Systemd Deployment (2026-02-15)
+
+### Completed
+- **T3.1**: Created `scripts/codeck.service` systemd unit file with [Unit], [Service], [Install] sections. Includes codeck user, resource limits (CPUQuota=200%, MemoryLimit=4G), NoNewPrivileges=true, and proper restart policy.
+
+### Next
+- **T3.2**: Create `scripts/install.sh` Part 1 (OS detection, root check, systemd check, dependency installation)
+
+### Problems Encountered
+- None

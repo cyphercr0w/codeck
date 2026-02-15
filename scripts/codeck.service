@@ -1,0 +1,22 @@
+[Unit]
+Description=Codeck - Claude Code Sandbox
+After=network.target docker.service
+Requires=docker.service
+
+[Service]
+Type=simple
+User=codeck
+Group=codeck
+WorkingDirectory=/opt/codeck
+ExecStart=/usr/bin/node /opt/codeck/dist/index.js --web
+Restart=always
+RestartSec=10
+Environment="NODE_ENV=production"
+Environment="CODECK_PORT=80"
+Environment="WORKSPACE=/home/codeck/workspace"
+CPUQuota=200%
+MemoryLimit=4G
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target

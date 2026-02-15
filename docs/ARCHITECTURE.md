@@ -94,6 +94,7 @@ init-keyring.sh
                             ├── initializeSearch()          → Memory search system initialization
                             ├── startPortScanner()          → Detects listening ports every 5s
                             ├── startMdns()                 → mDNS responder for codeck.local (LAN mode)
+                            ├── startTokenRefreshMonitor()  → Background OAuth token refresh (every 5min, 30min margin)
                             ├── initProactiveAgents()       → Cron scheduler + agent runtime startup
                             └── restoreSavedSessions()      → Auto-resume sessions from previous lifecycle (delayed 2s)
 ```
@@ -106,6 +107,7 @@ SIGTERM / SIGINT
     ▼
 gracefulShutdown()
     ├── saveSessionState()       → Persists sessions for auto-restore
+    ├── stopTokenRefreshMonitor()→ Clears token check interval
     ├── shutdownProactiveAgents()→ Stops cron schedules, kills running executions
     ├── shutdownSearch()         → Closes SQLite read connection
     ├── shutdownIndexer()        → Closes SQLite write connection
@@ -636,7 +638,12 @@ Authentication with a Claude account to use the CLI.
 
 The implementation handles several edge cases to ensure robust OAuth token management:
 
-- **Proactive Refresh:** Access tokens are automatically refreshed when within 5 minutes of expiry (`REFRESH_MARGIN_MS`). The refresh occurs in the background (async, non-blocking) to prevent disruption during active sessions.
+- **Auto-Refresh Monitor:** A background interval (`startTokenRefreshMonitor()`) runs every 5 minutes (`TOKEN_CHECK_INTERVAL = 5min`) and checks if the access token expires within the next 30 minutes (`REFRESH_MARGIN = 30min`). If so, it calls `refreshAccessToken()` which POSTs to the Anthropic OAuth token endpoint using the stored `refresh_token`. On success:
+  - `.credentials.json` is updated with the new `access_token`, `refresh_token`, and `expiresAt`
+  - Auth cache is invalidated so subsequent requests use the new token
+  - A `token_refreshed` event is broadcast to connected WebSocket clients
+  - On failure: retries up to 3 times (`MAX_REFRESH_RETRIES`). If all retries fail, a `token_error` event is broadcast.
+  - The monitor starts during server post-listen initialization and stops cleanly during `gracefulShutdown()` via `stopTokenRefreshMonitor()`.
 
 - **Concurrency Control:** The `refreshInProgress` flag prevents race conditions during concurrent refresh attempts. Only one refresh can execute at a time within a single container. Auth cache (3-second TTL) reduces thundering herd effect when multiple API calls check auth status simultaneously.
 

@@ -102,7 +102,7 @@ Progress tracker with granular tasks. Each task is scoped to ~30-60 minutes max.
   - **Validation:** `npm run build` succeeds. Server startup log shows "Token refresh monitor started". Shutdown stops the monitor.
 
 ### 4.2 Documentation
-- [ ] **T4.4** Update `docs/ARCHITECTURE.md` — Add token auto-refresh monitor to the process lifecycle (startup/shutdown) and token lifecycle sections.
+- [x] **T4.4** Update `docs/ARCHITECTURE.md` — Add token auto-refresh monitor to the process lifecycle (startup/shutdown) and token lifecycle sections.
   - **Validation:** ARCHITECTURE.md documents the monitor interval and refresh flow.
 
 ---

@@ -49,8 +49,10 @@
 
 - **T3.7**: Added "Production Deployment (Linux VPS)" section to `README.md` with quick install command and service management commands. Added DEPLOYMENT.md to the Documentation links list.
 
+- **T4.4**: Updated `docs/ARCHITECTURE.md` — Added `stopTokenRefreshMonitor()` to shutdown sequence. Expanded "Token Lifecycle" section with full auto-refresh monitor documentation (interval, margin, retry logic, broadcast events, lifecycle integration).
+
 ### Next
-- **T4.4**: Update `docs/ARCHITECTURE.md` with token refresh monitor documentation
+- **T-FINAL**: Final verification — build passes, all features documented, final commit
 
 ### Problems Encountered
 - None

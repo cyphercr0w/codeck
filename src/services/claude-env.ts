@@ -1,6 +1,7 @@
 import { readFileSync, writeFileSync, existsSync, chmodSync, statSync } from 'fs';
 import { execFileSync } from 'child_process';
 import { ACTIVE_AGENT } from './agent.js';
+import { readCredentials } from './auth-anthropic.js';
 
 // Resolve agent binary path — re-resolves if cached path becomes invalid
 let agentBinaryPath: string = ACTIVE_AGENT.command;
@@ -48,15 +49,8 @@ export function setAgentBinaryPath(path: string): void {
 export function getOAuthEnv(): Record<string, string> {
   const env: Record<string, string> = { HOME: '/root' };
   try {
-    // Enforce strict file permissions on credentials
-    if (existsSync(ACTIVE_AGENT.credentialsFile)) {
-      const stats = statSync(ACTIVE_AGENT.credentialsFile);
-      if (stats.mode & 0o077) {
-        chmodSync(ACTIVE_AGENT.credentialsFile, 0o600);
-      }
-    }
-    const creds = JSON.parse(readFileSync(ACTIVE_AGENT.credentialsFile, 'utf8'));
-    if (creds.claudeAiOauth?.accessToken) {
+    const creds = readCredentials();
+    if (creds?.claudeAiOauth?.accessToken) {
       env.CLAUDE_CODE_OAUTH_TOKEN = creds.claudeAiOauth.accessToken;
     }
   } catch (e) {

@@ -122,7 +122,7 @@ function validateCredentialsPermissions(): boolean {
  * Read and decrypt credentials file.
  * Handles both v2 (encrypted) and legacy (plaintext) formats.
  */
-function readCredentials(): PlaintextCredentials | null {
+export function readCredentials(): PlaintextCredentials | null {
   if (!existsSync(CLAUDE_CREDENTIALS_PATH)) return null;
   validateCredentialsPermissions();
 

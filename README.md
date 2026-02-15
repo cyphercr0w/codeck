@@ -68,34 +68,26 @@ Rebuild only when `Dockerfile.base` changes.
 
 ## LAN Access (`codeck.local`)
 
-Access Codeck from phones, tablets, and other devices on your local network.
+Access Codeck from phones, tablets, and other devices on your local network. Works the same on all platforms (Linux, Windows, macOS).
 
 **With CLI:**
 
 ```bash
-# Linux — configure during init (uses host networking)
-codeck init   # Select "Host networking" for LAN
-
-# Windows/macOS — start the mDNS advertiser
-codeck lan start
+codeck lan start   # Start mDNS advertiser for LAN discovery
 ```
 
 **Without CLI:**
 
-**Linux** — built-in, zero setup:
-
 ```bash
+# 1. Start Codeck with LAN overlay
 docker compose -f docker-compose.yml -f docker-compose.lan.yml up
-```
 
-**Windows/macOS** — host-side script required (Docker Desktop runs in a VM):
-
-```bash
+# 2. Run the host-side mDNS advertiser (requires admin)
 cd scripts && npm install
-node scripts/mdns-advertiser.cjs   # requires admin
+node scripts/mdns-advertiser.cjs
 ```
 
-The script advertises `codeck.local` and `{port}.codeck.local` via mDNS. See [docs/CONFIGURATION.md](docs/CONFIGURATION.md) for details.
+The advertiser script broadcasts `codeck.local` and `{port}.codeck.local` via mDNS. See [docs/CONFIGURATION.md](docs/CONFIGURATION.md) for details.
 
 ## Architecture
 

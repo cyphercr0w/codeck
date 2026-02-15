@@ -62,15 +62,19 @@ interface AuthConfig {
 }
 
 // OWASP minimum: N=2^17 (131072), r=8, p=1
+// maxmem must be set explicitly — Node.js defaults to 32MB which is insufficient
+// for cost=131072 (needs 128 * blockSize * cost = 128MB)
 const SCRYPT_COST = 131072;
 const SCRYPT_BLOCK_SIZE = 8;
 const SCRYPT_PARALLELIZATION = 1;
+const SCRYPT_MAXMEM = 256 * 1024 * 1024; // 256MB
 
 async function hashPassword(password: string, salt: string): Promise<string> {
   const key = await scryptAsync(password, salt, 64, {
     cost: SCRYPT_COST,
     blockSize: SCRYPT_BLOCK_SIZE,
     parallelization: SCRYPT_PARALLELIZATION,
+    maxmem: SCRYPT_MAXMEM,
   });
   return key.toString('hex');
 }
@@ -84,6 +88,7 @@ async function hashPasswordWithCost(password: string, salt: string, cost: number
     cost,
     blockSize: SCRYPT_BLOCK_SIZE,
     parallelization: SCRYPT_PARALLELIZATION,
+    maxmem: SCRYPT_MAXMEM,
   });
   return key.toString('hex');
 }

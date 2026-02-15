@@ -1,41 +1,26 @@
-# Codeck — LAN Access (Linux only)
+# Codeck — LAN Access
 #
-# Enables codeck.local and {port}.codeck.local from any device on the network.
-# Uses network_mode: host so the container shares the host's network directly —
-# mDNS broadcasts reach the LAN, and all ports are accessible without mapping.
+# Enables codeck.local from any device on the local network via mDNS.
+# Works the same on Linux, Windows, and macOS — uses bridge networking
+# with an mDNS responder inside the container.
 #
-# SECURITY WARNING:
-#   Host networking removes Docker's network isolation entirely. The container
-#   can access all host network interfaces, bind to any port, and interact with
-#   all services on the host network. Only use on trusted networks. Never expose
-#   to the public internet. Consider firewall rules to restrict access to
-#   trusted devices only.
-#
-#   AMPLIFIED RISK: Host networking + Docker socket = MAXIMUM ATTACK SURFACE.
-#   Containers spawned via Docker socket inherit the host network namespace.
-#   An attacker (or malicious agent objective) can bind to any port and access
-#   all host services (databases, APIs, admin panels on localhost).
-#   Only use on trusted networks with trusted users and trusted agent objectives.
+# For LAN device access (phones, tablets, other computers), also run
+# the host-side mDNS advertiser script:
+#   cd scripts && npm install && node scripts/mdns-advertiser.cjs
 #
 # Usage:
 #   docker compose -f docker-compose.yml -f docker-compose.lan.yml up
 #
 # Requirements:
-#   - Linux host (network_mode: host doesn't work on Windows/macOS Docker Desktop)
-#   - Port 80 must be free on the host
 #   - avahi-daemon or libnss-mdns on client devices (most Linux distros, all Apple devices have this)
 #   - Android: mDNS works natively since Android 12+; older versions need an app
+#   - Host-side mDNS advertiser for LAN discovery (see scripts/mdns-advertiser.cjs)
 #
 # What this gives you:
 #   - http://codeck.local — dashboard from any device
-#   - http://5173.codeck.local — dev server preview from any device
-#   - Direct port access: http://<host-ip>:5173 also works
+#   - http://codeck.local:{port} — dev server preview from any device
 
 services:
   sandbox:
-    network_mode: host
-    # With host networking, port mappings are not used (all container ports are on the host directly)
-    ports: !reset []
     environment:
-      - CODECK_NETWORK_MODE=host
-      - CODECK_MAPPED_PORTS=
+      - CODECK_LAN_MODE=true

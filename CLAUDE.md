@@ -36,7 +36,7 @@ docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
 # Prod:
 docker compose up
 
-# Prod with LAN access (Linux only — codeck.local from any device):
+# Prod with LAN access (codeck.local from any device):
 docker compose -f docker-compose.yml -f docker-compose.lan.yml up
 
 # Local build check:
@@ -47,9 +47,9 @@ cd cli && npm install && npm run build && npm link
 npm run build:cli   # from project root
 ```
 
-## LAN Access (Windows/macOS)
+## LAN Access
 
-On Windows/macOS, Docker runs in a VM so `network_mode: host` doesn't work. A host-side mDNS script advertises `codeck.local` via Bonjour:
+Run the host-side mDNS advertiser for LAN device discovery (works on all platforms):
 
 ```powershell
 # One-time setup:

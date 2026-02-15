@@ -13,7 +13,7 @@ import { ACTIVE_AGENT } from '../services/agent.js';
 import { getGitStatus, updateClaudeMd } from '../services/git.js';
 import { destroyAllSessions, hasSavedSessions, restoreSavedSessions, saveSessionState, updateAgentBinary } from '../services/console.js';
 import { getPresetStatus } from '../services/preset.js';
-import { detectDockerSocketMount } from '../services/environment.js';
+import { detectDockerSocketMount, detectDeploymentMode } from '../services/environment.js';
 import agentRoutes from '../routes/agent.routes.js';
 import githubRoutes from '../routes/github.routes.js';
 import gitRoutes from '../routes/git.routes.js';
@@ -319,6 +319,9 @@ export async function startWebServer(): Promise<void> {
   process.on('SIGINT', () => gracefulShutdown('SIGINT'));
 
   server.listen(PORT, () => {
+    const deploymentMode = detectDeploymentMode();
+    console.log(`[Startup] Starting Codeck in ${deploymentMode} mode`);
+
     const lanIP = getLanIP();
     const isLan = lanIP !== '127.0.0.1' && !lanIP.startsWith('172.');
     const portSuffix = PORT === 80 ? '' : `:${PORT}`;

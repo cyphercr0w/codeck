@@ -43,8 +43,10 @@
 
 - **T3.4**: Added `DeploymentMode` type (`'systemd' | 'docker' | 'cli-local'`), `detectDeploymentMode()` function (checks SYSTEMD_EXEC_PID → /.dockerenv → fallback), and `getDefaultConfig()` function (returns workspace/port defaults per mode) to `src/services/environment.ts`.
 
+- **T3.5**: Wired `detectDeploymentMode()` into `src/web/server.ts`. Added import and log line `"Starting Codeck in [mode] mode"` in the listen callback.
+
 ### Next
-- **T3.5**: Wire `detectDeploymentMode()` into `src/web/server.ts` startup
+- **T3.6**: Create `docs/DEPLOYMENT.md` with systemd installation guide
 
 ### Problems Encountered
 - None

@@ -77,7 +77,7 @@ Progress tracker with granular tasks. Each task is scoped to ~30-60 minutes max.
 - [x] **T3.4** Add `detectDeploymentMode()` and `getDefaultConfig()` to `src/services/environment.ts`.
   - **Validation:** `npm run build` succeeds. Functions return correct values for docker (/.dockerenv exists), cli-local (default), and systemd (SYSTEMD_EXEC_PID exists).
 
-- [ ] **T3.5** Import and use `detectDeploymentMode()` in `src/web/server.ts` — log deployment mode at startup.
+- [x] **T3.5** Import and use `detectDeploymentMode()` in `src/web/server.ts` — log deployment mode at startup.
   - **Validation:** `npm run build` succeeds. Server startup shows "Starting Codeck in [mode] mode" log line.
 
 ### 3.3 Documentation

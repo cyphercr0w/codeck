@@ -8,7 +8,7 @@ import v8 from 'v8';
 import { installLogInterceptor, getLogBuffer, broadcast } from './logger.js';
 import { setupWebSocket } from './websocket.js';
 import { isPasswordConfigured, setupPassword, validatePassword, validateSession, invalidateSession, changePassword } from '../services/auth.js';
-import { getClaudeStatus, isClaudeAuthenticated, getAccountInfo } from '../services/auth-anthropic.js';
+import { getClaudeStatus, isClaudeAuthenticated, getAccountInfo, startTokenRefreshMonitor, stopTokenRefreshMonitor } from '../services/auth-anthropic.js';
 import { ACTIVE_AGENT } from '../services/agent.js';
 import { getGitStatus, updateClaudeMd } from '../services/git.js';
 import { destroyAllSessions, hasSavedSessions, restoreSavedSessions, saveSessionState, updateAgentBinary } from '../services/console.js';
@@ -297,6 +297,7 @@ export async function startWebServer(): Promise<void> {
   function gracefulShutdown(signal: string): void {
     console.log(`[Server] Received signal ${signal}, shutting down...`);
     saveSessionState('shutdown');
+    stopTokenRefreshMonitor();
     shutdownProactiveAgents();
     shutdownEmbeddings();
     shutdownSearch();
@@ -346,6 +347,7 @@ export async function startWebServer(): Promise<void> {
     );
     startPortScanner();
     startMdns();
+    startTokenRefreshMonitor(broadcast);
     initProactiveAgents(broadcast);
 
     // Daily session transcript cleanup (remove >30 day old JSONL files)

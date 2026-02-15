@@ -41,8 +41,10 @@
 
 - **T3.3**: Completed `scripts/install.sh` Part 2 — Claude CLI installation (npm global), codeck user creation with docker group, workspace/config directory setup (/home/codeck/{workspace,.codeck,.claude,.ssh}), Codeck download from GitHub releases, npm production install, systemd service file copy + enable + start. Final output shows success message with useful commands.
 
+- **T3.4**: Added `DeploymentMode` type (`'systemd' | 'docker' | 'cli-local'`), `detectDeploymentMode()` function (checks SYSTEMD_EXEC_PID → /.dockerenv → fallback), and `getDefaultConfig()` function (returns workspace/port defaults per mode) to `src/services/environment.ts`.
+
 ### Next
-- **T3.4**: Add `detectDeploymentMode()` and `getDefaultConfig()` to `src/services/environment.ts`
+- **T3.5**: Wire `detectDeploymentMode()` into `src/web/server.ts` startup
 
 ### Problems Encountered
 - None

@@ -74,7 +74,7 @@ Progress tracker with granular tasks. Each task is scoped to ~30-60 minutes max.
   - **Validation:** Script is complete. `bash -n scripts/install.sh` passes. All steps from the spec are present.
 
 ### 3.2 Backend — Environment Detection
-- [ ] **T3.4** Add `detectDeploymentMode()` and `getDefaultConfig()` to `src/services/environment.ts`.
+- [x] **T3.4** Add `detectDeploymentMode()` and `getDefaultConfig()` to `src/services/environment.ts`.
   - **Validation:** `npm run build` succeeds. Functions return correct values for docker (/.dockerenv exists), cli-local (default), and systemd (SYSTEMD_EXEC_PID exists).
 
 - [ ] **T3.5** Import and use `detectDeploymentMode()` in `src/web/server.ts` — log deployment mode at startup.

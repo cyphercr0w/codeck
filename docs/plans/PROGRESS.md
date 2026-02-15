@@ -45,8 +45,10 @@
 
 - **T3.5**: Wired `detectDeploymentMode()` into `src/web/server.ts`. Added import and log line `"Starting Codeck in [mode] mode"` in the listen callback.
 
+- **T3.6**: Created `docs/DEPLOYMENT.md` with full systemd deployment guide (requirements, quick install, what installer does, service management, configuration overrides, resource limits, file paths, updating, troubleshooting). Updated `docs/README.md` index and `CLAUDE.md` docs table to include the new doc.
+
 ### Next
-- **T3.6**: Create `docs/DEPLOYMENT.md` with systemd installation guide
+- **T3.7**: Update `README.md` with "Production Deployment" section
 
 ### Problems Encountered
 - None

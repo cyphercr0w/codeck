@@ -81,7 +81,7 @@ Progress tracker with granular tasks. Each task is scoped to ~30-60 minutes max.
   - **Validation:** `npm run build` succeeds. Server startup shows "Starting Codeck in [mode] mode" log line.
 
 ### 3.3 Documentation
-- [ ] **T3.6** Create `docs/DEPLOYMENT.md` with systemd installation guide, requirements, commands, troubleshooting.
+- [x] **T3.6** Create `docs/DEPLOYMENT.md` with systemd installation guide, requirements, commands, troubleshooting.
   - **Validation:** Document exists with complete guide.
 
 - [ ] **T3.7** Update `README.md` with "Production Deployment" section pointing to DEPLOYMENT.md.

@@ -15,6 +15,7 @@ The docs explain architecture, data flows, APIs, and conventions that you won't 
 | Services | `docs/SERVICES.md` | Service exports, state shape, internal flows (`services/*.ts`) |
 | Frontend | `docs/FRONTEND.md` | Components, signals, views, terminal, CSS (`src/web/`) |
 | Config | `docs/CONFIGURATION.md` | Env vars, Dockerfile, compose, volumes, presets, keyring |
+| Deployment | `docs/DEPLOYMENT.md` | Systemd install, VPS setup, service management, troubleshooting |
 | Known Issues | `docs/KNOWN-ISSUES.md` | Bugs, tech debt, improvements |
 
 ## Key Architecture Decisions

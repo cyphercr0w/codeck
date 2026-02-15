@@ -14,4 +14,5 @@ For a project overview and quick start guide, see the root [README](../README.md
 | [FRONTEND.md](FRONTEND.md) | Preact SPA: component tree, signals-based state, view lifecycle, terminal system, CSS architecture |
 | [PROACTIVE-AGENTS.md](PROACTIVE-AGENTS.md) | Proactive agents: autonomous scheduled tasks, API, WebSocket events, filesystem layout, configuration |
 | [CONFIGURATION.md](CONFIGURATION.md) | Environment variables, Docker build and compose config, volumes, preset system, keyring setup, file permissions |
+| [DEPLOYMENT.md](DEPLOYMENT.md) | Production deployment: systemd installation on Linux VPS, service management, configuration, troubleshooting |
 | [KNOWN-ISSUES.md](KNOWN-ISSUES.md) | Bugs, technical debt, and potential improvements found during codebase audit |

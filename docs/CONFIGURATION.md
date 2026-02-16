@@ -13,7 +13,7 @@
 | `ANTHROPIC_API_KEY` | — | **Optional.** Alternative to OAuth login. **Security:** Prefer OAuth login (automatic token refresh, encryption at rest). If using API key, ensure .env has 0600 permissions on host. Never commit to git. |
 | `NODE_ENV` | `production` | Set in Dockerfile |
 | `CLAUDE_CODE_OAUTH_TOKEN` | — | Auto-set per PTY session from .credentials.json |
-| `CODECK_NETWORK_MODE` | `bridge` | Docker network mode: `bridge` (default) or `host` (LAN mode) |
+| `CODECK_NETWORK_MODE` | `bridge` | Docker network mode (bridge only, kept for compatibility) |
 | `CODECK_MAPPED_PORTS` | — | Comma-separated port ranges exposed from Docker (e.g., `80,3000-3009,5173-5179`) |
 | `SESSION_TTL_MS` | `604800000` | Session token lifetime in milliseconds (default: 7 days) |
 | `SESSION_RESTORE_DELAY` | `2000` | Delay in milliseconds before restoring PTY sessions on container startup (allows server initialization to complete) |
@@ -26,7 +26,7 @@
 Codeck does not currently enforce schema validation for environment variables at startup. Invalid or malformed values silently fall back to defaults (e.g., `CODECK_PORT=abc` → `80`). For production deployments, verify the following:
 
 1. **Numeric Variables**: Ensure `CODECK_PORT`, `SESSION_TTL_MS`, and `SESSION_RESTORE_DELAY` are valid integers.
-2. **Network Mode**: `CODECK_NETWORK_MODE` must be `host` or `bridge` (case-sensitive).
+2. **Network Mode**: `CODECK_NETWORK_MODE` is always `bridge` (host mode has been removed).
 3. **Encryption Key**: Set `CODECK_ENCRYPTION_KEY` to a random 32+ character string for production (see "Security: CODECK_ENCRYPTION_KEY" below).
 
 **Future Enhancement**: Planned migration to Zod-based schema validation with startup-time checks and fail-fast behavior. See `AUDIT-107` for details.
@@ -341,15 +341,28 @@ healthcheck:
   start_period: 10s
 ```
 
-### Docker socket
+### Docker socket (Experimental Mode)
 
-The Docker socket mount (`/var/run/docker.sock`) is required by the port-manager service for dynamic port mapping (auto-restart with new port mappings). This effectively grants the container root-equivalent access to the host Docker daemon.
+By default, the Docker socket is **NOT** mounted. The container runs in secure mode without access to the host Docker daemon. Docker commands inside the container (`docker ps`, etc.) will not work, and dynamic port exposure requires manual `docker-compose.override.yml` configuration.
+
+To enable Docker access, use the experimental compose overlay:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.experimental.yml up
+```
+
+This mounts `/var/run/docker.sock` into the container, enabling:
+- Dynamic port mapping via the dashboard UI (auto-restart with new port mappings)
+- Docker commands inside the container (`docker ps`, `docker compose`, etc.)
+- Proactive agents can spawn sibling containers
 
 **Risk:** Any process inside the container can create new containers, mount host filesystems, or execute commands on the host. The `cap_drop`, `no-new-privileges`, and `read_only` restrictions do not apply to containers created through the socket.
 
+**Detection:** The server detects the socket mount at runtime and exposes `dockerExperimental: true` in the status API. The dashboard shows a persistent warning banner when active.
+
 **Mitigation options:**
-- **Socket proxy (recommended for security-sensitive deployments):** Use [tecnativa/docker-socket-proxy](https://github.com/Tecnativa/docker-socket-proxy) as a sidecar that whitelists only the Docker API endpoints needed by port-manager (container create, start, inspect).
-- **Remove the mount:** If dynamic port mapping is not needed, remove the `/var/run/docker.sock` bind mount entirely. Ports can still be mapped manually via `docker-compose.override.yml`.
+- **Default (secure):** Do not use the experimental overlay. Ports are mapped manually.
+- **Socket proxy:** Use [tecnativa/docker-socket-proxy](https://github.com/Tecnativa/docker-socket-proxy) as a sidecar that whitelists only needed Docker API endpoints.
 
 ### Volume data protection
 
@@ -553,7 +566,7 @@ Codeck also writes tokens directly to `.credentials.json` as a more reliable fal
 - **Dev server preview:** `http://localhost:{port}` (e.g., `http://localhost:3000`)
 - Only the Codeck port (default 80) is mapped by default. Additional ports are added via the dashboard, API, or `docker-compose.override.yml`.
 
-### LAN mode — Linux (phones, tablets, other devices)
+### LAN mode (all platforms)
 
 Enable with the LAN compose override:
 
@@ -561,20 +574,16 @@ Enable with the LAN compose override:
 docker compose -f docker-compose.yml -f docker-compose.lan.yml up
 ```
 
-This adds `network_mode: host`, which gives the container direct access to the host's network. The built-in mDNS responder (`src/services/mdns.ts`) broadcasts `codeck.local` and `*.codeck.local` to the LAN.
-
-**Security warning:** Host networking removes Docker's network isolation entirely. The container can access all host network interfaces, bind to any port, and interact with all services on the host network. Only use LAN mode on trusted networks. Never expose to the public internet. Consider firewall rules to restrict access to trusted devices.
+This enables the container's built-in mDNS responder (`src/services/mdns.ts`) which broadcasts `codeck.local` and `*.codeck.local`. For full LAN discovery from other devices, also run the **host-side mDNS advertiser script**.
 
 - **Dashboard:** `http://codeck.local`
 - **Dev server preview:** `http://codeck.local:{port}` (e.g., `http://codeck.local:5173`)
 - **Direct IP access:** `http://{HOST_IP}:{port}` also works
 - mDNS resolution requires avahi/libnss-mdns on Linux clients, built-in on Apple devices, Android 12+
 
-**Note:** `network_mode: host` only works on Linux. On Windows/macOS, Docker Desktop runs containers in a VM — host networking gives access to the VM's network, not the LAN.
+### Host-side mDNS advertiser (for LAN device access)
 
-### LAN mode — Windows/macOS (host-side mDNS script)
-
-On Windows and macOS, Docker Desktop runs containers inside a VM, so `network_mode: host` doesn't give LAN access. A **host-side mDNS advertiser script** is required instead.
+The host-side mDNS advertiser script is required for LAN devices (phones, tablets, other computers) to discover `codeck.local`. This works the same on all platforms (Linux, Windows, macOS).
 
 The script lives in `scripts/mdns-advertiser.cjs` and uses `@homebridge/ciao` for full Bonjour service advertisement. This makes `codeck.local` resolvable from any device on the LAN (including Android Chrome).
 

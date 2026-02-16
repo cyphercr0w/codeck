@@ -6,6 +6,7 @@ import { getGitStatus, getWorkspacePath } from '../services/git.js';
 import { getSession, writeToSession, resizeSession, destroySession, markSessionAttached, listSessions } from '../services/console.js';
 import { getLogBuffer, setWsClients, broadcast } from './logger.js';
 import { isPasswordConfigured, validateSession } from '../services/auth.js';
+import { detectDockerSocketMount } from '../services/environment.js';
 import type { Socket } from 'net';
 
 let clients: WebSocket[] = [];
@@ -120,6 +121,7 @@ export function setupWebSocket(server: Server): void {
         workspace: getWorkspacePath(),
         agent: { name: ACTIVE_AGENT.name, id: ACTIVE_AGENT.id },
         sessions: listSessions(),
+        dockerExperimental: detectDockerSocketMount(),
       },
     }));
     ws.send(JSON.stringify({ type: 'logs', data: getLogBuffer() }));
@@ -218,6 +220,7 @@ export function broadcastStatus(): void {
       git: getGitStatus(),
       agent: { name: ACTIVE_AGENT.name, id: ACTIVE_AGENT.id },
       sessions: listSessions(),
+      dockerExperimental: detectDockerSocketMount(),
     },
   });
 }

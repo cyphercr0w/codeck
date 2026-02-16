@@ -4,7 +4,7 @@
 #   docker compose up                            # Webapp mode (localhost)
 #   docker compose run --rm sandbox --help       # Show help
 #
-# LAN access (Linux — codeck.local from any device):
+# LAN access (codeck.local from any device):
 #   docker compose -f docker-compose.yml -f docker-compose.lan.yml up
 #
 # Dev (build from source):
@@ -57,11 +57,9 @@ services:
       - codeck-data:/workspace/.codeck
       - claude-config:/root/.claude
       - ssh-data:/root/.ssh
-      # WARNING: Docker socket grants host-level access. Required by port-manager
-      # for dynamic port mapping. For security-sensitive deployments, consider using
-      # a Docker socket proxy (e.g., tecnativa/docker-socket-proxy) instead.
-      # See docs/CONFIGURATION.md for details.
-      - /var/run/docker.sock:/var/run/docker.sock
+      # Docker socket is NOT mounted by default for security.
+      # To enable Docker access (experimental), use:
+      #   docker compose -f docker-compose.yml -f docker-compose.experimental.yml up
     extra_hosts:
       - "host.docker.internal:host-gateway"
     environment:

@@ -84,6 +84,9 @@ export const agentName = signal('Claude');
 export interface PortInfo { port: number; exposed: boolean; }
 export const activePorts = signal<PortInfo[]>([]);
 
+// Docker experimental mode
+export const dockerExperimental = signal(false);
+
 // Files
 export const currentFilesPath = signal('');
 
@@ -126,6 +129,9 @@ export function updateStateFromServer(data: Record<string, any>): void {
   }
   if (data.git) {
     // Could expand git state signals if needed
+  }
+  if (typeof data.dockerExperimental === 'boolean') {
+    dockerExperimental.value = data.dockerExperimental;
   }
   if (data.sessions) {
     setSessions(data.sessions.map((s: any) => ({

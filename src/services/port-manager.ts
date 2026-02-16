@@ -1,10 +1,10 @@
 import { readFileSync } from 'fs';
 import { execFileSync } from 'child_process';
 
-type NetworkMode = 'host' | 'bridge';
+type NetworkMode = 'bridge';
 
 let codeckPort = parseInt(process.env.CODECK_PORT || '80', 10);
-let networkMode: NetworkMode = 'bridge';
+const networkMode: NetworkMode = 'bridge';
 let mappedPorts: Set<number> = new Set();
 let containerId: string | null = null;
 
@@ -92,20 +92,13 @@ function detectComposeInfo(): void {
 }
 
 export function initPortManager(): void {
-  const mode = process.env.CODECK_NETWORK_MODE;
-  if (mode === 'host' || mode === 'bridge') {
-    networkMode = mode;
-  } else if (mode) {
-    console.warn(`[PortManager] Invalid CODECK_NETWORK_MODE="${mode}" — using "bridge"`);
-  }
-
   const portsSpec = process.env.CODECK_MAPPED_PORTS || '';
   mappedPorts = parsePorts(portsSpec);
 
   containerId = detectContainerId();
   detectComposeInfo();
 
-  console.log(`[PortManager] mode=${networkMode}, mapped=${mappedPorts.size} ports, container=${containerId || 'unknown'}`);
+  console.log(`[PortManager] mode=bridge, mapped=${mappedPorts.size} ports, container=${containerId || 'unknown'}`);
 }
 
 export function getNetworkMode(): NetworkMode {
@@ -117,7 +110,6 @@ export function getMappedPorts(): number[] {
 }
 
 export function isPortExposed(port: number): boolean {
-  if (networkMode === 'host') return true;
   return mappedPorts.has(port);
 }
 

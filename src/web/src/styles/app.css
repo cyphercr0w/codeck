@@ -396,6 +396,21 @@
   flex: 1;
 }
 
+.experimental-warning {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 16px;
+  margin-bottom: 24px;
+  background: rgba(234, 179, 8, 0.1);
+  border: 1px solid rgba(234, 179, 8, 0.3);
+  border-radius: 8px;
+  color: var(--warning, #eab308);
+}
+.experimental-warning-icon { font-size: 24px; flex-shrink: 0; }
+.experimental-warning-text strong { display: block; margin-bottom: 4px; font-size: 15px; }
+.experimental-warning-text p { margin: 0; font-size: 13px; opacity: 0.9; color: var(--fg-secondary, #999); }
+
 .home-header { margin-bottom: 28px; }
 .home-title {
   font-size: 20px;

@@ -68,34 +68,26 @@ Rebuild only when `Dockerfile.base` changes.
 
 ## LAN Access (`codeck.local`)
 
-Access Codeck from phones, tablets, and other devices on your local network.
+Access Codeck from phones, tablets, and other devices on your local network. Works the same on all platforms (Linux, Windows, macOS).
 
 **With CLI:**
 
 ```bash
-# Linux — configure during init (uses host networking)
-codeck init   # Select "Host networking" for LAN
-
-# Windows/macOS — start the mDNS advertiser
-codeck lan start
+codeck lan start   # Start mDNS advertiser for LAN discovery
 ```
 
 **Without CLI:**
 
-**Linux** — built-in, zero setup:
-
 ```bash
+# 1. Start Codeck with LAN overlay
 docker compose -f docker-compose.yml -f docker-compose.lan.yml up
-```
 
-**Windows/macOS** — host-side script required (Docker Desktop runs in a VM):
-
-```bash
+# 2. Run the host-side mDNS advertiser (requires admin)
 cd scripts && npm install
-node scripts/mdns-advertiser.cjs   # requires admin
+node scripts/mdns-advertiser.cjs
 ```
 
-The script advertises `codeck.local` and `{port}.codeck.local` via mDNS. See [docs/CONFIGURATION.md](docs/CONFIGURATION.md) for details.
+The advertiser script broadcasts `codeck.local` and `{port}.codeck.local` via mDNS. See [docs/CONFIGURATION.md](docs/CONFIGURATION.md) for details.
 
 ## Architecture
 
@@ -159,6 +151,37 @@ Only the Codeck port (default 80) is mapped initially. Additional ports can be a
 - **Workspace export** as `.tar.gz`
 - **Centralized logging** with automatic token sanitization
 
+## Production Deployment (Linux VPS)
+
+For running Codeck natively on a Linux VPS as a systemd service (e.g., for SaaS Cloud):
+
+```bash
+curl -fsSL https://codeck.app/install.sh | sudo bash
+```
+
+This installs Node.js, Docker, Claude CLI, creates a `codeck` system user, and sets up a systemd service. After installation:
+
+```bash
+systemctl status codeck       # Check service status
+journalctl -u codeck -f       # Follow logs
+```
+
+See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) for the full guide, configuration options, and troubleshooting.
+
+## Docker Socket Access (Experimental)
+
+By default, Codeck runs in **secure mode** without access to the host Docker daemon. Docker commands (`docker ps`, `docker compose`, etc.) will not work inside the container, and dynamic port exposure via the dashboard requires manual configuration.
+
+To enable Docker access (for advanced workflows like Docker-in-Docker, dynamic port mapping, or container orchestration), use the experimental overlay:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.experimental.yml up
+```
+
+**Warning:** This mounts `/var/run/docker.sock` into the container, granting full access to the host Docker daemon. This removes container isolation entirely. Only use on trusted systems.
+
+When experimental mode is active, the dashboard shows a persistent warning banner.
+
 ## Tech Stack
 
 | Layer | Technology |
@@ -188,4 +211,5 @@ Full technical documentation in [`docs/`](docs/README.md):
 - [Services](docs/SERVICES.md) — backend service layer internals
 - [Frontend](docs/FRONTEND.md) — Preact SPA, components, signals, CSS
 - [Configuration](docs/CONFIGURATION.md) — env vars, Docker, volumes, presets
+- [Deployment](docs/DEPLOYMENT.md) — systemd install, VPS setup, service management
 - [Known Issues](docs/KNOWN-ISSUES.md) — bugs, tech debt, improvements

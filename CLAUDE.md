@@ -15,6 +15,7 @@ The docs explain architecture, data flows, APIs, and conventions that you won't 
 | Services | `docs/SERVICES.md` | Service exports, state shape, internal flows (`services/*.ts`) |
 | Frontend | `docs/FRONTEND.md` | Components, signals, views, terminal, CSS (`src/web/`) |
 | Config | `docs/CONFIGURATION.md` | Env vars, Dockerfile, compose, volumes, presets, keyring |
+| Deployment | `docs/DEPLOYMENT.md` | Systemd install, VPS setup, service management, troubleshooting |
 | Known Issues | `docs/KNOWN-ISSUES.md` | Bugs, tech debt, improvements |
 
 ## Key Architecture Decisions
@@ -36,7 +37,7 @@ docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
 # Prod:
 docker compose up
 
-# Prod with LAN access (Linux only — codeck.local from any device):
+# Prod with LAN access (codeck.local from any device):
 docker compose -f docker-compose.yml -f docker-compose.lan.yml up
 
 # Local build check:
@@ -47,9 +48,9 @@ cd cli && npm install && npm run build && npm link
 npm run build:cli   # from project root
 ```
 
-## LAN Access (Windows/macOS)
+## LAN Access
 
-On Windows/macOS, Docker runs in a VM so `network_mode: host` doesn't work. A host-side mDNS script advertises `codeck.local` via Bonjour:
+Run the host-side mDNS advertiser for LAN device discovery (works on all platforms):
 
 ```powershell
 # One-time setup:

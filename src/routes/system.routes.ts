@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import {
-  getNetworkInfo, isPortExposed, getNetworkMode, getMappedPorts, getCodeckPort,
-  getComposeInfo, addMappedPort, removeMappedPort, writePortOverride, spawnComposeRestart, canAutoRestart,
+  getNetworkInfo, isPortExposed, getMappedPorts, getCodeckPort,
+  addMappedPort, removeMappedPort, writePortOverride, spawnComposeRestart, canAutoRestart,
 } from '../services/port-manager.js';
 import { saveSessionState, updateAgentBinary } from '../services/console.js';
 
@@ -25,12 +25,7 @@ router.post('/add-port', (req, res) => {
     return;
   }
 
-  if (getNetworkMode() === 'host') {
-    res.json({ success: true });
-    return;
-  }
-
-  // Bridge mode — try auto-restart with new port mapping
+  // Try auto-restart with new port mapping
   if (!canAutoRestart()) {
     res.json({
       success: false,
@@ -84,11 +79,6 @@ router.post('/remove-port', (req, res) => {
 
   if (port === getCodeckPort()) {
     res.status(400).json({ error: 'Cannot remove the Codeck port' });
-    return;
-  }
-
-  if (getNetworkMode() === 'host') {
-    res.json({ success: true, message: 'Host mode — all ports are accessible, nothing to remove' });
     return;
   }
 

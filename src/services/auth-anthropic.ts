@@ -324,6 +324,70 @@ function scheduleProactiveRefresh(creds: Record<string, unknown>): void {
   }
 }
 
+// ============ Token Refresh Monitor ============
+
+const TOKEN_CHECK_INTERVAL = 5 * 60 * 1000;  // Check every 5 minutes
+const MONITOR_REFRESH_MARGIN = 30 * 60 * 1000; // Refresh when within 30 minutes of expiry
+const MAX_REFRESH_RETRIES = 3;
+
+let refreshMonitorInterval: ReturnType<typeof setInterval> | null = null;
+let refreshRetryCount = 0;
+let broadcastFn: ((msg: object) => void) | null = null;
+
+/**
+ * Start background monitor that checks token expiry and refreshes proactively.
+ * Should be called once after server startup.
+ */
+export function startTokenRefreshMonitor(broadcast?: (msg: object) => void): void {
+  if (refreshMonitorInterval) return; // Already running
+
+  if (broadcast) broadcastFn = broadcast;
+
+  refreshMonitorInterval = setInterval(async () => {
+    const creds = readCredentials();
+    if (!creds?.claudeAiOauth?.refreshToken || !creds.claudeAiOauth.expiresAt) return;
+
+    const now = Date.now();
+    const timeUntilExpiry = creds.claudeAiOauth.expiresAt - now;
+
+    // Token already expired or within refresh margin
+    if (timeUntilExpiry <= MONITOR_REFRESH_MARGIN) {
+      console.log(`[Claude] Token refresh monitor: expires in ${Math.round(timeUntilExpiry / 60000)}min, refreshing...`);
+
+      const success = await performTokenRefresh(creds.claudeAiOauth.refreshToken);
+      if (success) {
+        refreshRetryCount = 0;
+        broadcastFn?.({ type: 'token_refreshed', timestamp: Date.now() });
+        const newCreds = readCredentials();
+        if (newCreds?.claudeAiOauth?.expiresAt) {
+          console.log(`[Claude] ✓ Token refreshed, expires at ${new Date(newCreds.claudeAiOauth.expiresAt).toISOString()}`);
+        }
+      } else {
+        refreshRetryCount++;
+        console.log(`[Claude] Token refresh failed (attempt ${refreshRetryCount}/${MAX_REFRESH_RETRIES})`);
+        if (refreshRetryCount >= MAX_REFRESH_RETRIES) {
+          console.log('[Claude] ⚠ Max refresh retries reached, broadcasting token error');
+          broadcastFn?.({ type: 'token_error', timestamp: Date.now() });
+          refreshRetryCount = 0; // Reset for next cycle
+        }
+      }
+    }
+  }, TOKEN_CHECK_INTERVAL);
+
+  console.log('[Claude] Token refresh monitor started (interval: 5min, margin: 30min)');
+}
+
+/**
+ * Stop the token refresh monitor. Called during graceful shutdown.
+ */
+export function stopTokenRefreshMonitor(): void {
+  if (refreshMonitorInterval) {
+    clearInterval(refreshMonitorInterval);
+    refreshMonitorInterval = null;
+    console.log('[Claude] Token refresh monitor stopped');
+  }
+}
+
 // ============ Auth Check ============
 
 /**

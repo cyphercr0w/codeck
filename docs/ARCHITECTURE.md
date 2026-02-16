@@ -94,6 +94,7 @@ init-keyring.sh
                             ├── initializeSearch()          → Memory search system initialization
                             ├── startPortScanner()          → Detects listening ports every 5s
                             ├── startMdns()                 → mDNS responder for codeck.local (LAN mode)
+                            ├── startTokenRefreshMonitor()  → Background OAuth token refresh (every 5min, 30min margin)
                             ├── initProactiveAgents()       → Cron scheduler + agent runtime startup
                             └── restoreSavedSessions()      → Auto-resume sessions from previous lifecycle (delayed 2s)
 ```
@@ -106,6 +107,7 @@ SIGTERM / SIGINT
     ▼
 gracefulShutdown()
     ├── saveSessionState()       → Persists sessions for auto-restore
+    ├── stopTokenRefreshMonitor()→ Clears token check interval
     ├── shutdownProactiveAgents()→ Stops cron schedules, kills running executions
     ├── shutdownSearch()         → Closes SQLite read connection
     ├── shutdownIndexer()        → Closes SQLite write connection
@@ -636,7 +638,12 @@ Authentication with a Claude account to use the CLI.
 
 The implementation handles several edge cases to ensure robust OAuth token management:
 
-- **Proactive Refresh:** Access tokens are automatically refreshed when within 5 minutes of expiry (`REFRESH_MARGIN_MS`). The refresh occurs in the background (async, non-blocking) to prevent disruption during active sessions.
+- **Auto-Refresh Monitor:** A background interval (`startTokenRefreshMonitor()`) runs every 5 minutes (`TOKEN_CHECK_INTERVAL = 5min`) and checks if the access token expires within the next 30 minutes (`REFRESH_MARGIN = 30min`). If so, it calls `refreshAccessToken()` which POSTs to the Anthropic OAuth token endpoint using the stored `refresh_token`. On success:
+  - `.credentials.json` is updated with the new `access_token`, `refresh_token`, and `expiresAt`
+  - Auth cache is invalidated so subsequent requests use the new token
+  - A `token_refreshed` event is broadcast to connected WebSocket clients
+  - On failure: retries up to 3 times (`MAX_REFRESH_RETRIES`). If all retries fail, a `token_error` event is broadcast.
+  - The monitor starts during server post-listen initialization and stops cleanly during `gracefulShutdown()` via `stopTokenRefreshMonitor()`.
 
 - **Concurrency Control:** The `refreshInProgress` flag prevents race conditions during concurrent refresh attempts. Only one refresh can execute at a time within a single container. Auth cache (3-second TTL) reduces thundering herd effect when multiple API calls check auth status simultaneously.
 
@@ -913,7 +920,7 @@ Browser: GET http://localhost:3000/
 
 ### Port manager (port-manager.ts)
 
-Reads `CODECK_NETWORK_MODE` and `CODECK_MAPPED_PORTS` environment variables on startup. Detects compose project info (project dir, service name, container image) via Docker container labels. Provides `isPortExposed(port)` to check if a port is in the mapped range (always true in host mode).
+Reads `CODECK_MAPPED_PORTS` environment variable on startup. Detects compose project info (project dir, service name, container image) via Docker container labels. Provides `isPortExposed(port)` to check if a port is in the mapped range.
 
 When a new port needs to be exposed in bridge mode, the port manager:
 1. Writes `docker-compose.override.yml` on the host via a helper container (base64 pipe)
@@ -988,21 +995,13 @@ Codeck implements a **single-container architecture** where all projects share o
 
 ### Network Mode Architecture
 
-**Two Deployment Modes:**
-
-1. **Bridge Mode (default)** — Standard Docker network isolation:
-   - Container runs on Docker bridge network
-   - Network namespace isolation: **ENABLED** (container isolated from host network)
-   - Port exposure: Explicit mapping via `docker-compose.yml` (e.g., `80:80`)
-   - Inbound access: Only mapped ports reachable from host
-   - Outbound access: Unrestricted (no egress filtering)
-
-2. **Host Mode (LAN access via `docker-compose.lan.yml`)** — **Removes all network isolation:**
-   - Container shares host's network namespace (`network_mode: host`)
-   - Network namespace isolation: **NONE** (container processes bind directly to host network)
-   - Port exposure: All container ports accessible on host (no mapping needed)
-   - **Security Warning:** Documented in `docker-compose.lan.yml` — "removes Docker's network isolation entirely"
-   - **Recommendation:** Only use on fully trusted, isolated networks (home/team LAN). Never on public Wi-Fi, corporate networks, or shared LANs.
+**Bridge Mode (all platforms)** — Standard Docker network isolation:
+- Container runs on Docker bridge network
+- Network namespace isolation: **ENABLED** (container isolated from host network)
+- Port exposure: Explicit mapping via `docker-compose.yml` (e.g., `80:80`)
+- Inbound access: Only mapped ports reachable from host
+- Outbound access: Unrestricted (no egress filtering)
+- LAN access: Use `docker-compose.lan.yml` overlay + host-side mDNS advertiser script
 
 ### Host Access via `extra_hosts`
 
@@ -1454,7 +1453,7 @@ Proactive agents spawn via `child_process.spawn()` with a hardcoded binary path 
 
 **Docker Socket Access — CRITICAL SECURITY NOTE**
 
-Agents have full Docker host access via the socket mount (`/var/run/docker.sock`). This is **intentional** for dev workflows (users expect `docker compose up` to work), but means:
+By default, the Docker socket is **NOT** mounted (secure mode). When running in experimental mode (`docker-compose.experimental.yml`), agents have full Docker host access via the socket mount (`/var/run/docker.sock`). This means:
 
 - Agents can spawn privileged containers to gain root on host
 - Agents can read logs and attach to other containers

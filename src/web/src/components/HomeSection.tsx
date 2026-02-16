@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'preact/hooks';
-import { accountEmail, accountOrg, claudeAuthenticated, sessions, agentName, activePorts, wsConnected } from '../state/store';
+import { accountEmail, accountOrg, claudeAuthenticated, sessions, agentName, activePorts, wsConnected, dockerExperimental } from '../state/store';
 import { apiFetch, getAuthToken } from '../api';
 import { IconUser, IconMonitor, IconActivity, IconShield, IconHardDrive, IconDownload, IconPlug, IconPlus, IconX } from './Icons';
 import { ConfirmModal } from './ConfirmModal';
@@ -271,6 +271,15 @@ export function HomeSection({ onRelogin }: HomeSectionProps) {
   return (
     <div class="content-section">
       <div class="home-content">
+        {dockerExperimental.value && (
+          <div class="experimental-warning" role="alert">
+            <div class="experimental-warning-icon">&#9888;&#65039;</div>
+            <div class="experimental-warning-text">
+              <strong>Experimental Mode Active</strong>
+              <p>Docker socket is mounted. The container has full access to the host Docker daemon. This removes container isolation. Only use on trusted systems.</p>
+            </div>
+          </div>
+        )}
         <div class="home-header">
           <div class="home-title">
             <IconUser size={20} />

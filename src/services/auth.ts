@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, mkdirSync, copyFileSync } from 'fs';
+import { existsSync, readFileSync, mkdirSync, copyFileSync, rmSync } from 'fs';
 import { scrypt, createHash, randomBytes, timingSafeEqual, ScryptOptions } from 'crypto';
 import { join, dirname } from 'path';
 import { atomicWriteFileSync } from './memory.js';
@@ -18,7 +18,7 @@ const CODECK_DIR = process.env.CODECK_DIR || '/workspace/.codeck';
 const AUTH_FILE = join(CODECK_DIR, 'auth.json');
 
 // Backup location on a volume that reliably persists (/root/.claude)
-const AUTH_BACKUP = '/root/.claude/codeck-auth.json';
+const AUTH_BACKUP = join(process.env.CLAUDE_CONFIG_DIR || '/root/.claude', 'codeck-auth.json');
 
 // ============ IN-MEMORY AUTH STATE ============
 // The in-memory config is the AUTHORITY while the server is running.
@@ -183,6 +183,14 @@ function hashPasswordLegacy(password: string, salt: string): string {
 export function isPasswordConfigured(): boolean {
   // In-memory state is authoritative — no filesystem checks needed
   return memoryAuthConfig !== null;
+}
+
+/** Reset in-memory auth state — ONLY for testing.
+ * Reloads from disk. Also cleans up backup file to prevent cross-test leaks. */
+export function _resetForTesting(): void {
+  // Clean backup file too (persistAuth writes here)
+  try { if (existsSync(AUTH_BACKUP)) rmSync(AUTH_BACKUP, { force: true }); } catch { /* ignore */ }
+  memoryAuthConfig = loadAuthFromDisk();
 }
 
 export async function setupPassword(password: string): Promise<{ success: boolean; token: string }> {

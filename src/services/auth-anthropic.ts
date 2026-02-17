@@ -536,6 +536,11 @@ export function getInMemoryToken(): string | null {
   return inMemoryToken;
 }
 
+/** Reset in-memory token — ONLY for testing */
+export function _resetInMemoryTokenForTesting(): void {
+  inMemoryToken = null;
+}
+
 /**
  * Check if there is an active Claude session.
  * Priority: 1) env var, 2) .credentials.json, 3) plaintext cache, 4) oauthAccount config

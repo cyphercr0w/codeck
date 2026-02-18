@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'preact/hooks';
 import { sessions, activeSessionId, setActiveSessionId, addLocalLog, addSession, removeSession, renameSession, agentName, isMobile } from '../state/store';
 import { apiFetch } from '../api';
 import { createTerminal, destroyTerminal, fitTerminal, focusTerminal, writeToTerminal } from '../terminal';
-import { wsSend, setTerminalHandlers } from '../ws';
+import { wsSend, setTerminalHandlers, attachSession } from '../ws';
 import { IconPlus, IconX, IconShell, IconTerminal } from './Icons';
 import { MobileTerminalToolbar } from './MobileTerminalToolbar';
 
@@ -58,7 +58,7 @@ export function ClaudeSection({ onNewSession, onNewShell }: ClaudeSectionProps) 
 
       const instance = createTerminal(s.id, el);
 
-      wsSend({ type: 'console:attach', sessionId: s.id });
+      attachSession(s.id);
       wsSend({ type: 'console:resize', sessionId: s.id, cols: instance.term.cols, rows: instance.term.rows });
     }
   }, [sessionList.length]);
@@ -248,7 +248,7 @@ export function mountTerminalForSession(sessionId: string, cwd: string, name?: s
 
   setTimeout(() => {
     instance.fitAddon.fit();
-    wsSend({ type: 'console:attach', sessionId });
+    attachSession(sessionId);
     wsSend({ type: 'console:resize', sessionId, cols: instance.term.cols, rows: instance.term.rows });
     instance.term.focus();
   }, 100);

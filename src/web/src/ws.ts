@@ -29,6 +29,10 @@ let reconnectBackoff = 1000; // Exponential backoff: 1s → 2s → 4s → ... �
 let reconnectAttempts = 0;
 const MAX_RECONNECT_ATTEMPTS = 15;
 
+// Track which sessions have been attached on the current WS connection
+// to prevent duplicate console:attach messages on reconnect.
+const attachedSessions = new Set<string>();
+
 // Buffer the last resize message sent while disconnected so terminal
 // dimensions are correct immediately after reconnection.
 let pendingResize: object | null = null;
@@ -53,6 +57,14 @@ export function wsSend(msg: object): void {
   }
 }
 
+/** Send console:attach only once per session per WS connection.
+ *  Prevents duplicate attach when multiple code paths fire on reconnect. */
+export function attachSession(sessionId: string): void {
+  if (attachedSessions.has(sessionId)) return;
+  attachedSessions.add(sessionId);
+  wsSend({ type: 'console:attach', sessionId });
+}
+
 export function connectWebSocket(): void {
   if (ws && ws.readyState !== WebSocket.CLOSED) return;
 
@@ -66,6 +78,7 @@ export function connectWebSocket(): void {
     lastMessageAt = Date.now();
     reconnectBackoff = 1000; // Reset backoff on successful connection
     reconnectAttempts = 0;
+    attachedSessions.clear(); // New connection — reset attach tracking
     addLog({ type: 'info', message: 'Connected to server', timestamp: Date.now() });
     // Don't re-attach here — wait for the 'status' message which includes
     // the server's current session list. Attaching stale IDs after a
@@ -104,7 +117,7 @@ export function connectWebSocket(): void {
         updateStateFromServer(msg.data);
         // After state sync, re-attach all current sessions
         sessions.value.forEach(s => {
-          wsSend({ type: 'console:attach', sessionId: s.id });
+          attachSession(s.id);
         });
       } else if (msg.type === 'log') {
         if (!isLogEntry(msg.data)) return;
@@ -122,7 +135,7 @@ export function connectWebSocket(): void {
         );
         for (const s of restored) {
           addSession({ id: s.id, type: s.type as 'agent' | 'shell', cwd: s.cwd, name: s.name, createdAt: Date.now() });
-          wsSend({ type: 'console:attach', sessionId: s.id });
+          attachSession(s.id);
         }
         if (restored.length > 0 && !activeSessionId.value) {
           setActiveSessionId(restored[0].id);

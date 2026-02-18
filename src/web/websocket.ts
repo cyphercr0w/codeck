@@ -185,10 +185,11 @@ function handleConsoleMessage(ws: WebSocket, msg: { type: string; sessionId: str
         // unbounded buffer growth when client is slow to consume output.
         session.pty.pause();
         ws.send(JSON.stringify({ type: 'console:output', sessionId: msg.sessionId, data }), (err) => {
-          if (!err) {
-            try { session.pty.resume(); } catch { /* session may be destroyed */ }
-          }
-          // If send failed, leave paused — client likely disconnected
+          // Always resume PTY regardless of send error. Leaving it paused
+          // permanently freezes the terminal. If the client truly disconnected,
+          // the WS close event handles cleanup.
+          try { session.pty.resume(); } catch { /* session may be destroyed */ }
+          if (err) console.warn('[WS] Send error for session', msg.sessionId, err.message);
         });
       }
     });

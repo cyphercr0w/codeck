@@ -175,6 +175,17 @@ log "Service started"
 sleep 2
 systemctl is-active --quiet codeck && log "Running!" || warn "Check: journalctl -u codeck -n 30"
 
+# ─── Symlink repo into workspace ──────────────────────────────────────
+
+WORKSPACE_LINK="$CODECK_HOME/workspace/codeck"
+if [[ ! -e "$WORKSPACE_LINK" ]]; then
+  ln -s "$CODECK_DIR" "$WORKSPACE_LINK"
+  chown -h "$CODECK_USER:$CODECK_USER" "$WORKSPACE_LINK"
+  log "Symlinked $CODECK_DIR → $WORKSPACE_LINK"
+else
+  log "Workspace link already exists: $WORKSPACE_LINK"
+fi
+
 # ─── Firewall ────────────────────────────────────────────────────────
 
 if command -v ufw &>/dev/null; then

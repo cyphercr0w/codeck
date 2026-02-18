@@ -1,14 +1,15 @@
 import { activeSection, wsConnected, setActiveSection, type Section } from '../state/store';
 import { IconHome, IconFolder, IconTerminal, IconBot, IconPlug, IconSettings } from './Icons';
+import { NAV_ITEMS } from './nav-items';
 
-const NAV_ITEMS: { section: Section; icon: () => preact.JSX.Element; label: string }[] = [
-  { section: 'home', icon: () => <IconHome size={22} />, label: 'Home' },
-  { section: 'filesystem', icon: () => <IconFolder size={22} />, label: 'Filesystem' },
-  { section: 'claude', icon: () => <IconTerminal size={22} />, label: 'Terminal' },
-  { section: 'agents', icon: () => <IconBot size={22} />, label: 'Auto Agents' },
-  { section: 'integrations', icon: () => <IconPlug size={22} />, label: 'Integrations' },
-  { section: 'config', icon: () => <IconSettings size={22} />, label: 'Config' },
-];
+const SECTION_ICONS: Record<Section, () => preact.JSX.Element> = {
+  home: () => <IconHome size={22} />,
+  filesystem: () => <IconFolder size={22} />,
+  claude: () => <IconTerminal size={22} />,
+  agents: () => <IconBot size={22} />,
+  integrations: () => <IconPlug size={22} />,
+  config: () => <IconSettings size={22} />,
+};
 
 interface MobileMenuProps {
   open: boolean;
@@ -35,7 +36,7 @@ export function MobileMenu({ open, onClose, onSectionChange }: MobileMenuProps) 
                 onClose();
               }}
             >
-              <span class="mobile-menu-icon">{item.icon()}</span>
+              <span class="mobile-menu-icon">{SECTION_ICONS[item.section]()}</span>
               {item.label}
             </button>
           ))}

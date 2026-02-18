@@ -86,22 +86,10 @@ export function createTerminal(sessionId: string, container: HTMLElement): Termi
         }, { passive: true });
       }
 
-      // Refit terminal + scroll to bottom when virtual keyboard opens/closes.
-      // visualViewport.resize fires when the keyboard changes the viewport size.
-      if (window.visualViewport) {
-        let prevHeight = window.visualViewport.height;
-        window.visualViewport.addEventListener('resize', () => {
-          const newHeight = window.visualViewport!.height;
-          // Refit to new viewport dimensions
-          fitAddon.fit();
-          wsSend({ type: 'console:resize', sessionId, cols: term.cols, rows: term.rows });
-          // Keyboard opened (viewport shrank) — scroll to bottom so user sees input
-          if (newHeight < prevHeight) {
-            setTimeout(() => term.scrollToBottom(), 50);
-          }
-          prevHeight = newHeight;
-        });
-      }
+      // NOTE: visualViewport.resize is handled exclusively by MobileTerminalToolbar.
+      // It recalculates the container height first, then the ResizeObserver on the
+      // container triggers fitAddon.fit() + console:resize. Having a handler here
+      // too caused a race condition (fit before container height was adjusted).
     }
   }
 

@@ -11,8 +11,21 @@ import type { Socket } from 'net';
 
 let clients: WebSocket[] = [];
 
-// Track PTY event disposables per session to prevent handler stacking on re-attach
-const sessionDisposables = new Map<string, Array<{ dispose: () => void }>>();
+// --- Multi-client PTY session tracking ---
+// Multiple clients (e.g. PC + mobile) can attach to the same PTY session.
+// Output is broadcast to ALL attached clients; resize uses max dimensions.
+
+// sessionId → Set<WebSocket> (all clients attached to this session)
+const sessionClients = new Map<string, Set<WebSocket>>();
+
+// sessionId → disposables (ONE onData + onExit handler per session, broadcasts to all)
+const sessionHandlers = new Map<string, Array<{ dispose: () => void }>>();
+
+// ws → Map<sessionId, { cols, rows }> (per-client dimensions for each session)
+const clientDimensions = new Map<WebSocket, Map<string, { cols: number; rows: number }>>();
+
+// sessionId → { cols, rows } (current max dimensions applied to PTY)
+const sessionMaxDimensions = new Map<string, { cols: number; rows: number }>();
 
 // Max input payload size per WS message (64KB per OWASP recommendation)
 const MAX_INPUT_SIZE = 65536;
@@ -140,10 +153,50 @@ export function setupWebSocket(server: Server): void {
     ws.on('close', () => {
       console.log('[WS] Client disconnected');
       clients = clients.filter(c => c !== ws);
-      messageRates.delete(ws); // Clean up rate tracking
+      messageRates.delete(ws);
       setWsClients(clients);
+
+      // Remove this client from all session client sets
+      for (const [sessionId, clientSet] of sessionClients) {
+        clientSet.delete(ws);
+        if (clientSet.size === 0) {
+          // No clients left — dispose PTY handlers for this session
+          const handlers = sessionHandlers.get(sessionId);
+          if (handlers) {
+            handlers.forEach(d => d.dispose());
+            sessionHandlers.delete(sessionId);
+          }
+          sessionClients.delete(sessionId);
+          sessionMaxDimensions.delete(sessionId);
+        } else {
+          // Recalculate max dimensions with remaining clients
+          recalcMaxDimensions(sessionId);
+        }
+      }
+      clientDimensions.delete(ws);
     });
   });
+}
+
+/** Recalculate max dimensions across all clients attached to a session and resize PTY if changed. */
+function recalcMaxDimensions(sessionId: string): void {
+  const clientSet = sessionClients.get(sessionId);
+  if (!clientSet || clientSet.size === 0) return;
+
+  let maxCols = 1, maxRows = 1;
+  for (const client of clientSet) {
+    const dims = clientDimensions.get(client)?.get(sessionId);
+    if (dims) {
+      maxCols = Math.max(maxCols, dims.cols);
+      maxRows = Math.max(maxRows, dims.rows);
+    }
+  }
+
+  const prev = sessionMaxDimensions.get(sessionId);
+  if (!prev || prev.cols !== maxCols || prev.rows !== maxRows) {
+    sessionMaxDimensions.set(sessionId, { cols: maxCols, rows: maxRows });
+    resizeSession(sessionId, maxCols, maxRows);
+  }
 }
 
 // Note: WS message-level authorization (per-session ownership) is intentionally
@@ -173,44 +226,73 @@ function handleConsoleMessage(ws: WebSocket, msg: { type: string; sessionId: str
       return;
     }
 
-    // Dispose previous handlers to prevent stacking on re-attach (page refresh)
-    const oldDisposables = sessionDisposables.get(msg.sessionId);
-    if (oldDisposables) {
-      oldDisposables.forEach(d => d.dispose());
+    // Add this client to the session's client set
+    let clientSet = sessionClients.get(msg.sessionId);
+    if (!clientSet) {
+      clientSet = new Set();
+      sessionClients.set(msg.sessionId, clientSet);
+    }
+    clientSet.add(ws);
+
+    // Only create PTY handlers if this is the first client attaching to this session
+    // (or if handlers were previously cleaned up after all clients disconnected)
+    if (!sessionHandlers.has(msg.sessionId)) {
+      const sid = msg.sessionId; // capture for closures
+
+      const dataDisposable = session.pty.onData((data: string) => {
+        const currentClients = sessionClients.get(sid);
+        if (!currentClients) return;
+
+        const payload = JSON.stringify({ type: 'console:output', sessionId: sid, data });
+        for (const client of currentClients) {
+          if (client.readyState === WebSocket.OPEN) {
+            client.send(payload, (err) => {
+              if (err) console.warn('[WS] Send error for session', sid, err.message);
+            });
+          }
+        }
+      });
+
+      const exitDisposable = session.pty.onExit(({ exitCode }: { exitCode: number }) => {
+        const currentClients = sessionClients.get(sid);
+        if (currentClients) {
+          const payload = JSON.stringify({ type: 'console:exit', sessionId: sid, exitCode });
+          for (const client of currentClients) {
+            if (client.readyState === WebSocket.OPEN) client.send(payload);
+          }
+        }
+        // Clean up all tracking for this session
+        sessionHandlers.delete(sid);
+        sessionClients.delete(sid);
+        sessionMaxDimensions.delete(sid);
+        destroySession(sid);
+      });
+
+      sessionHandlers.set(msg.sessionId, [dataDisposable, exitDisposable]);
     }
 
-    const dataDisposable = session.pty.onData((data: string) => {
-      if (ws.readyState === WebSocket.OPEN) {
-        // Backpressure: pause PTY while WebSocket send is in-flight to prevent
-        // unbounded buffer growth when client is slow to consume output.
-        session.pty.pause();
-        ws.send(JSON.stringify({ type: 'console:output', sessionId: msg.sessionId, data }), (err) => {
-          // Always resume PTY regardless of send error. Leaving it paused
-          // permanently freezes the terminal. If the client truly disconnected,
-          // the WS close event handles cleanup.
-          try { session.pty.resume(); } catch { /* session may be destroyed */ }
-          if (err) console.warn('[WS] Send error for session', msg.sessionId, err.message);
-        });
-      }
-    });
-    const exitDisposable = session.pty.onExit(({ exitCode }: { exitCode: number }) => {
-      if (ws.readyState === WebSocket.OPEN)
-        ws.send(JSON.stringify({ type: 'console:exit', sessionId: msg.sessionId, exitCode }));
-      sessionDisposables.delete(msg.sessionId);
-      destroySession(msg.sessionId);
-    });
-
-    sessionDisposables.set(msg.sessionId, [dataDisposable, exitDisposable]);
-
-    // Replay any buffered output from before attach
+    // Replay any buffered output to THIS client only
     const buffered = markSessionAttached(msg.sessionId);
     for (const chunk of buffered) {
       if (ws.readyState === WebSocket.OPEN)
         ws.send(JSON.stringify({ type: 'console:output', sessionId: msg.sessionId, data: chunk }));
     }
   }
+
   if (msg.type === 'console:input') writeToSession(msg.sessionId, msg.data || '');
-  if (msg.type === 'console:resize') resizeSession(msg.sessionId, msg.cols || 80, msg.rows || 24);
+
+  if (msg.type === 'console:resize') {
+    // Store this client's dimensions
+    let dims = clientDimensions.get(ws);
+    if (!dims) {
+      dims = new Map();
+      clientDimensions.set(ws, dims);
+    }
+    dims.set(msg.sessionId, { cols: msg.cols || 80, rows: msg.rows || 24 });
+
+    // Resize PTY to max of all clients' dimensions (prevents mobile shrinking PC)
+    recalcMaxDimensions(msg.sessionId);
+  }
 }
 
 export function broadcastStatus(): void {

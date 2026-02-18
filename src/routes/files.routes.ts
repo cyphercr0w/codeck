@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { readdir, stat, readFile, writeFile, mkdir, realpath } from 'fs/promises';
+import { readdir, stat, readFile, writeFile, mkdir } from 'fs/promises';
 import { join, resolve, sep } from 'path';
 import { broadcastStatus } from '../web/websocket.js';
 
@@ -8,22 +8,17 @@ const WORKSPACE = resolve(process.env.WORKSPACE || '/workspace');
 const router = Router();
 
 /**
- * Resolve a relative path against a base directory, validate it stays within bounds,
- * and resolve symlinks to prevent symlink-based path traversal bypasses.
+ * Resolve a relative path against a base directory and validate it stays within bounds.
  * Returns the validated path, or null if access is denied.
- * For paths that don't exist yet (write/mkdir), validates the resolved path without realpath.
+ *
+ * Path traversal is prevented by resolving ".." segments and checking the result
+ * starts with the base directory. Symlinks within the workspace are intentionally
+ * followed — they are placed by the admin (e.g., repo symlinks for self-dev).
  */
 async function safePath(base: string, relativePath: string): Promise<string | null> {
   const resolved = resolve(base, relativePath);
   if (!resolved.startsWith(base + sep) && resolved !== base) return null;
-  try {
-    const real = await realpath(resolved);
-    if (!real.startsWith(base + sep) && real !== base) return null;
-    return real;
-  } catch {
-    // Path doesn't exist yet — resolved path is acceptable (for write/mkdir of new files)
-    return resolved;
-  }
+  return resolved;
 }
 
 // List directory files

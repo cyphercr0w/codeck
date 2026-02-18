@@ -69,6 +69,23 @@ This makes `codeck.local` and `{port}.codeck.local` resolvable from phones, tabl
 - **Branching**: work directly on `main`
 - **Code style**: follow existing patterns in the codebase (no reformatting unrelated code)
 
+## Self-Deploy (VPS / systemd mode)
+
+If you are running on a VPS where this repo IS the live Codeck installation (`/opt/codeck`), you can deploy your own changes:
+
+```bash
+# After editing code:
+npm run build && sudo systemctl restart codeck
+```
+
+Or use the helper script: `bash scripts/self-deploy.sh`
+
+**Important:**
+- The service restart kills your terminal session. The frontend auto-reconnects.
+- Always `git commit` before deploying — your files stay on disk, but committed code is safer.
+- If a deploy breaks the server, SSH in: `sudo git checkout . && sudo npm run build && sudo systemctl restart codeck`
+- You have sudo for: `systemctl restart/stop/start codeck`
+
 ## Rules
 
 - **Always update docs after any change.** README.md, docs/, and CLAUDE.md must reflect the current state. Update them in the same commit as the code change — never leave docs stale.

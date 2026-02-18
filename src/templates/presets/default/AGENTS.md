@@ -117,29 +117,3 @@ Before ending ANY session:
 4. If user preferences were discovered: update preferences.md
 
 These steps are **mandatory**. Not optional. Not "if significant". EVERY session.
-
----
-
-## Self-Development (systemd mode)
-
-When running on a VPS (systemd mode), you can develop Codeck itself. The workspace contains a full clone of the Codeck repo at `/workspace/codeck`.
-
-### How it works
-
-- **`/opt/codeck`** — the LIVE installation (systemd runs from here)
-- **`/workspace/codeck`** — your dev clone (edit, build, test here)
-
-### Workflow
-
-1. Work in `/workspace/codeck` — edit code, run tests
-2. `git add`, `git commit`, `git push` your changes
-3. Run `bash /workspace/codeck/scripts/self-deploy.sh` to deploy
-4. The script builds, syncs to `/opt/codeck`, and restarts the service
-5. Your terminal session will die (the service restarted). The frontend auto-reconnects.
-
-### Important
-
-- **Always commit before deploying.** The service restart kills your session — uncommitted work in progress is fine (it stays on disk), but committed code is safer.
-- **Quick deploy** (skip npm ci): `bash /workspace/codeck/scripts/self-deploy.sh --quick`
-- **If deploy breaks the server**, SSH in and rollback: `cd /opt/codeck && sudo git checkout . && sudo systemctl restart codeck`
-- You have sudo access for: `systemctl restart/stop/start codeck`, `rsync`, `cp`, `chown`

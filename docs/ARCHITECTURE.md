@@ -638,16 +638,15 @@ Authentication with a Claude account to use the CLI.
 
 The implementation handles several edge cases to ensure robust OAuth token management:
 
-- **Auto-Refresh Monitor:** A background interval (`startTokenRefreshMonitor()`) runs every 5 minutes (`TOKEN_CHECK_INTERVAL = 5min`) and checks if the access token expires within the next 30 minutes (`REFRESH_MARGIN = 30min`). If so, it calls `refreshAccessToken()` which POSTs to the Anthropic OAuth token endpoint using the stored `refresh_token`. On success:
-  - `.credentials.json` is updated with the new `access_token`, `refresh_token`, and `expiresAt`
-  - Auth cache is invalidated so subsequent requests use the new token
-  - A `token_refreshed` event is broadcast to connected WebSocket clients
-  - On failure: retries up to 3 times (`MAX_REFRESH_RETRIES`). If all retries fail, a `token_error` event is broadcast.
+- **Auto-Refresh Monitor:** A background interval (`startTokenRefreshMonitor()` in `auth-anthropic.ts`) runs every 5 minutes (`REFRESH_CHECK_INTERVAL_MS = 5min`) and checks if the access token expires within the next 30 minutes (`REFRESH_MARGIN_PROACTIVE_MS = 30min`). If so, it calls `performTokenRefresh()` which POSTs to the Anthropic OAuth token endpoint using the stored `refresh_token`. On success:
+  - `.credentials.json` is updated with the new encrypted `access_token`, `refresh_token`, and `expiresAt`
+  - In-memory token, auth cache, and plaintext cache are all updated
+  - If the token is already expired (e.g., container was suspended), the monitor attempts recovery before giving up
   - The monitor starts during server post-listen initialization and stops cleanly during `gracefulShutdown()` via `stopTokenRefreshMonitor()`.
 
 - **Concurrency Control:** The `refreshInProgress` flag prevents race conditions during concurrent refresh attempts. Only one refresh can execute at a time within a single container. Auth cache (3-second TTL) reduces thundering herd effect when multiple API calls check auth status simultaneously.
 
-- **Revocation Detection:** Token revocation is detected via token use failure (OAuth 2.0 spec does not provide client-side revocation notifications). If the Claude API returns 401 Unauthorized, `markTokenExpired()` is called to invalidate the local cache and force re-authentication.
+- **Revocation Detection:** Token revocation is detected via token use failure (OAuth 2.0 spec does not provide client-side revocation notifications). If the Claude API returns 401 Unauthorized, `markTokenExpired()` is called which: (1) clears the in-memory token and auth cache, (2) attempts a refresh using the stored refresh token, and (3) only deletes credential files if the refresh fails. This preserves recoverability — a 401 from a temporarily invalid access token doesn't destroy the refresh token needed for recovery.
 
 - **PKCE State Cleanup:** PKCE state files (`.pkce-state.json`) have a 5-minute TTL. Stale states are cleaned up on timeout, successful login, error, or startup (if persisted state is loaded and found to be expired).
 

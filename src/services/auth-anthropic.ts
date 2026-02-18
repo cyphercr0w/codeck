@@ -503,6 +503,49 @@ function scheduleProactiveRefresh(creds: Record<string, unknown>): void {
   }
 }
 
+// ============ Background Token Refresh Monitor ============
+
+const REFRESH_CHECK_INTERVAL_MS = 5 * 60 * 1000;      // Check every 5 minutes
+const REFRESH_MARGIN_PROACTIVE_MS = 30 * 60 * 1000;   // Refresh 30 min before expiry
+
+let refreshMonitorInterval: ReturnType<typeof setInterval> | null = null;
+
+export function startTokenRefreshMonitor(): void {
+  if (refreshMonitorInterval) return; // Already running
+
+  console.log('[Claude] Starting token refresh monitor (every 5min, 30min margin)');
+
+  refreshMonitorInterval = setInterval(async () => {
+    // Skip if token already marked expired with no recovery path
+    if (tokenMarkedExpired) return;
+
+    const creds = readCredentials();
+    if (!creds?.claudeAiOauth?.refreshToken || !creds.claudeAiOauth.expiresAt) return;
+
+    const timeUntilExpiry = creds.claudeAiOauth.expiresAt - Date.now();
+
+    if (timeUntilExpiry <= 0) {
+      // Already expired — try refresh before giving up
+      console.log('[Claude] Token expired, attempting recovery via refresh token...');
+      const ok = await performTokenRefresh(creds.claudeAiOauth.refreshToken);
+      if (!ok) {
+        console.log('[Claude] Refresh failed — token is dead, user must re-login');
+      }
+    } else if (timeUntilExpiry <= REFRESH_MARGIN_PROACTIVE_MS) {
+      // Expiring soon — refresh proactively
+      console.log(`[Claude] Token expires in ${Math.round(timeUntilExpiry / 60000)}min, refreshing...`);
+      await performTokenRefresh(creds.claudeAiOauth.refreshToken);
+    }
+  }, REFRESH_CHECK_INTERVAL_MS);
+}
+
+export function stopTokenRefreshMonitor(): void {
+  if (refreshMonitorInterval) {
+    clearInterval(refreshMonitorInterval);
+    refreshMonitorInterval = null;
+  }
+}
+
 // ============ Auth Check ============
 
 /**
@@ -617,7 +660,25 @@ export function markTokenExpired(): void {
   tokenMarkedExpired = true;
   inMemoryToken = null;
   invalidateAuthCache();
-  // Clear ALL cached tokens — they're proven invalid
+
+  // Attempt recovery via refresh token BEFORE wiping files
+  const creds = readCredentials();
+  if (creds?.claudeAiOauth?.refreshToken) {
+    console.log('[Claude] Attempting token refresh before clearing credentials...');
+    performTokenRefresh(creds.claudeAiOauth.refreshToken).then(ok => {
+      if (ok) {
+        console.log('[Claude] Token recovered after 401');
+      } else {
+        console.log('[Claude] Refresh failed — clearing all credentials');
+        clearAllCredentialFiles();
+      }
+    });
+  } else {
+    clearAllCredentialFiles();
+  }
+}
+
+function clearAllCredentialFiles(): void {
   try { if (existsSync(TOKEN_CACHE_PATH)) unlinkSync(TOKEN_CACHE_PATH); } catch { /* ignore */ }
   try { if (existsSync(CREDENTIALS_BACKUP)) unlinkSync(CREDENTIALS_BACKUP); } catch { /* ignore */ }
   try { if (existsSync(CLAUDE_CREDENTIALS_PATH)) unlinkSync(CLAUDE_CREDENTIALS_PATH); } catch { /* ignore */ }

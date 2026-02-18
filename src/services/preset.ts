@@ -12,9 +12,11 @@ const BACKUPS_DIR = join(CODECK_DIR, 'backups');
 const VALID_PRESET_ID = /^[a-zA-Z0-9_-]+$/;
 
 // Allowed destination path prefixes for manifest files
+const home = process.env.HOME || '/root';
 const ALLOWED_DEST_PREFIXES = [
   '/workspace/',
-  '/root/.claude/',
+  `${home}/.claude/`,
+  '/home/', // systemd mode: /home/codeck/.claude/
 ];
 
 // ── Types ────────────────────────────────────────────────────────────

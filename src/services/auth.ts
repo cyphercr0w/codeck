@@ -2,6 +2,7 @@ import { existsSync, readFileSync, mkdirSync, copyFileSync, rmSync } from 'fs';
 import { scrypt, createHash, randomBytes, timingSafeEqual, ScryptOptions } from 'crypto';
 import { join, dirname } from 'path';
 import { atomicWriteFileSync } from './memory.js';
+import { ACTIVE_AGENT } from './agent.js';
 
 function scryptAsync(password: string, salt: string, keylen: number, options?: ScryptOptions): Promise<Buffer> {
   return new Promise((resolve, reject) => {
@@ -17,8 +18,8 @@ function scryptAsync(password: string, salt: string, keylen: number, options?: S
 const CODECK_DIR = process.env.CODECK_DIR || '/workspace/.codeck';
 const AUTH_FILE = join(CODECK_DIR, 'auth.json');
 
-// Backup location on a volume that reliably persists (/root/.claude)
-const AUTH_BACKUP = join(process.env.CLAUDE_CONFIG_DIR || '/root/.claude', 'codeck-auth.json');
+// Backup location on a volume that reliably persists (~/.claude)
+const AUTH_BACKUP = join(ACTIVE_AGENT.configDir, 'codeck-auth.json');
 
 // ============ IN-MEMORY AUTH STATE ============
 // The in-memory config is the AUTHORITY while the server is running.

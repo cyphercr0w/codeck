@@ -1,4 +1,7 @@
-const claudeConfigDir = process.env.CLAUDE_CONFIG_DIR || '/root/.claude';
+import { homedir } from 'os';
+
+const home = process.env.HOME || homedir();
+const claudeConfigDir = process.env.CLAUDE_CONFIG_DIR || `${home}/.claude`;
 
 export const ACTIVE_AGENT = {
   id: 'claude',
@@ -8,7 +11,7 @@ export const ACTIVE_AGENT = {
   instructionFile: 'CLAUDE.md',
   configDir: claudeConfigDir,
   credentialsFile: `${claudeConfigDir}/.credentials.json`,
-  configFile: '/root/.claude.json',
+  configFile: `${home}/.claude.json`,
   settingsFile: `${claudeConfigDir}/settings.json`,
   projectsDir: `${claudeConfigDir}/projects`,
 } as const;

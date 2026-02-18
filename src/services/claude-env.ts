@@ -19,7 +19,7 @@ export function resolveAgentBinary(): string {
   const commonPaths = [
     `/usr/local/bin/${ACTIVE_AGENT.command}`,
     `/usr/bin/${ACTIVE_AGENT.command}`,
-    `/root/.npm-global/bin/${ACTIVE_AGENT.command}`,
+    `${process.env.HOME || '/root'}/.npm-global/bin/${ACTIVE_AGENT.command}`,
   ];
   for (const p of commonPaths) {
     if (existsSync(p)) return p;

@@ -9,7 +9,7 @@ import { ACTIVE_AGENT } from './agent.js';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const WORKSPACE = resolve(process.env.WORKSPACE || '/workspace');
 export function getWorkspacePath(): string { return WORKSPACE; }
-const SSH_DIR = '/root/.ssh';
+const SSH_DIR = `${process.env.HOME || '/root'}/.ssh`;
 const SSH_KEY_PATH = `${SSH_DIR}/id_ed25519`;
 const SSH_PUB_PATH = `${SSH_KEY_PATH}.pub`;
 

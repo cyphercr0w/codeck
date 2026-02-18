@@ -59,13 +59,13 @@ step "System dependencies"
 case "$PKG_MANAGER" in
   apt)
     apt-get update -qq
-    apt-get install -y -qq curl git build-essential python3 >/dev/null
+    apt-get install -y -qq curl git build-essential python3 rsync >/dev/null
     ;;
   dnf|yum)
-    $PKG_MANAGER install -y -q curl git gcc gcc-c++ make python3 >/dev/null
+    $PKG_MANAGER install -y -q curl git gcc gcc-c++ make python3 rsync >/dev/null
     ;;
 esac
-log "Installed: curl, git, build-essential, python3"
+log "Installed: curl, git, build-essential, python3, rsync"
 
 # ─── Node.js ────────────────────────────────────────────────────────
 
@@ -144,6 +144,20 @@ chmod 700 "$CODECK_HOME/.codeck" "$CODECK_HOME/.claude" "$CODECK_HOME/.ssh"
 chown -R "$CODECK_USER:$CODECK_USER" "$CODECK_HOME"
 log "Directories ready under $CODECK_HOME"
 
+# Sudoers: allow codeck user to restart the service and sync files (for self-deploy)
+SUDOERS_FILE="/etc/sudoers.d/codeck"
+cat > "$SUDOERS_FILE" <<'SUDOERS'
+# Codeck self-deploy: restart service, sync files, fix ownership
+codeck ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart codeck
+codeck ALL=(ALL) NOPASSWD: /usr/bin/systemctl stop codeck
+codeck ALL=(ALL) NOPASSWD: /usr/bin/systemctl start codeck
+codeck ALL=(ALL) NOPASSWD: /usr/bin/rsync *
+codeck ALL=(ALL) NOPASSWD: /usr/bin/cp *
+codeck ALL=(ALL) NOPASSWD: /usr/bin/chown *
+SUDOERS
+chmod 440 "$SUDOERS_FILE"
+log "Sudoers configured (self-deploy permissions)"
+
 # ─── Clone and build Codeck ─────────────────────────────────────────
 
 step "Codeck (clone + build)"
@@ -169,6 +183,25 @@ npm run build 2>&1 | tail -5
 
 chown -R "$CODECK_USER:$CODECK_USER" "$CODECK_DIR"
 log "Codeck built at $CODECK_DIR"
+
+# ─── Workspace dev clone (for self-development) ─────────────────────
+
+step "Workspace dev clone"
+
+WORKSPACE_CLONE="$CODECK_HOME/workspace/codeck"
+if [[ -d "$WORKSPACE_CLONE/.git" ]]; then
+  log "Dev clone already exists at $WORKSPACE_CLONE"
+  cd "$WORKSPACE_CLONE"
+  sudo -u "$CODECK_USER" git fetch origin 2>/dev/null || true
+else
+  log "Cloning dev copy to $WORKSPACE_CLONE..."
+  sudo -u "$CODECK_USER" git clone --branch "$CODECK_BRANCH" "$CODECK_REPO" "$WORKSPACE_CLONE"
+fi
+
+# Install dev dependencies in workspace clone (Claude needs them to build)
+cd "$WORKSPACE_CLONE"
+sudo -u "$CODECK_USER" npm ci 2>&1 | tail -3
+log "Dev clone ready at $WORKSPACE_CLONE (with devDependencies)"
 
 # ─── Systemd service ────────────────────────────────────────────────
 

@@ -2,9 +2,11 @@ import { existsSync } from 'fs';
 
 /**
  * Detect if the Docker socket is mounted (experimental mode).
- * Returns true when /var/run/docker.sock exists inside the container.
+ * Only relevant inside Docker — mounting the socket breaks container isolation.
+ * Outside Docker (systemd/cli-local), the socket always exists and is normal.
  */
 export function detectDockerSocketMount(): boolean {
+  if (detectDeploymentMode() !== 'docker') return false;
   return existsSync('/var/run/docker.sock');
 }
 

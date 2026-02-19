@@ -140,12 +140,12 @@ export function connectWebSocket(): void {
         }
         if (restored.length > 0) {
           if (!activeSessionId.value) setActiveSessionId(restored[0].id);
-          // Navigate to the terminal view so ClaudeSection mounts and creates terminals.
-          // restoringPending stays true — ClaudeSection resets it after mounting all terminals.
           setActiveSection('claude');
-        } else {
-          setRestoringPending(false);
         }
+        // Always clear the overlay immediately — don't wait for ClaudeSection's useEffect.
+        // Delegating to the useEffect is fragile: if it doesn't fire (e.g. section already
+        // mounted, same sessionList.length), the overlay stays stuck forever.
+        setRestoringPending(false);
       } else if (msg.type === 'console:error') {
         // Session not found on server (e.g., after container restart) — remove ghost
         if (typeof msg.sessionId === 'string') {

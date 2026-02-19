@@ -83,6 +83,14 @@ export function AuthView({ onAuth }: AuthViewProps) {
     if (e.key === 'Enter') handleSubmit();
   }
 
+  // When the virtual keyboard opens it overlays content (interactive-widget=overlays-content).
+  // Scroll the focused input into the visible area after the keyboard finishes animating.
+  function handleFocus(e: FocusEvent) {
+    setTimeout(() => {
+      (e.target as HTMLElement)?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    }, 350);
+  }
+
   return (
     <div class="view-setup">
       <div class="setup-card">
@@ -101,6 +109,7 @@ export function AuthView({ onAuth }: AuthViewProps) {
             placeholder={isSetup ? 'Password (min 8 characters)' : 'Password'}
             autocomplete={isSetup ? 'new-password' : 'current-password'}
             onKeyDown={handlePasswordKey}
+          onFocus={handleFocus}
           />
         </div>
         {isSetup && (
@@ -112,6 +121,7 @@ export function AuthView({ onAuth }: AuthViewProps) {
               placeholder="Confirm password"
               autocomplete="new-password"
               onKeyDown={handleConfirmKey}
+            onFocus={handleFocus}
             />
           </div>
         )}

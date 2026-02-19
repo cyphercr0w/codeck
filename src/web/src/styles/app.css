@@ -1663,6 +1663,16 @@
 
   .setup-card { padding: 28px 20px; }
 
+  /* Auth view: anchor card to top so keyboard doesn't cover inputs.
+   * The viewport meta is interactive-widget=overlays-content so the keyboard
+   * overlays the layout without resizing it. Centering the card vertically puts
+   * inputs right behind the keyboard on small screens. */
+  .view-setup {
+    align-items: flex-start;
+    padding: 40px 0 80px;
+    overflow-y: auto;
+  }
+
   /* Terminal: prevent virtual keyboard from breaking layout */
   .terminal-instance { position: relative; inset: auto; height: 100%; }
   .terminal-instances { position: relative; }

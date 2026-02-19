@@ -8,7 +8,8 @@
 #   docker compose -f docker/compose.isolated.yml up --build
 #
 # With LAN access (codeck.local from any device):
-#   docker compose -f docker/compose.isolated.yml -f docker/compose.lan.yml up
+#   codeck lan start   (macOS/Windows — requires admin/UAC)
+#   On Linux: configured via codeck init (host networking)
 
 services:
   sandbox:

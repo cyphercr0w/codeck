@@ -144,9 +144,9 @@ Session tokens in localStorage are accessible to XSS. Acceptable for single-user
 
 Token in `ws://...?token=` URL visible in DevTools. Migrate to WebSocket subprotocol header.
 
-### Host mode disables network isolation
+### mDNS has no authentication
 
-LAN mode (`docker/compose.lan.yml`) shares host network. Only use on trusted networks.
+LAN access via `codeck.local` uses mDNS (RFC 6762), which has no authentication. On untrusted LANs, attackers can spoof `codeck.local` to redirect browsers. Always verify the URL before entering credentials.
 
 ### Workspace export follows symlinks
 

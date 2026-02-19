@@ -581,13 +581,18 @@ Codeck also writes tokens directly to `.credentials.json` as a more reliable fal
 
 ### LAN mode (all platforms)
 
-Enable with the LAN compose override:
+LAN access makes `codeck.local` resolvable from phones, tablets, and other devices on the same network.
+
+**Via CLI (recommended):**
 
 ```bash
-docker compose -f docker/compose.isolated.yml -f docker/compose.lan.yml up
+codeck lan start   # macOS/Windows — starts mDNS advertiser (requires admin/UAC)
+codeck lan stop    # stop and clean hosts file
 ```
 
-This enables the container's built-in mDNS responder (`src/services/mdns.ts`) which broadcasts `codeck.local` and `*.codeck.local`. For full LAN discovery from other devices, also run the **host-side mDNS advertiser script**.
+On Linux, configure LAN access at `codeck init` time (host networking).
+
+The mDNS advertiser broadcasts `codeck.local` and per-port subdomains (`{port}.codeck.local`). The container's built-in mDNS responder (`services/mdns.ts`) handles `.local` queries from inside the container. For full LAN discovery from other devices, the **host-side mDNS advertiser script** is required.
 
 - **Dashboard:** `http://codeck.local`
 - **Dev server preview:** `http://codeck.local:{port}` (e.g., `http://codeck.local:5173`)
@@ -596,20 +601,17 @@ This enables the container's built-in mDNS responder (`src/services/mdns.ts`) wh
 
 ### Host-side mDNS advertiser (for LAN device access)
 
-The host-side mDNS advertiser script is required for LAN devices (phones, tablets, other computers) to discover `codeck.local`. This works the same on all platforms (Linux, Windows, macOS).
-
-The script lives in `scripts/mdns-advertiser.cjs` and uses `@homebridge/ciao` for full Bonjour service advertisement. This makes `codeck.local` resolvable from any device on the LAN (including Android Chrome).
+The host-side mDNS advertiser script is required for LAN devices (phones, tablets, other computers) to discover `codeck.local`. `codeck lan start` runs it automatically. To run manually:
 
 **Setup (one-time):**
 
-```powershell
-cd scripts
-npm install
+```bash
+cd scripts && npm install
 ```
 
 **Run (requires admin — writes to hosts file):**
 
-```powershell
+```bash
 # Windows (PowerShell as Administrator):
 node scripts/mdns-advertiser.cjs
 

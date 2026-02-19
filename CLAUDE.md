@@ -34,9 +34,6 @@ docker build -t codeck-base -f docker/Dockerfile.base .
 # Isolated mode (single container — runtime + webapp):
 docker compose -f docker/compose.isolated.yml up --build
 
-# Isolated + LAN access (codeck.local from any device):
-docker compose -f docker/compose.isolated.yml -f docker/compose.lan.yml up
-
 # Managed mode (daemon on host + runtime in container):
 codeck start    # starts container + daemon in foreground
 

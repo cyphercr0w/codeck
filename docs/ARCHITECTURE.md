@@ -1195,7 +1195,7 @@ Codeck implements a **single-container architecture** where all projects share o
 - Port exposure: Explicit mapping via compose file (e.g., `80:80`)
 - Inbound access: Only mapped ports reachable from host
 - Outbound access: Unrestricted (no egress filtering)
-- LAN access: Use `docker/compose.lan.yml` overlay + host-side mDNS advertiser script
+- LAN access: Run `codeck lan start` (macOS/Windows) or configure host networking at `codeck init` (Linux)
 
 ### Host Access via `extra_hosts`
 

@@ -49,12 +49,7 @@ function composeFiles(opts: ComposeOpts): string[] {
   if (opts.mode === 'managed') {
     return ['-f', 'docker/compose.managed.yml'];
   }
-  // Isolated mode
-  const files = ['-f', 'docker/compose.isolated.yml'];
-  if (opts.lanMode === 'host') {
-    files.push('-f', 'docker/compose.lan.yml');
-  }
-  return files;
+  return ['-f', 'docker/compose.isolated.yml'];
 }
 
 function composeExecOpts(projectPath: string): ExecaOptions {

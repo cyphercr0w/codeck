@@ -346,6 +346,7 @@ export async function changePassword(currentPassword: string, newPassword: strin
 export interface SessionInfo {
   id: string;
   createdAt: number;
+  expiresAt: number;
   ip: string;
   current: boolean;
 }
@@ -358,6 +359,7 @@ export function getActiveSessions(currentToken?: string): SessionInfo[] {
     results.push({
       id: session.id,
       createdAt: session.createdAt,
+      expiresAt: session.createdAt + SESSION_TTL,
       ip: session.ip,
       current: token === currentToken,
     });

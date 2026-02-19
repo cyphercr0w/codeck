@@ -3056,6 +3056,11 @@
   white-space: nowrap;
 }
 
+.settings-expires-urgent {
+  color: var(--error, #e55);
+  font-weight: 600;
+}
+
 .settings-table-wrap {
   overflow-x: auto;
 }

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { sessions, activeSessionId, setActiveSessionId, addLocalLog, addSession, removeSession, renameSession, agentName, isMobile, restoringPending } from '../state/store';
 import { apiFetch } from '../api';
-import { createTerminal, destroyTerminal, fitTerminal, focusTerminal, writeToTerminal, scrollToBottom } from '../terminal';
+import { createTerminal, destroyTerminal, fitTerminal, focusTerminal, writeToTerminal, scrollToBottom, getTerminal } from '../terminal';
 import { wsSend, setTerminalHandlers, attachSession, setOnSessionReattached } from '../ws';
 import { IconPlus, IconX, IconShell, IconTerminal } from './Icons';
 import { MobileTerminalToolbar } from './MobileTerminalToolbar';
@@ -25,12 +25,17 @@ export function ClaudeSection({ onNewSession, onNewShell }: ClaudeSectionProps) 
     // scroll to latest content, and re-focus the active terminal so the user
     // can keep typing without having to click first.
     setOnSessionReattached((sessionId) => {
+      // If the terminal doesn't exist yet the page just loaded (F5) and
+      // useEffect below will handle mounting.  Only proceed when the terminal
+      // is already live (WS transient reconnect).
+      if (!getTerminal(sessionId)) return;
+
+      // Fit first, then attach so the server replays at the correct dimensions.
       requestAnimationFrame(() => {
         fitTerminal(sessionId);
+        attachSession(sessionId);
         scrollToBottom(sessionId);
-        if (sessionId === activeSessionId.value) {
-          focusTerminal(sessionId);
-        }
+        if (sessionId === activeSessionId.value) focusTerminal(sessionId);
       });
     });
 
@@ -76,13 +81,10 @@ export function ClaudeSection({ onNewSession, onNewShell }: ClaudeSectionProps) 
       // default 80x24 — then fitAddon.fit() reflows to the real size and the
       // viewport ends up in the wrong position (content appears above, black screen).
       const sid = s.id;
-      const isActive = s.id === activeSessionId.value;
+      // Fit BEFORE attaching so the server replays at the correct dimensions.
       requestAnimationFrame(() => {
         fitTerminal(sid);
         attachSession(sid);
-        // Scroll to the latest content after replay so restored sessions are
-        // visible immediately (xterm doesn't guarantee viewport position after reflow).
-        if (isActive) scrollToBottom(sid);
       });
     }
 

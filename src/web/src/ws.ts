@@ -128,17 +128,22 @@ export function connectWebSocket(): void {
       if (msg.type === 'status') {
         if (typeof msg.data !== 'object' || msg.data === null) return;
         updateStateFromServer(msg.data);
-        // After state sync, re-attach all current sessions and notify
-        // the terminal layer so it can resync PTY dimensions per session.
+        // Notify the terminal layer so it can resync PTY dimensions and
+        // re-attach each session after fitting — attaching here (before fit)
+        // would cause the server to stream replay data into an unsized terminal,
+        // producing a black screen.  attachSession is called inside
+        // onSessionReattached (WS-reconnect) and useEffect (F5 page load),
+        // both after fitTerminal runs.
         sessions.value.forEach(s => {
-          attachSession(s.id);
           onSessionReattached?.(s.id);
         });
-        // Always clear the restoring overlay after a successful status sync.
-        // The overlay is set on WS disconnect (if sessions were active) and must
-        // be cleared here — updateStateFromServer only sets it to true, never false,
-        // so without this the overlay would stay stuck after a normal reconnect.
-        setRestoringPending(false);
+        // Clear the restoring overlay only when the server confirms sessions are
+        // already ready (pendingRestore absent or false).  When pendingRestore is
+        // true the server still has PTY sessions in flight — the sessions:restored
+        // message will clear the overlay once they're actually ready.
+        if (!msg.data.pendingRestore) {
+          setRestoringPending(false);
+        }
       } else if (msg.type === 'log') {
         if (!isLogEntry(msg.data)) return;
         addLog(msg.data);

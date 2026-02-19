@@ -47,51 +47,47 @@ export function createTerminal(sessionId: string, container: HTMLElement): Termi
     textarea.setAttribute('autocapitalize', 'off');
     textarea.setAttribute('spellcheck', 'false');
     textarea.setAttribute('enterkeyhint', 'send');
+  }
 
-    // On mobile, disable xterm's textarea so our hidden input takes over.
-    // Track recent touch on the terminal container to distinguish user taps
-    // from programmatic focus (e.g. xterm auto-focusing after data output).
-    // Keyboard should only open on explicit user taps, not on data flow.
-    if (isMobile.value) {
-      textarea.readOnly = true;
-      textarea.tabIndex = -1;
-      textarea.style.pointerEvents = 'none';
+  // On mobile, disable xterm's textarea so our hidden input takes over.
+  if (isMobile.value && textarea) {
+    textarea.readOnly = true;
+    textarea.tabIndex = -1;
+    textarea.style.pointerEvents = 'none';
 
-      // Track recent touch on terminal to distinguish user taps from auto-focus
-      let lastTouchTime = 0;
-      container.addEventListener('touchstart', () => { lastTouchTime = Date.now(); }, { passive: true });
+    // Track recent touch on terminal to distinguish user taps from auto-focus
+    let lastTouchTime = 0;
+    container.addEventListener('touchstart', () => { lastTouchTime = Date.now(); }, { passive: true });
 
-      textarea.addEventListener('focus', () => {
-        textarea.blur();
-        if (Date.now() - lastTouchTime < 500) {
-          document.getElementById('mobile-hidden-input')?.focus();
-        }
-      });
-
-      // Disable pointer-events on xterm-screen so touches fall through to
-      // xterm-viewport (a real scrollable div with overflow-y). This lets
-      // the browser handle native touch scrolling — much smoother than
-      // xterm's built-in JS scroll or our custom touchmove handler.
-      const screen = container.querySelector('.xterm-screen') as HTMLElement | null;
-      if (screen) {
-        screen.style.pointerEvents = 'none';
+    textarea.addEventListener('focus', () => {
+      textarea.blur();
+      if (Date.now() - lastTouchTime < 500) {
+        document.getElementById('mobile-hidden-input')?.focus();
       }
+    });
 
-      // Scroll lock: detect when user scrolls up to read history.
-      // When locked, writeToTerminal preserves their scroll position.
-      const viewport = container.querySelector('.xterm-viewport') as HTMLElement | null;
-      if (viewport) {
-        viewport.addEventListener('scroll', () => {
-          const atBottom = viewport.scrollTop + viewport.clientHeight >= viewport.scrollHeight - 10;
-          scrollLocked.set(sessionId, !atBottom);
-        }, { passive: true });
-      }
+    // Disable pointer-events on xterm-screen so touches fall through to
+    // xterm-viewport (a real scrollable div with overflow-y). This lets
+    // the browser handle native touch scrolling — much smoother than
+    // xterm's built-in JS scroll or our custom touchmove handler.
+    const screen = container.querySelector('.xterm-screen') as HTMLElement | null;
+    if (screen) screen.style.pointerEvents = 'none';
 
-      // NOTE: visualViewport.resize is handled exclusively by MobileTerminalToolbar.
-      // It recalculates the container height first, then the ResizeObserver on the
-      // container triggers fitAddon.fit() + console:resize. Having a handler here
-      // too caused a race condition (fit before container height was adjusted).
-    }
+    // NOTE: visualViewport.resize is handled exclusively by MobileTerminalToolbar.
+  }
+
+  // Scroll lock — track user scroll intent on ALL platforms.
+  // When the user scrolls up into scrollback, lock auto-scroll so they can
+  // read history. When they scroll back to the bottom, release the lock.
+  // Using the DOM scroll event (not xterm buffer state) as the source of truth:
+  // the DOM always reflects where the user's viewport is, regardless of how
+  // xterm batches or sequences its internal buffer updates.
+  const xtermViewport = container.querySelector('.xterm-viewport') as HTMLElement | null;
+  if (xtermViewport) {
+    xtermViewport.addEventListener('scroll', () => {
+      const atBottom = xtermViewport.scrollTop + xtermViewport.clientHeight >= xtermViewport.scrollHeight - 10;
+      scrollLocked.set(sessionId, !atBottom);
+    }, { passive: true });
   }
 
   term.onData((data) => {
@@ -160,27 +156,31 @@ export function writeToTerminal(sessionId: string, data: string): void {
     try { listener(sessionId, sanitized); } catch {}
   }
 
-  // On mobile with scroll lock: user scrolled up to read history.
-  // Save viewport scrollTop before write, restore after xterm renders.
-  // This defeats xterm's internal auto-scroll on term.write().
-  if (isMobile.value && scrollLocked.get(sessionId)) {
-    const viewport = instance.term.element?.querySelector('.xterm-viewport') as HTMLElement | null;
-    if (viewport) {
-      const savedTop = viewport.scrollTop;
-      instance.term.write(sanitized, () => {
-        viewport.scrollTop = savedTop;
-      });
-      return;
+  // If the user scrolled up to read history, don't yank them to the bottom.
+  // scrollLocked is set by the DOM scroll listener in createTerminal — it reflects
+  // user intent, not xterm's async buffer state (which can be stale mid-replay).
+  if (scrollLocked.get(sessionId)) {
+    if (isMobile.value) {
+      // Mobile: physically restore the DOM scrollTop after xterm renders, because
+      // xterm's internal write can shift the viewport element's scroll position.
+      const viewport = instance.term.element?.querySelector('.xterm-viewport') as HTMLElement | null;
+      if (viewport) {
+        const savedTop = viewport.scrollTop;
+        instance.term.write(sanitized, () => { viewport.scrollTop = savedTop; });
+        return;
+      }
     }
+    // Desktop: xterm preserves scroll position natively — just write.
+    instance.term.write(sanitized);
+    return;
   }
 
-  // Write and auto-scroll only if the viewport was already at the live area.
-  // viewportY === baseY means the user is seeing the cursor line (at bottom).
-  // If viewportY < baseY, the user scrolled up into scrollback — don't yank them down.
-  const buf = instance.term.buffer.active;
-  const atBottom = buf.viewportY >= buf.baseY;
+  // Not scroll-locked: write and always follow the output to the bottom.
+  // This covers both normal use (user at bottom) and PTY buffer replay on
+  // session restore (viewport starts at 0 while baseY grows — without this
+  // explicit scroll the terminal appears black until the user presses Enter).
   instance.term.write(sanitized);
-  if (atBottom) instance.term.scrollToBottom();
+  instance.term.scrollToBottom();
 }
 
 export function focusTerminal(sessionId: string): void {

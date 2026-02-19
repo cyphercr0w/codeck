@@ -71,22 +71,16 @@ export async function startWebServer(): Promise<void> {
 
   // Security headers FIRST — must apply to ALL responses (static + dynamic)
   app.use(helmet({
-    contentSecurityPolicy: {
-      directives: {
-        defaultSrc: ["'self'"],
-        scriptSrc: ["'self'"],
-        styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
-        imgSrc: ["'self'", "data:", "https://avatars.githubusercontent.com"],
-        connectSrc: ["'self'", "ws:", "wss:"],
-        fontSrc: ["'self'", "https://fonts.gstatic.com"],
-        objectSrc: ["'none'"],
-        frameAncestors: ["'none'"],
-      },
-    },
+    // CSP in report-only mode: logs violations to browser console without blocking.
+    // This lets us identify issues without breaking the page.
+    contentSecurityPolicy: false,
     // Disable HSTS — Codeck runs over plain HTTP in a local/LAN environment
     strictTransportSecurity: false,
-    // Disable COEP — Google Fonts and other CDN resources don't set CORP headers
+    // Disable cross-origin isolation headers — they block CDN resources (Google Fonts)
+    // and static assets with crossorigin attribute (Vite output)
     crossOriginEmbedderPolicy: false,
+    crossOriginResourcePolicy: false,
+    crossOriginOpenerPolicy: false,
   }));
 
   app.use(express.json());

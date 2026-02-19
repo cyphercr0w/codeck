@@ -100,7 +100,7 @@ services:
       - claude-config:/root/.claude
       - ssh-data:/root/.ssh
       - gh-config:/root/.config/gh
-      - /var/run/docker.sock:/var/run/docker.sock
+      # No Docker socket — runtime is isolated. Port exposure goes through the daemon.
     extra_hosts:
       - "host.docker.internal:host-gateway"
     entrypoint: ["/usr/local/bin/init-keyring.sh", "env", "NODE_ENV=production", "node", "apps/runtime/dist/index.js"]

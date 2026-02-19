@@ -73,7 +73,7 @@ services:
       - /home/codeck/.claude:/root/.claude
       - /home/codeck/.ssh:/root/.ssh
       - /home/codeck/.config/gh:/root/.config/gh
-      - /var/run/docker.sock:/var/run/docker.sock
+      # No Docker socket — runtime is isolated. Port exposure is managed by the host daemon.
     extra_hosts:
       - "host.docker.internal:host-gateway"
     entrypoint: ["/usr/local/bin/init-keyring.sh", "env", "NODE_ENV=production", "node", "apps/runtime/dist/index.js"]

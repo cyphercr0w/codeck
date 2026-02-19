@@ -188,41 +188,9 @@ export const initCommand = new Command('init')
       }
     }
 
-    // 6. LAN mode (isolated mode only — managed uses daemon for access)
-    let lanMode: 'none' | 'host' | 'mdns' = existingConfig?.lanMode || 'none';
-    if (codeckMode === 'isolated') {
-      if (os === 'linux') {
-        const lanResult = await p.select({
-          message: 'LAN access mode:',
-          options: [
-            { value: 'none', label: 'None', hint: 'Localhost only' },
-            { value: 'host', label: 'Host networking', hint: 'codeck.local via avahi (Linux only)' },
-          ],
-          initialValue: lanMode === 'host' ? 'host' : 'none',
-        });
-        if (p.isCancel(lanResult)) {
-          p.outro(chalk.red('Setup cancelled.'));
-          process.exit(0);
-        }
-        lanMode = lanResult as 'none' | 'host';
-      } else {
-        const lanResult = await p.select({
-          message: 'LAN access mode:',
-          options: [
-            { value: 'none', label: 'None', hint: 'Localhost only' },
-            { value: 'mdns', label: 'mDNS advertiser', hint: 'codeck.local via Bonjour (requires admin)' },
-          ],
-          initialValue: lanMode === 'mdns' ? 'mdns' : 'none',
-        });
-        if (p.isCancel(lanResult)) {
-          p.outro(chalk.red('Setup cancelled.'));
-          process.exit(0);
-        }
-        lanMode = lanResult as 'none' | 'mdns';
-      }
-    } else {
-      lanMode = 'none';
-    }
+    // LAN mode is not configurable via init — isolated has no host process for mDNS,
+    // and managed mode handles LAN access through the daemon.
+    const lanMode: 'none' | 'host' | 'mdns' = 'none';
 
     // 7. GitHub Token
     const defaultGhToken = existingEnv.GITHUB_TOKEN || '';

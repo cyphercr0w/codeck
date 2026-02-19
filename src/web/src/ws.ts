@@ -134,6 +134,11 @@ export function connectWebSocket(): void {
           attachSession(s.id);
           onSessionReattached?.(s.id);
         });
+        // Always clear the restoring overlay after a successful status sync.
+        // The overlay is set on WS disconnect (if sessions were active) and must
+        // be cleared here — updateStateFromServer only sets it to true, never false,
+        // so without this the overlay would stay stuck after a normal reconnect.
+        setRestoringPending(false);
       } else if (msg.type === 'log') {
         if (!isLogEntry(msg.data)) return;
         addLog(msg.data);

@@ -174,9 +174,11 @@ export function writeToTerminal(sessionId: string, data: string): void {
     }
   }
 
-  // Desktop or at-bottom: standard behavior with auto-scroll
+  // Write and auto-scroll only if the viewport was already at the live area.
+  // viewportY === baseY means the user is seeing the cursor line (at bottom).
+  // If viewportY < baseY, the user scrolled up into scrollback — don't yank them down.
   const buf = instance.term.buffer.active;
-  const atBottom = buf.baseY + instance.term.rows >= buf.length - 2;
+  const atBottom = buf.viewportY >= buf.baseY;
   instance.term.write(sanitized);
   if (atBottom) instance.term.scrollToBottom();
 }

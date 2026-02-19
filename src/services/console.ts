@@ -31,6 +31,9 @@ interface ConsoleSession {
 }
 
 const sessions = new Map<string, ConsoleSession>();
+// Set to true during destroyAllSessions() to suppress per-session state saves
+// that would overwrite the shutdown snapshot with an empty session list.
+let suppressStateSave = false;
 
 console.log(`[Console] Agent binary resolved: ${getAgentBinaryPath()}`);
 
@@ -276,11 +279,13 @@ export function destroySession(id: string): void {
     }
   }, 2000);
 
-  saveSessionState('session_destroyed');
+  if (!suppressStateSave) saveSessionState('session_destroyed');
 }
 
 export function destroyAllSessions(): void {
+  suppressStateSave = true;
   for (const [id] of sessions) destroySession(id);
+  suppressStateSave = false;
 }
 
 export function markSessionAttached(id: string): string[] {

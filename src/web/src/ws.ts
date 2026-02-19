@@ -1,4 +1,4 @@
-import { setWsConnected, updateStateFromServer, addLog, sessions, activeSessionId, addSession, setActiveSessionId, setActivePorts, type LogEntry, removeSession, updateProactiveAgent, appendAgentOutput, setAgentRunning } from './state/store';
+import { setWsConnected, updateStateFromServer, addLog, sessions, activeSessionId, addSession, setActiveSessionId, setActivePorts, setActiveSection, type LogEntry, removeSession, updateProactiveAgent, appendAgentOutput, setAgentRunning } from './state/store';
 import { getAuthToken } from './api';
 
 // Known WebSocket message types — reject anything not in this set
@@ -135,10 +135,13 @@ export function connectWebSocket(): void {
         );
         for (const s of restored) {
           addSession({ id: s.id, type: s.type as 'agent' | 'shell', cwd: s.cwd, name: s.name, createdAt: Date.now() });
-          attachSession(s.id);
+          // Do NOT call attachSession here — the terminal DOM element doesn't exist yet.
+          // ClaudeSection's useEffect handles attachment after it mounts the terminal.
         }
-        if (restored.length > 0 && !activeSessionId.value) {
-          setActiveSessionId(restored[0].id);
+        if (restored.length > 0) {
+          if (!activeSessionId.value) setActiveSessionId(restored[0].id);
+          // Navigate to the terminal view so ClaudeSection mounts and creates terminals
+          setActiveSection('claude');
         }
       } else if (msg.type === 'console:error') {
         // Session not found on server (e.g., after container restart) — remove ghost

@@ -1,7 +1,8 @@
 import { spawn as ptySpawn, type IPty } from 'node-pty';
-import { readFileSync, existsSync, readdirSync, mkdirSync, unlinkSync } from 'fs';
+import { readFileSync, existsSync, readdirSync, mkdirSync, unlinkSync, renameSync } from 'fs';
 import { randomUUID } from 'crypto';
 import { resolve } from 'path';
+import { realpathSync } from 'fs';
 import { execFileSync } from 'child_process';
 import { ACTIVE_AGENT } from './agent.js';
 import { syncToClaudeSettings } from './permissions.js';
@@ -307,9 +308,12 @@ export function listSessions(): Array<{ id: string; type: string; cwd: string; n
 /**
  * Encode a project path the same way Claude Code does for ~/.claude/projects/.
  * Replaces /, \, :, and spaces with '-'.
+ * Uses realpathSync to dereference symlinks — Claude CLI also resolves symlinks,
+ * so a cwd like /home/codeck/workspace/codeck (→ /opt/codeck) must encode as -opt-codeck.
  */
 function encodeProjectPath(cwd: string): string {
-  const absolute = resolve(cwd);
+  let absolute = resolve(cwd);
+  try { absolute = realpathSync(absolute); } catch { /* path may not exist or resolve */ }
   return absolute.replace(/[/\\: ]/g, '-');
 }
 
@@ -367,7 +371,8 @@ export function saveSessionState(reason: string, continuationPrompt?: string): S
 
   atomicWriteFileSync(SESSIONS_STATE_PATH, JSON.stringify(state, null, 2));
 
-  console.log(`[Console] Saved ${saved.length} sessions (reason: ${reason})`);
+  const detail = saved.map(s => `${s.id.slice(0, 8)}(conv:${s.conversationId?.slice(0, 8) || 'none'})`).join(', ');
+  console.log(`[Console] Saved ${saved.length} sessions (reason: ${reason}): ${detail || 'none'}`);
   return state;
 }
 
@@ -392,16 +397,42 @@ export function restoreSavedSessions(): Array<{ id: string; type: string; cwd: s
     return [];
   }
 
+  console.log(`[Console] Restoring ${state.sessions.length} saved sessions...`);
   const restored: Array<{ id: string; type: string; cwd: string; name: string }> = [];
 
   for (const saved of state.sessions) {
+    // If conversationId is missing (e.g. saved before detection completed or symlink bug),
+    // fall back to the most recent .jsonl file in the project dir for this cwd.
+    if (saved.type === 'agent' && !saved.conversationId) {
+      const encoded = encodeProjectPath(saved.cwd);
+      const projectDir = `${ACTIVE_AGENT.projectsDir}/${encoded}`;
+      try {
+        if (existsSync(projectDir)) {
+          const files = readdirSync(projectDir)
+            .filter(f => f.endsWith('.jsonl'))
+            .sort(); // UUIDs sort lexically; latest is last
+          if (files.length > 0) {
+            saved.conversationId = files[files.length - 1].replace('.jsonl', '');
+            console.log(`[Console] Inferred conversationId for ${saved.id.slice(0, 8)}: ${saved.conversationId.slice(0, 8)} (from ${projectDir})`);
+          } else {
+            console.warn(`[Console] No .jsonl files in ${projectDir} for session ${saved.id.slice(0, 8)} — will start fresh`);
+          }
+        } else {
+          console.warn(`[Console] Project dir missing: ${projectDir} for session ${saved.id.slice(0, 8)} — will start fresh`);
+        }
+      } catch (e) {
+        console.warn(`[Console] Could not infer conversationId for ${saved.id.slice(0, 8)}:`, (e as Error).message);
+      }
+    }
+
+    console.log(`[Console] Restoring session ${saved.id.slice(0, 8)}: type=${saved.type}, cwd=${saved.cwd}, conversationId=${saved.conversationId?.slice(0, 8) || 'none'}`);
     try {
       // Validate saved cwd exists, fallback to /workspace
       const cwd = existsSync(saved.cwd) ? saved.cwd : '/workspace';
       if (saved.type === 'agent') {
         const session = createConsoleSession({
           cwd,
-          resume: true,
+          resume: !!saved.conversationId,
           conversationId: saved.conversationId,
           continuationPrompt: saved.continuationPrompt,
         });
@@ -411,15 +442,15 @@ export function restoreSavedSessions(): Array<{ id: string; type: string; cwd: s
         restored.push({ id: session.id, type: session.type, cwd: session.cwd, name: session.name });
       }
     } catch (e) {
-      console.log(`[Console] Failed to restore session ${saved.id}:`, (e as Error).message);
+      console.log(`[Console] Failed to restore session ${saved.id.slice(0, 8)}:`, (e as Error).message);
     }
   }
 
-  // Delete state file after restore to prevent stale accumulation
+  // Rename sessions.json to .bak after restore (keep for debugging, but won't re-trigger on next restart)
   try {
-    unlinkSync(SESSIONS_STATE_PATH);
-  } catch (e) {
-    console.warn('[Console] Failed to delete sessions.json after restore:', (e as Error).message);
+    renameSync(SESSIONS_STATE_PATH, SESSIONS_STATE_PATH + '.bak');
+  } catch {
+    try { unlinkSync(SESSIONS_STATE_PATH); } catch { /* ignore */ }
   }
 
   console.log(`[Console] Restored ${restored.length}/${state.sessions.length} sessions`);

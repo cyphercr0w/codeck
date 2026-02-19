@@ -20,25 +20,30 @@ const HOSTS_MARKER_END = '# codeck-ports-end';
 /** Remove codeck entries from the hosts file. Elevates on Windows if needed. */
 async function cleanupHostsFile(): Promise<void> {
   if (process.platform === 'win32') {
-    // On Windows hosts file requires admin — use PowerShell elevation
-    const ps = `
-      $h = [IO.File]::ReadAllText('${HOSTS_PATH}');
-      $s = $h.IndexOf('${HOSTS_MARKER_START}');
-      $e = $h.IndexOf('${HOSTS_MARKER_END}');
-      if ($s -ge 0 -and $e -ge 0) {
-        $cleaned = $h.Substring(0, $s) + $h.Substring($e + ${HOSTS_MARKER_END.length});
-        $cleaned = $cleaned -replace '\`n{3,}', '\`n\`n';
-        [IO.File]::WriteAllText('${HOSTS_PATH}', $cleaned);
-      }
-    `.replace(/\n\s+/g, ' ').trim();
+    // Write cleanup script to a temp file to avoid PowerShell quoting nightmares
+    const scriptPath = join(tmpdir(), 'codeck-hosts-cleanup.ps1');
+    writeFileSync(scriptPath, [
+      `$hostsPath = '${HOSTS_PATH.replace(/\\/g, '\\\\')}'`,
+      `$start = '${HOSTS_MARKER_START}'`,
+      `$end = '${HOSTS_MARKER_END}'`,
+      `$h = [IO.File]::ReadAllText($hostsPath)`,
+      `$si = $h.IndexOf($start)`,
+      `$ei = $h.IndexOf($end)`,
+      `if ($si -ge 0 -and $ei -ge 0) {`,
+      `  $cleaned = $h.Substring(0, $si) + $h.Substring($ei + $end.Length)`,
+      `  $cleaned = [regex]::Replace($cleaned, '\`n{3,}', '\`n\`n')`,
+      `  [IO.File]::WriteAllText($hostsPath, $cleaned)`,
+      `}`,
+    ].join('\n'), 'utf-8');
+
     try {
       await execa('powershell', [
         '-NoProfile', '-Command',
-        `Start-Process powershell -ArgumentList '-NoProfile -Command "${ps.replace(/"/g, '\\"')}"' -Verb RunAs -WindowStyle Hidden -Wait`,
+        `Start-Process powershell -ArgumentList '-NoProfile -ExecutionPolicy Bypass -File "${scriptPath}"' -Verb RunAs -WindowStyle Hidden -Wait`,
       ]);
       console.log(chalk.dim('Cleaned up hosts file entries.'));
     } catch {
-      console.log(chalk.yellow('Could not clean hosts file — UAC denied. Remove codeck.local entries manually if needed.'));
+      console.log(chalk.yellow('UAC denied — could not clean hosts file. Remove codeck.local entries manually.'));
     }
   } else {
     try {
@@ -52,8 +57,7 @@ async function cleanupHostsFile(): Promise<void> {
         console.log(chalk.dim('Cleaned up hosts file entries.'));
       }
     } catch {
-      // May need sudo on macOS/Linux
-      console.log(chalk.yellow('Could not clean hosts file — run with sudo if needed.'));
+      console.log(chalk.yellow('Could not clean hosts file — try with sudo.'));
     }
   }
 }

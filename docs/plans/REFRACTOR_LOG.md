@@ -8,7 +8,7 @@ Este archivo registra el progreso y decisiones técnicas.
 
 Branch: refactor/daemon-runtime-gateway
 Modo objetivo: local + gateway
-Último bloque completado: MILESTONE 0 — PREPARACIÓN
+Último bloque completado: MILESTONE 1 — WEBAPP
 
 ---
 
@@ -38,6 +38,34 @@ Modo objetivo: local + gateway
 - `.gitignore` ya cubre `dist` y `.turbo` globalmente, no se necesitaron cambios
 
 **Smoke test:** `npm run build` — OK (frontend vite + backend tsc + copy:templates)
+
+---
+
+### Iteración 2 — MILESTONE 1: WEBAPP
+**Fecha:** 2026-02-19
+
+**Bloque:** Milestone 1 — Mover SPA a apps/web
+
+**Cambios:**
+- Movidos archivos frontend de `src/web/` a `apps/web/`: `index.html`, `vite.config.ts`, `tsconfig.json`, `public/`, `src/`
+- Backend files (`server.ts`, `websocket.ts`, `logger.ts`) permanecen en `src/web/` (son compilados por tsc)
+- Actualizado `apps/web/vite.config.ts`: outDir cambiado de `../../dist/web/public` a `dist` (output local a `apps/web/dist/`)
+- Actualizado `apps/web/package.json`: dependencias frontend (preact, signals, xterm, dompurify), devDeps (vite, preset-vite), scripts reales (`vite build`, `vite`)
+- Removidas dependencias frontend-only del root `package.json` (preact, @preact/signals, @xterm/xterm, @xterm/addon-fit, dompurify, @preact/preset-vite, @testing-library/preact)
+- Actualizado root `package.json` build:frontend script: `npm run build -w @codeck/web` (usa npm workspaces)
+- Actualizado root `tsconfig.json`: exclusión simplificada a `["apps"]` (ya no existe `src/web/src` etc.)
+- Actualizado `src/web/server.ts`: rutas de static files y SPA catch-all apuntan a `apps/web/dist/` en vez de `__dirname/public`
+
+**Problemas:** Ninguno.
+
+**Decisiones:**
+- Los archivos backend (`server.ts`, `websocket.ts`, `logger.ts`) permanecen en `src/web/` porque son parte del backend compilado por tsc del root. Se migrarán en Milestone 2 (Runtime)
+- Las dependencias frontend se mueven a `apps/web/package.json` para aislar el workspace. npm workspaces hoistea al root `node_modules/`
+- El vite dev proxy (`/api` → `localhost:8080`, `/ws` → `ws://localhost:8080`) se mantiene — es configuración de desarrollo solamente
+- No se encontraron hardcodes de host en código de producción. Todas las API calls usan rutas relativas `/api/...`, WebSocket usa `location.host` dinámicamente
+- El `tsconfig.json` root excluye `apps` completo para evitar que tsc intente compilar código JSX del frontend
+
+**Smoke test:** `npm run build` — OK (frontend vite build → apps/web/dist + backend tsc + copy:templates). Startup test confirmó resolución correcta de paths.
 
 ---
 

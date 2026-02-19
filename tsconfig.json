@@ -15,5 +15,5 @@
     "rootDir": "./src"
   },
   "include": ["src/**/*"],
-  "exclude": ["src/web/public", "src/web/src", "src/web/vite.config.ts", "src/web/index.html"]
+  "exclude": ["apps"]
 }

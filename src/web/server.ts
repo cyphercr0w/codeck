@@ -89,7 +89,7 @@ export async function startWebServer(): Promise<void> {
   app.use(express.json());
 
   // Hashed assets (JS/CSS) get long cache; index.html always revalidates
-  app.use(express.static(join(__dirname, 'public'), {
+  app.use(express.static(join(__dirname, '../../apps/web/dist'), {
     setHeaders(res, filePath) {
       if (filePath.endsWith('.html')) {
         res.setHeader('Cache-Control', 'no-cache');
@@ -285,7 +285,7 @@ export async function startWebServer(): Promise<void> {
 
   // SPA catch-all — serve index.html for all non-API routes (client-side routing)
   app.get('*', (_req, res) => {
-    res.sendFile(join(__dirname, 'public', 'index.html'));
+    res.sendFile(join(__dirname, '../../apps/web/dist', 'index.html'));
   });
 
   // Centralized error handler — catch-all for unhandled errors in routes (CWE-209)

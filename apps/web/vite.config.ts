@@ -5,7 +5,7 @@ export default defineConfig({
   plugins: [preact()],
   root: '.',
   build: {
-    outDir: '../../dist/web/public',
+    outDir: 'dist',
     emptyOutDir: true,
   },
   server: {

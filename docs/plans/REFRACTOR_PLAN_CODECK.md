@@ -65,7 +65,8 @@ scripts/
 # CURRENT NEXT BLOCK
 
 - [x] MILESTONE 0 — PREPARACIÓN (completado)
-- [ ] MILESTONE 1 — WEBAPP (siguiente)
+- [x] MILESTONE 1 — WEBAPP (completado)
+- [ ] MILESTONE 2 — RUNTIME (siguiente)
 
 ---
 
@@ -86,10 +87,10 @@ DONE cuando:
 
 # MILESTONE 1 — WEBAPP
 
-- [ ] Mover SPA a apps/web
-- [ ] Configurar build output apps/web/dist
-- [ ] Eliminar hardcodes de host
-- [ ] Usar API_BASE=/api relativo
+- [x] Mover SPA a apps/web
+- [x] Configurar build output apps/web/dist
+- [x] Eliminar hardcodes de host
+- [x] Usar API_BASE=/api relativo
 
 DONE cuando:
 - Web build funciona aislado.

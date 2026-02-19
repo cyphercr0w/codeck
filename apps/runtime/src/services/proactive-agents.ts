@@ -387,7 +387,7 @@ function executeAgent(agentId: string): void {
   const prompt = runtime.config.objective;
   const cwd = runtime.config.cwd;
 
-  const spawnArgs = ['-p', prompt, '--output-format', 'stream-json', '--verbose'];
+  const spawnArgs = ['-p', prompt, '--output-format', 'stream-json', '--verbose', '--no-session-persistence'];
   if (runtime.config.model) {
     spawnArgs.unshift('--model', runtime.config.model);
   }

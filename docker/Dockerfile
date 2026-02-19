@@ -14,7 +14,6 @@ COPY package.json package-lock.json ./
 COPY apps/runtime/package.json apps/runtime/
 COPY apps/daemon/package.json apps/daemon/
 COPY apps/web/package.json apps/web/
-COPY apps/cli/package.json apps/cli/
 RUN if [ -f package-lock.json ]; then npm ci --omit=dev; else npm install --omit=dev; fi \
     && cp -r /prebuilt/node_modules/better-sqlite3 node_modules/better-sqlite3 2>/dev/null || true
 

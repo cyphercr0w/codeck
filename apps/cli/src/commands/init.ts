@@ -6,7 +6,7 @@ import { resolve, join } from 'node:path';
 import { getConfig, setConfig, isInitialized, type CodeckMode } from '../lib/config.js';
 import { detectOS, isDockerInstalled, isDockerRunning, isPortAvailable, isBaseImageBuilt } from '../lib/detect.js';
 import { generateOverrideYaml, generateEnvFile, writeOverrideFile, writeEnvFile, readEnvFile } from '../lib/compose.js';
-import { buildBaseImage, composeUp } from '../lib/docker.js';
+import { buildBaseImage } from '../lib/docker.js';
 
 export const initCommand = new Command('init')
   .description('Interactive setup wizard for Codeck')
@@ -304,33 +304,6 @@ export const initCommand = new Command('init')
       }
     } else {
       p.log.info('Base image already built.');
-    }
-
-    // 12. Start container
-    const startResult = await p.confirm({
-      message: 'Start Codeck now?',
-      initialValue: true,
-    });
-
-    if (!p.isCancel(startResult) && startResult) {
-      p.log.info('Starting Codeck...');
-      try {
-        await composeUp({
-          projectPath,
-          lanMode,
-          mode: codeckMode,
-        });
-        const url = `http://localhost${port === 80 ? '' : ':' + port}`;
-        if (codeckMode === 'managed') {
-          p.log.success(`Runtime container started. Now run the daemon:`);
-          console.log(chalk.cyan(`  codeck start`));
-        } else {
-          p.log.success(`Codeck is running at ${chalk.cyan(url)}`);
-        }
-      } catch (err) {
-        p.log.error(`Failed to start: ${(err as Error).message}`);
-        p.log.info('You can try again with `codeck start`.');
-      }
     }
 
     // Done

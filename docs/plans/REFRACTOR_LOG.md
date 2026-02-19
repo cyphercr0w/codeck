@@ -8,7 +8,7 @@ Este archivo registra el progreso y decisiones técnicas.
 
 Branch: refactor/daemon-runtime-gateway
 Modo objetivo: local + gateway
-Último bloque completado: MILESTONE 3.3 — Auditoría
+Último bloque completado: MILESTONE 3.4 — Rate Limit
 
 ---
 
@@ -333,6 +333,38 @@ Modo objetivo: local + gateway
 - `sessionId` es null en `auth.login_failure` porque no hay sesión asociada a un intento fallido
 
 **Smoke test:** `npm run build` — OK (frontend + runtime). `npm run build:daemon` — OK. Startup en port 9997: `/api/auth/status` → `{"configured":true}`, login fallido genera audit entry, shutdown genera flush a `audit.log`. Verificado contenido JSONL: `{"timestamp":"...","event":"auth.login_failure","sessionId":null,"deviceId":"test-device-1","actor":"::1"}`. Shutdown limpio.
+
+---
+
+### Iteración 11 — MILESTONE 3.4: RATE LIMIT
+**Fecha:** 2026-02-19
+
+**Bloque:** Milestone 3.4 — Rate limit (auth agresivo, writes moderado, configurable por env)
+
+**Cambios:**
+- Creado `apps/daemon/src/services/rate-limit.ts` — servicio de rate limiting reutilizable:
+  - Clase `RateLimiter` con sliding window per-IP, cleanup automático cada 5 min, `destroy()` para shutdown
+  - `createAuthLimiter()` — agresivo: 10 req/min (env: `RATE_AUTH_MAX`, `RATE_AUTH_WINDOW_MS`)
+  - `createWritesLimiter()` — moderado: 60 req/min (env: `RATE_WRITES_MAX`, `RATE_WRITES_WINDOW_MS`)
+  - Brute-force lockout extraído de server.ts: `checkLockout`, `recordFailedLogin`, `clearFailedAttempts` (env: `LOCKOUT_THRESHOLD`, `LOCKOUT_DURATION_MS`)
+- Refactorizado `apps/daemon/src/server.ts`:
+  - Eliminado rate limiting y lockout inline (~60 líneas) — reemplazado por imports del servicio
+  - Nuevo middleware writes rate limiter: aplica a POST/PUT/DELETE en `/api/*` (excluye auth/ y GET/HEAD/OPTIONS)
+  - Graceful shutdown llama `authLimiter.destroy()` y `writesLimiter.destroy()` (libera timers)
+
+**Problemas:** Ninguno.
+
+**Decisiones:**
+- La clase `RateLimiter` es genérica y reutilizable — se puede instanciar con cualquier config. Las factories `createAuthLimiter` y `createWritesLimiter` encapsulan los defaults con env vars
+- Todos los parámetros son configurables via env vars sin necesidad de cambiar código:
+  - `RATE_AUTH_MAX` (default 10), `RATE_AUTH_WINDOW_MS` (default 60000)
+  - `RATE_WRITES_MAX` (default 60), `RATE_WRITES_WINDOW_MS` (default 60000)
+  - `LOCKOUT_THRESHOLD` (default 5), `LOCKOUT_DURATION_MS` (default 900000)
+- El writes limiter se aplica DESPUÉS del auth middleware — solo requests autenticados llegan al writes limiter (no malgasta capacidad en requests no autenticados)
+- Los endpoints auth (login/logout) están excluidos del writes limiter porque ya tienen su propio limiter más agresivo
+- El brute-force lockout es un mecanismo separado del rate limiter — se complementan pero no se superponen (rate limit = ventana, lockout = threshold acumulativo)
+
+**Smoke test:** `npm run build` — OK (frontend + runtime). `npm run build:daemon` — OK. Startup con `RATE_AUTH_MAX=3`: primeras 3 requests pasan normalmente, 4ta request → 429 `"Too many requests"`. Endpoints públicos no afectados. Shutdown limpio.
 
 ---
 

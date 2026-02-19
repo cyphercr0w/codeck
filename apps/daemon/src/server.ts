@@ -16,6 +16,13 @@ import {
   getAuthLog,
 } from './services/auth.js';
 import { audit, flushAudit } from './services/audit.js';
+import {
+  createAuthLimiter,
+  createWritesLimiter,
+  checkLockout,
+  recordFailedLogin,
+  clearFailedAttempts,
+} from './services/rate-limit.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PORT = parseInt(process.env.CODECK_DAEMON_PORT || '8080', 10);
@@ -38,63 +45,10 @@ export async function startDaemon(): Promise<void> {
 
   app.use(express.json());
 
-  // ── Rate limiting (auth endpoints) ──
+  // ── Rate limiters (configurable via env vars) ──
 
-  const AUTH_RATE_LIMIT = 10; // max requests per window
-  const AUTH_RATE_WINDOW = 60_000; // 1 minute
-  const authRateMap = new Map<string, { count: number; windowStart: number }>();
-
-  // Cleanup stale entries every 5 minutes
-  const rateCleanupInterval = setInterval(() => {
-    const now = Date.now();
-    for (const [ip, entry] of authRateMap) {
-      if (now - entry.windowStart > AUTH_RATE_WINDOW * 2) authRateMap.delete(ip);
-    }
-  }, 5 * 60_000);
-  rateCleanupInterval.unref();
-
-  function checkAuthRateLimit(ip: string): boolean {
-    const now = Date.now();
-    const entry = authRateMap.get(ip);
-    if (!entry || now - entry.windowStart > AUTH_RATE_WINDOW) {
-      authRateMap.set(ip, { count: 1, windowStart: now });
-      return true;
-    }
-    entry.count++;
-    return entry.count <= AUTH_RATE_LIMIT;
-  }
-
-  // ── Brute-force lockout ──
-
-  const LOCKOUT_THRESHOLD = 5;
-  const LOCKOUT_DURATION_MS = 15 * 60_000; // 15 minutes
-  const failedAttempts = new Map<string, { count: number; lockedUntil: number }>();
-
-  function checkLockout(ip: string): { locked: boolean; retryAfter?: number } {
-    const entry = failedAttempts.get(ip);
-    if (!entry) return { locked: false };
-    if (entry.lockedUntil > Date.now()) {
-      return { locked: true, retryAfter: Math.ceil((entry.lockedUntil - Date.now()) / 1000) };
-    }
-    if (entry.lockedUntil > 0) {
-      failedAttempts.delete(ip);
-    }
-    return { locked: false };
-  }
-
-  function recordFailedLogin(ip: string): void {
-    const entry = failedAttempts.get(ip) || { count: 0, lockedUntil: 0 };
-    entry.count++;
-    if (entry.count >= LOCKOUT_THRESHOLD) {
-      entry.lockedUntil = Date.now() + LOCKOUT_DURATION_MS;
-      entry.count = 0;
-    }
-    failedAttempts.set(ip, entry);
-  }
-
-  function clearFailedAttempts(ip: string): void {
-    failedAttempts.delete(ip);
-  }
+  const authLimiter = createAuthLimiter();
+  const writesLimiter = createWritesLimiter();
 
   // ── Public endpoints (no auth required) ──
 
@@ -117,7 +71,7 @@ export async function startDaemon(): Promise<void> {
   app.post('/api/auth/login', async (req, res) => {
     const ip = req.ip || 'unknown';
 
-    if (!checkAuthRateLimit(ip)) {
+    if (!authLimiter.check(ip)) {
       res.status(429).json({ success: false, error: 'Too many requests. Try again later.' });
       return;
     }
@@ -163,6 +117,21 @@ export async function startDaemon(): Promise<void> {
 
     // Update lastSeen for active session
     touchSession(token);
+    next();
+  });
+
+  // ── Writes rate limiter (POST/PUT/DELETE on protected routes) ──
+
+  app.use('/api', (req, res, next) => {
+    if (req.method === 'GET' || req.method === 'HEAD' || req.method === 'OPTIONS') return next();
+    // auth/login and auth/logout already covered by authLimiter
+    if (req.path.startsWith('/auth/')) return next();
+
+    const ip = req.ip || 'unknown';
+    if (!writesLimiter.check(ip)) {
+      res.status(429).json({ error: 'Write rate limit exceeded. Try again later.' });
+      return;
+    }
     next();
   });
 
@@ -243,7 +212,8 @@ export async function startDaemon(): Promise<void> {
   // Graceful shutdown
   function gracefulShutdown(signal: string): void {
     console.log(`[Daemon] Received ${signal}, shutting down...`);
-    clearInterval(rateCleanupInterval);
+    authLimiter.destroy();
+    writesLimiter.destroy();
     flushAudit();
     server.close(() => {
       console.log('[Daemon] Closed cleanly');

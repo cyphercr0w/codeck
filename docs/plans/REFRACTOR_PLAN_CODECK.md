@@ -67,7 +67,7 @@ scripts/
 - [x] MILESTONE 0 — PREPARACIÓN (completado)
 - [x] MILESTONE 1 — WEBAPP (completado)
 - [x] MILESTONE 2 — RUNTIME (completado)
-- [ ] MILESTONE 3 — DAEMON (siguiente: 3.4)
+- [ ] MILESTONE 3 — DAEMON (siguiente: 3.5)
 
 ---
 
@@ -145,9 +145,9 @@ DONE cuando:
 - [x] eventos auth
 
 ## 3.4 Rate limit
-- [ ] auth agresivo
-- [ ] writes moderado
-- [ ] configurable por env
+- [x] auth agresivo
+- [x] writes moderado
+- [x] configurable por env
 
 ## 3.5 Proxy HTTP
 - [ ] /api/runtime/* → runtime internal

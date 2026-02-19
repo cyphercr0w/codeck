@@ -349,9 +349,11 @@ export async function startWebServer(): Promise<void> {
       const restoreDelayMs = parseInt(process.env.SESSION_RESTORE_DELAY || '2000', 10);
       setTimeout(() => {
         const restored = restoreSavedSessions();
-        if (restored.length > 0) {
-          broadcast({ type: 'sessions:restored', data: restored });
-        }
+        // Always broadcast sessions:restored, even if empty.
+        // The frontend keeps the "Restoring sessions..." overlay visible until it
+        // receives this message. If we only broadcast on restored.length > 0, an empty
+        // restore (e.g. all sessions failed) leaves the overlay stuck forever.
+        broadcast({ type: 'sessions:restored', data: restored });
       }, restoreDelayMs);
     }
   });

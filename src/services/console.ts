@@ -447,9 +447,19 @@ export function saveSessionState(reason: string, continuationPrompt?: string): S
     });
   }
   const state: SessionsState = { version: 1, savedAt: Date.now(), sessions: saved };
+
+  // If there are no sessions to save, remove the file entirely instead of writing an empty
+  // state. This prevents phantom restore cycles: an empty sessions.json would cause
+  // hasSavedSessions()=true on next startup, leading to a restore with 0 sessions and a
+  // stuck "Restoring sessions..." overlay.
+  if (saved.length === 0) {
+    try { unlinkSync(SESSIONS_STATE_PATH); } catch { /* already gone */ }
+    console.log(`[Console] Removed sessions state (reason: ${reason}): no sessions to persist`);
+    return state;
+  }
+
   const dir = resolve(SESSIONS_STATE_PATH, '..');
   if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
-
   atomicWriteFileSync(SESSIONS_STATE_PATH, JSON.stringify(state, null, 2));
 
   const detail = saved.map(s => `${s.id.slice(0, 8)}(conv:${s.conversationId?.slice(0, 8) || 'none'})`).join(', ');

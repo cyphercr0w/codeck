@@ -32,7 +32,7 @@ Handles git, GitHub CLI auth, SSH keys, workspace CLAUDE.md, credentials, and re
 
 ### 5. Unused `pnpm` in base image
 
-`Dockerfile.base` installs `pnpm` globally but project uses `npm`. Unnecessary image weight.
+`docker/Dockerfile.base` installs `pnpm` globally but project uses `npm`. Unnecessary image weight.
 
 ### 6. Synchronous filesystem operations in routes
 
@@ -102,7 +102,7 @@ Backpressure via `pty.pause()`/`resume()` is implemented but has no send queue m
 
 `@xenova/transformers` requires `sharp` (native module) which fails to install in the current Docker image. Hybrid search degrades gracefully to BM25-only. sqlite-vec extension loads fine — only the embedding provider is missing.
 
-**Fix:** Either precompile `sharp` + `@xenova/transformers` in `Dockerfile.base`, or use the Gemini fallback (`GEMINI_API_KEY` env var). The WASM model is ~300MB on first download.
+**Fix:** Either precompile `sharp` + `@xenova/transformers` in `docker/Dockerfile.base`, or use the Gemini fallback (`GEMINI_API_KEY` env var). The WASM model is ~300MB on first download.
 
 ### MemorySection component is dead code
 
@@ -146,7 +146,7 @@ Token in `ws://...?token=` URL visible in DevTools. Migrate to WebSocket subprot
 
 ### Host mode disables network isolation
 
-LAN mode (`docker-compose.lan.yml`) shares host network. Only use on trusted networks.
+LAN mode (`docker/compose.lan.yml`) shares host network. Only use on trusted networks.
 
 ### Workspace export follows symlinks
 

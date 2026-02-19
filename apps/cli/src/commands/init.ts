@@ -114,11 +114,11 @@ export const initCommand = new Command('init')
 
     // 3. Detect project path
     let projectPath = existingConfig?.projectPath || '';
-    const cwdHasCompose = existsSync(join(process.cwd(), 'docker-compose.yml')) &&
+    const cwdHasCompose = existsSync(join(process.cwd(), 'docker/compose.yml')) &&
                           existsSync(join(process.cwd(), 'Dockerfile.base'));
 
     // Validate existing projectPath still exists
-    if (projectPath && !existsSync(join(projectPath, 'docker-compose.yml'))) {
+    if (projectPath && !existsSync(join(projectPath, 'docker/compose.yml'))) {
       projectPath = '';
     }
 
@@ -131,8 +131,8 @@ export const initCommand = new Command('init')
         placeholder: '/path/to/codeck',
         validate: (value) => {
           const resolved = resolve(value);
-          if (!existsSync(join(resolved, 'docker-compose.yml'))) {
-            return 'docker-compose.yml not found in that directory';
+          if (!existsSync(join(resolved, 'docker/compose.yml'))) {
+            return 'docker/compose.yml not found in that directory';
           }
           if (!existsSync(join(resolved, 'Dockerfile.base'))) {
             return 'Dockerfile.base not found in that directory';
@@ -286,7 +286,7 @@ export const initCommand = new Command('init')
 
     // Track files created by this init for cleanup on failure
     const envPath = join(projectPath, '.env');
-    const overridePath = join(projectPath, 'docker-compose.override.yml');
+    const overridePath = join(projectPath, 'docker/compose.override.yml');
     const envExistedBefore = existsSync(envPath);
     const overrideExistedBefore = existsSync(overridePath);
 

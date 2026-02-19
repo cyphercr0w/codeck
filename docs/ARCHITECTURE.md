@@ -108,7 +108,7 @@ The system does not use a database — all state lives in memory (Map/variables)
 | **SPA served by** | Runtime | Daemon |
 | **Browser talks to** | Runtime directly | Daemon only |
 | **Runtime exposed?** | Yes | No (private `codeck_net` only) |
-| **Docker compose** | `docker-compose.yml` | `docker-compose.gateway.yml` |
+| **Docker compose** | `docker/compose.yml` | `docker/compose.gateway.yml` |
 | **Rate limiting** | Runtime (200/min general) | Daemon (10/min auth, 60/min writes) |
 | **Audit log** | None | Daemon (`audit.log` JSONL) |
 | **Use case** | Local Docker, systemd on VPS | Public-facing VPS behind nginx |
@@ -294,7 +294,7 @@ Each service is an ES module with pure functions (no classes). Mutable state is 
 | `memory-indexer` | `services/memory-indexer.ts` | `db` (better-sqlite3 instance), file watcher | `/workspace/.codeck/index/index.db` |
 | `memory-search` | `services/memory-search.ts` | `db` (better-sqlite3 readonly) | `/workspace/.codeck/index/index.db` |
 | `session-writer` | `services/session-writer.ts` | `sessionStreams: Map`, input/output buffers | `/workspace/.codeck/sessions/*.jsonl` |
-| `port-manager` | `services/port-manager.ts` | `networkMode`, `mappedPorts: Set`, `containerId`, compose labels | Writes `docker-compose.override.yml` via Docker helper |
+| `port-manager` | `services/port-manager.ts` | `networkMode`, `mappedPorts: Set`, `containerId`, compose labels | Writes `compose.override.yml` via Docker helper |
 | `logger` | `web/logger.ts` | `logBuffer: LogEntry[]` (circular, max 100), `wsClients[]` | None |
 
 ### Daemon service layer (gateway mode)
@@ -1071,14 +1071,14 @@ Browser: GET http://localhost:3000/
         └── Container service on 0.0.0.0:3000
 ```
 
-**Default mapping:** Only the Codeck port (default 80) is mapped. Additional ports are added on demand via the dashboard UI, the `POST /api/system/add-port` API, or manually in `docker-compose.override.yml` (see `docker-compose.override.yml.example`). The Codeck CLI `init` wizard can also pre-map ports during setup.
+**Default mapping:** Only the Codeck port (default 80) is mapped. Additional ports are added on demand via the dashboard UI, the `POST /api/system/add-port` API, or manually in `compose.override.yml` (see `compose.override.yml.example`). The Codeck CLI `init` wizard can also pre-map ports during setup.
 
 ### Port manager (port-manager.ts)
 
 Reads `CODECK_MAPPED_PORTS` environment variable on startup. Detects compose project info (project dir, service name, container image) via Docker container labels. Provides `isPortExposed(port)` to check if a port is in the mapped range.
 
 When a new port needs to be exposed in bridge mode, the port manager:
-1. Writes `docker-compose.override.yml` on the host via a helper container (base64 pipe)
+1. Writes `compose.override.yml` on the host via a helper container (base64 pipe)
 2. Saves session state for auto-restore
 3. Spawns a detached helper container that runs `docker compose up -d` after a 3s delay
 4. The sandbox container gets recreated with the new port mapping
@@ -1153,14 +1153,14 @@ Codeck implements a **single-container architecture** where all projects share o
 **Bridge Mode (all platforms)** — Standard Docker network isolation:
 - Container runs on Docker bridge network
 - Network namespace isolation: **ENABLED** (container isolated from host network)
-- Port exposure: Explicit mapping via `docker-compose.yml` (e.g., `80:80`)
+- Port exposure: Explicit mapping via `docker/compose.yml` (e.g., `80:80`)
 - Inbound access: Only mapped ports reachable from host
 - Outbound access: Unrestricted (no egress filtering)
-- LAN access: Use `docker-compose.lan.yml` overlay + host-side mDNS advertiser script
+- LAN access: Use `docker/compose.lan.yml` overlay + host-side mDNS advertiser script
 
 ### Host Access via `extra_hosts`
 
-**Configuration** (`docker-compose.yml` line 59-60):
+**Configuration** (`docker/compose.yml` line 59-60):
 ```yaml
 extra_hosts:
   - "host.docker.internal:host-gateway"
@@ -1379,7 +1379,7 @@ The preset system, git service, and workspace export work together to maintain t
 ### Multi-image build strategy
 
 ```
-Dockerfile.base (build once)
+docker/Dockerfile.base (build once)
     │
     │  FROM node:22-slim
     │  + build-essential, git, openssh, dbus, gnome-keyring
@@ -1388,7 +1388,7 @@ Dockerfile.base (build once)
     │  + init-keyring.sh
     │
     ▼
-Dockerfile (production)              Dockerfile.dev (development)
+docker/Dockerfile (production)       docker/Dockerfile.dev (development)
     │                                    │
     │  FROM codeck-base:latest         │  FROM codeck-base:latest AS builder
     │  COPY package.json                 │  COPY . .
@@ -1426,10 +1426,12 @@ Codeck also saves the OAuth token directly in `.credentials.json` as a fallback 
 ### Docker Compose — Local mode
 
 ```yaml
-# docker-compose.yml
+# docker/compose.yml
 services:
   sandbox:
-    build: .
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
     init: true
     ports:
       - "${CODECK_PORT:-80}:${CODECK_PORT:-80}"
@@ -1446,15 +1448,17 @@ services:
     command: ["--web"]
 ```
 
-Additional dev server ports are exposed on demand via `docker-compose.override.yml`. `init: true` adds tini as PID 1 to reap zombie processes.
+Additional dev server ports are exposed on demand via `compose.override.yml`. `init: true` adds tini as PID 1 to reap zombie processes.
 
 ### Docker Compose — Gateway mode
 
 ```yaml
-# docker-compose.gateway.yml (simplified)
+# docker/compose.gateway.yml (simplified)
 services:
   daemon:
-    build: .
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
     ports: ["${CODECK_DAEMON_PORT:-8080}:8080"]
     networks: [codeck_net]
     environment:
@@ -1463,7 +1467,9 @@ services:
     entrypoint: ["env", "NODE_ENV=production", "node", "apps/daemon/dist/index.js"]
 
   runtime:
-    build: .
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
     container_name: codeck-runtime
     networks: [codeck_net]
     # No ports exposed to host
@@ -1478,7 +1484,7 @@ networks:
     driver: bridge
 ```
 
-See `docker-compose.gateway.yml` for full config with security hardening, resource limits, and volume mounts.
+See `docker/compose.gateway.yml` for full config with security hardening, resource limits, and volume mounts.
 
 ---
 
@@ -1643,7 +1649,7 @@ Proactive agents spawn via `child_process.spawn()` with a hardcoded binary path 
 
 **Docker Socket Access — CRITICAL SECURITY NOTE**
 
-By default, the Docker socket is **NOT** mounted (secure mode). When running in experimental mode (`docker-compose.experimental.yml`), agents have full Docker host access via the socket mount (`/var/run/docker.sock`). This means:
+The Docker socket is mounted by default in `docker/compose.yml` (required by port-manager for dynamic port mapping). This means agents have full Docker host access via the socket mount (`/var/run/docker.sock`):
 
 - Agents can spawn privileged containers to gain root on host
 - Agents can read logs and attach to other containers
@@ -1735,12 +1741,12 @@ See AUDIT-97 for comprehensive CSRF threat model analysis and implementation rec
 
 Codeck mitigates supply chain risks through:
 
-- **Base image digest pinning** — `node:22-slim` pinned to immutable SHA256 digest in `Dockerfile.base` prevents tag-swap attacks and ensures reproducible builds
+- **Base image digest pinning** — `node:22-slim` pinned to immutable SHA256 digest in `docker/Dockerfile.base` prevents tag-swap attacks and ensures reproducible builds
 - **npm lockfile** — `package-lock.json` (lockfile version 3) ensures reproducible dependency installs across all environments
 - **Explicit version pinning** — Claude CLI (`@anthropic-ai/claude-code@2.1.39`) and security-critical packages pinned to exact versions rather than semver ranges
 
 **Current Supply Chain Controls:**
-- ✅ Docker base image digest pinning (prevents tag-swap, documented update process in Dockerfile.base comments)
+- ✅ Docker base image digest pinning (prevents tag-swap, documented update process in docker/Dockerfile.base comments)
 - ✅ Claude CLI version pinning (prevents supply chain drift, manual update policy)
 - ✅ npm package lockfile (reproducible installs, version consistency)
 - ✅ Minimal base image (`node:22-slim` reduces attack surface vs full Node image)
@@ -1756,7 +1762,7 @@ Codeck mitigates supply chain risks through:
 
 Digest pinning provides reproducible builds at the cost of delayed security patches. To balance security and stability:
 
-- **Update cadence:** Monthly verification against Docker Hub (see Dockerfile.base line 6 comments)
+- **Update cadence:** Monthly verification against Docker Hub (see docker/Dockerfile.base line 6 comments)
 - **Last verified:** 2026-02-14 (digest sha256:5373f1906319...)
 - **Security-critical CVEs:** May warrant immediate update (monitor Debian Security Advisories)
 - **Update procedure:** Documented in AUDIT-110 (Docker Base Image CVE Scan) and CONFIGURATION.md

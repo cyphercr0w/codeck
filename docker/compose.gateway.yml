@@ -4,14 +4,16 @@
 # Only the daemon is exposed to the host; the runtime is internal.
 #
 # Usage:
-#   docker compose -f docker-compose.gateway.yml up --build
+#   docker compose -f docker/compose.gateway.yml up --build
 #
 # With nginx in front:
 #   nginx → daemon:8080 → runtime (codeck_net)
 
 services:
   daemon:
-    build: .
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
     restart: unless-stopped
     init: true
     ports:
@@ -45,7 +47,9 @@ services:
     command: []
 
   runtime:
-    build: .
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
     container_name: codeck-runtime
     restart: unless-stopped
     init: true

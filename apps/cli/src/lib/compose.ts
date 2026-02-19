@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { stringify } from 'yaml';
 
 /**
- * Generate docker-compose.override.yml content.
+ * Generate docker/compose.override.yml content.
  * Matches the format used by port-manager.ts inside the container.
  */
 export function generateOverrideYaml(extraPorts: number[], codeckPort: number): string {
@@ -70,11 +70,11 @@ export function readEnvFile(projectPath: string): Record<string, string> {
 }
 
 /**
- * Write docker-compose.override.yml to the project directory.
+ * Write docker/compose.override.yml to the project directory.
  */
 export function writeOverrideFile(projectPath: string, content: string): void {
   if (!content) return;
-  writeFileSync(join(projectPath, 'docker-compose.override.yml'), content, 'utf8');
+  writeFileSync(join(projectPath, 'docker/compose.override.yml'), content, 'utf8');
 }
 
 /**
@@ -85,10 +85,10 @@ export function writeEnvFile(projectPath: string, content: string): void {
 }
 
 /**
- * Check if docker-compose.override.yml exists.
+ * Check if docker/compose.override.yml exists.
  */
 export function overrideExists(projectPath: string): boolean {
-  return existsSync(join(projectPath, 'docker-compose.override.yml'));
+  return existsSync(join(projectPath, 'docker/compose.override.yml'));
 }
 
 /**

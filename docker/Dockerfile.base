@@ -1,6 +1,6 @@
 # Codeck - Base Image
 # Contains system tools, language runtimes, and agent CLIs
-# Build once: docker build -t codeck-base -f Dockerfile.base .
+# Build once: docker build -t codeck-base -f docker/Dockerfile.base .
 
 # Pinned to digest for reproducible builds. Update periodically for security patches.
 # Update cadence: Check monthly via `docker pull node:22-slim && docker inspect node:22-slim | jq -r '.[0].RepoDigests[0]'`

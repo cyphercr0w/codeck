@@ -72,7 +72,7 @@ export interface ContainerInfo {
 
 export async function getContainerStatus(projectPath: string, mode?: 'local' | 'gateway'): Promise<ContainerInfo[]> {
   try {
-    const composeFile = mode === 'gateway' ? 'docker-compose.gateway.yml' : 'docker-compose.yml';
+    const composeFile = mode === 'gateway' ? 'docker/compose.gateway.yml' : 'docker/compose.yml';
     const { stdout } = await execa('docker', ['compose', '-f', composeFile, 'ps', '--format', 'json'], {
       cwd: projectPath,
       timeout: DETECT_TIMEOUT,

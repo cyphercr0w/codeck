@@ -16,8 +16,11 @@ warn() { echo -e "${YELLOW}[deploy]${NC} $*"; }
 
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
-log "Building..."
+log "Building TypeScript..."
 npm run build 2>&1 | tail -5
+
+log "Building Docker image..."
+docker build -t codeck -f docker/Dockerfile . 2>&1 | tail -5
 
 log "Restarting service (your session will die)..."
 nohup sudo systemctl restart codeck >/dev/null 2>&1 &

@@ -55,7 +55,7 @@ curl -s -X POST http://localhost/api/system/add-port \
    - `{"success": true, "restarting": true}` — tell the user: "Mapping port {port}. The container is restarting — this takes about 15 seconds. Your session will resume automatically." **Stop and wait.** Do not run any more commands.
    - `{"success": false, "requiresRestart": true, "instructions": "..."}` — auto-restart unavailable. Tell the user the manual steps:
      > I couldn't restart automatically. To map port {port}:
-     > 1. Add `- "{port}:{port}"` to `ports` in `docker-compose.override.yml`
+     > 1. Add `- "{port}:{port}"` to `ports` in `docker/compose.override.yml`
      > 2. Add the port to `CODECK_MAPPED_PORTS` in the same file
      > 3. Run `docker compose down && docker compose up -d`
 

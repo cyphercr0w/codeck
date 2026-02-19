@@ -29,16 +29,16 @@ The docs explain architecture, data flows, APIs, and conventions that you won't 
 
 ```bash
 # Build base image (once):
-docker build -t codeck-base -f Dockerfile.base .
+docker build -t codeck-base -f docker/Dockerfile.base .
 
 # Dev:
-docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
+docker compose -f docker/compose.yml -f docker/compose.dev.yml up --build
 
 # Prod:
-docker compose up
+docker compose -f docker/compose.yml up
 
 # Prod with LAN access (codeck.local from any device):
-docker compose -f docker-compose.yml -f docker-compose.lan.yml up
+docker compose -f docker/compose.yml -f docker/compose.lan.yml up
 
 # Local build check:
 npm run build
@@ -47,7 +47,10 @@ npm run build
 npm run build:cli   # from project root
 
 # Gateway mode (daemon + runtime in separate containers):
-docker compose -f docker-compose.gateway.yml up --build
+docker compose -f docker/compose.gateway.yml up --build
+
+# Hosted mode (daemon on host + runtime in container, for VPS):
+docker compose -f docker/compose.hosted.yml up -d
 ```
 
 ## LAN Access
@@ -77,15 +80,16 @@ If you are running on a VPS where this repo IS the live Codeck installation (`/o
 
 ```bash
 # After editing code:
-npm run build && sudo systemctl restart codeck
+npm run build && docker build -t codeck -f docker/Dockerfile . && sudo systemctl restart codeck
 ```
 
 Or use the helper script: `bash scripts/self-deploy.sh`
 
 **Important:**
 - The service restart kills your terminal session. The frontend auto-reconnects.
+- `systemctl restart codeck` manages both the daemon and the runtime container.
 - Always `git commit` before deploying — your files stay on disk, but committed code is safer.
-- If a deploy breaks the server, SSH in: `sudo git checkout . && sudo npm run build && sudo systemctl restart codeck`
+- If a deploy breaks the server, SSH in: `sudo git checkout . && sudo npm run build && docker build -t codeck -f docker/Dockerfile . && sudo systemctl restart codeck`
 - You have sudo for: `systemctl restart/stop/start codeck`
 
 ## Rules

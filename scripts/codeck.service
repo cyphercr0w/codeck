@@ -1,7 +1,7 @@
 [Unit]
 Description=Codeck - Claude Code Sandbox
-After=network.target
-Wants=docker.service
+After=network.target docker.service
+Requires=docker.service
 
 [Service]
 Type=simple
@@ -11,20 +11,20 @@ WorkingDirectory=/opt/codeck
 
 Environment="PATH=/usr/local/bin:/usr/bin:/bin"
 Environment="NODE_ENV=production"
-Environment="CODECK_PORT=80"
-Environment="WORKSPACE=/home/codeck/workspace"
-Environment="CODECK_DIR=/home/codeck/.codeck"
+Environment="CODECK_DAEMON_PORT=80"
+Environment="CODECK_RUNTIME_URL=http://127.0.0.1:7777"
+Environment="CODECK_RUNTIME_WS_URL=http://127.0.0.1:7778"
+Environment="CODECK_DIR=/workspace/.codeck"
 Environment="HOME=/home/codeck"
 
-ExecStart=/usr/bin/node /opt/codeck/apps/runtime/dist/index.js --web
+ExecStartPre=/usr/bin/docker compose -f /opt/codeck/docker/compose.hosted.yml up -d --wait
+ExecStart=/usr/bin/node /opt/codeck/apps/daemon/dist/index.js
+ExecStopPost=/usr/bin/docker compose -f /opt/codeck/docker/compose.hosted.yml down
+
 Restart=always
 RestartSec=10
-
-# Resource limits
-CPUQuota=200%
-MemoryMax=4G
-
-# Security
+CPUQuota=100%
+MemoryMax=512M
 NoNewPrivileges=true
 ProtectSystem=full
 AmbientCapabilities=CAP_NET_BIND_SERVICE

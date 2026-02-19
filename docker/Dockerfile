@@ -2,10 +2,10 @@
 # Uses pre-built base image with Claude CLI for faster rebuilds
 #
 # First time setup:
-#   docker build -t codeck-base -f Dockerfile.base .
+#   docker build -t codeck-base -f docker/Dockerfile.base .
 #
 # Then build normally:
-#   docker compose build
+#   docker compose -f docker/compose.yml build
 
 FROM codeck-base:latest
 

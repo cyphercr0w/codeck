@@ -30,13 +30,13 @@ router.post('/add-port', (req, res) => {
     res.json({
       success: false,
       requiresRestart: true,
-      instructions: `Port ${port} is not mapped. Add "${port}:${port}" to docker-compose.override.yml and restart the container.`,
+      instructions: `Port ${port} is not mapped. Add "${port}:${port}" to docker/compose.override.yml and restart the container.`,
     });
     return;
   }
 
   try {
-    // 1. Write docker-compose.override.yml on the host via helper container
+    // 1. Write docker/compose.override.yml on the host via helper container
     const allPorts = [...getMappedPorts(), port];
     writePortOverride(allPorts);
 
@@ -64,7 +64,7 @@ router.post('/add-port', (req, res) => {
     res.json({
       success: false,
       requiresRestart: true,
-      instructions: `Auto-restart failed. Manually add "${port}:${port}" to docker-compose.override.yml and restart.`,
+      instructions: `Auto-restart failed. Manually add "${port}:${port}" to docker/compose.override.yml and restart.`,
     });
   }
 });
@@ -91,7 +91,7 @@ router.post('/remove-port', (req, res) => {
     res.json({
       success: false,
       requiresRestart: true,
-      instructions: `Remove the "${port}:${port}" line from docker-compose.override.yml and restart the container.`,
+      instructions: `Remove the "${port}:${port}" line from docker/compose.override.yml and restart the container.`,
     });
     return;
   }
@@ -125,7 +125,7 @@ router.post('/remove-port', (req, res) => {
     res.json({
       success: false,
       requiresRestart: true,
-      instructions: `Auto-restart failed. Manually edit docker-compose.override.yml and restart.`,
+      instructions: `Auto-restart failed. Manually edit docker/compose.override.yml and restart.`,
     });
   }
 });

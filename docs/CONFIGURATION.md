@@ -172,7 +172,7 @@ All logs pass through `sanitizeSecrets()` before writing. 15+ regex patterns cov
 Build the base image first (one-time):
 
 ```bash
-docker build -t codeck-base -f Dockerfile.base .
+docker build -t codeck-base -f docker/Dockerfile.base .
 ```
 
 ### Production
@@ -181,7 +181,7 @@ Requires pre-built `dist/` directory:
 
 ```bash
 npm run build                    # Build frontend + backend
-docker compose up --build        # Uses Dockerfile (production)
+docker compose -f docker/compose.yml up --build   # Uses docker/Dockerfile (production)
 ```
 
 ### Development
@@ -189,7 +189,7 @@ docker compose up --build        # Uses Dockerfile (production)
 Builds from source inside the container:
 
 ```bash
-docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
+docker compose -f docker/compose.yml -f docker/compose.dev.yml up --build
 ```
 
 ### Image layers
@@ -206,7 +206,7 @@ codeck (production, ~200MB on top of base)
 ├── npm install --omit=dev
 ├── Pre-built node-pty copied from /prebuilt/
 ├── dist/ (pre-built on host)
-└── src/templates/
+└── apps/runtime/src/templates/
 
 codeck-dev (development, ~300MB on top of base)
 ├── npm install (all deps including Vite, TypeScript)
@@ -218,7 +218,7 @@ codeck-dev (development, ~300MB on top of base)
 
 #### Digest Pinning
 
-The base image (`node:22-slim`) is pinned to a specific SHA256 digest in `Dockerfile.base` to ensure reproducible builds and prevent supply chain attacks:
+The base image (`node:22-slim`) is pinned to a specific SHA256 digest in `docker/Dockerfile.base` to ensure reproducible builds and prevent supply chain attacks:
 
 ```dockerfile
 FROM node:22-slim@sha256:5373f1906319b3a1f291da5d102f4ce5c77ccbe29eb637f072b6c7b70443fc36
@@ -236,8 +236,8 @@ FROM node:22-slim@sha256:5373f1906319b3a1f291da5d102f4ce5c77ccbe29eb637f072b6c7b
    ```bash
    docker run --rm aquasec/trivy:latest image --severity CRITICAL,HIGH node:22-slim@sha256:<new-digest>
    ```
-4. Update the digest in `Dockerfile.base` line 7
-5. Rebuild: `docker build -t codeck-base -f Dockerfile.base .`
+4. Update the digest in `docker/Dockerfile.base` line 7
+5. Rebuild: `docker build -t codeck-base -f docker/Dockerfile.base .`
 6. Test in dev mode before deploying to production
 
 **Update Schedule:**
@@ -257,7 +257,7 @@ FROM node:22-slim@sha256:5373f1906319b3a1f291da5d102f4ce5c77ccbe29eb637f072b6c7b
 
 #### Claude CLI Version
 
-The Claude CLI is pinned to an explicit version in `Dockerfile.base`:
+The Claude CLI is pinned to an explicit version in `docker/Dockerfile.base`:
 
 ```dockerfile
 RUN npm install -g pnpm @anthropic-ai/claude-code@2.1.39
@@ -267,7 +267,7 @@ RUN npm install -g pnpm @anthropic-ai/claude-code@2.1.39
 
 1. Check for new releases: https://www.npmjs.com/package/@anthropic-ai/claude-code
 2. Review the changelog: https://github.com/anthropics/claude-code/blob/main/CHANGELOG.md
-3. Update the version in `Dockerfile.base` line 54
+3. Update the version in `docker/Dockerfile.base` line 54
 4. Rebuild the base image and test
 
 The server can also auto-update the Claude CLI at runtime via `POST /api/system/update-agent`, but base image pinning ensures a known-good version is always available on container restart.
@@ -364,28 +364,20 @@ healthcheck:
   start_period: 10s
 ```
 
-### Docker socket (Experimental Mode)
+### Docker socket
 
-By default, the Docker socket is **NOT** mounted. The container runs in secure mode without access to the host Docker daemon. Docker commands inside the container (`docker ps`, etc.) will not work, and dynamic port exposure requires manual `docker-compose.override.yml` configuration.
+The Docker socket (`/var/run/docker.sock`) is mounted by default in the main compose file (`docker/compose.yml`). This is required by the port-manager service for dynamic port mapping.
 
-To enable Docker access, use the experimental compose overlay:
-
-```bash
-docker compose -f docker-compose.yml -f docker-compose.experimental.yml up
-```
-
-This mounts `/var/run/docker.sock` into the container, enabling:
+**What this enables:**
 - Dynamic port mapping via the dashboard UI (auto-restart with new port mappings)
 - Docker commands inside the container (`docker ps`, `docker compose`, etc.)
 - Proactive agents can spawn sibling containers
 
 **Risk:** Any process inside the container can create new containers, mount host filesystems, or execute commands on the host. The `cap_drop`, `no-new-privileges`, and `read_only` restrictions do not apply to containers created through the socket.
 
-**Detection:** The server detects the socket mount at runtime and exposes `dockerExperimental: true` in the status API. The dashboard shows a persistent warning banner when active.
-
 **Mitigation options:**
-- **Default (secure):** Do not use the experimental overlay. Ports are mapped manually.
 - **Socket proxy:** Use [tecnativa/docker-socket-proxy](https://github.com/Tecnativa/docker-socket-proxy) as a sidecar that whitelists only needed Docker API endpoints.
+- **Remove mount:** Edit `docker/compose.yml` to remove the Docker socket volume. Dynamic port mapping will not work, but manual `compose.override.yml` configuration is still possible.
 
 ### Volume data protection
 
@@ -421,7 +413,7 @@ volumes:
 
 ### Creating custom presets
 
-1. Create directory: `src/templates/presets/<preset-id>/`
+1. Create directory: `apps/runtime/src/templates/presets/<preset-id>/`
 2. Create `manifest.json`:
 
 ```json
@@ -466,7 +458,7 @@ Codeck uses a three-layer instruction file system that provides hierarchical con
   - Session end sequence (write final daily entry, update path memory, create ADRs)
   - Environment info (workspace location, container details, port exposure flow)
   - Preferences and rules references
-- **Source:** `src/templates/presets/default/CLAUDE.md`
+- **Source:** `apps/runtime/src/templates/presets/default/CLAUDE.md`
 - **Auto-loaded:** By Claude Code CLI on every session spawn
 
 #### Layer 2 (Workspace): `/workspace/CLAUDE.md`
@@ -479,7 +471,7 @@ Codeck uses a three-layer instruction file system that provides hierarchical con
   - Networking rules (localhost vs host.docker.internal, never show 172.x.x.x IPs)
   - Non-interactive command rules (always use `-y`, `--yes`, `--no-input` flags)
   - Auto-generated project listing via `<!-- PROJECTS_LIST -->` marker
-- **Source:** `src/templates/CLAUDE.md`
+- **Source:** `apps/runtime/src/templates/CLAUDE.md`
 - **Marker-based updates:** `updateClaudeMd()` only replaces content after the `<!-- PROJECTS_LIST -->` marker, preserving user edits elsewhere
 
 #### Layer 3 (Project): `/workspace/<project>/CLAUDE.md`
@@ -587,14 +579,14 @@ Codeck also writes tokens directly to `.credentials.json` as a more reliable fal
 
 - **Dashboard:** `http://localhost`
 - **Dev server preview:** `http://localhost:{port}` (e.g., `http://localhost:3000`)
-- Only the Codeck port (default 80) is mapped by default. Additional ports are added via the dashboard, API, or `docker-compose.override.yml`.
+- Only the Codeck port (default 80) is mapped by default. Additional ports are added via the dashboard, API, or `compose.override.yml`.
 
 ### LAN mode (all platforms)
 
 Enable with the LAN compose override:
 
 ```bash
-docker compose -f docker-compose.yml -f docker-compose.lan.yml up
+docker compose -f docker/compose.yml -f docker/compose.lan.yml up
 ```
 
 This enables the container's built-in mDNS responder (`src/services/mdns.ts`) which broadcasts `codeck.local` and `*.codeck.local`. For full LAN discovery from other devices, also run the **host-side mDNS advertiser script**.
@@ -663,10 +655,10 @@ sudo node scripts/mdns-advertiser.cjs
 Only the Codeck port (default 80, configurable via `CODECK_PORT`) is mapped by default. Dev server ports are exposed by adding them via:
 - **Dashboard UI**: Port Mapping card in the Account panel (input port + click Add)
 - **API**: `POST /api/system/add-port` with `{"port": N}` (used by the agent inside the container)
-- **Manual**: Edit `docker-compose.override.yml` and restart
+- **Manual**: Edit `compose.override.yml` and restart
 
 When a port is added via the UI or API, the system automatically:
-1. Writes `docker-compose.override.yml` on the host (via Docker helper container)
+1. Writes `compose.override.yml` on the host (via Docker helper container)
 2. Saves active sessions to disk
 3. Restarts the container with `docker compose up -d` (via detached helper container)
 4. Sessions auto-restore on the new container
@@ -675,7 +667,7 @@ Active ports are detected by scanning listening sockets every 5 seconds and broa
 
 ### Custom port ranges
 
-Copy `docker-compose.override.yml.example` to `docker-compose.override.yml` and customize. Docker Compose auto-loads override files without extra `-f` flags. The auto-restart mechanism will also update this file when ports are added via the UI/API.
+Copy `compose.override.yml.example` to `compose.override.yml` and customize. Docker Compose auto-loads override files without extra `-f` flags. The auto-restart mechanism will also update this file when ports are added via the UI/API.
 
 ---
 
@@ -692,7 +684,7 @@ npm link -w @codeck/cli          # link globally (optional)
 
 ### Commands
 
-**`codeck init`** — Interactive setup wizard. If initialization fails (e.g., base image build error), automatically rolls back newly-created configuration files while preserving any pre-existing `.env` or `docker-compose.override.yml`.
+**`codeck init`** — Interactive setup wizard. If initialization fails (e.g., base image build error), automatically rolls back newly-created configuration files while preserving any pre-existing `.env` or `compose.override.yml`.
 
 **`codeck restart`** — Restart the Codeck container. Includes shutdown verification: polls container status for up to 10 seconds after `docker compose down` to ensure containers fully stop before starting new ones, preventing port conflict race conditions.
 
@@ -716,10 +708,10 @@ Persistent config stored at:
 
 ### Relationship to .env and override.yml
 
-`codeck init` generates both `.env` and `docker-compose.override.yml` in the project directory:
+`codeck init` generates both `.env` and `compose.override.yml` in the project directory:
 
 - `.env` — `CODECK_PORT`, `GITHUB_TOKEN`, `ANTHROPIC_API_KEY`
-- `docker-compose.override.yml` — extra port mappings + `CODECK_MAPPED_PORTS` env var
+- `compose.override.yml` — extra port mappings + `CODECK_MAPPED_PORTS` env var
 
 These files are also managed at runtime by the port-manager service inside the container (for dynamic port additions via the dashboard UI). The CLI and the container both produce the same format.
 
@@ -751,7 +743,7 @@ Codeck implements supply chain security controls to protect against compromised 
 ### Dependency Management
 
 **Base Image Pinning:**
-The base image (`node:22-slim`) is pinned to a specific SHA256 digest in `Dockerfile.base` to ensure reproducible builds and prevent supply chain attacks:
+The base image (`node:22-slim`) is pinned to a specific SHA256 digest in `docker/Dockerfile.base` to ensure reproducible builds and prevent supply chain attacks:
 
 ```dockerfile
 FROM node:22-slim@sha256:5373f1906319b3a1f291da5d102f4ce5c77ccbe29eb637f072b6c7b70443fc36
@@ -765,8 +757,8 @@ FROM node:22-slim@sha256:5373f1906319b3a1f291da5d102f4ce5c77ccbe29eb637f072b6c7b
    docker pull node:22-slim
    docker inspect node:22-slim | grep -A 1 "RepoDigests"
    ```
-3. Update the digest in `Dockerfile.base` line 7
-4. Rebuild base image: `docker build -t codeck-base -f Dockerfile.base .`
+3. Update the digest in `docker/Dockerfile.base` line 7
+4. Rebuild base image: `docker build -t codeck-base -f docker/Dockerfile.base .`
 5. Test before deploying to production
 
 **Schedule:** Update base image digest monthly, aligned with Node.js security release schedule (typically 2nd Tuesday of each month).
@@ -825,7 +817,7 @@ curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/inst
 **Usage:**
 ```bash
 # Scan base image after building
-docker build -t codeck-base -f Dockerfile.base .
+docker build -t codeck-base -f docker/Dockerfile.base .
 trivy image codeck-base
 
 # Scan final application image
@@ -962,7 +954,7 @@ docker sbom codeck
 
 ### Read-Only Filesystem
 
-The container runs with a read-only root filesystem (`read_only: true` in docker-compose.yml) with explicit tmpfs mounts for runtime writable directories:
+The container runs with a read-only root filesystem (`read_only: true` in docker/compose.yml) with explicit tmpfs mounts for runtime writable directories:
 
 ```yaml
 read_only: true

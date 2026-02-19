@@ -19,11 +19,11 @@
     "test": "vitest",
     "test:ui": "vitest --ui",
     "test:coverage": "vitest --coverage",
-    "docker:build-base": "docker build -t codeck-base -f Dockerfile.base .",
-    "docker:dev": "docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build",
-    "docker:up": "docker compose up -d",
-    "docker:down": "docker compose down",
-    "docker:logs": "docker compose logs -f",
+    "docker:build-base": "docker build -t codeck-base -f docker/Dockerfile.base .",
+    "docker:dev": "docker compose -f docker/compose.yml -f docker/compose.dev.yml up --build",
+    "docker:up": "docker compose -f docker/compose.yml up -d",
+    "docker:down": "docker compose -f docker/compose.yml down",
+    "docker:logs": "docker compose -f docker/compose.yml logs -f",
     "build:cli": "npm run build -w @codeck/cli"
   },
   "devDependencies": {

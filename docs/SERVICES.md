@@ -523,7 +523,7 @@ Detects network mode, tracks exposed ports, and handles automatic port exposure 
 | `getNetworkInfo` | `(): NetworkInfo` | Full network info (mode, mapped ports, container ID) |
 | `getComposeInfo` | `(): ComposeInfo` | Compose project dir, service name, container image |
 | `addMappedPort` | `(port): void` | Add a port to the in-memory mapped set |
-| `writePortOverride` | `(ports): void` | Write `docker-compose.override.yml` on host via helper container |
+| `writePortOverride` | `(ports): void` | Write `compose.override.yml` on host via helper container |
 | `spawnComposeRestart` | `(): void` | Spawn a detached helper container that runs `docker compose up -d` |
 | `canAutoRestart` | `(): boolean` | True if compose info is available for auto-restart |
 
@@ -539,7 +539,7 @@ Detects network mode, tracks exposed ports, and handles automatic port exposure 
 ### Auto-restart flow
 
 When `POST /api/system/add-port` is called in bridge mode with compose info available:
-1. Generates `docker-compose.override.yml` with new port mapping
+1. Generates `compose.override.yml` with new port mapping
 2. Writes it to the host via a helper container (base64 pipe to avoid escaping)
 3. Saves session state for auto-restore after restart
 4. Responds immediately with `{ success: true, restarting: true }`

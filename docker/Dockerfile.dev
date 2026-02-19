@@ -1,7 +1,7 @@
 # Codeck - Dev Image
 #
 # Build:
-#   docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
+#   docker compose -f docker/compose.yml -f docker/compose.dev.yml up --build
 
 # Stage 1: Build (uses base image which has prebuilt node-pty)
 FROM codeck-base:latest AS builder

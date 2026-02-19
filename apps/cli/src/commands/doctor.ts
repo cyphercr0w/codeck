@@ -98,10 +98,10 @@ export const doctorCommand = new Command('doctor')
         ok('Project path', config.projectPath);
 
         // Docker compose file
-        if (existsSync(join(config.projectPath, 'docker-compose.yml'))) {
-          ok('docker-compose.yml');
+        if (existsSync(join(config.projectPath, 'docker/compose.yml'))) {
+          ok('docker/compose.yml');
         } else {
-          fail('docker-compose.yml not found');
+          fail('docker/compose.yml not found');
           issues++;
         }
 
@@ -115,9 +115,9 @@ export const doctorCommand = new Command('doctor')
         // override
         if (config.extraPorts.length > 0) {
           if (overrideExists(config.projectPath)) {
-            ok('docker-compose.override.yml');
+            ok('docker/compose.override.yml');
           } else {
-            warn('docker-compose.override.yml missing', 'Extra ports configured but override not generated');
+            warn('docker/compose.override.yml missing', 'Extra ports configured but override not generated');
           }
         }
 

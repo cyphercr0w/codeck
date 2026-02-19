@@ -139,7 +139,7 @@ export function removeMappedPort(port: number): void {
 }
 
 /**
- * Write docker-compose.override.yml on the host filesystem via a helper container.
+ * Write docker/compose.override.yml on the host filesystem via a helper container.
  * Uses the sandbox image (already local) with entrypoint override.
  * The override adds port mappings and updates CODECK_MAPPED_PORTS env var.
  *
@@ -181,14 +181,14 @@ export function writePortOverride(ports: number[]): void {
     '-v', `${composeProjectDir}:/compose`,
     '--entrypoint', 'sh',
     containerImage,
-    '-c', 'base64 -d > /compose/docker-compose.override.yml',
+    '-c', 'mkdir -p /compose/docker && base64 -d > /compose/docker/compose.override.yml',
   ], { input: b64, encoding: 'utf8', timeout: 30000 });
 
   console.log(`[PortManager] Wrote override: ports=[${overridePorts.join(',')}], env=CODECK_MAPPED_PORTS=${allPortsList.join(',')}`);
 }
 
 /**
- * Delete docker-compose.override.yml on the host filesystem via a helper container.
+ * Delete docker/compose.override.yml on the host filesystem via a helper container.
  * Used when all extra port mappings are removed.
  */
 export function deletePortOverride(): void {
@@ -201,7 +201,7 @@ export function deletePortOverride(): void {
     '-v', `${composeProjectDir}:/compose`,
     '--entrypoint', 'sh',
     containerImage,
-    '-c', 'rm -f /compose/docker-compose.override.yml',
+    '-c', 'rm -f /compose/docker/compose.override.yml',
   ], { encoding: 'utf8', timeout: 15000 });
 
   console.log('[PortManager] Deleted override file (no extra ports)');

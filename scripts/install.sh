@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Codeck Installation Script
-# Clones the repo, builds from source, and installs as a systemd service.
+# Codeck Installation Script — Hosted Mode
+#
+# Deploys Codeck as: daemon (host, systemd) + runtime (Docker container).
+# The daemon serves the web UI on port 80 and proxies to the runtime container.
 #
 # Usage:
 #   curl -fsSL https://raw.githubusercontent.com/cyphercr0w/codeck/main/scripts/install.sh | sudo bash
@@ -86,20 +88,18 @@ else
 fi
 log "Package manager: $PKG_MANAGER"
 
-# ─── Isolation warning ──────────────────────────────────────────────
+# ─── Security warning ────────────────────────────────────────────────
 
 echo ""
 echo -e "${YELLOW}┌──────────────────────────────────────────────────────────┐${NC}"
 echo -e "${YELLOW}│                  ⚠  SECURITY WARNING                    │${NC}"
 echo -e "${YELLOW}├──────────────────────────────────────────────────────────┤${NC}"
-echo -e "${YELLOW}│  This installs Codeck directly on the host without       │${NC}"
-echo -e "${YELLOW}│  container isolation.                                     │${NC}"
+echo -e "${YELLOW}│  This installs Codeck in hosted mode:                    │${NC}"
+echo -e "${YELLOW}│    • Daemon runs on the host (serves web UI on port 80)  │${NC}"
+echo -e "${YELLOW}│    • Runtime runs in a Docker container (sandboxed)      │${NC}"
 echo -e "${YELLOW}│                                                           │${NC}"
-echo -e "${YELLOW}│  The agent (Claude Code) will run as the 'codeck' user   │${NC}"
-echo -e "${YELLOW}│  and has full access to:                                  │${NC}"
-echo -e "${YELLOW}│    • the host filesystem                                  │${NC}"
-echo -e "${YELLOW}│    • network interfaces                                   │${NC}"
-echo -e "${YELLOW}│    • the ability to run arbitrary commands                │${NC}"
+echo -e "${YELLOW}│  The agent (Claude Code) runs inside the container with  │${NC}"
+echo -e "${YELLOW}│  access to the workspace directory and Docker socket.    │${NC}"
 echo -e "${YELLOW}│                                                           │${NC}"
 echo -e "${YELLOW}│  Recommended: run on a dedicated VPS, not your personal  │${NC}"
 echo -e "${YELLOW}│  workstation. For local use, prefer Docker mode instead.  │${NC}"
@@ -107,8 +107,7 @@ echo -e "${YELLOW}└───────────────────�
 echo ""
 
 if [ -t 0 ]; then
-  # Interactive shell — require explicit confirmation
-  read -r -p "Continue anyway? [y/N] " _confirm
+  read -r -p "Continue? [y/N] " _confirm
   case "$_confirm" in
     [yY][eE][sS]|[yY]) : ;;
     *)
@@ -117,7 +116,6 @@ if [ -t 0 ]; then
       ;;
   esac
 else
-  # Piped execution (curl | bash) — show countdown so user can Ctrl+C
   echo -e "${YELLOW}[!]${NC} Running non-interactively. Continuing in 10 seconds — press Ctrl+C to abort."
   for i in 10 9 8 7 6 5 4 3 2 1; do
     printf "\r    %d... " "$i"
@@ -135,13 +133,13 @@ step "System dependencies"
 case "$PKG_MANAGER" in
   apt)
     apt-get update -qq
-    apt-get install -y -qq curl git build-essential python3 rsync >/dev/null
+    apt-get install -y -qq curl git >/dev/null
     ;;
   dnf|yum)
-    $PKG_MANAGER install -y -q curl git gcc gcc-c++ make python3 rsync >/dev/null
+    $PKG_MANAGER install -y -q curl git >/dev/null
     ;;
 esac
-log "Installed: curl, git, build-essential, python3, rsync"
+log "Installed: curl, git"
 
 # ─── Node.js ────────────────────────────────────────────────────────
 
@@ -172,7 +170,7 @@ else
   log "Node.js $(node -v) installed"
 fi
 
-# ─── Docker (for Claude to use) ─────────────────────────────────────
+# ─── Docker ──────────────────────────────────────────────────────────
 
 step "Docker"
 
@@ -186,43 +184,13 @@ else
   log "Docker installed: $(docker --version)"
 fi
 
-# ─── GitHub CLI ─────────────────────────────────────────────────────
-
-step "GitHub CLI (gh)"
-
-if command -v gh &>/dev/null; then
-  log "GitHub CLI already installed: $(gh --version | head -1)"
-else
-  log "Installing GitHub CLI..."
-  case "$PKG_MANAGER" in
-    apt)
-      curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
-        | dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg 2>/dev/null
-      echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" \
-        > /etc/apt/sources.list.d/github-cli.list
-      apt-get update -qq
-      apt-get install -y -qq gh >/dev/null
-      ;;
-    dnf|yum)
-      $PKG_MANAGER install -y -q 'dnf-command(config-manager)' 2>/dev/null || true
-      $PKG_MANAGER config-manager --add-repo https://cli.github.com/packages/rpm/gh-cli.repo 2>/dev/null || true
-      $PKG_MANAGER install -y -q gh >/dev/null
-      ;;
-  esac
-  log "GitHub CLI installed: $(gh --version | head -1)"
+# Verify Docker is running
+if ! docker info &>/dev/null; then
+  systemctl start docker
+  sleep 2
+  docker info &>/dev/null || error "Docker is not running"
 fi
-
-# ─── Claude Code CLI ────────────────────────────────────────────────
-
-step "Claude Code CLI"
-
-if command -v claude &>/dev/null; then
-  log "Claude CLI already installed: $(claude --version 2>/dev/null || echo 'unknown')"
-else
-  log "Installing Claude Code CLI (this takes a minute)..."
-  npm install -g @anthropic-ai/claude-code 2>/dev/null
-  log "Claude CLI installed: $(claude --version 2>/dev/null || echo 'ok')"
-fi
+log "Docker is running"
 
 # ─── User and directories ───────────────────────────────────────────
 
@@ -239,7 +207,7 @@ usermod -aG docker "$CODECK_USER" 2>/dev/null || true
 log "User '$CODECK_USER' in docker group"
 
 CODECK_HOME="/home/$CODECK_USER"
-for dir in "$CODECK_HOME/workspace" "$CODECK_HOME/.codeck" "$CODECK_HOME/.claude" "$CODECK_HOME/.ssh"; do
+for dir in "$CODECK_HOME/workspace" "$CODECK_HOME/.codeck" "$CODECK_HOME/.claude" "$CODECK_HOME/.ssh" "$CODECK_HOME/.config/gh"; do
   mkdir -p "$dir"
 done
 chmod 700 "$CODECK_HOME/.codeck" "$CODECK_HOME/.claude" "$CODECK_HOME/.ssh"
@@ -247,7 +215,6 @@ chown -R "$CODECK_USER:$CODECK_USER" "$CODECK_HOME"
 log "Directories ready under $CODECK_HOME"
 
 # Create /workspace symlink so agent memory paths (/workspace/.codeck/...) resolve correctly
-# on non-Docker deployments where the workspace lives at a different absolute path.
 if [ ! -e /workspace ]; then
   ln -sf "$CODECK_HOME/workspace" /workspace
   log "/workspace → $CODECK_HOME/workspace symlink created"
@@ -257,26 +224,23 @@ else
   log "WARNING: /workspace exists as a non-symlink — skipping (may be Docker volume)"
 fi
 
-# Sudoers: allow codeck user to restart the service and sync files (for self-deploy)
+# Sudoers: allow codeck user to manage the service and Docker compose
 SUDOERS_FILE="/etc/sudoers.d/codeck"
 cat > "$SUDOERS_FILE" <<'SUDOERS'
-# Codeck self-deploy: restart service, sync files, fix ownership
+# Codeck: service management and Docker compose
 codeck ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart codeck
 codeck ALL=(ALL) NOPASSWD: /usr/bin/systemctl stop codeck
 codeck ALL=(ALL) NOPASSWD: /usr/bin/systemctl start codeck
-codeck ALL=(ALL) NOPASSWD: /usr/bin/rsync *
-codeck ALL=(ALL) NOPASSWD: /usr/bin/cp *
+codeck ALL=(ALL) NOPASSWD: /usr/bin/docker compose *
 codeck ALL=(ALL) NOPASSWD: /usr/bin/chown *
 SUDOERS
 chmod 440 "$SUDOERS_FILE"
-log "Sudoers configured (self-deploy permissions)"
+log "Sudoers configured"
 
 # ─── Git identity ───────────────────────────────────────────────────
 
 step "Git identity"
 
-# Set git committer name for the codeck user (displayed on GitHub commits).
-# The email should be configured after gh auth login to link commits to a GitHub avatar.
 sudo -u "$CODECK_USER" git config --global user.name "Codeck"
 log "Git user.name = Codeck (set for $CODECK_USER)"
 
@@ -298,13 +262,41 @@ fi
 cd "$CODECK_DIR"
 
 log "Installing dependencies..."
-npm ci 2>&1 | tail -3
+npm ci --ignore-scripts 2>&1 | tail -3
 
-log "Building (frontend + backend)..."
+log "Building (TypeScript compile)..."
 npm run build 2>&1 | tail -5
 
 chown -R "$CODECK_USER:$CODECK_USER" "$CODECK_DIR"
 log "Codeck built at $CODECK_DIR"
+
+# ─── Docker images ───────────────────────────────────────────────────
+
+step "Docker images"
+
+log "Building base image (this takes a few minutes on first run)..."
+docker build -t codeck-base -f docker/Dockerfile.base . 2>&1 | tail -5
+
+log "Building runtime image..."
+docker build -t codeck -f docker/Dockerfile . 2>&1 | tail -5
+
+log "Docker images ready"
+
+# ─── Environment file ────────────────────────────────────────────────
+
+step "Environment file"
+
+CODECK_UID=$(id -u "$CODECK_USER")
+CODECK_GID=$(id -g "$CODECK_USER")
+
+ENV_FILE="$CODECK_DIR/.env"
+cat > "$ENV_FILE" <<EOF
+# Codeck hosted mode — generated by install.sh
+CODECK_UID=$CODECK_UID
+CODECK_GID=$CODECK_GID
+EOF
+chown "$CODECK_USER:$CODECK_USER" "$ENV_FILE"
+log "Created $ENV_FILE (UID=$CODECK_UID, GID=$CODECK_GID)"
 
 # ─── Systemd service ────────────────────────────────────────────────
 
@@ -313,8 +305,8 @@ step "Systemd service"
 cat > /etc/systemd/system/codeck.service <<'UNIT'
 [Unit]
 Description=Codeck - Claude Code Sandbox
-After=network.target
-Wants=docker.service
+After=network.target docker.service
+Requires=docker.service
 
 [Service]
 Type=simple
@@ -324,20 +316,20 @@ WorkingDirectory=/opt/codeck
 
 Environment="PATH=/usr/local/bin:/usr/bin:/bin"
 Environment="NODE_ENV=production"
-Environment="CODECK_PORT=80"
-Environment="WORKSPACE=/home/codeck/workspace"
-Environment="CODECK_DIR=/home/codeck/.codeck"
+Environment="CODECK_DAEMON_PORT=80"
+Environment="CODECK_RUNTIME_URL=http://127.0.0.1:7777"
+Environment="CODECK_RUNTIME_WS_URL=http://127.0.0.1:7778"
+Environment="CODECK_DIR=/workspace/.codeck"
 Environment="HOME=/home/codeck"
 
-ExecStart=/usr/bin/node /opt/codeck/apps/runtime/dist/index.js --web
+ExecStartPre=/usr/bin/docker compose -f /opt/codeck/docker/compose.hosted.yml up -d --wait
+ExecStart=/usr/bin/node /opt/codeck/apps/daemon/dist/index.js
+ExecStopPost=/usr/bin/docker compose -f /opt/codeck/docker/compose.hosted.yml down
+
 Restart=always
 RestartSec=10
-
-# Resource limits
-CPUQuota=200%
-MemoryMax=4G
-
-# Security
+CPUQuota=100%
+MemoryMax=512M
 NoNewPrivileges=true
 ProtectSystem=full
 AmbientCapabilities=CAP_NET_BIND_SERVICE
@@ -351,7 +343,7 @@ systemctl enable codeck >/dev/null 2>&1
 systemctl start codeck
 log "Service installed and started"
 
-sleep 2
+sleep 3
 if systemctl is-active --quiet codeck; then
   log "Service is running!"
 else
@@ -383,16 +375,22 @@ echo -e "${GREEN}═════════════════════
 echo ""
 echo -e "  Open: ${CYAN}http://${PUBLIC_IP}${NC}"
 echo ""
+echo "  Architecture:"
+echo "    Daemon (host)    → :80 (web UI + proxy)"
+echo "    Runtime (Docker) → :7777/:7778 (localhost only)"
+echo ""
 echo "  Commands:"
 echo "    systemctl status codeck     — status"
-echo "    systemctl restart codeck    — restart"
-echo "    journalctl -u codeck -f     — logs"
+echo "    systemctl restart codeck    — restart (daemon + container)"
+echo "    journalctl -u codeck -f     — daemon logs"
+echo "    docker logs codeck-runtime  — runtime logs"
 echo ""
 echo "  Update:"
-echo "    cd /opt/codeck && sudo git pull && sudo npm ci && sudo npm run build && sudo systemctl restart codeck"
+echo "    cd /opt/codeck && sudo git pull && npm ci --ignore-scripts && npm run build"
+echo "    docker build -t codeck -f docker/Dockerfile . && sudo systemctl restart codeck"
 echo ""
 echo "  Paths:"
 echo "    /opt/codeck/                — app code"
-echo "    /home/codeck/workspace/     — workspace"
-echo "    /home/codeck/.codeck/       — config & memory"
+echo "    /home/codeck/workspace/     — workspace (bind-mounted into container)"
+echo "    /home/codeck/.claude/       — Claude CLI config"
 echo ""

@@ -1,18 +1,20 @@
 # Codeck
 #
 # Usage:
-#   docker compose up                            # Webapp mode (localhost)
-#   docker compose run --rm sandbox --help       # Show help
+#   docker compose -f docker/compose.yml up
+#   docker compose -f docker/compose.yml run --rm sandbox --help
 #
-# LAN access (Linux — codeck.local from any device):
-#   docker compose -f docker-compose.yml -f docker-compose.lan.yml up
+# LAN access (codeck.local from any device):
+#   docker compose -f docker/compose.yml -f docker/compose.lan.yml up
 #
 # Dev (build from source):
-#   docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
+#   docker compose -f docker/compose.yml -f docker/compose.dev.yml up --build
 
 services:
   sandbox:
-    build: .
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
     restart: unless-stopped
     init: true          # tini as PID 1 — reaps zombie processes from dev servers
     stdin_open: true

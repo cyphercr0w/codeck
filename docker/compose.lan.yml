@@ -9,7 +9,7 @@
 #   cd scripts && npm install && node scripts/mdns-advertiser.cjs
 #
 # Usage:
-#   docker compose -f docker-compose.yml -f docker-compose.lan.yml up
+#   docker compose -f docker/compose.yml -f docker/compose.lan.yml up
 #
 # Requirements:
 #   - avahi-daemon or libnss-mdns on client devices (most Linux distros, all Apple devices have this)

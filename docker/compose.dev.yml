@@ -1,0 +1,10 @@
+# Codeck - Dev Override
+#
+# Usage:
+#   docker compose -f docker/compose.yml -f docker/compose.dev.yml up --build
+
+services:
+  sandbox:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.dev

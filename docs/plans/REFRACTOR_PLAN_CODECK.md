@@ -66,7 +66,7 @@ scripts/
 
 - [x] MILESTONE 0 — PREPARACIÓN (completado)
 - [x] MILESTONE 1 — WEBAPP (completado)
-- [ ] MILESTONE 2 — RUNTIME (siguiente)
+- [ ] MILESTONE 2 — RUNTIME (en progreso: 2.1 completado, siguiente: 2.2)
 
 ---
 
@@ -100,9 +100,9 @@ DONE cuando:
 # MILESTONE 2 — RUNTIME
 
 ## 2.1 Server base
-- [ ] Crear apps/runtime
-- [ ] Implementar /internal/status
-- [ ] Servir web en modo local
+- [x] Crear apps/runtime
+- [x] Implementar /internal/status
+- [x] Servir web en modo local
 
 ## 2.2 PTY
 - [ ] Migrar node-pty

@@ -8,7 +8,7 @@ Este archivo registra el progreso y decisiones técnicas.
 
 Branch: refactor/daemon-runtime-gateway
 Modo objetivo: local + gateway
-Último bloque completado: MILESTONE 1 — WEBAPP
+Último bloque completado: MILESTONE 2.1 — RUNTIME SERVER BASE
 
 ---
 
@@ -66,6 +66,44 @@ Modo objetivo: local + gateway
 - El `tsconfig.json` root excluye `apps` completo para evitar que tsc intente compilar código JSX del frontend
 
 **Smoke test:** `npm run build` — OK (frontend vite build → apps/web/dist + backend tsc + copy:templates). Startup test confirmó resolución correcta de paths.
+
+---
+
+### Iteración 3 — MILESTONE 2.1: RUNTIME SERVER BASE
+**Fecha:** 2026-02-19
+
+**Bloque:** Milestone 2.1 — Crear apps/runtime, /internal/status, servir web en local mode
+
+**Cambios:**
+- Migrado todo el backend de `src/` a `apps/runtime/src/` via `git mv` (preserva historial):
+  - `src/index.ts` → `apps/runtime/src/index.ts`
+  - `src/web/{server,websocket,logger}.ts` → `apps/runtime/src/web/`
+  - `src/routes/*.ts` → `apps/runtime/src/routes/`
+  - `src/services/*.ts` → `apps/runtime/src/services/`
+  - `src/templates/` → `apps/runtime/src/templates/`
+- Creado `apps/runtime/tsconfig.json` con misma configuración que root (ES2022, NodeNext, strict)
+- Actualizado `apps/runtime/package.json` con dependencias reales (express, helmet, ws, node-pty, etc.), scripts de build (`tsc && copy:templates`), y optionalDependencies
+- Removidas dependencias backend del root `package.json` — ahora viven solo en `@codeck/runtime`
+- Actualizado root `package.json`: build:backend usa workspace (`npm run build -w @codeck/runtime`), start/dev apuntan a `apps/runtime/dist/index.js`
+- Root `tsconfig.json` convertido a config base inerte (sin archivos propios, sin outDir/rootDir)
+- Agregado endpoint `/internal/status` en server.ts — retorna `{ status: "ok", uptime: <seconds> }`, registrado antes del auth middleware
+- Actualizado static file serving: usa constante `WEB_DIST` calculada desde `__dirname` (`../../../web/dist`)
+- Actualizado `Dockerfile`: COPY paths a `apps/runtime/dist/`, `apps/web/dist/`, templates; ENTRYPOINT a `apps/runtime/dist/index.js`
+- Actualizado `Dockerfile.dev`: COPY sources desde `apps/`, dist output desde workspace paths
+- Actualizados scripts de deploy: `codeck.service`, `install.sh`, `dev-setup.sh` — ExecStart apunta a `apps/runtime/dist/index.js`
+
+**Problemas:** Ninguno.
+
+**Decisiones:**
+- Se usa `git mv` para todos los movimientos — preserva historial de git y permite detectar renames
+- El directorio `src/` se elimina completamente; ya no existe en el repo
+- `/internal/status` se registra ANTES del auth middleware — es un endpoint interno para health checks del daemon, no requiere autenticación
+- Las rutas relativas internas entre services/routes/web no cambian — la estructura interna de `src/` se mantuvo idéntica dentro de `apps/runtime/src/`
+- Las dependencias de backend se mueven completamente al workspace `@codeck/runtime`; el root solo mantiene devDeps compartidas (vitest, typescript, tsx, vite)
+- El root tsconfig.json queda como config base sin compilar nada — cada workspace tiene su propio tsconfig
+- La ruta a `apps/web/dist/` se calcula con `WEB_DIST = join(__dirname, '../../../web/dist')` desde `apps/runtime/dist/web/server.js`
+
+**Smoke test:** `npm run build` — OK (frontend vite → apps/web/dist + backend tsc → apps/runtime/dist + copy:templates). Startup test en port 9999 confirmó: `/internal/status` → `{"status":"ok","uptime":3.02}`, `/api/auth/status` → `{"configured":true}`, SPA catch-all → HTTP 200. Shutdown limpio con todos los servicios.
 
 ---
 

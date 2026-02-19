@@ -189,7 +189,7 @@ Environment="WORKSPACE=$CODECK_HOME/workspace"
 Environment="CODECK_DIR=$CODECK_HOME/.codeck"
 Environment="HOME=$CODECK_HOME"
 
-ExecStart=/usr/bin/node $CODECK_DIR/dist/index.js --web
+ExecStart=/usr/bin/node $CODECK_DIR/apps/runtime/dist/index.js --web
 Restart=always
 RestartSec=10
 

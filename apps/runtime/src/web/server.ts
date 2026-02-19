@@ -40,6 +40,8 @@ import { cleanupOldSessions } from '../services/session-summarizer.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PORT = parseInt(process.env.CODECK_PORT || '80', 10);
+// Resolve path to apps/web/dist from apps/runtime/dist/web/
+const WEB_DIST = join(__dirname, '../../../web/dist');
 
 function logMemoryConfig(): void {
   const heapStats = v8.getHeapStatistics();
@@ -88,8 +90,14 @@ export async function startWebServer(): Promise<void> {
 
   app.use(express.json());
 
+  // Internal health endpoint — used by daemon for runtime health checks
+  // Registered before auth middleware; not exposed via /api prefix
+  app.get('/internal/status', (_req, res) => {
+    res.json({ status: 'ok', uptime: process.uptime() });
+  });
+
   // Hashed assets (JS/CSS) get long cache; index.html always revalidates
-  app.use(express.static(join(__dirname, '../../apps/web/dist'), {
+  app.use(express.static(WEB_DIST, {
     setHeaders(res, filePath) {
       if (filePath.endsWith('.html')) {
         res.setHeader('Cache-Control', 'no-cache');
@@ -285,7 +293,7 @@ export async function startWebServer(): Promise<void> {
 
   // SPA catch-all — serve index.html for all non-API routes (client-side routing)
   app.get('*', (_req, res) => {
-    res.sendFile(join(__dirname, '../../apps/web/dist', 'index.html'));
+    res.sendFile(join(WEB_DIST, 'index.html'));
   });
 
   // Centralized error handler — catch-all for unhandled errors in routes (CWE-209)

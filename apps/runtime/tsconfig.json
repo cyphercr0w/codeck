@@ -10,9 +10,10 @@
     "declarationMap": true,
     "sourceMap": true,
     "forceConsistentCasingInFileNames": true,
-    "resolveJsonModule": true
+    "resolveJsonModule": true,
+    "outDir": "./dist",
+    "rootDir": "./src"
   },
-  "references": [],
-  "files": [],
-  "exclude": ["apps", "packages"]
+  "include": ["src/**/*"],
+  "exclude": ["dist"]
 }

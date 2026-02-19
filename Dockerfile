@@ -14,11 +14,12 @@ COPY package.json package-lock.json ./
 RUN if [ -f package-lock.json ]; then npm ci --omit=dev; else npm install --omit=dev; fi \
     && cp -r /prebuilt/node_modules/better-sqlite3 node_modules/better-sqlite3 2>/dev/null || true
 
-# Copy built output
-COPY dist ./dist
+# Copy built outputs (runtime backend + web frontend)
+COPY apps/runtime/dist ./apps/runtime/dist
+COPY apps/web/dist ./apps/web/dist
 
-# Copy static assets (Vite already built frontend to dist/web/public)
-COPY src/templates ./dist/templates
+# Copy templates into runtime dist (same layout as local build)
+COPY apps/runtime/src/templates ./apps/runtime/dist/templates
 
 VOLUME ["/workspace", "/root/.claude"]
 
@@ -35,5 +36,5 @@ ENV WORKSPACE=/workspace
 # If you increase the container memory limit, increase this proportionally.
 ENV NODE_OPTIONS="--max-old-space-size=2048"
 
-ENTRYPOINT ["/usr/local/bin/init-keyring.sh", "env", "NODE_ENV=production", "node", "dist/index.js"]
+ENTRYPOINT ["/usr/local/bin/init-keyring.sh", "env", "NODE_ENV=production", "node", "apps/runtime/dist/index.js"]
 CMD ["--web"]

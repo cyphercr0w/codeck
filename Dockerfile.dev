@@ -18,19 +18,21 @@ RUN rm -rf ./node_modules/node-pty && cp -r /prebuilt/node_modules/node-pty ./no
 
 # Then copy source and build (only this layer rebuilds on code changes)
 COPY tsconfig.json ./
-COPY src/ ./src/
+COPY apps/runtime/ ./apps/runtime/
+COPY apps/web/ ./apps/web/
 RUN npm run build
 
 # Stage 2: Runtime
 FROM codeck-base:latest
 WORKDIR /app
 
-COPY --from=builder /build/dist ./dist
+COPY --from=builder /build/apps/runtime/dist ./apps/runtime/dist
+COPY --from=builder /build/apps/web/dist ./apps/web/dist
 COPY --from=builder /build/node_modules ./node_modules
 COPY --from=builder /build/package.json ./
 
-# Copy static assets (Vite already built frontend to dist/web/public)
-COPY src/templates ./dist/templates
+# Copy templates into runtime dist (same layout as local build)
+COPY apps/runtime/src/templates ./apps/runtime/dist/templates
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
   CMD curl -f http://localhost/api/auth/status || exit 1
@@ -45,5 +47,5 @@ ENV WORKSPACE=/workspace
 # If you increase the container memory limit, increase this proportionally.
 ENV NODE_OPTIONS="--max-old-space-size=2048"
 
-ENTRYPOINT ["/usr/local/bin/init-keyring.sh", "env", "NODE_ENV=production", "node", "dist/index.js"]
+ENTRYPOINT ["/usr/local/bin/init-keyring.sh", "env", "NODE_ENV=production", "node", "apps/runtime/dist/index.js"]
 CMD ["--web"]

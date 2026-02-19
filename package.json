@@ -24,7 +24,7 @@
     "docker:up": "docker compose up -d",
     "docker:down": "docker compose down",
     "docker:logs": "docker compose logs -f",
-    "build:cli": "cd cli && npm run build"
+    "build:cli": "npm run build -w @codeck/cli"
   },
   "devDependencies": {
     "@types/supertest": "^6.0.3",

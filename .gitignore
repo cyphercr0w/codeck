@@ -71,9 +71,5 @@ pnpm-debug.log*
 scripts/node_modules/
 scripts/package-lock.json
 
-# CLI build artifacts
-cli/dist/
-cli/node_modules/
-
 # Docker (local overrides)
 docker-compose.override.yml

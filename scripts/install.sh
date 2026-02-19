@@ -320,11 +320,13 @@ Environment="CODECK_DAEMON_PORT=80"
 Environment="CODECK_RUNTIME_URL=http://127.0.0.1:7777"
 Environment="CODECK_RUNTIME_WS_URL=http://127.0.0.1:7778"
 Environment="CODECK_DIR=/workspace/.codeck"
+Environment="CODECK_PROJECT_DIR=/opt/codeck"
+Environment="CODECK_COMPOSE_FILE=docker/compose.managed.yml"
 Environment="HOME=/home/codeck"
 
-ExecStartPre=/usr/bin/docker compose -f /opt/codeck/docker/compose.hosted.yml up -d --wait
+ExecStartPre=/usr/bin/docker compose -f /opt/codeck/docker/compose.managed.yml up -d --wait
 ExecStart=/usr/bin/node /opt/codeck/apps/daemon/dist/index.js
-ExecStopPost=/usr/bin/docker compose -f /opt/codeck/docker/compose.hosted.yml down
+ExecStopPost=/usr/bin/docker compose -f /opt/codeck/docker/compose.managed.yml down
 
 Restart=always
 RestartSec=10

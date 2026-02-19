@@ -13,7 +13,7 @@ export const openCommand = new Command('open')
     }
 
     const config = getConfig();
-    const containers = await getContainerStatus(config.projectPath);
+    const containers = await getContainerStatus(config.projectPath, config.mode);
     const isRunning = containers.some(c => c.state === 'running');
 
     if (!isRunning) {

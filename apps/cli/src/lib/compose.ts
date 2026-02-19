@@ -16,7 +16,7 @@ export function generateOverrideYaml(extraPorts: number[], codeckPort: number): 
 
   const doc = {
     services: {
-      sandbox: {
+      sandbox: {  // Isolated mode service name
         ports: overridePorts.map(p => `${p}:${p}`),
         environment: [
           `CODECK_MAPPED_PORTS=${allPorts.join(',')}`,

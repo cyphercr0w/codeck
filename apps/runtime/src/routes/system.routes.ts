@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { request as httpRequest } from 'http';
 import {
   getNetworkInfo, isPortExposed, getMappedPorts, getCodeckPort,
   addMappedPort, removeMappedPort, writePortOverride, spawnComposeRestart, canAutoRestart,
@@ -7,25 +8,73 @@ import { saveSessionState, updateAgentBinary } from '../services/console.js';
 
 const router = Router();
 
+const DAEMON_URL = process.env.CODECK_DAEMON_URL || '';
+
+/**
+ * Delegate a request to the daemon's port management API.
+ * Used in managed mode where the daemon (on the host) handles port exposure.
+ */
+function delegateToDaemon(
+  method: string,
+  path: string,
+  body: Record<string, unknown> | null,
+): Promise<{ status: number; data: Record<string, unknown> }> {
+  return new Promise((resolve, reject) => {
+    const url = new URL(path, DAEMON_URL);
+    const bodyStr = body ? JSON.stringify(body) : null;
+    const req = httpRequest(url.href, {
+      method,
+      headers: bodyStr ? { 'content-type': 'application/json', 'content-length': String(Buffer.byteLength(bodyStr)) } : {},
+      timeout: 30_000,
+    }, (res) => {
+      let data = '';
+      res.on('data', (chunk: Buffer) => { data += chunk; });
+      res.on('end', () => {
+        try {
+          resolve({ status: res.statusCode || 500, data: JSON.parse(data) });
+        } catch {
+          resolve({ status: res.statusCode || 500, data: { error: 'Invalid response from daemon' } });
+        }
+      });
+    });
+    req.on('error', (err) => reject(err));
+    req.on('timeout', () => { req.destroy(); reject(new Error('Daemon timeout')); });
+    if (bodyStr) req.write(bodyStr);
+    req.end();
+  });
+}
+
 // GET /api/system/network-info — returns network mode, mapped ports, container ID
 router.get('/network-info', (_req, res) => {
   res.json(getNetworkInfo());
 });
 
-// POST /api/system/add-port — expose a port to the host, auto-restarting if possible
-router.post('/add-port', (req, res) => {
+// POST /api/system/add-port — expose a port to the host
+router.post('/add-port', async (req, res) => {
   const { port } = req.body;
   if (!port || typeof port !== 'number' || port < 1 || port > 65535) {
     res.status(400).json({ error: 'Invalid port number (1-65535)' });
     return;
   }
 
+  // Managed mode: delegate to daemon
+  if (DAEMON_URL) {
+    try {
+      const result = await delegateToDaemon('POST', '/api/system/add-port', { port });
+      res.status(result.status).json(result.data);
+    } catch (e) {
+      console.error('[System] Daemon delegation failed:', (e as Error).message);
+      res.status(502).json({ success: false, error: 'Could not reach daemon for port management' });
+    }
+    return;
+  }
+
+  // Isolated mode: existing Docker CLI path (requires Docker socket)
   if (isPortExposed(port)) {
     res.json({ success: true, alreadyMapped: true });
     return;
   }
 
-  // Try auto-restart with new port mapping
   if (!canAutoRestart()) {
     res.json({
       success: false,
@@ -36,25 +85,15 @@ router.post('/add-port', (req, res) => {
   }
 
   try {
-    // 1. Write docker/compose.override.yml on the host via helper container
     const allPorts = [...getMappedPorts(), port];
     writePortOverride(allPorts);
-
-    // 2. Update in-memory state
     addMappedPort(port);
-
-    // 3. Save session state so sessions auto-restore after restart
     saveSessionState('port-add', `Port ${port} has been exposed. Continue your previous task.`);
-
-    // 4. Respond immediately
     res.json({ success: true, restarting: true });
-
-    // 5. Spawn restart helper after response is sent
     setTimeout(() => {
       try {
         spawnComposeRestart();
       } catch (e) {
-        // Rollback: remove the port we just added since restart failed
         removeMappedPort(port);
         console.error('[System] Failed to spawn restart, rolled back port add:', (e as Error).message);
       }
@@ -69,14 +108,27 @@ router.post('/add-port', (req, res) => {
   }
 });
 
-// POST /api/system/remove-port — remove a port mapping and restart
-router.post('/remove-port', (req, res) => {
+// POST /api/system/remove-port — remove a port mapping
+router.post('/remove-port', async (req, res) => {
   const { port } = req.body;
   if (!port || typeof port !== 'number' || port < 1 || port > 65535) {
     res.status(400).json({ error: 'Invalid port number (1-65535)' });
     return;
   }
 
+  // Managed mode: delegate to daemon
+  if (DAEMON_URL) {
+    try {
+      const result = await delegateToDaemon('POST', '/api/system/remove-port', { port });
+      res.status(result.status).json(result.data);
+    } catch (e) {
+      console.error('[System] Daemon delegation failed:', (e as Error).message);
+      res.status(502).json({ success: false, error: 'Could not reach daemon for port management' });
+    }
+    return;
+  }
+
+  // Isolated mode: existing Docker CLI path
   if (port === getCodeckPort()) {
     res.status(400).json({ error: 'Cannot remove the Codeck port' });
     return;
@@ -97,20 +149,11 @@ router.post('/remove-port', (req, res) => {
   }
 
   try {
-    // 1. Remove from in-memory state
     removeMappedPort(port);
-
-    // 2. Rewrite override with remaining ports (or delete if none left)
     const remainingPorts = getMappedPorts();
     writePortOverride(remainingPorts);
-
-    // 3. Save session state for auto-restore after restart
     saveSessionState('port-remove', `Port ${port} has been unmapped. Continue your previous task.`);
-
-    // 4. Respond immediately
     res.json({ success: true, restarting: true, remainingPorts });
-
-    // 5. Spawn restart helper after response is sent
     setTimeout(() => {
       try {
         spawnComposeRestart();
@@ -120,7 +163,6 @@ router.post('/remove-port', (req, res) => {
     }, 500);
   } catch (e) {
     console.error('[System] Port removal failed:', (e as Error).message);
-    // Re-add the port since the override write failed
     addMappedPort(port);
     res.json({
       success: false,

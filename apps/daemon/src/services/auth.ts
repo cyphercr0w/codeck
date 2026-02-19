@@ -1,6 +1,7 @@
 import { existsSync, readFileSync, writeFileSync, mkdirSync, renameSync, unlinkSync } from 'fs';
 import { scrypt, randomBytes, randomUUID, timingSafeEqual, ScryptOptions } from 'crypto';
 import { join, dirname } from 'path';
+import { CODECK_DIR } from '../lib/paths.js';
 
 // ── Helpers ──
 
@@ -29,7 +30,6 @@ function atomicWriteFileSync(filePath: string, data: string, options?: { mode?: 
 
 // ── Config ──
 
-const CODECK_DIR = process.env.CODECK_DIR || '/workspace/.codeck';
 const AUTH_FILE = join(CODECK_DIR, 'auth.json');
 const SESSIONS_FILE = join(CODECK_DIR, 'daemon-sessions.json');
 

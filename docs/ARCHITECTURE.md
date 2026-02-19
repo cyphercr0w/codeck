@@ -35,7 +35,7 @@ apps/
 
 All four apps build independently (`npm run build`). The runtime and daemon share no code — communication is HTTP/WS over the network.
 
-### Local mode (single process)
+### Isolated mode (single container)
 
 ```
 ┌─────────────────┐
@@ -57,9 +57,9 @@ All four apps build independently (`npm run build`). The runtime and daemon shar
 └───────────────────────────────────┘
 ```
 
-The runtime serves the SPA, handles auth, and runs all backend logic. This is the default mode for local Docker deployments and systemd installs.
+The runtime serves the SPA, handles auth, and runs all backend logic. No daemon, no Docker socket. This is the default mode — simple and secure. Works on Linux, macOS, and Windows.
 
-### Gateway mode (two processes)
+### Managed mode (daemon on host + runtime in container)
 
 ```
 ┌─────────────────┐
@@ -70,17 +70,18 @@ The runtime serves the SPA, handles auth, and runs all backend logic. This is th
    HTTP + WebSocket
          │
 ┌────────┴──────────────────────────┐
-│     Daemon (:8080, exposed)       │
+│     Daemon (:8080, host process)  │
 │                                    │
 │  ├─ Static Files (apps/web/dist)  │
 │  ├─ Auth (login/logout/sessions)  │
 │  ├─ Rate Limiting (auth + writes) │
 │  ├─ Audit Log (JSONL)             │
+│  ├─ Port Manager (compose ops)    │
 │  ├─ HTTP Proxy (/api/* → runtime) │
 │  └─ WS Proxy (upgrade → runtime)  │
 └────────┬──────────────────────────┘
          │
-    codeck_net (Docker bridge, private)
+    localhost (127.0.0.1:7777/7778)
          │
 ┌────────┴──────────────────────────┐
 │     Runtime (:7777/:7778, private)│
@@ -92,7 +93,7 @@ The runtime serves the SPA, handles auth, and runs all backend logic. This is th
 └───────────────────────────────────┘
 ```
 
-The daemon is the only exposed process. It handles password auth, rate limiting, and audit logging, then proxies all other requests to the runtime over a private Docker network. The runtime is never exposed to the host.
+The daemon runs as a native Node.js process on the host. It handles password auth, rate limiting, audit logging, and port exposure (via Docker Compose operations). The runtime is in an isolated Docker container — no Docker socket, never exposed to the network. Port requests from the runtime are delegated to the daemon via `CODECK_DAEMON_URL`. Works on Linux, macOS, and Windows.
 
 The system does not use a database — all state lives in memory (Map/variables) and in JSON files on disk.
 
@@ -100,23 +101,26 @@ The system does not use a database — all state lives in memory (Map/variables)
 
 ## Deployment modes
 
-| | Local | Gateway |
+| | Isolated | Managed |
 |---|---|---|
-| **Processes** | 1 (runtime) | 2 (daemon + runtime) |
+| **Processes** | 1 (runtime in container) | 2 (daemon on host + runtime in container) |
 | **Exposed port** | Runtime `:80` | Daemon `:8080` |
 | **Auth** | Runtime handles all | Daemon handles password auth; runtime trusts private network |
 | **SPA served by** | Runtime | Daemon |
 | **Browser talks to** | Runtime directly | Daemon only |
-| **Runtime exposed?** | Yes | No (private `codeck_net` only) |
-| **Docker compose** | `docker/compose.yml` | `docker/compose.gateway.yml` |
+| **Runtime exposed?** | Yes (container port) | No (127.0.0.1 only) |
+| **Docker compose** | `docker/compose.isolated.yml` | `docker/compose.managed.yml` |
 | **Rate limiting** | Runtime (200/min general) | Daemon (10/min auth, 60/min writes) |
 | **Audit log** | None | Daemon (`audit.log` JSONL) |
-| **Use case** | Local Docker, systemd on VPS | Public-facing VPS behind nginx |
+| **Port exposure** | Manual override or Docker socket (opt-in) | Daemon handles via compose operations |
+| **Docker socket** | Not mounted (isolated) | Not mounted (isolated) |
+| **Cross-platform** | Linux, macOS, Windows | Linux, macOS, Windows |
+| **Use case** | Local sandbox, simple setup | VPS, multi-device access, dynamic ports |
 
-### Gateway proxy flow
+### Managed mode proxy flow
 
 ```
-Browser                    Daemon                     Runtime
+Browser                    Daemon (host)              Runtime (container)
   │                          │                          │
   │ POST /api/auth/login ──→ │ (daemon-owned)           │
   │ ← {token} ──────────────│                           │
@@ -139,8 +143,25 @@ Browser                    Daemon                     Runtime
 - `GET /api/auth/sessions` — list active sessions
 - `DELETE /api/auth/sessions/:id` — revoke session
 - `GET /api/auth/log` — auth event history
+- `GET /api/ports` — list mapped ports (port manager)
+- `POST /api/system/add-port` — expose a port (port manager)
+- `POST /api/system/remove-port` — remove a port mapping (port manager)
 
 **All other `/api/*`** requests are proxied to the runtime with `X-Forwarded-*` headers. The daemon strips its own `Authorization` header before proxying.
+
+### Port exposure flow (managed mode)
+
+```
+Runtime                     Daemon (host)
+  │                           │
+  │ POST /api/system/add-port │
+  │  (CODECK_DAEMON_URL) ───→ │
+  │                           │ Write compose.override.yml
+  │                           │ docker compose up -d runtime
+  │  ← {success, restarting} │
+```
+
+In managed mode, the runtime delegates port requests to the daemon via `CODECK_DAEMON_URL`. The daemon writes `docker/compose.override.yml` and restarts the runtime container with the new port mapping. No Docker socket is needed inside the container.
 
 ---
 
@@ -1153,14 +1174,14 @@ Codeck implements a **single-container architecture** where all projects share o
 **Bridge Mode (all platforms)** — Standard Docker network isolation:
 - Container runs on Docker bridge network
 - Network namespace isolation: **ENABLED** (container isolated from host network)
-- Port exposure: Explicit mapping via `docker/compose.yml` (e.g., `80:80`)
+- Port exposure: Explicit mapping via compose file (e.g., `80:80`)
 - Inbound access: Only mapped ports reachable from host
 - Outbound access: Unrestricted (no egress filtering)
 - LAN access: Use `docker/compose.lan.yml` overlay + host-side mDNS advertiser script
 
 ### Host Access via `extra_hosts`
 
-**Configuration** (`docker/compose.yml` line 59-60):
+**Configuration** (compose files):
 ```yaml
 extra_hosts:
   - "host.docker.internal:host-gateway"
@@ -1421,10 +1442,10 @@ exec "$@"                             # Then executes the server
 
 Codeck also saves the OAuth token directly in `.credentials.json` as a fallback (more reliable in a container).
 
-### Docker Compose — Local mode
+### Docker Compose — Isolated mode
 
 ```yaml
-# docker/compose.yml
+# docker/compose.isolated.yml
 services:
   sandbox:
     build:
@@ -1448,41 +1469,28 @@ services:
 
 Additional dev server ports are exposed on demand via `compose.override.yml`. `init: true` adds tini as PID 1 to reap zombie processes.
 
-### Docker Compose — Gateway mode
+### Docker Compose — Managed mode
 
 ```yaml
-# docker/compose.gateway.yml (simplified)
+# docker/compose.managed.yml (simplified)
 services:
-  daemon:
-    build:
-      context: ..
-      dockerfile: docker/Dockerfile
-    ports: ["${CODECK_DAEMON_PORT:-8080}:8080"]
-    networks: [codeck_net]
-    environment:
-      - CODECK_RUNTIME_URL=http://codeck-runtime:7777
-      - CODECK_RUNTIME_WS_URL=http://codeck-runtime:7778
-    entrypoint: ["env", "NODE_ENV=production", "node", "apps/daemon/dist/index.js"]
-
   runtime:
     build:
       context: ..
       dockerfile: docker/Dockerfile
     container_name: codeck-runtime
-    networks: [codeck_net]
-    # No ports exposed to host
+    ports:
+      - "127.0.0.1:7777:7777"
+      - "127.0.0.1:7778:7778"
     environment:
       - CODECK_PORT=7777
       - CODECK_WS_PORT=7778
+      - CODECK_DAEMON_URL=http://host.docker.internal:${CODECK_DAEMON_PORT:-8080}
     entrypoint: ["/usr/local/bin/init-keyring.sh", "node", "apps/runtime/dist/index.js"]
     command: ["--web"]
-
-networks:
-  codeck_net:
-    driver: bridge
 ```
 
-See `docker/compose.gateway.yml` for full config with security hardening, resource limits, and volume mounts.
+The daemon runs on the host as a native Node.js process (not in a container). See `docker/compose.managed.yml` for full config with security hardening, resource limits, and volume mounts.
 
 ---
 
@@ -1647,7 +1655,7 @@ Proactive agents spawn via `child_process.spawn()` with a hardcoded binary path 
 
 **Docker Socket Access — CRITICAL SECURITY NOTE**
 
-The Docker socket is mounted by default in `docker/compose.yml` (required by port-manager for dynamic port mapping). This means agents have full Docker host access via the socket mount (`/var/run/docker.sock`):
+The Docker socket is **not mounted** by default in either compose file. In isolated mode, it can be optionally enabled by uncommenting the volume line in `compose.isolated.yml`. In managed mode, port exposure is handled by the host daemon — no socket needed. If the Docker socket IS mounted:
 
 - Agents can spawn privileged containers to gain root on host
 - Agents can read logs and attach to other containers

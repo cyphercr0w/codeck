@@ -96,12 +96,16 @@ export const doctorCommand = new Command('doctor')
       // Project path
       if (config.projectPath && existsSync(config.projectPath)) {
         ok('Project path', config.projectPath);
+        ok('Mode', config.mode);
 
         // Docker compose file
-        if (existsSync(join(config.projectPath, 'docker/compose.yml'))) {
-          ok('docker/compose.yml');
+        const composeFile = config.mode === 'managed'
+          ? 'docker/compose.managed.yml'
+          : 'docker/compose.isolated.yml';
+        if (existsSync(join(config.projectPath, composeFile))) {
+          ok(composeFile);
         } else {
-          fail('docker/compose.yml not found');
+          fail(`${composeFile} not found`);
           issues++;
         }
 
@@ -132,7 +136,7 @@ export const doctorCommand = new Command('doctor')
         // Container status
         if (dockerInstalled) {
           console.log(chalk.dim('\nContainers'));
-          const containers = await getContainerStatus(config.projectPath);
+          const containers = await getContainerStatus(config.projectPath, config.mode);
           if (containers.length > 0) {
             for (const c of containers) {
               if (c.state === 'running') {

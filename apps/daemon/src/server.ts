@@ -25,6 +25,9 @@ import {
 } from './services/rate-limit.js';
 import { proxyToRuntime, getRuntimeUrl } from './services/proxy.js';
 import { handleWsUpgrade, shutdownWsProxy, getWsConnectionCount, getRuntimeWsUrl } from './services/ws-proxy.js';
+import {
+  initDaemonPortManager, addPort, removePort, getMappedPorts, isPortExposed, isPortManagerEnabled,
+} from './services/port-manager.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PORT = parseInt(process.env.CODECK_DAEMON_PORT || '8080', 10);
@@ -35,6 +38,9 @@ export async function startDaemon(): Promise<void> {
   const app = express();
   app.set('trust proxy', 1);
   const server = createServer(app);
+
+  // Initialize port manager (requires CODECK_PROJECT_DIR)
+  initDaemonPortManager();
 
   // Security headers — same config as runtime
   app.use(helmet({
@@ -64,7 +70,7 @@ export async function startDaemon(): Promise<void> {
   app.get('/api/ui/status', (_req, res) => {
     res.json({
       status: 'ok',
-      mode: 'gateway',
+      mode: 'managed',
       uptime: process.uptime(),
       wsConnections: getWsConnectionCount(),
     });
@@ -192,6 +198,50 @@ export async function startDaemon(): Promise<void> {
     res.json({ events: getAuthLog() });
   });
 
+  // ── Daemon-owned port management routes (not proxied) ──
+
+  app.get('/api/ports', (_req, res) => {
+    if (!isPortManagerEnabled()) {
+      // Fallback: proxy to runtime (it may have its own port detection)
+      return proxyToRuntime(_req, res);
+    }
+    res.json({ ports: getMappedPorts() });
+  });
+
+  app.post('/api/system/add-port', (req, res) => {
+    if (!isPortManagerEnabled()) {
+      return proxyToRuntime(req, res);
+    }
+    const { port } = req.body;
+    if (!port || typeof port !== 'number' || port < 1 || port > 65535) {
+      res.status(400).json({ error: 'Invalid port number (1-65535)' });
+      return;
+    }
+    const result = addPort(port);
+    if (result.success) {
+      res.json(result);
+    } else {
+      res.status(500).json(result);
+    }
+  });
+
+  app.post('/api/system/remove-port', (req, res) => {
+    if (!isPortManagerEnabled()) {
+      return proxyToRuntime(req, res);
+    }
+    const { port } = req.body;
+    if (!port || typeof port !== 'number' || port < 1 || port > 65535) {
+      res.status(400).json({ error: 'Invalid port number (1-65535)' });
+      return;
+    }
+    const result = removePort(port);
+    if (result.success) {
+      res.json(result);
+    } else {
+      res.status(500).json(result);
+    }
+  });
+
   // ── Proxy: forward all remaining /api/* to runtime ──
 
   app.use('/api', (req, res) => {
@@ -245,7 +295,7 @@ export async function startDaemon(): Promise<void> {
   process.on('SIGINT', () => gracefulShutdown('SIGINT'));
 
   server.listen(PORT, () => {
-    console.log(`\n[Daemon] Codeck gateway running on :${PORT}`);
+    console.log(`\n[Daemon] Codeck managed mode running on :${PORT}`);
     console.log(`[Daemon] Serving web from ${WEB_DIST}`);
     console.log(`[Daemon] Proxying API to ${getRuntimeUrl()}`);
     const wsUrl = getRuntimeWsUrl();

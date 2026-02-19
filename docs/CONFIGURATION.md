@@ -8,8 +8,9 @@
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `CODECK_PORT` | `80` | Runtime HTTP listening port. In gateway mode, set to `7777` (internal). |
-| `CODECK_WS_PORT` | — | **Optional.** Separate WebSocket port. If set and differs from `CODECK_PORT`, creates a dedicated WS server. Required for gateway mode (e.g., `7778`). |
+| `CODECK_PORT` | `80` | Runtime HTTP listening port. In managed mode, set to `7777` (internal). |
+| `CODECK_WS_PORT` | — | **Optional.** Separate WebSocket port. If set and differs from `CODECK_PORT`, creates a dedicated WS server. Required for managed mode (e.g., `7778`). |
+| `CODECK_DAEMON_URL` | — | **Managed mode only.** URL of the host daemon (e.g., `http://host.docker.internal:8080`). When set, runtime delegates port requests to the daemon. |
 | `WORKSPACE` | `/workspace` | Workspace directory for projects |
 | `CODECK_DIR` | `/workspace/.codeck` | Codeck data directory (auth, config, memory, rules, skills, preferences) |
 | `GITHUB_TOKEN` | — | **Optional.** Token for cloning private repos via HTTPS. Use fine-grained PATs. |
@@ -24,14 +25,16 @@
 | `AGENT_SIGKILL_GRACE_MS` | `15000` | Grace period (ms) between SIGTERM and SIGKILL for proactive agent timeouts. Clamped to 5000–60000. |
 | `GEMINI_API_KEY` | — | **Optional.** Gemini API key for embedding fallback (free tier). Enables semantic/hybrid search. |
 
-### Daemon (gateway mode only)
+### Daemon (managed mode only)
 
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `CODECK_DAEMON_PORT` | `8080` | Daemon listening port (exposed to host) |
 | `CODECK_RUNTIME_URL` | `http://codeck-runtime:7777` | Runtime HTTP URL for proxy |
 | `CODECK_RUNTIME_WS_URL` | `CODECK_RUNTIME_URL` | Runtime WebSocket URL. Set separately when WS runs on a different port (e.g., `http://codeck-runtime:7778`). |
-| `CODECK_DIR` | `/workspace/.codeck` | Same as runtime — daemon reads `auth.json`, writes `daemon-sessions.json` and `audit.log` |
+| `CODECK_DIR` | OS-dependent | Codeck data dir. Container: `/workspace/.codeck`. Host: `~/.config/codeck` (Linux/macOS), `%APPDATA%\codeck` (Windows). Daemon reads `auth.json`, writes `daemon-sessions.json` and `audit.log`. |
+| `CODECK_PROJECT_DIR` | — | Codeck repo path on host. Required for daemon port-manager (compose operations). |
+| `CODECK_COMPOSE_FILE` | `docker/compose.managed.yml` | Compose file path (relative to `CODECK_PROJECT_DIR`). Used by daemon port-manager. |
 | `SESSION_TTL_MS` | `604800000` | Daemon session lifetime (default: 7 days) |
 | `PROXY_TIMEOUT_MS` | `30000` | HTTP proxy timeout (ms) |
 | `MAX_WS_CONNECTIONS` | `20` | Max concurrent WebSocket connections |
@@ -181,13 +184,18 @@ Requires pre-built `dist/` directory:
 
 ```bash
 npm run build                                       # Build frontend + backend
-docker compose -f docker/compose.yml up --build     # Single container (runtime + webapp)
+docker compose -f docker/compose.isolated.yml up --build     # Isolated: single container (runtime + webapp)
 ```
 
-### Gateway mode
+### Managed mode
 
 ```bash
-docker compose -f docker/compose.gateway.yml up --build   # Daemon + runtime containers
+codeck start    # Starts runtime container + daemon (foreground)
+
+# Or manually:
+docker compose -f docker/compose.managed.yml up -d --build
+CODECK_DAEMON_PORT=8080 CODECK_RUNTIME_URL=http://127.0.0.1:7777 \
+  CODECK_PROJECT_DIR=/path/to/codeck node apps/daemon/dist/index.js
 ```
 
 ### Image layers
@@ -359,18 +367,13 @@ healthcheck:
 
 ### Docker socket
 
-The Docker socket (`/var/run/docker.sock`) is mounted by default in the main compose file (`docker/compose.yml`). This is required by the port-manager service for dynamic port mapping.
+The Docker socket is **not mounted** by default in either mode. This is a deliberate security decision — the runtime container is fully isolated.
 
-**What this enables:**
-- Dynamic port mapping via the dashboard UI (auto-restart with new port mappings)
-- Docker commands inside the container (`docker ps`, `docker compose`, etc.)
-- Proactive agents can spawn sibling containers
+**Isolated mode:** Port mapping must be pre-configured via `compose.override.yml` or using `codeck init`. Dynamic port exposure requires opt-in Docker socket mount (uncomment the volume line in `compose.isolated.yml`).
 
-**Risk:** Any process inside the container can create new containers, mount host filesystems, or execute commands on the host. The `cap_drop`, `no-new-privileges`, and `read_only` restrictions do not apply to containers created through the socket.
+**Managed mode:** The daemon runs on the host and handles port exposure natively via Docker Compose operations. The runtime delegates port requests to the daemon via `CODECK_DAEMON_URL`. No Docker socket needed.
 
-**Mitigation options:**
-- **Socket proxy:** Use [tecnativa/docker-socket-proxy](https://github.com/Tecnativa/docker-socket-proxy) as a sidecar that whitelists only needed Docker API endpoints.
-- **Remove mount:** Edit `docker/compose.yml` to remove the Docker socket volume. Dynamic port mapping will not work, but manual `compose.override.yml` configuration is still possible.
+**Opt-in Docker socket** (isolated mode only): Uncomment the Docker socket volume in `compose.isolated.yml` to enable automatic port exposure from inside the container. This grants host-level Docker access — only use on trusted systems.
 
 ### Volume data protection
 
@@ -579,7 +582,7 @@ Codeck also writes tokens directly to `.credentials.json` as a more reliable fal
 Enable with the LAN compose override:
 
 ```bash
-docker compose -f docker/compose.yml -f docker/compose.lan.yml up
+docker compose -f docker/compose.isolated.yml -f docker/compose.lan.yml up
 ```
 
 This enables the container's built-in mDNS responder (`src/services/mdns.ts`) which broadcasts `codeck.local` and `*.codeck.local`. For full LAN discovery from other devices, also run the **host-side mDNS advertiser script**.
@@ -947,7 +950,7 @@ docker sbom codeck
 
 ### Read-Only Filesystem
 
-The container runs with a read-only root filesystem (`read_only: true` in docker/compose.yml) with explicit tmpfs mounts for runtime writable directories:
+The container runs with a read-only root filesystem (`read_only: true` in compose files) with explicit tmpfs mounts for runtime writable directories:
 
 ```yaml
 read_only: true

@@ -20,9 +20,9 @@
     "test:ui": "vitest --ui",
     "test:coverage": "vitest --coverage",
     "docker:build-base": "docker build -t codeck-base -f docker/Dockerfile.base .",
-    "docker:up": "docker compose -f docker/compose.yml up -d",
-    "docker:down": "docker compose -f docker/compose.yml down",
-    "docker:logs": "docker compose -f docker/compose.yml logs -f",
+    "docker:up": "docker compose -f docker/compose.isolated.yml up -d",
+    "docker:down": "docker compose -f docker/compose.isolated.yml down",
+    "docker:logs": "docker compose -f docker/compose.isolated.yml logs -f",
     "build:cli": "npm run build -w @codeck/cli"
   },
   "devDependencies": {

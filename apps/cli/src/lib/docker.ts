@@ -18,7 +18,7 @@ interface ComposeOpts {
 }
 
 /**
- * Validate that projectPath is a real directory containing docker/compose.yml.
+ * Validate that projectPath is a real directory containing a compose file.
  * Prevents use of malicious paths as cwd for Docker commands.
  */
 function validateProjectPath(projectPath: string): void {
@@ -37,17 +37,19 @@ function validateProjectPath(projectPath: string): void {
     }
     throw err;
   }
-  if (!existsSync(join(resolved, 'docker/compose.yml'))) {
-    throw new Error(`docker/compose.yml not found in project path: ${resolved}`);
+  // Check for at least one compose file
+  if (!existsSync(join(resolved, 'docker/compose.isolated.yml')) &&
+      !existsSync(join(resolved, 'docker/compose.managed.yml'))) {
+    throw new Error(`No compose files found in project path: ${resolved}`);
   }
 }
 
 function composeFiles(opts: ComposeOpts): string[] {
-  if (opts.mode === 'gateway') {
-    // Gateway mode uses its own compose file — no LAN overlay
-    return ['-f', 'docker/compose.gateway.yml'];
+  if (opts.mode === 'managed') {
+    return ['-f', 'docker/compose.managed.yml'];
   }
-  const files = ['-f', 'docker/compose.yml'];
+  // Isolated mode
+  const files = ['-f', 'docker/compose.isolated.yml'];
   if (opts.lanMode === 'host') {
     files.push('-f', 'docker/compose.lan.yml');
   }

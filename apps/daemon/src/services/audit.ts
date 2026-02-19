@@ -1,5 +1,6 @@
 import { appendFileSync, existsSync, mkdirSync } from 'fs';
 import { join, dirname } from 'path';
+import { CODECK_DIR } from '../lib/paths.js';
 
 // ── Types ──
 
@@ -20,7 +21,6 @@ export interface AuditEntry {
 
 // ── Config ──
 
-const CODECK_DIR = process.env.CODECK_DIR || '/workspace/.codeck';
 const AUDIT_FILE = join(CODECK_DIR, 'audit.log');
 
 // ── Buffer for batched writes ──

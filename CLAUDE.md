@@ -31,17 +31,14 @@ The docs explain architecture, data flows, APIs, and conventions that you won't 
 # Build base image (once):
 docker build -t codeck-base -f docker/Dockerfile.base .
 
-# Local mode (single container — runtime + webapp):
-docker compose -f docker/compose.yml up --build
+# Isolated mode (single container — runtime + webapp):
+docker compose -f docker/compose.isolated.yml up --build
 
-# Local + LAN access (codeck.local from any device):
-docker compose -f docker/compose.yml -f docker/compose.lan.yml up
+# Isolated + LAN access (codeck.local from any device):
+docker compose -f docker/compose.isolated.yml -f docker/compose.lan.yml up
 
-# Gateway mode (daemon + runtime in separate containers):
-docker compose -f docker/compose.gateway.yml up --build
-
-# Hosted mode (daemon on host + runtime in container, for VPS):
-docker compose -f docker/compose.hosted.yml up -d
+# Managed mode (daemon on host + runtime in container):
+codeck start    # starts container + daemon in foreground
 
 # Local build check:
 npm run build

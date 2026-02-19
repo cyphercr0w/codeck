@@ -1,28 +1,43 @@
 # Deployment Guide
 
-Codeck supports three deployment modes:
+Codeck supports two deployment modes. Both work on Linux, macOS, and Windows.
 
-| Mode | Use case | Detection |
-|------|----------|-----------|
-| **Docker** (default) | Development, local sandbox | `/.dockerenv` exists |
-| **Hosted** (VPS) | Production VPS — daemon on host + runtime in Docker | `SYSTEMD_EXEC_PID` env var |
-| **CLI-local** | Direct `node` execution | Fallback |
+| Mode | Use case | Architecture |
+|------|----------|-------------|
+| **Isolated** (default) | Local sandbox, development | Single Docker container (runtime + webapp) |
+| **Managed** | VPS, multi-device, dynamic ports | Daemon on host + runtime in isolated container |
 
 ---
 
-## Hosted Deployment (Linux VPS)
+## Isolated Mode
 
-Run Codeck in hosted mode: the daemon runs natively on the host (serves web UI, handles auth) and proxies to a runtime container (runs Claude Code, PTYs, file operations).
+Single container running the runtime with the webapp. No daemon, no Docker socket. Simple and secure.
+
+```bash
+# Via CLI:
+codeck init       # Choose "Isolated" mode
+codeck start
+
+# Or directly:
+docker compose -f docker/compose.isolated.yml up --build
+```
+
+---
+
+## Managed Mode
+
+The daemon runs natively on the host (serves web UI, handles auth, port exposure) and proxies to a runtime container (runs Claude Code, PTYs, file operations).
 
 ### Architecture
 
 ```
 ┌──────────────────────────────────────────────────┐
-│  Host (systemd)                                  │
+│  Host                                            │
 │                                                  │
-│  codeck daemon (:80)                             │
+│  codeck daemon (:8080)                           │
 │    ├── Web UI (SPA)                              │
 │    ├── Auth, sessions, rate limiting             │
+│    ├── Port manager (compose operations)         │
 │    └── Proxy → runtime container                 │
 │                                                  │
 │  ┌────────────────────────────────────────────┐  │
@@ -31,10 +46,23 @@ Run Codeck in hosted mode: the daemon runs natively on the host (serves web UI, 
 │  │    ├── :7778 WebSocket (localhost only)    │  │
 │  │    ├── Claude Code CLI                     │  │
 │  │    ├── PTY sessions                        │  │
-│  │    └── /workspace (bind mount)             │  │
+│  │    └── /workspace (volume)                 │  │
 │  └────────────────────────────────────────────┘  │
 └──────────────────────────────────────────────────┘
 ```
+
+### Cross-platform setup
+
+```bash
+# Via CLI (Linux, macOS, Windows):
+codeck init       # Choose "Managed" mode
+codeck start      # Starts runtime container + daemon in foreground (Ctrl+C to stop)
+codeck stop       # Stops runtime container (daemon stops via Ctrl+C)
+```
+
+### Linux VPS — systemd service
+
+For production Linux VPS deployments, the daemon runs as a systemd service:
 
 ### Requirements
 
@@ -200,31 +228,17 @@ sudo systemctl restart codeck
 
 ## Docker Deployment
 
-### Local mode (default)
+### Isolated mode (default)
 
 Single container running the runtime with the SPA:
 
 ```bash
-docker compose -f docker/compose.yml up --build    # → http://localhost:80
+docker compose -f docker/compose.isolated.yml up --build    # → http://localhost:80
 ```
 
 See the main [README.md](../README.md) for full commands.
 
-### Gateway mode
-
-Two containers: daemon (exposed) + runtime (private). Use when deploying behind nginx or exposing to the internet.
-
-```bash
-docker compose -f docker/compose.gateway.yml up --build   # → http://localhost:8080
-```
-
-**Architecture:**
-- **Daemon** (`:8080`, exposed): Auth, rate limiting, audit, proxies to runtime
-- **Runtime** (`:7777`/`:7778`, private `codeck_net`): All business logic, PTY, files, memory
-- Same Docker image, different entrypoints
-- Shared volumes: workspace, claude-config, ssh-data
-
-**Typical nginx config for gateway mode:**
+**Typical nginx config for managed mode (VPS behind reverse proxy):**
 ```nginx
 server {
     listen 80;
@@ -249,8 +263,8 @@ The `@codeck/cli` package automates Docker lifecycle:
 
 ```bash
 npm run build:cli && npm link -w @codeck/cli
-codeck init           # Choose local or gateway mode
-codeck start          # Starts the correct compose file
+codeck init           # Choose isolated or managed mode
+codeck start          # Starts the correct compose file (+ daemon for managed)
 codeck stop
 codeck status
 ```

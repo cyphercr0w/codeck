@@ -1,13 +1,16 @@
-# Codeck — Hosted Mode (VPS)
+# Codeck — Managed Mode
 #
-# Runtime-only container for VPS deployment. The daemon runs natively
-# on the host as a systemd service and proxies to this container.
+# Daemon on host (Node.js) + runtime in isolated Docker container.
+# Daemon handles auth, webapp, port exposure. Runtime is never exposed.
+# Works on Linux, macOS, and Windows.
 #
-# Usage (managed by systemd — see scripts/codeck.service):
-#   docker compose -f docker/compose.hosted.yml up -d
+# Usage:
+#   docker compose -f docker/compose.managed.yml up -d --build
+#   CODECK_DAEMON_PORT=8080 CODECK_RUNTIME_URL=http://127.0.0.1:7777 \
+#     node apps/daemon/dist/index.js
 #
 # Architecture:
-#   Host daemon (:80) → Runtime container (:7777 HTTP, :7778 WS)
+#   Host daemon (:8080) → Runtime container (:7777 HTTP, :7778 WS)
 #   Only localhost ports — not exposed to the internet.
 
 services:
@@ -27,6 +30,7 @@ services:
       - CODECK_PORT=7777
       - CODECK_WS_PORT=7778
       - CODECK_NETWORK_MODE=bridge
+      - CODECK_DAEMON_URL=http://host.docker.internal:${CODECK_DAEMON_PORT:-8080}
       - WORKSPACE=/workspace
       - CODECK_UID=${CODECK_UID:-}
       - CODECK_GID=${CODECK_GID:-}
@@ -69,12 +73,18 @@ services:
       - /run/dbus:size=10M,mode=0755
       - /var/run:size=10M,mode=0755
     volumes:
-      - /home/codeck/workspace:/workspace
-      - /home/codeck/.claude:/root/.claude
-      - /home/codeck/.ssh:/root/.ssh
-      - /home/codeck/.config/gh:/root/.config/gh
+      - ${CODECK_WORKSPACE:-workspace}:/workspace
+      - ${CODECK_CLAUDE_CONFIG:-claude-config}:/root/.claude
+      - ${CODECK_SSH_DATA:-ssh-data}:/root/.ssh
+      - ${CODECK_GH_CONFIG:-gh-config}:/root/.config/gh
       # No Docker socket — runtime is isolated. Port exposure is managed by the host daemon.
     extra_hosts:
       - "host.docker.internal:host-gateway"
     entrypoint: ["/usr/local/bin/init-keyring.sh", "env", "NODE_ENV=production", "node", "apps/runtime/dist/index.js"]
     command: ["--web"]
+
+volumes:
+  workspace:
+  claude-config:
+  ssh-data:
+  gh-config:

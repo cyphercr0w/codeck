@@ -9,36 +9,41 @@ Give the agent its own machine. Let it live there.
 
 ## Deploy
 
-### Local — Docker (isolated)
+### Isolated mode — single container
 
-Runs inside a Docker container. Safe for local use on your main machine.
+Runs inside a Docker container. No daemon, no Docker socket. Safe for local use on any platform.
 
 ```bash
 git clone https://github.com/cyphercr0w/codeck
 cd codeck && npm install && npm run build:cli
-npx -w @codeck/cli codeck init      # interactive setup wizard
-npx -w @codeck/cli codeck start     # → http://localhost
-npx -w @codeck/cli codeck stop
-npx -w @codeck/cli codeck status
-npx -w @codeck/cli codeck logs
-npx -w @codeck/cli codeck open
+codeck init        # interactive setup wizard — choose "Isolated"
+codeck start       # → http://localhost
+codeck stop
+codeck status
+codeck logs
+codeck open
 ```
 
-Or link globally: `npm link -w @codeck/cli` then use `codeck` directly.
+Or with npm workspace: `npx -w @codeck/cli codeck init`. Link globally with `npm link -w @codeck/cli`.
 
-`codeck init` detects your OS, lets you choose deployment mode (local or gateway), builds the base image, and starts the container. Re-running is safe — never destroys volumes.
+### Managed mode — daemon + container
+
+Daemon on host handles auth, webapp, and port exposure. Runtime in isolated container. Works on Linux, macOS, and Windows.
+
+```bash
+codeck init        # choose "Managed"
+codeck start       # starts runtime container + daemon in foreground
+```
 
 ### Linux VPS — systemd service
 
-The agent runs as a systemd service directly on the host. One command, no Docker required.
-
-> **Warning:** This mode runs without container isolation. The agent has full access to the host filesystem and can run arbitrary commands as the `codeck` system user. Use a dedicated machine or VPS — never your personal workstation.
+For production VPS, the managed mode daemon runs as a systemd service:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/cyphercr0w/codeck/main/scripts/install.sh | sudo bash
 ```
 
-Installs Node.js, Claude Code CLI, creates a `codeck` user, and starts the service on port 80.
+Installs Node.js, Docker, builds images, creates a `codeck` user, and starts the service on port 80.
 
 ```bash
 systemctl status codeck

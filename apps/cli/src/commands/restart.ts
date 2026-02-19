@@ -31,19 +31,23 @@ export const restartCommand = new Command('restart')
         await new Promise(r => setTimeout(r, 1000));
       }
 
-      const label = config.mode === 'gateway' ? 'gateway mode' : 'local mode';
-      console.log(chalk.dim(`Starting in ${label}...`));
+      console.log(chalk.dim(`Starting in ${config.mode} mode...`));
       await composeUp({
         projectPath: config.projectPath,
         lanMode: config.lanMode,
         mode: config.mode,
-        build: config.mode === 'gateway',
+        build: config.mode === 'managed',
       });
 
       console.log();
       console.log(chalk.green('Codeck restarted!'));
       console.log(chalk.dim(`  Mode: ${config.mode}`));
       console.log(chalk.dim(`  URL:  http://localhost${config.port === 80 ? '' : ':' + config.port}`));
+
+      if (config.mode === 'managed') {
+        console.log(chalk.dim('  Note: Restart the daemon process separately (Ctrl+C + codeck start).'));
+      }
+
       console.log();
     } catch (err) {
       console.log(chalk.red(`Failed to restart: ${(err as Error).message}`));

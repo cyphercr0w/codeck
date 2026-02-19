@@ -1,13 +1,14 @@
-# Codeck — Local Mode
+# Codeck — Isolated Mode
 #
 # Single container running the runtime with the webapp.
-# For local development, self-hosting, and LAN access.
+# No daemon, no Docker socket. Simple and secure.
+# Works on Linux, macOS, and Windows.
 #
 # Usage:
-#   docker compose -f docker/compose.yml up --build
+#   docker compose -f docker/compose.isolated.yml up --build
 #
 # With LAN access (codeck.local from any device):
-#   docker compose -f docker/compose.yml -f docker/compose.lan.yml up
+#   docker compose -f docker/compose.isolated.yml -f docker/compose.lan.yml up
 
 services:
   sandbox:

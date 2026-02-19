@@ -20,7 +20,7 @@ export const statusCommand = new Command('status')
     console.log(`  Project:     ${config.projectPath}`);
     console.log(`  Mode:        ${config.mode}`);
     console.log(`  Port:        ${config.port}`);
-    if (config.mode === 'local') {
+    if (config.mode === 'isolated') {
       console.log(`  Extra ports: ${config.extraPorts.length > 0 ? config.extraPorts.join(', ') : 'none'}`);
       console.log(`  LAN mode:   ${config.lanMode}`);
     }
@@ -47,7 +47,7 @@ export const statusCommand = new Command('status')
     const isRunning = containers.some(c => c.state === 'running');
     if (isRunning) {
       console.log(`  Local: ${chalk.cyan(`http://localhost${config.port === 80 ? '' : ':' + config.port}`)}`);
-      if (config.mode === 'local') {
+      if (config.mode === 'isolated') {
         if (config.lanMode === 'host') {
           console.log(`  LAN:   ${chalk.cyan('http://codeck.local')}`);
         } else if (config.lanMode === 'mdns') {

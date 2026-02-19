@@ -22,7 +22,7 @@ You have access to the host's Docker daemon via a mounted socket. Containers you
 - **`docker system prune`** — this removes all stopped containers, unused networks, and dangling images. It could delete the user's work.
 - **`docker image rm`** of the Codeck image — breaks the system on next restart.
 - **`docker compose down` in the Codeck project directory** — kills the sandbox.
-- **Modify `docker/compose.yml`** or `docker/compose.override.yml` directly — use `POST /api/system/add-port` and `POST /api/system/remove-port` for port changes.
+- **Modify `docker/compose.isolated.yml`**, `docker/compose.managed.yml`, or `docker/compose.override.yml` directly — use `POST /api/system/add-port` and `POST /api/system/remove-port` for port changes.
 - **`claude install`** or **`claude update`** — these modify the CLI binary and can break the system. Use `POST /api/system/update-agent` for controlled updates.
 
 ## Best practices

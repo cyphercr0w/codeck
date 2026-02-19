@@ -70,9 +70,9 @@ export interface ContainerInfo {
   ports: string;
 }
 
-export async function getContainerStatus(projectPath: string, mode?: 'local' | 'gateway'): Promise<ContainerInfo[]> {
+export async function getContainerStatus(projectPath: string, mode?: 'isolated' | 'managed'): Promise<ContainerInfo[]> {
   try {
-    const composeFile = mode === 'gateway' ? 'docker/compose.gateway.yml' : 'docker/compose.yml';
+    const composeFile = mode === 'managed' ? 'docker/compose.managed.yml' : 'docker/compose.isolated.yml';
     const { stdout } = await execa('docker', ['compose', '-f', composeFile, 'ps', '--format', 'json'], {
       cwd: projectPath,
       timeout: DETECT_TIMEOUT,

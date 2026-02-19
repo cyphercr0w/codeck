@@ -108,6 +108,8 @@ All protected endpoints require `Authorization: Bearer <token>` header (or `?tok
 | `GET` | `/api/files/read` | `?path=<relative>` | `{ success, content, size }` | Read file content (max 100KB) |
 | `PUT` | `/api/files/write` | `{ path, content }` | `{ success }` | Write file content (max 500KB, creates parent dirs) |
 | `POST` | `/api/files/mkdir` | `{ name }` | `{ success, name, path }` | Create directory in workspace root |
+| `DELETE` | `/api/files/delete` | `{ path }` | `{ success }` | Delete file or empty directory |
+| `POST` | `/api/files/rename` | `{ oldPath, newPath }` | `{ success }` | Rename/move file or directory |
 
 **`items[]` format:** `{ name, isDirectory, size, modified }`
 

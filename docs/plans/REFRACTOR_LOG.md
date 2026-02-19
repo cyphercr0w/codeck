@@ -8,7 +8,7 @@ Este archivo registra el progreso y decisiones técnicas.
 
 Branch: refactor/daemon-runtime-gateway
 Modo objetivo: local + gateway
-Último bloque completado: MILESTONE 2.2 — PTY
+Último bloque completado: MILESTONE 2.3 — Filesystem
 
 ---
 
@@ -138,6 +138,32 @@ Modo objetivo: local + gateway
 - `MAX_SESSIONS` se lee una vez al startup desde env var — no es dinámico, pero es suficiente para configuración por deployment
 
 **Smoke test:** `npm run build` — OK. Startup en port 9999: `/internal/status` → `{"status":"ok","uptime":3.01}`, `/api/auth/status` → `{"configured":true}`. Shutdown limpio.
+
+---
+
+### Iteración 5 — MILESTONE 2.3: FILESYSTEM
+**Fecha:** 2026-02-19
+
+**Bloque:** Milestone 2.3 — Filesystem (read/write/list/delete/rename)
+
+**Cambios:**
+- Agregados dos nuevos endpoints a `apps/runtime/src/routes/files.routes.ts`:
+  - `DELETE /api/files/delete` — elimina un archivo o directorio vacío
+  - `POST /api/files/rename` — renombra/mueve un archivo o directorio
+- Importados `unlink`, `rmdir`, `rename` de `fs/promises`
+- Actualizado `docs/API.md` con la documentación de los nuevos endpoints
+
+**Problemas:** Ninguno.
+
+**Decisiones:**
+- `DELETE /api/files/delete` usa `rmdir` para directorios (solo vacíos) y `unlink` para archivos — no permite eliminación recursiva por seguridad
+- Ambos endpoints previenen operaciones sobre el workspace root (`fullPath === WORKSPACE`)
+- `POST /api/files/rename` valida ambos paths (oldPath y newPath) con `safePath()` — ambos deben estar dentro del workspace
+- Ambos endpoints llaman `broadcastStatus()` tras la operación exitosa (mismo patrón que `mkdir`)
+- Se preservan los read/write/list existentes sin modificación — ya estaban completos
+- No se agregan delete/rename a las rutas de agent data (`codeck.routes.ts`) — ese scope es intencionalmente restrictivo (solo lectura/escritura de archivos existentes)
+
+**Smoke test:** `npm run build` — OK (frontend vite → apps/web/dist + backend tsc → apps/runtime/dist + copy:templates). Startup en port 9999: `/internal/status` → `{"status":"ok","uptime":3.04}`, `/api/auth/status` → `{"configured":true}`. Shutdown limpio.
 
 ---
 

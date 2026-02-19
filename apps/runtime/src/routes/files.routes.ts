@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { readdir, stat, readFile, writeFile, mkdir } from 'fs/promises';
+import { readdir, stat, readFile, writeFile, mkdir, unlink, rmdir, rename } from 'fs/promises';
 import { join, resolve, sep } from 'path';
 import { broadcastStatus } from '../web/websocket.js';
 
@@ -164,6 +164,89 @@ router.post('/mkdir', async (req, res) => {
       res.status(409).json({ error: 'Already exists' });
     } else {
       res.status(500).json({ error: 'Error creating directory' });
+    }
+  }
+});
+
+// Delete file or empty directory
+router.delete('/delete', async (req, res) => {
+  const { path: relativePath } = req.body;
+  if (!relativePath || typeof relativePath !== 'string') {
+    res.status(400).json({ error: 'Path required' });
+    return;
+  }
+
+  const fullPath = await safePath(WORKSPACE, relativePath);
+
+  if (!fullPath) {
+    res.status(403).json({ error: 'Access denied' });
+    return;
+  }
+
+  // Prevent deleting the workspace root itself
+  if (fullPath === WORKSPACE) {
+    res.status(403).json({ error: 'Cannot delete workspace root' });
+    return;
+  }
+
+  try {
+    const s = await stat(fullPath);
+    if (s.isDirectory()) {
+      // rmdir only removes empty directories — safe by default
+      await rmdir(fullPath);
+    } else {
+      await unlink(fullPath);
+    }
+    broadcastStatus();
+    res.json({ success: true });
+  } catch (err: unknown) {
+    const code = (err as NodeJS.ErrnoException).code;
+    if (code === 'ENOENT') {
+      res.status(404).json({ error: 'File not found' });
+    } else if (code === 'ENOTEMPTY') {
+      res.status(409).json({ error: 'Directory not empty' });
+    } else {
+      res.status(500).json({ error: 'Error deleting file' });
+    }
+  }
+});
+
+// Rename/move file or directory
+router.post('/rename', async (req, res) => {
+  const { oldPath, newPath } = req.body;
+  if (!oldPath || typeof oldPath !== 'string') {
+    res.status(400).json({ error: 'oldPath required' });
+    return;
+  }
+  if (!newPath || typeof newPath !== 'string') {
+    res.status(400).json({ error: 'newPath required' });
+    return;
+  }
+
+  const fullOldPath = await safePath(WORKSPACE, oldPath);
+  const fullNewPath = await safePath(WORKSPACE, newPath);
+
+  if (!fullOldPath || !fullNewPath) {
+    res.status(403).json({ error: 'Access denied' });
+    return;
+  }
+
+  // Prevent renaming the workspace root
+  if (fullOldPath === WORKSPACE) {
+    res.status(403).json({ error: 'Cannot rename workspace root' });
+    return;
+  }
+
+  try {
+    await rename(fullOldPath, fullNewPath);
+    broadcastStatus();
+    res.json({ success: true });
+  } catch (err: unknown) {
+    const code = (err as NodeJS.ErrnoException).code;
+    if (code === 'ENOENT') {
+      res.status(404).json({ error: 'Source not found' });
+    } else {
+      res.status(500).json({ error: 'Error renaming file' });
     }
   }
 });

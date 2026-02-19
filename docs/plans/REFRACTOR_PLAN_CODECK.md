@@ -66,7 +66,7 @@ scripts/
 
 - [x] MILESTONE 0 — PREPARACIÓN (completado)
 - [x] MILESTONE 1 — WEBAPP (completado)
-- [ ] MILESTONE 2 — RUNTIME (en progreso: 2.1–2.2 completados, siguiente: 2.3)
+- [ ] MILESTONE 2 — RUNTIME (en progreso: 2.1–2.3 completados, siguiente: 2.4)
 
 ---
 
@@ -110,7 +110,7 @@ DONE cuando:
 - [x] Limitar sesiones concurrentes
 
 ## 2.3 Filesystem
-- [ ] read/write/list/delete/rename
+- [x] read/write/list/delete/rename
 
 ## 2.4 Proactive Agents
 - [ ] CRUD

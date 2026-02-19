@@ -69,6 +69,7 @@ scripts/
 - [x] MILESTONE 2 — RUNTIME (completado)
 - [x] MILESTONE 3 — DAEMON (completado)
 - [x] MILESTONE 4 — NETWORKING (completado)
+- [x] MILESTONE 5 — CLI (completado)
 
 ---
 
@@ -177,10 +178,10 @@ DONE cuando:
 
 # MILESTONE 5 — CLI
 
-- [ ] codeck init
-- [ ] codeck start --mode local
-- [ ] codeck start --mode gateway
-- [ ] stop/status/logs
+- [x] codeck init
+- [x] codeck start --mode local
+- [x] codeck start --mode gateway
+- [x] stop/status/logs
 
 DONE cuando:
 - Ambos modos arrancan desde CLI.

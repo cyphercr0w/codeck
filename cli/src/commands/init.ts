@@ -3,7 +3,7 @@ import chalk from 'chalk';
 import * as p from '@clack/prompts';
 import { existsSync, unlinkSync } from 'node:fs';
 import { resolve, join } from 'node:path';
-import { getConfig, setConfig, isInitialized } from '../lib/config.js';
+import { getConfig, setConfig, isInitialized, type CodeckMode } from '../lib/config.js';
 import { detectOS, isDockerInstalled, isDockerRunning, isPortAvailable, isBaseImageBuilt } from '../lib/detect.js';
 import { generateOverrideYaml, generateEnvFile, writeOverrideFile, writeEnvFile, readEnvFile } from '../lib/compose.js';
 import { buildBaseImage, composeUp } from '../lib/docker.js';
@@ -92,6 +92,26 @@ export const initCommand = new Command('init')
       process.exit(1);
     }
 
+    // 2.5 Codeck mode selection (local vs gateway)
+    const defaultMode: CodeckMode = existingConfig?.mode || 'local';
+    const codeckModeResult = await p.select({
+      message: 'Codeck mode:',
+      options: [
+        { value: 'local', label: 'Local', hint: 'Single container — runtime serves the webapp directly' },
+        { value: 'gateway', label: 'Gateway', hint: 'Daemon + runtime — daemon as public entry point, runtime isolated' },
+      ],
+      initialValue: defaultMode,
+    });
+    if (p.isCancel(codeckModeResult)) {
+      p.outro(chalk.red('Setup cancelled.'));
+      process.exit(0);
+    }
+    const codeckMode = codeckModeResult as CodeckMode;
+
+    if (codeckMode === 'gateway') {
+      p.log.info('Gateway mode: daemon handles auth and proxies to an isolated runtime.');
+    }
+
     // 3. Detect project path
     let projectPath = existingConfig?.projectPath || '';
     const cwdHasCompose = existsSync(join(process.cwd(), 'docker-compose.yml')) &&
@@ -131,9 +151,10 @@ export const initCommand = new Command('init')
     const existingEnv = readEnvFile(projectPath);
 
     // 4. Webapp port
-    const defaultPort = existingConfig?.port || parseInt(existingEnv.CODECK_PORT || '80', 10);
+    const modeDefaultPort = codeckMode === 'gateway' ? 8080 : 80;
+    const defaultPort = existingConfig?.port || parseInt(existingEnv.CODECK_PORT || String(modeDefaultPort), 10);
     const portResult = await p.text({
-      message: 'Webapp port:',
+      message: codeckMode === 'gateway' ? 'Daemon port:' : 'Webapp port:',
       placeholder: String(defaultPort),
       defaultValue: String(defaultPort),
       validate: (value) => {
@@ -162,80 +183,87 @@ export const initCommand = new Command('init')
       }
     }
 
-    // 5. Extra ports
-    const defaultExtraPorts = existingConfig?.extraPorts || [];
-    const portsResult = await p.multiselect({
-      message: 'Pre-map extra ports for dev server preview:',
-      options: [
-        { value: 3000, label: '3000 (React/Next.js)', hint: defaultExtraPorts.includes(3000) ? 'previously selected' : '' },
-        { value: 5173, label: '5173 (Vite)', hint: defaultExtraPorts.includes(5173) ? 'previously selected' : '' },
-        { value: 8080, label: '8080 (Generic)', hint: defaultExtraPorts.includes(8080) ? 'previously selected' : '' },
-        { value: -1, label: 'Custom port...' },
-      ],
-      initialValues: defaultExtraPorts.length > 0
-        ? defaultExtraPorts.filter(n => [3000, 5173, 8080].includes(n))
-        : [],
-      required: false,
-    });
-    if (p.isCancel(portsResult)) {
-      p.outro(chalk.red('Setup cancelled.'));
-      process.exit(0);
-    }
-
-    let extraPorts = (portsResult as number[]).filter(n => n > 0);
-
-    // Handle custom port
-    if ((portsResult as number[]).includes(-1)) {
-      const customResult = await p.text({
-        message: 'Enter custom port(s), comma-separated:',
-        placeholder: '4000, 9090',
-        validate: (value) => {
-          const nums = value.split(',').map(s => parseInt(s.trim(), 10));
-          if (nums.some(n => isNaN(n) || n < 1 || n > 65535)) {
-            return 'Invalid port number';
-          }
-          return undefined;
-        },
+    // 5. Extra ports (local mode only — gateway runtime is isolated)
+    let extraPorts: number[] = [];
+    if (codeckMode === 'local') {
+      const defaultExtraPorts = existingConfig?.extraPorts || [];
+      const portsResult = await p.multiselect({
+        message: 'Pre-map extra ports for dev server preview:',
+        options: [
+          { value: 3000, label: '3000 (React/Next.js)', hint: defaultExtraPorts.includes(3000) ? 'previously selected' : '' },
+          { value: 5173, label: '5173 (Vite)', hint: defaultExtraPorts.includes(5173) ? 'previously selected' : '' },
+          { value: 8080, label: '8080 (Generic)', hint: defaultExtraPorts.includes(8080) ? 'previously selected' : '' },
+          { value: -1, label: 'Custom port...' },
+        ],
+        initialValues: defaultExtraPorts.length > 0
+          ? defaultExtraPorts.filter(n => [3000, 5173, 8080].includes(n))
+          : [],
+        required: false,
       });
-      if (!p.isCancel(customResult)) {
-        const custom = customResult.split(',').map(s => parseInt(s.trim(), 10));
-        extraPorts = [...extraPorts, ...custom];
+      if (p.isCancel(portsResult)) {
+        p.outro(chalk.red('Setup cancelled.'));
+        process.exit(0);
       }
+
+      extraPorts = (portsResult as number[]).filter(n => n > 0);
+
+      // Handle custom port
+      if ((portsResult as number[]).includes(-1)) {
+        const customResult = await p.text({
+          message: 'Enter custom port(s), comma-separated:',
+          placeholder: '4000, 9090',
+          validate: (value) => {
+            const nums = value.split(',').map(s => parseInt(s.trim(), 10));
+            if (nums.some(n => isNaN(n) || n < 1 || n > 65535)) {
+              return 'Invalid port number';
+            }
+            return undefined;
+          },
+        });
+        if (!p.isCancel(customResult)) {
+          const custom = customResult.split(',').map(s => parseInt(s.trim(), 10));
+          extraPorts = [...extraPorts, ...custom];
+        }
+      }
+
+      // Remove duplicates
+      extraPorts = [...new Set(extraPorts)].sort((a, b) => a - b);
     }
 
-    // Remove duplicates
-    extraPorts = [...new Set(extraPorts)].sort((a, b) => a - b);
-
-    // 6. LAN mode
+    // 6. LAN mode (local mode only — gateway uses its own network config)
     let lanMode: 'none' | 'host' | 'mdns' = existingConfig?.lanMode || 'none';
-    if (os === 'linux') {
-      const lanResult = await p.select({
-        message: 'LAN access mode:',
-        options: [
-          { value: 'none', label: 'None', hint: 'Localhost only' },
-          { value: 'host', label: 'Host networking', hint: 'codeck.local via avahi (Linux only)' },
-        ],
-        initialValue: lanMode === 'host' ? 'host' : 'none',
-      });
-      if (p.isCancel(lanResult)) {
-        p.outro(chalk.red('Setup cancelled.'));
-        process.exit(0);
+    if (codeckMode === 'local') {
+      if (os === 'linux') {
+        const lanResult = await p.select({
+          message: 'LAN access mode:',
+          options: [
+            { value: 'none', label: 'None', hint: 'Localhost only' },
+            { value: 'host', label: 'Host networking', hint: 'codeck.local via avahi (Linux only)' },
+          ],
+          initialValue: lanMode === 'host' ? 'host' : 'none',
+        });
+        if (p.isCancel(lanResult)) {
+          p.outro(chalk.red('Setup cancelled.'));
+          process.exit(0);
+        }
+        lanMode = lanResult as 'none' | 'host';
+      } else {
+        const lanResult = await p.select({
+          message: 'LAN access mode:',
+          options: [
+            { value: 'none', label: 'None', hint: 'Localhost only' },
+            { value: 'mdns', label: 'mDNS advertiser', hint: 'codeck.local via Bonjour (requires admin)' },
+          ],
+          initialValue: lanMode === 'mdns' ? 'mdns' : 'none',
+        });
+        if (p.isCancel(lanResult)) {
+          p.outro(chalk.red('Setup cancelled.'));
+          process.exit(0);
+        }
+        lanMode = lanResult as 'none' | 'mdns';
       }
-      lanMode = lanResult as 'none' | 'host';
     } else {
-      const lanResult = await p.select({
-        message: 'LAN access mode:',
-        options: [
-          { value: 'none', label: 'None', hint: 'Localhost only' },
-          { value: 'mdns', label: 'mDNS advertiser', hint: 'codeck.local via Bonjour (requires admin)' },
-        ],
-        initialValue: lanMode === 'mdns' ? 'mdns' : 'none',
-      });
-      if (p.isCancel(lanResult)) {
-        p.outro(chalk.red('Setup cancelled.'));
-        process.exit(0);
-      }
-      lanMode = lanResult as 'none' | 'mdns';
+      lanMode = 'none';
     }
 
     // 7. GitHub Token
@@ -262,9 +290,12 @@ export const initCommand = new Command('init')
     const envExistedBefore = existsSync(envPath);
     const overrideExistedBefore = existsSync(overridePath);
 
-    const envVars: Record<string, string> = {
-      CODECK_PORT: String(port),
-    };
+    const envVars: Record<string, string> = {};
+    if (codeckMode === 'gateway') {
+      envVars.CODECK_DAEMON_PORT = String(port);
+    } else {
+      envVars.CODECK_PORT = String(port);
+    }
     if (ghToken) envVars.GITHUB_TOKEN = ghToken;
     if (apiKey) envVars.ANTHROPIC_API_KEY = apiKey;
 
@@ -296,6 +327,7 @@ export const initCommand = new Command('init')
       port,
       extraPorts,
       lanMode,
+      mode: codeckMode,
       initialized: true,
       os,
     });
@@ -336,6 +368,7 @@ export const initCommand = new Command('init')
         await composeUp({
           projectPath,
           lanMode,
+          mode: codeckMode,
         });
         const url = `http://localhost${port === 80 ? '' : ':' + port}`;
         p.log.success(`Codeck is running at ${chalk.cyan(url)}`);

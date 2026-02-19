@@ -17,16 +17,19 @@ export const statusCommand = new Command('status')
 
     // Config summary
     console.log(chalk.dim('Configuration'));
-    console.log(`  Project:    ${config.projectPath}`);
-    console.log(`  Port:       ${config.port}`);
-    console.log(`  Extra ports: ${config.extraPorts.length > 0 ? config.extraPorts.join(', ') : 'none'}`);
-    console.log(`  LAN mode:   ${config.lanMode}`);
-    console.log(`  OS:         ${config.os}`);
-    console.log(`  Config:     ${getConfigPath()}`);
+    console.log(`  Project:     ${config.projectPath}`);
+    console.log(`  Mode:        ${config.mode}`);
+    console.log(`  Port:        ${config.port}`);
+    if (config.mode === 'local') {
+      console.log(`  Extra ports: ${config.extraPorts.length > 0 ? config.extraPorts.join(', ') : 'none'}`);
+      console.log(`  LAN mode:   ${config.lanMode}`);
+    }
+    console.log(`  OS:          ${config.os}`);
+    console.log(`  Config:      ${getConfigPath()}`);
 
     // Container status
     console.log(chalk.dim('\nContainers'));
-    const containers = await getContainerStatus(config.projectPath);
+    const containers = await getContainerStatus(config.projectPath, config.mode);
     if (containers.length === 0) {
       console.log(chalk.yellow('  No containers running. Run `codeck start`.'));
     } else {
@@ -44,13 +47,15 @@ export const statusCommand = new Command('status')
     const isRunning = containers.some(c => c.state === 'running');
     if (isRunning) {
       console.log(`  Local: ${chalk.cyan(`http://localhost${config.port === 80 ? '' : ':' + config.port}`)}`);
-      if (config.lanMode === 'host') {
-        console.log(`  LAN:   ${chalk.cyan('http://codeck.local')}`);
-      } else if (config.lanMode === 'mdns') {
-        console.log(`  LAN:   ${chalk.dim('Run `codeck lan start` for mDNS access')}`);
+      if (config.mode === 'local') {
+        if (config.lanMode === 'host') {
+          console.log(`  LAN:   ${chalk.cyan('http://codeck.local')}`);
+        } else if (config.lanMode === 'mdns') {
+          console.log(`  LAN:   ${chalk.dim('Run `codeck lan start` for mDNS access')}`);
+        }
       }
     } else {
-      console.log(chalk.dim('  Container not running'));
+      console.log(chalk.dim('  Containers not running'));
     }
     console.log();
   });

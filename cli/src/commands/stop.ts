@@ -4,7 +4,7 @@ import { getConfig, isInitialized } from '../lib/config.js';
 import { composeDown } from '../lib/docker.js';
 
 export const stopCommand = new Command('stop')
-  .description('Stop the Codeck container')
+  .description('Stop the Codeck container(s)')
   .action(async () => {
     if (!isInitialized()) {
       console.log(chalk.red('Codeck not initialized. Run `codeck init` first.'));
@@ -18,6 +18,7 @@ export const stopCommand = new Command('stop')
       await composeDown({
         projectPath: config.projectPath,
         lanMode: config.lanMode,
+        mode: config.mode,
       });
       console.log(chalk.green('Codeck stopped.'));
     } catch (err) {

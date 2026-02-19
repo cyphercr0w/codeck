@@ -70,9 +70,10 @@ export interface ContainerInfo {
   ports: string;
 }
 
-export async function getContainerStatus(projectPath: string): Promise<ContainerInfo[]> {
+export async function getContainerStatus(projectPath: string, mode?: 'local' | 'gateway'): Promise<ContainerInfo[]> {
   try {
-    const { stdout } = await execa('docker', ['compose', 'ps', '--format', 'json'], {
+    const composeFile = mode === 'gateway' ? 'docker-compose.gateway.yml' : 'docker-compose.yml';
+    const { stdout } = await execa('docker', ['compose', '-f', composeFile, 'ps', '--format', 'json'], {
       cwd: projectPath,
       timeout: DETECT_TIMEOUT,
     });

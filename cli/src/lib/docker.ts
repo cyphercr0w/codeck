@@ -1,7 +1,7 @@
 import { execa, type Options as ExecaOptions } from 'execa';
 import { existsSync, statSync } from 'node:fs';
 import { resolve, join } from 'node:path';
-import type { CodeckConfig } from './config.js';
+import type { CodeckConfig, CodeckMode } from './config.js';
 
 /** Default timeouts for Docker operations (ms) */
 const TIMEOUT = {
@@ -14,6 +14,7 @@ const TIMEOUT = {
 interface ComposeOpts {
   projectPath: string;
   lanMode?: CodeckConfig['lanMode'];
+  mode?: CodeckMode;
   dev?: boolean;
 }
 
@@ -43,6 +44,10 @@ function validateProjectPath(projectPath: string): void {
 }
 
 function composeFiles(opts: ComposeOpts): string[] {
+  if (opts.mode === 'gateway') {
+    // Gateway mode uses its own compose file — no dev/LAN overlays
+    return ['-f', 'docker-compose.gateway.yml'];
+  }
   const files = ['-f', 'docker-compose.yml'];
   if (opts.dev) {
     files.push('-f', 'docker-compose.dev.yml');

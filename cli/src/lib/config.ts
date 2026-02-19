@@ -2,11 +2,14 @@ import Conf from 'conf';
 import { openSync, closeSync, unlinkSync, constants } from 'node:fs';
 import { dirname, join } from 'node:path';
 
+export type CodeckMode = 'local' | 'gateway';
+
 export interface CodeckConfig {
   projectPath: string;
   port: number;
   extraPorts: number[];
   lanMode: 'none' | 'host' | 'mdns';
+  mode: CodeckMode;
   initialized: boolean;
   os: 'windows' | 'macos' | 'linux';
   lanPid?: number;
@@ -17,6 +20,7 @@ const schema = {
   port: { type: 'number' as const, default: 80 },
   extraPorts: { type: 'array' as const, default: [] as number[], items: { type: 'number' as const } },
   lanMode: { type: 'string' as const, default: 'none', enum: ['none', 'host', 'mdns'] },
+  mode: { type: 'string' as const, default: 'local', enum: ['local', 'gateway'] },
   initialized: { type: 'boolean' as const, default: false },
   os: { type: 'string' as const, default: 'linux', enum: ['windows', 'macos', 'linux'] },
   lanPid: { type: 'number' as const },
@@ -33,6 +37,7 @@ export function getConfig(): CodeckConfig {
     port: config.get('port'),
     extraPorts: config.get('extraPorts'),
     lanMode: config.get('lanMode'),
+    mode: config.get('mode'),
     initialized: config.get('initialized'),
     os: config.get('os'),
     lanPid: config.get('lanPid'),

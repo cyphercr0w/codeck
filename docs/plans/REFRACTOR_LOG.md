@@ -8,7 +8,7 @@ Este archivo registra el progreso y decisiones técnicas.
 
 Branch: refactor/daemon-runtime-gateway
 Modo objetivo: local + gateway
-Último bloque completado: MILESTONE 4 — NETWORKING
+Último bloque completado: MILESTONE 5 — CLI
 
 ---
 
@@ -445,6 +445,56 @@ Modo objetivo: local + gateway
 - Runtime con WS separado (ports 9995/9994): startup OK, muestra `WS: :9994`, WS server listening confirmado
 - Runtime sin WS (port 9992): startup OK, sin línea WS — local mode sin cambios
 - Daemon con WS URL separada (port 9993): startup OK, muestra `Proxying WS to http://localhost:9994`
+
+---
+
+### Iteración 14 — MILESTONE 5: CLI
+**Fecha:** 2026-02-19
+
+**Bloque:** Milestone 5 — CLI (codeck init, codeck start --mode local/gateway, stop/status/logs)
+
+**Cambios:**
+- Actualizado `cli/src/lib/config.ts`:
+  - Nuevo tipo `CodeckMode = 'local' | 'gateway'` exportado
+  - Campo `mode` agregado a `CodeckConfig` interface y schema (default: `'local'`)
+  - `getConfig()` ahora retorna `mode`
+- Actualizado `cli/src/lib/docker.ts`:
+  - `ComposeOpts` acepta campo `mode?: CodeckMode`
+  - `composeFiles()` selecciona `docker-compose.gateway.yml` cuando mode es `'gateway'`; en gateway mode no se aplican overlays dev/LAN
+  - Import de `CodeckMode` desde config
+- Actualizado `cli/src/lib/detect.ts`:
+  - `getContainerStatus()` acepta parámetro opcional `mode` y usa el compose file correcto para `docker compose ps`
+- Actualizado `cli/src/commands/init.ts`:
+  - Nuevo prompt de modo Codeck (local vs gateway) después de verificación Docker (paso 2.5)
+  - Puerto default cambia según modo: 80 (local) vs 8080 (gateway)
+  - Extra ports y LAN mode se omiten en gateway mode (runtime aislado)
+  - Env var generada es `CODECK_DAEMON_PORT` en gateway, `CODECK_PORT` en local
+  - `setConfig()` incluye `mode`, `composeUp()` recibe `mode`
+- Actualizado `cli/src/commands/start.ts`:
+  - Nueva opción `--mode <mode>` (overrides config)
+  - Validación de valores: solo acepta `'local'` o `'gateway'`
+  - Muestra modo activo en output; en gateway mode: build siempre habilitado, dev deshabilitado
+- Actualizado `cli/src/commands/stop.ts`: pasa `mode` a `composeDown()`
+- Actualizado `cli/src/commands/restart.ts`: pasa `mode` a `composeDown()`, `composeUp()`, y `getContainerStatus()`; muestra modo activo
+- Actualizado `cli/src/commands/status.ts`: muestra `mode` en config summary; solo muestra extra ports y LAN en local mode; pasa `mode` a `getContainerStatus()`
+- Actualizado `cli/src/commands/logs.ts`: pasa `mode` a `composeLogs()`
+
+**Problemas:** Ninguno.
+
+**Decisiones:**
+- El CLI vive en `cli/` (no en `apps/cli/`) — no se migró porque el CLI es un paquete independiente con su propio `package.json` y `node_modules`. El placeholder `apps/cli/package.json` queda como está
+- Gateway mode en `composeFiles()` no aplica overlays dev ni LAN — el gateway compose file es autosuficiente con su propia red y configuración
+- En gateway mode, el init skip las preguntas de extra ports y LAN mode — el runtime no tiene puertos expuestos y la red es privada
+- `start --mode` permite override temporal del modo configurado — útil para testing sin re-ejecutar init
+- En gateway mode, `composeUp` siempre usa `--build` porque el compose file define ambos servicios y necesita la imagen
+- `getContainerStatus()` usa `-f` explícito para el compose file según modo — sin esto, `docker compose ps` buscaría el compose file default y podría mostrar containers incorrectos
+- El campo `mode` tiene default `'local'` en el schema de Conf — backward compatible con configuraciones existentes que no tienen el campo
+
+**Smoke test:**
+- `npm run build` — OK (frontend vite → apps/web/dist + backend tsc → apps/runtime/dist + daemon tsc → apps/daemon/dist)
+- `cd cli && npx tsc --noEmit` — OK (0 errors)
+- `cd cli && npm run build` — OK (tsc → cli/dist)
+- Runtime startup (port 9999) — OK, startup/shutdown limpio
 
 ---
 

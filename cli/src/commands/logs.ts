@@ -25,6 +25,7 @@ export const logsCommand = new Command('logs')
       await composeLogs({
         projectPath: config.projectPath,
         lanMode: config.lanMode,
+        mode: config.mode,
         lines,
       });
     } catch {

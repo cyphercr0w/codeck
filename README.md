@@ -1,6 +1,6 @@
 # Codeck
 
-**Freedom for the agent. Claude Sandbox.**
+**Freedom for the agent.**
 
 A persistent environment for Claude Code — always-on workspace, memory across sessions, full tool access, accessible from any browser.
 

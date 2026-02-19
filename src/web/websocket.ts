@@ -1,6 +1,6 @@
 import { WebSocketServer, WebSocket } from 'ws';
 import { Server } from 'http';
-import { getClaudeStatus, isClaudeAuthenticated } from '../services/auth-anthropic.js';
+import { getClaudeStatus, isClaudeAuthenticated, syncCredentialsAfterCLI } from '../services/auth-anthropic.js';
 import { ACTIVE_AGENT } from '../services/agent.js';
 import { getGitStatus, getWorkspacePath } from '../services/git.js';
 import { getSession, writeToSession, resizeSession, destroySession, markSessionAttached, listSessions, hasSavedSessions } from '../services/console.js';
@@ -262,6 +262,8 @@ function handleConsoleMessage(ws: WebSocket, msg: { type: string; sessionId: str
             if (client.readyState === WebSocket.OPEN) client.send(payload);
           }
         }
+        // Sync credentials after CLI exit — CLI may have refreshed the token during the session
+        syncCredentialsAfterCLI();
         // Clean up all tracking for this session
         sessionHandlers.delete(sid);
         sessionClients.delete(sid);

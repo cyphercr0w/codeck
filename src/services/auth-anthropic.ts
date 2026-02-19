@@ -59,7 +59,15 @@ export function syncCredentialsAfterCLI(): void {
         writeFileSync(TOKEN_CACHE_PATH, token, { mode: 0o600 });
         tokenMarkedExpired = false;
         invalidateAuthCache();
-        console.log('[Claude] Synced credentials after CLI execution (CLI plaintext format)');
+        // Re-encrypt and update backup so it stays current with the CLI-refreshed token.
+        // Preserve existing accountInfo and refreshToken from the CLI's output.
+        const refreshToken = typeof raw.claudeAiOauth?.refreshToken === 'string' ? raw.claudeAiOauth.refreshToken : '';
+        const expiresIn = raw.claudeAiOauth?.expiresAt
+          ? Math.max(0, Math.round((raw.claudeAiOauth.expiresAt - Date.now()) / 1000))
+          : undefined;
+        const existingAccount = raw.accountInfo ?? getCachedAccountInfo() ?? undefined;
+        saveOAuthToken(token, refreshToken, existingAccount, expiresIn);
+        console.log('[Claude] Synced credentials after CLI execution (CLI plaintext format, re-encrypted backup)');
         return;
       }
       if (token.includes('mock')) {

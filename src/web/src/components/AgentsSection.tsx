@@ -64,6 +64,16 @@ function formatNextRun(ts: number | null): string {
   return `in ${Math.floor(diff / 86400000)}d`;
 }
 
+// ── Tick hook — forces re-render every second for live countdowns ──
+
+function useNow(): void {
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    const id = setInterval(() => setTick(t => t + 1), 1000);
+    return () => clearInterval(id);
+  }, []);
+}
+
 // ── Sub-components ──
 
 interface ExecutionResult {
@@ -197,6 +207,7 @@ function AgentCard({ agent, onSelect, onAction, onEdit }: {
   onEdit: () => void;
 }) {
   const [confirming, setConfirming] = useState(false);
+  useNow(); // re-render every second for live "Next run" countdown
 
   return (
     <div class="dash-card agent-card" onClick={onSelect}>
@@ -577,6 +588,7 @@ function AgentDetailView({ agent, onBack, onEdit }: {
   const [logContent, setLogContent] = useState<string | null>(null);
   const [objectiveExpanded, setObjectiveExpanded] = useState(false);
   const outputRef = useRef<HTMLPreElement>(null);
+  useNow(); // re-render every second for live "Next run" countdown
 
   const liveOutput = agentOutputs.value[agent.id] || '';
 

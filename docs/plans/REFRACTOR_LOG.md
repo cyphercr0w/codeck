@@ -8,7 +8,7 @@ Este archivo registra el progreso y decisiones técnicas.
 
 Branch: refactor/daemon-runtime-gateway
 Modo objetivo: local + gateway
-Último bloque completado: MILESTONE 3.5 — Proxy HTTP
+Último bloque completado: MILESTONE 3.6 — Proxy WS (MILESTONE 3 COMPLETO)
 
 ---
 

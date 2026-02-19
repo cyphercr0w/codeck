@@ -67,7 +67,7 @@ scripts/
 - [x] MILESTONE 0 — PREPARACIÓN (completado)
 - [x] MILESTONE 1 — WEBAPP (completado)
 - [x] MILESTONE 2 — RUNTIME (completado)
-- [ ] MILESTONE 3 — DAEMON (siguiente: 3.6)
+- [x] MILESTONE 3 — DAEMON (completado)
 
 ---
 
@@ -153,9 +153,9 @@ DONE cuando:
 - [x] /api/runtime/* → runtime internal
 
 ## 3.6 Proxy WS
-- [ ] Browser WS → daemon → runtime
-- [ ] límite conexiones
-- [ ] heartbeat
+- [x] Browser WS → daemon → runtime
+- [x] límite conexiones
+- [x] heartbeat
 
 DONE cuando:
 - gateway mode funciona con runtime privado.

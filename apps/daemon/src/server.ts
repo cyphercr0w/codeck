@@ -24,6 +24,7 @@ import {
   clearFailedAttempts,
 } from './services/rate-limit.js';
 import { proxyToRuntime, getRuntimeUrl } from './services/proxy.js';
+import { handleWsUpgrade, shutdownWsProxy, getWsConnectionCount } from './services/ws-proxy.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PORT = parseInt(process.env.CODECK_DAEMON_PORT || '8080', 10);
@@ -51,6 +52,12 @@ export async function startDaemon(): Promise<void> {
   const authLimiter = createAuthLimiter();
   const writesLimiter = createWritesLimiter();
 
+  // ── WebSocket upgrade handler ──
+
+  server.on('upgrade', (req, socket, head) => {
+    handleWsUpgrade(req, socket as import('net').Socket, head);
+  });
+
   // ── Public endpoints (no auth required) ──
 
   // Daemon status
@@ -59,6 +66,7 @@ export async function startDaemon(): Promise<void> {
       status: 'ok',
       mode: 'gateway',
       uptime: process.uptime(),
+      wsConnections: getWsConnectionCount(),
     });
   });
 
@@ -219,6 +227,7 @@ export async function startDaemon(): Promise<void> {
   // Graceful shutdown
   function gracefulShutdown(signal: string): void {
     console.log(`[Daemon] Received ${signal}, shutting down...`);
+    shutdownWsProxy();
     authLimiter.destroy();
     writesLimiter.destroy();
     flushAudit();

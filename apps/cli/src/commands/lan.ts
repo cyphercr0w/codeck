@@ -17,20 +17,44 @@ const HOSTS_PATH = process.platform === 'win32'
 const HOSTS_MARKER_START = '# codeck-ports-start';
 const HOSTS_MARKER_END = '# codeck-ports-end';
 
-/** Remove codeck entries from the hosts file. */
-function cleanupHostsFile(): void {
-  try {
-    const content = readFileSync(HOSTS_PATH, 'utf-8');
-    const startIdx = content.indexOf(HOSTS_MARKER_START);
-    const endIdx = content.indexOf(HOSTS_MARKER_END);
-    if (startIdx !== -1 && endIdx !== -1) {
-      const newContent = content.substring(0, startIdx) +
-        content.substring(endIdx + HOSTS_MARKER_END.length);
-      writeFileSync(HOSTS_PATH, newContent.replace(/\n{3,}/g, '\n\n'), 'utf-8');
+/** Remove codeck entries from the hosts file. Elevates on Windows if needed. */
+async function cleanupHostsFile(): Promise<void> {
+  if (process.platform === 'win32') {
+    // On Windows hosts file requires admin — use PowerShell elevation
+    const ps = `
+      $h = [IO.File]::ReadAllText('${HOSTS_PATH}');
+      $s = $h.IndexOf('${HOSTS_MARKER_START}');
+      $e = $h.IndexOf('${HOSTS_MARKER_END}');
+      if ($s -ge 0 -and $e -ge 0) {
+        $cleaned = $h.Substring(0, $s) + $h.Substring($e + ${HOSTS_MARKER_END.length});
+        $cleaned = $cleaned -replace '\`n{3,}', '\`n\`n';
+        [IO.File]::WriteAllText('${HOSTS_PATH}', $cleaned);
+      }
+    `.replace(/\n\s+/g, ' ').trim();
+    try {
+      await execa('powershell', [
+        '-NoProfile', '-Command',
+        `Start-Process powershell -ArgumentList '-NoProfile -Command "${ps.replace(/"/g, '\\"')}"' -Verb RunAs -WindowStyle Hidden -Wait`,
+      ]);
       console.log(chalk.dim('Cleaned up hosts file entries.'));
+    } catch {
+      console.log(chalk.yellow('Could not clean hosts file — UAC denied. Remove codeck.local entries manually if needed.'));
     }
-  } catch {
-    // May need admin — hosts cleanup is best-effort from non-elevated terminal
+  } else {
+    try {
+      const content = readFileSync(HOSTS_PATH, 'utf-8');
+      const startIdx = content.indexOf(HOSTS_MARKER_START);
+      const endIdx = content.indexOf(HOSTS_MARKER_END);
+      if (startIdx !== -1 && endIdx !== -1) {
+        const newContent = content.substring(0, startIdx) +
+          content.substring(endIdx + HOSTS_MARKER_END.length);
+        writeFileSync(HOSTS_PATH, newContent.replace(/\n{3,}/g, '\n\n'), 'utf-8');
+        console.log(chalk.dim('Cleaned up hosts file entries.'));
+      }
+    } catch {
+      // May need sudo on macOS/Linux
+      console.log(chalk.yellow('Could not clean hosts file — run with sudo if needed.'));
+    }
   }
 }
 
@@ -156,7 +180,7 @@ lanCommand
     const config = getConfig();
 
     // Always clean hosts file (process may have died without cleanup)
-    cleanupHostsFile();
+    await cleanupHostsFile();
 
     if (!config.lanPid) {
       console.log(chalk.dim('mDNS advertiser is not running.'));

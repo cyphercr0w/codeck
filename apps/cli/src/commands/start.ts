@@ -1,9 +1,11 @@
 import { Command } from 'commander';
 import chalk from 'chalk';
+import * as p from '@clack/prompts';
 import { join } from 'node:path';
 import { mkdirSync, existsSync } from 'node:fs';
 import { randomBytes } from 'node:crypto';
-import { getConfig, isInitialized, type CodeckMode } from '../lib/config.js';
+import { spawn, execFileSync } from 'node:child_process';
+import { getConfig, setConfig, isInitialized, type CodeckMode } from '../lib/config.js';
 import { composeUp } from '../lib/docker.js';
 
 export const startCommand = new Command('start')
@@ -55,7 +57,67 @@ export const startCommand = new Command('start')
 
       if (mode === 'managed') {
         // In managed mode, run the daemon in foreground
-        console.log(chalk.dim('Runtime container started. Starting daemon...'));
+        console.log(chalk.dim('Runtime container started.'));
+
+        // Offer LAN access on Windows/macOS (Linux uses host networking)
+        let lanStarted = false;
+        if (process.platform !== 'linux') {
+          const lanResult = await p.confirm({
+            message: 'Enable LAN access? (codeck.local)',
+            initialValue: true,
+          });
+
+          if (!p.isCancel(lanResult) && lanResult) {
+            const scriptPath = join(config.projectPath, 'scripts', 'mdns-advertiser.cjs');
+            const scriptsDir = join(config.projectPath, 'scripts');
+            const portArg = String(config.port);
+
+            // Install script deps if needed
+            if (!existsSync(join(scriptsDir, 'node_modules'))) {
+              console.log(chalk.dim('Installing mDNS dependencies...'));
+              const { execa: ex } = await import('execa');
+              await ex('npm', ['install'], { cwd: scriptsDir, stdio: 'inherit' });
+            }
+
+            if (process.platform === 'win32') {
+              try {
+                const { execa: ex } = await import('execa');
+                const { stdout } = await ex('powershell', [
+                  '-NoProfile', '-Command',
+                  `$p = Start-Process -FilePath '${process.execPath}' ` +
+                  `-ArgumentList '"${scriptPath}" ${portArg}' ` +
+                  `-Verb RunAs -WindowStyle Hidden -PassThru; ` +
+                  `Write-Output $p.Id`,
+                ]);
+                const pid = parseInt(stdout.trim(), 10);
+                if (!isNaN(pid) && pid > 0) {
+                  setConfig({ lanPid: pid });
+                  lanStarted = true;
+                }
+              } catch {
+                console.log(chalk.yellow('UAC denied — LAN access skipped.'));
+              }
+            } else {
+              // macOS
+              const child = spawn(process.execPath, [scriptPath, portArg], {
+                cwd: scriptsDir,
+                detached: true,
+                stdio: 'ignore',
+              });
+              child.unref();
+              if (child.pid) {
+                setConfig({ lanPid: child.pid });
+                lanStarted = true;
+              }
+            }
+
+            if (lanStarted) {
+              console.log(chalk.green('LAN access enabled (codeck.local).'));
+            }
+          }
+        }
+
+        console.log(chalk.dim('Starting daemon...'));
         console.log();
 
         const { execa } = await import('execa');
@@ -79,13 +141,29 @@ export const startCommand = new Command('start')
           },
         });
 
-        // On SIGINT/SIGTERM, stop daemon then container
+        // On SIGINT/SIGTERM, stop daemon + mDNS + container
         const cleanup = async (signal: string) => {
           console.log(chalk.dim(`\nReceived ${signal}, stopping...`));
           daemonProcess.kill(signal === 'SIGTERM' ? 'SIGTERM' : 'SIGINT');
           try {
             await daemonProcess;
           } catch { /* process exited */ }
+
+          // Stop mDNS advertiser if we started it
+          if (lanStarted) {
+            const lanPid = getConfig().lanPid;
+            if (lanPid) {
+              try {
+                if (process.platform === 'win32') {
+                  execFileSync('taskkill', ['/PID', String(lanPid), '/F', '/T'], { stdio: 'ignore' });
+                } else {
+                  process.kill(lanPid, 'SIGTERM');
+                }
+              } catch { /* best effort */ }
+              setConfig({ lanPid: undefined });
+            }
+          }
+
           console.log(chalk.dim('Stopping runtime container...'));
           const { composeDown } = await import('../lib/docker.js');
           try {

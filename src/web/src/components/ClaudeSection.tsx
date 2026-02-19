@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { sessions, activeSessionId, setActiveSessionId, addLocalLog, addSession, removeSession, renameSession, agentName, isMobile, restoringPending } from '../state/store';
 import { apiFetch } from '../api';
-import { createTerminal, destroyTerminal, fitTerminal, focusTerminal, writeToTerminal } from '../terminal';
+import { createTerminal, destroyTerminal, fitTerminal, focusTerminal, writeToTerminal, scrollToBottom, getTerminal } from '../terminal';
 import { wsSend, setTerminalHandlers, attachSession, setOnSessionReattached } from '../ws';
 import { IconPlus, IconX, IconShell, IconTerminal } from './Icons';
 import { MobileTerminalToolbar } from './MobileTerminalToolbar';
@@ -21,10 +21,22 @@ export function ClaudeSection({ onNewSession, onNewShell }: ClaudeSectionProps) 
 
   // Register terminal handlers for WS output/exit and post-reconnect resync
   useEffect(() => {
-    // After WS reconnects and a session is re-attached, resync PTY dimensions.
-    // Uses rAF so the terminal container has its correct layout size before fitting.
+    // After WS reconnects and a session is re-attached, resync PTY dimensions,
+    // scroll to latest content, and re-focus the active terminal so the user
+    // can keep typing without having to click first.
     setOnSessionReattached((sessionId) => {
-      requestAnimationFrame(() => fitTerminal(sessionId));
+      // If the terminal doesn't exist yet the page just loaded (F5) and
+      // useEffect below will handle mounting.  Only proceed when the terminal
+      // is already live (WS transient reconnect).
+      if (!getTerminal(sessionId)) return;
+
+      // Fit first, then attach so the server replays at the correct dimensions.
+      requestAnimationFrame(() => {
+        fitTerminal(sessionId);
+        attachSession(sessionId);
+        scrollToBottom(sessionId);
+        if (sessionId === activeSessionId.value) focusTerminal(sessionId);
+      });
     });
 
     setTerminalHandlers(
@@ -64,13 +76,16 @@ export function ClaudeSection({ onNewSession, onNewShell }: ClaudeSectionProps) 
 
       createTerminal(s.id, el);
 
-      attachSession(s.id);
-      // Defer fit until the browser has laid out the terminal container.
-      // createTerminal → term.open() is synchronous but the container may not
-      // have its final dimensions until the next frame (especially for the
-      // non-active terminals that start with display:none).
+      // Fit BEFORE attaching so the server replays the PTY buffer at the correct
+      // terminal dimensions. If we attach first, replay data renders at xterm's
+      // default 80x24 — then fitAddon.fit() reflows to the real size and the
+      // viewport ends up in the wrong position (content appears above, black screen).
       const sid = s.id;
-      requestAnimationFrame(() => fitTerminal(sid));
+      // Fit BEFORE attaching so the server replays at the correct dimensions.
+      requestAnimationFrame(() => {
+        fitTerminal(sid);
+        attachSession(sid);
+      });
     }
 
   }, [sessionList.length]);
@@ -85,8 +100,12 @@ export function ClaudeSection({ onNewSession, onNewShell }: ClaudeSectionProps) 
     if (activeEl) activeEl.classList.add('active');
     // Use rAF so the browser has applied display:block (CSS active class) and
     // computed the container's layout dimensions before FitAddon measures them.
+    // scrollToBottom after fit: xterm may have rendered at wrong dims before
+    // this tab was active (80x24 default) — after reflow the viewport can be
+    // anywhere, so we always land at the latest content on tab switch.
     requestAnimationFrame(() => {
       fitTerminal(activeId);
+      scrollToBottom(activeId);
       focusTerminal(activeId);
     });
   }, [activeId]);
@@ -132,13 +151,20 @@ export function ClaudeSection({ onNewSession, onNewShell }: ClaudeSectionProps) 
     removeSession(id);
   }
 
-  // On mobile, tapping the terminal area focuses the hidden input (keyboard capture)
+  // Clicking the terminal area restores focus to the active terminal.
+  // On desktop: focus may be lost after WS reconnects or state updates — clicking
+  // should bring it back without the user needing to F5. On mobile: forward to the
+  // hidden input that captures keyboard events.
   function handleTerminalTap(e: MouseEvent) {
-    if (!isMobile.value) return;
     const target = e.target as HTMLElement;
-    // Don't steal focus from toolbar buttons
-    if (target.closest('.mobile-toolbar')) return;
-    document.getElementById('mobile-hidden-input')?.focus();
+    if (isMobile.value) {
+      if (target.closest('.mobile-toolbar')) return;
+      document.getElementById('mobile-hidden-input')?.focus();
+    } else {
+      // Don't steal focus from tab buttons or close icons
+      if (target.closest('button')) return;
+      if (activeId) focusTerminal(activeId);
+    }
   }
 
   const mobile = isMobile.value;

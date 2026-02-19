@@ -35,6 +35,40 @@ step "Pre-flight checks"
 [[ "$(uname -s)" == "Linux" ]] || error "Linux required. Detected: $(uname -s)"
 log "OS: Linux ($(uname -r))"
 
+# Detect WSL — systemd support is limited; warn before proceeding
+if grep -qiE "(microsoft|wsl)" /proc/version 2>/dev/null; then
+  echo ""
+  echo -e "${YELLOW}┌──────────────────────────────────────────────────────────┐${NC}"
+  echo -e "${YELLOW}│                  ⚠  WSL DETECTED                        │${NC}"
+  echo -e "${YELLOW}├──────────────────────────────────────────────────────────┤${NC}"
+  echo -e "${YELLOW}│  You appear to be running inside Windows Subsystem for   │${NC}"
+  echo -e "${YELLOW}│  Linux (WSL). systemd support in WSL is limited and      │${NC}"
+  echo -e "${YELLOW}│  may not work correctly.                                  │${NC}"
+  echo -e "${YELLOW}│                                                           │${NC}"
+  echo -e "${YELLOW}│  Recommended: use Docker Desktop on Windows instead.      │${NC}"
+  echo -e "${YELLOW}│  Install the Codeck CLI and run: codeck init              │${NC}"
+  echo -e "${YELLOW}└──────────────────────────────────────────────────────────┘${NC}"
+  echo ""
+  if [ -t 0 ]; then
+    read -r -p "Continue anyway? [y/N] " _wsl_confirm
+    case "$_wsl_confirm" in
+      [yY][eE][sS]|[yY]) : ;;
+      *)
+        echo -e "${RED}Aborted.${NC}"
+        exit 1
+        ;;
+    esac
+  else
+    echo -e "${YELLOW}[!]${NC} Running non-interactively. Continuing in 10 seconds — press Ctrl+C to abort."
+    for i in 10 9 8 7 6 5 4 3 2 1; do
+      printf "\r    %d... " "$i"
+      sleep 1
+    done
+    echo ""
+  fi
+  echo ""
+fi
+
 [[ "$EUID" -eq 0 ]] || error "Run as root: sudo bash install.sh"
 log "Running as root"
 
@@ -51,6 +85,48 @@ else
   error "No supported package manager (apt, dnf, yum)"
 fi
 log "Package manager: $PKG_MANAGER"
+
+# ─── Isolation warning ──────────────────────────────────────────────
+
+echo ""
+echo -e "${YELLOW}┌──────────────────────────────────────────────────────────┐${NC}"
+echo -e "${YELLOW}│                  ⚠  SECURITY WARNING                    │${NC}"
+echo -e "${YELLOW}├──────────────────────────────────────────────────────────┤${NC}"
+echo -e "${YELLOW}│  This installs Codeck directly on the host without       │${NC}"
+echo -e "${YELLOW}│  container isolation.                                     │${NC}"
+echo -e "${YELLOW}│                                                           │${NC}"
+echo -e "${YELLOW}│  The agent (Claude Code) will run as the 'codeck' user   │${NC}"
+echo -e "${YELLOW}│  and has full access to:                                  │${NC}"
+echo -e "${YELLOW}│    • the host filesystem                                  │${NC}"
+echo -e "${YELLOW}│    • network interfaces                                   │${NC}"
+echo -e "${YELLOW}│    • the ability to run arbitrary commands                │${NC}"
+echo -e "${YELLOW}│                                                           │${NC}"
+echo -e "${YELLOW}│  Recommended: run on a dedicated VPS, not your personal  │${NC}"
+echo -e "${YELLOW}│  workstation. For local use, prefer Docker mode instead.  │${NC}"
+echo -e "${YELLOW}└──────────────────────────────────────────────────────────┘${NC}"
+echo ""
+
+if [ -t 0 ]; then
+  # Interactive shell — require explicit confirmation
+  read -r -p "Continue anyway? [y/N] " _confirm
+  case "$_confirm" in
+    [yY][eE][sS]|[yY]) : ;;
+    *)
+      echo -e "${RED}Aborted.${NC}"
+      exit 1
+      ;;
+  esac
+else
+  # Piped execution (curl | bash) — show countdown so user can Ctrl+C
+  echo -e "${YELLOW}[!]${NC} Running non-interactively. Continuing in 10 seconds — press Ctrl+C to abort."
+  for i in 10 9 8 7 6 5 4 3 2 1; do
+    printf "\r    %d... " "$i"
+    sleep 1
+  done
+  echo ""
+fi
+
+echo ""
 
 # ─── System dependencies ────────────────────────────────────────────
 

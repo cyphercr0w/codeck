@@ -6,6 +6,7 @@ import { apiFetch, setAuthToken } from '../api';
 interface SessionInfo {
   id: string;
   createdAt: number;
+  expiresAt: number;
   ip: string;
   current: boolean;
 }
@@ -28,6 +29,14 @@ function relativeTime(ts: number): string {
 
 function absoluteTime(ts: number): string {
   return new Date(ts).toLocaleString();
+}
+
+function expiresIn(expiresAt: number): { label: string; urgent: boolean } {
+  const diff = Math.floor((expiresAt - Date.now()) / 1000);
+  if (diff <= 0) return { label: 'Expirada', urgent: true };
+  if (diff < 3600) return { label: `${Math.floor(diff / 60)} min`, urgent: true };
+  if (diff < 86400) return { label: `${Math.floor(diff / 3600)} h`, urgent: true };
+  return { label: `${Math.floor(diff / 86400)} d`, urgent: false };
 }
 
 // ── Change Password Card ───────────────────────────────────────────────────
@@ -130,7 +139,8 @@ function ActiveSessionsCard() {
     try {
       const res = await apiFetch('/api/auth/sessions');
       const data = await res.json();
-      setSessions(data.sessions || []);
+      const now = Date.now();
+      setSessions((data.sessions || []).filter((s: SessionInfo) => s.expiresAt > now));
     } catch {
       // ignore
     } finally {
@@ -166,29 +176,38 @@ function ActiveSessionsCard() {
               <tr>
                 <th>IP</th>
                 <th>Creada</th>
+                <th>Expira</th>
                 <th></th>
                 <th></th>
               </tr>
             </thead>
             <tbody>
-              {sessions.map(s => (
-                <tr key={s.id}>
-                  <td>{s.ip}</td>
-                  <td title={absoluteTime(s.createdAt)}>{relativeTime(s.createdAt)}</td>
-                  <td>
-                    {s.current && <span class="settings-badge">Sesión actual</span>}
-                  </td>
-                  <td>
-                    <button
-                      class="btn-danger-sm"
-                      disabled={s.current || revoking === s.id}
-                      onClick={() => revoke(s.id)}
-                    >
-                      {revoking === s.id ? '…' : 'Revocar'}
-                    </button>
-                  </td>
-                </tr>
-              ))}
+              {sessions.map(s => {
+                const exp = expiresIn(s.expiresAt);
+                return (
+                  <tr key={s.id}>
+                    <td>{s.ip}</td>
+                    <td title={absoluteTime(s.createdAt)}>{relativeTime(s.createdAt)}</td>
+                    <td title={absoluteTime(s.expiresAt)}>
+                      <span class={exp.urgent ? 'settings-expires-urgent' : ''}>
+                        {exp.label}
+                      </span>
+                    </td>
+                    <td>
+                      {s.current && <span class="settings-badge">Sesión actual</span>}
+                    </td>
+                    <td>
+                      <button
+                        class="btn-danger-sm"
+                        disabled={s.current || revoking === s.id}
+                        onClick={() => revoke(s.id)}
+                      >
+                        {revoking === s.id ? '…' : 'Revocar'}
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>

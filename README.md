@@ -1,210 +1,161 @@
 # Codeck
 
-Docker sandbox that runs **Claude Code CLI** and exposes it through a web interface on port 80. Authenticate with Claude OAuth, open interactive terminals, browse files, manage GitHub integration, and monitor resource usage — all from the browser.
+**Freedom for the agent.** Codeck gives Claude Code its own persistent environment — a dedicated workspace with memory, tools, and full autonomy. Access it from any browser.
 
-## Quick Start (CLI)
+Run it as a Docker container on your laptop, or deploy it as a systemd service on a dedicated VPS and let the agent live there full-time.
 
-The `codeck` CLI automates the entire setup and lifecycle:
+---
+
+## Deployment options
+
+### VPS / Dedicated server (recommended)
+
+The agent gets its own machine. Persistent memory, background tasks, always-on.
 
 ```bash
-# Install the CLI
-cd cli && npm install && npm run build && npm link
-
-# Interactive setup — builds base image, generates config, starts container
-codeck init
-
-# Open the webapp
-codeck open
+# Fresh VPS — installs everything and starts the service
+curl -fsSL https://raw.githubusercontent.com/cyphercr0w/codeck/main/scripts/dev-setup.sh | sudo bash
 ```
 
-On first visit: set a local password, authenticate with Claude OAuth, and choose a configuration preset.
-
-## CLI Commands
-
-| Command | Description |
-|---------|-------------|
-| `codeck init` | Interactive setup wizard (port, extra ports, LAN, tokens, base image build) |
-| `codeck start` | Start the container (`--dev` for development mode) |
-| `codeck stop` | Stop the container |
-| `codeck restart` | Stop + start (`--dev` for development mode) |
-| `codeck status` | Show container status, URLs, and configuration |
-| `codeck logs` | Stream container logs (`-n 100` for more lines) |
-| `codeck doctor` | Diagnose environment issues (Docker, images, ports, config) |
-| `codeck open` | Open the webapp in your default browser |
-| `codeck lan` | Manage LAN access via mDNS (`start`/`stop`/`status`) |
-
-Re-running `codeck init` is safe — it loads existing config as defaults and never destroys volumes.
-
-## Manual Setup (without CLI)
+After setup, open `http://<your-server-ip>` in the browser.
 
 ```bash
-# 1. Build the base image (one time, ~5 min)
+# Service management
+systemctl status codeck
+journalctl -u codeck -f
+npm run build && sudo systemctl restart codeck   # deploy code changes
+```
+
+### Docker (local or cloud)
+
+```bash
+# 1. Build base image (once, ~5 min)
 docker build -t codeck-base -f Dockerfile.base .
 
-# 2. (Optional) Copy and edit the environment file
-echo "CODECK_PORT=80" > .env
-
-# 3. Start the container
+# 2. Start
 docker compose up
 
-# 4. Open http://localhost
+# 3. Open http://localhost
 ```
 
-### Development mode
+### CLI (Docker lifecycle manager)
 
 ```bash
-docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
+cd cli && npm install && npm run build && npm link
+
+codeck init      # interactive setup wizard
+codeck start     # start container
+codeck open      # open in browser
+codeck status    # show URLs and config
+codeck logs      # stream logs
 ```
 
-### Base Image
+---
 
-The base image includes heavy dependencies (Node.js, Claude CLI, GitHub CLI, node-pty). Build it once:
+## What it gives the agent
 
-```bash
-docker build -t codeck-base -f Dockerfile.base .
-```
+- **Persistent workspace** — projects and memory survive restarts
+- **Full tool access** — terminal, git, GitHub CLI, Docker, internet
+- **Memory system** — SQLite FTS5 search, per-project context, daily journals, durable memory across sessions
+- **Up to 5 concurrent PTY terminals** — via node-pty + xterm.js + WebSocket
+- **Proactive agents** — schedule recurring tasks (cron-style)
+- **File browser** — view and edit workspace files from the browser
+- **GitHub integration** — SSH keys + CLI device flow authentication
+- **Port preview** — dev servers inside the environment accessible via browser
 
-Rebuild only when `Dockerfile.base` changes.
+## What it gives you
 
-## LAN Access (`codeck.local`)
+- **Browser UI** — access from anywhere, including phones and tablets
+- **Claude OAuth** — PKCE auth flow, automatic token refresh
+- **Local password** — scrypt-hashed, 7-day session tokens
+- **LAN access** — `codeck.local` from any device on your network via mDNS
+- **Dashboard** — CPU, memory, disk, active sessions, Claude API usage
+- **Preset system** — manifest-driven workspace configuration
 
-Access Codeck from phones, tablets, and other devices on your local network. Works the same on all platforms (Linux, Windows, macOS).
-
-**With CLI:**
-
-```bash
-codeck lan start   # Start mDNS advertiser for LAN discovery
-```
-
-**Without CLI:**
-
-```bash
-# 1. Start Codeck with LAN overlay
-docker compose -f docker-compose.yml -f docker-compose.lan.yml up
-
-# 2. Run the host-side mDNS advertiser (requires admin)
-cd scripts && npm install
-node scripts/mdns-advertiser.cjs
-```
-
-The advertiser script broadcasts `codeck.local` and `{port}.codeck.local` via mDNS. See [docs/CONFIGURATION.md](docs/CONFIGURATION.md) for details.
+---
 
 ## Architecture
 
 ```
 ┌──────────────────────────────────────────────────────┐
-│  Docker Container (node:22-slim)                     │
+│  Codeck (Docker container or VPS systemd service)    │
 │                                                      │
 │  ┌────────────────────────────────────────────────┐  │
-│  │  Express Server (:80)                          │  │
+│  │  Express Server (:80 or :8080)                 │  │
 │  │  ├── REST API (/api/*)                         │  │
 │  │  ├── WebSocket (terminal I/O + logs)           │  │
 │  │  └── Static files (Vite build)                 │  │
 │  └────────────────────────────────────────────────┘  │
 │                                                      │
 │  ┌──────────┐  ┌──────────┐  ┌───────────────────┐  │
-│  │ Claude   │  │ node-pty │  │ mDNS responder    │  │
-│  │ Code CLI │  │ sessions │  │ (LAN mode)        │  │
+│  │ Claude   │  │ node-pty │  │ Memory system     │  │
+│  │ Code CLI │  │ sessions │  │ (SQLite FTS5)     │  │
 │  └──────────┘  └──────────┘  └───────────────────┘  │
 │                                                      │
-│  /workspace/  /workspace/.codeck/  /root/.claude/  │
+│  /workspace/   /workspace/.codeck/   ~/.claude/      │
 └──────────────────────────────────────────────────────┘
 
 ┌──────────────────────────────────────────────────────┐
 │  Browser (Preact + xterm.js)                         │
-│  ├── Auth view (password + OAuth + preset wizard)    │
+│  ├── Auth (password + OAuth + preset wizard)         │
 │  ├── Home (account, resources, usage dashboard)      │
 │  ├── Files (file browser + editor)                   │
 │  ├── Claude (PTY terminals, up to 5 sessions)        │
+│  ├── Agents (proactive / scheduled tasks)            │
 │  ├── Integrations (GitHub SSH + CLI device flow)     │
-│  └── Config (viewer/editor for .codeck/)           │
+│  ├── Memory (workspace .codeck/ viewer/editor)       │
+│  └── Settings (password, sessions, auth log)         │
 └──────────────────────────────────────────────────────┘
 ```
 
-## Port Preview
+---
 
-Dev servers running inside the container are accessible via direct port mapping (no proxy):
-
-| Access | URL |
-|--------|-----|
-| Same machine | `http://localhost:{port}` (e.g., `http://localhost:5173`) |
-| LAN devices | `http://codeck.local:{port}` |
-| Direct IP | `http://{HOST_IP}:{port}` |
-
-Only the Codeck port (default 80) is mapped initially. Additional ports can be added via the dashboard UI, the `POST /api/system/add-port` API, or `docker-compose.override.yml`. Servers must bind to `0.0.0.0` (not `localhost`) to be reachable. The port scanner detects active ports every 5 seconds.
-
-## Features
-
-- **Local password auth** with hashed credentials (scrypt) and 7-day session tokens
-- **Claude OAuth PKCE** for CLI authentication (paste code or token directly)
-- **Up to 5 concurrent PTY terminals** via node-pty + xterm.js + WebSocket
-- **Collapsible sidebar** with mobile slide-down menu
-- **File browser** with directory creation, text file viewing/editing
-- **Project creation** — new folder, existing folder, or git clone
-- **GitHub integration** — CLI device flow login + SSH key management
-- **Preset system** — manifest-driven configuration (Default + Empty presets)
-- **Persistent memory** — summary, decisions, per-project context, preferences
-- **Dashboard** — CPU, memory, disk, active sessions, Claude API usage
-- **Port preview** — direct port mapping for dev servers inside the container
-- **LAN access** — `codeck.local` from phones/tablets via mDNS
-- **Config viewer/editor** for `/workspace/.codeck/` agent data files
-- **Workspace export** as `.tar.gz`
-- **Centralized logging** with automatic token sanitization
-
-## Production Deployment (Linux VPS)
-
-For running Codeck natively on a Linux VPS as a systemd service (e.g., for SaaS Cloud):
+## LAN access (`codeck.local`)
 
 ```bash
-curl -fsSL https://codeck.app/install.sh | sudo bash
+# With CLI
+codeck lan start
+
+# Without CLI
+docker compose -f docker-compose.yml -f docker-compose.lan.yml up
+cd scripts && npm install && node scripts/mdns-advertiser.cjs
 ```
 
-This installs Node.js, Docker, Claude CLI, creates a `codeck` system user, and sets up a systemd service. After installation:
+Broadcasts `codeck.local` and `{port}.codeck.local` via mDNS — reachable from phones, tablets, and any LAN device.
 
-```bash
-systemctl status codeck       # Check service status
-journalctl -u codeck -f       # Follow logs
-```
-
-See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) for the full guide, configuration options, and troubleshooting.
-
-## Docker Socket Access (Experimental)
-
-By default, Codeck runs in **secure mode** without access to the host Docker daemon. Docker commands (`docker ps`, `docker compose`, etc.) will not work inside the container, and dynamic port exposure via the dashboard requires manual configuration.
-
-To enable Docker access (for advanced workflows like Docker-in-Docker, dynamic port mapping, or container orchestration), use the experimental overlay:
+## Docker socket (experimental)
 
 ```bash
 docker compose -f docker-compose.yml -f docker-compose.experimental.yml up
 ```
 
-**Warning:** This mounts `/var/run/docker.sock` into the container, granting full access to the host Docker daemon. This removes container isolation entirely. Only use on trusted systems.
+Mounts `/var/run/docker.sock` for Docker-in-Docker and dynamic port mapping. Removes container isolation — only use on trusted systems.
 
-When experimental mode is active, the dashboard shows a persistent warning banner.
+---
 
-## Tech Stack
+## Tech stack
 
 | Layer | Technology |
 |-------|------------|
-| Frontend | Preact 10.19, @preact/signals, xterm.js 5.5, Vite 5.4 |
+| Frontend | Preact 10, @preact/signals, xterm.js 5.5, Vite 5.4 |
 | Backend | Node.js 22+, Express 4.18, ws 8.16 |
 | Terminal | node-pty 1.0 + xterm.js |
+| Memory | SQLite FTS5, session summarizer, context injection |
 | Networking | multicast-dns 7.2 (mDNS/Bonjour) |
-| Container | Docker, tini (PID 1), gnome-keyring |
-| CLI | Claude Code, GitHub CLI, git, openssh |
+| Container | Docker, tini, gnome-keyring |
+| CLI tools | Claude Code, GitHub CLI, git, openssh |
 | Codeck CLI | Commander, @clack/prompts, execa, conf |
 
 ## Security
 
-- **Docker hardening**: `cap_drop ALL`, minimal `cap_add`, `no-new-privileges`, `pids_limit 512`
-- **Credentials**: OAuth tokens at mode 0600, password hashed with scrypt + random salt
+- **Credentials**: OAuth tokens at mode 0600, password hashed with scrypt + salt
 - **Rate limiting**: per-route (10/min auth, 200/min general), 7-day session TTL
-- **Isolation**: Path traversal protection, PTY sandboxed inside container
-- **Logging**: Automatic sanitization of Anthropic and GitHub tokens
+- **Docker hardening**: `cap_drop ALL`, minimal `cap_add`, `no-new-privileges`, `pids_limit 512`
+- **Logging**: automatic sanitization of Anthropic and GitHub tokens
 
 ## Documentation
 
-Full technical documentation in [`docs/`](docs/README.md):
+Full technical docs in [`docs/`](docs/README.md):
 
 - [Architecture](docs/ARCHITECTURE.md) — system design, process lifecycle, security model
 - [API Reference](docs/API.md) — REST endpoints and WebSocket protocol

@@ -19,19 +19,73 @@ export const initCommand = new Command('init')
       p.log.info('Existing configuration found. Values will be used as defaults.');
     }
 
-    // 1. Detect OS
+    // 1. Detect OS + Docker availability (silently, no exit yet)
     const os = detectOS();
     p.log.info(`Detected OS: ${chalk.cyan(os)}`);
 
-    // 2. Check Docker
-    const dockerOk = await isDockerInstalled();
-    if (!dockerOk) {
+    const [dockerInstalled, dockerRunning] = await Promise.all([
+      isDockerInstalled(),
+      isDockerRunning(),
+    ]);
+
+    // 2. Mode selection
+    type DeployMode = 'docker' | 'systemd';
+    let mode: DeployMode;
+
+    if (os === 'linux') {
+      const modeResult = await p.select({
+        message: 'Deployment mode:',
+        options: [
+          { value: 'systemd', label: 'systemd service', hint: 'VPS / bare Linux — recommended' },
+          {
+            value: 'docker',
+            label: 'Docker',
+            hint: dockerInstalled ? (dockerRunning ? 'running' : 'installed, not running') : 'not detected',
+          },
+        ],
+        initialValue: (existingConfig as any)?.mode === 'docker' ? 'docker' : 'systemd',
+      });
+      if (p.isCancel(modeResult)) {
+        p.outro(chalk.red('Setup cancelled.'));
+        process.exit(0);
+      }
+      mode = modeResult as DeployMode;
+    } else {
+      // macOS / Windows — Docker is the only supported mode
+      p.log.info(`On ${os}, Docker is the only supported deployment mode.`);
+      if (!dockerInstalled) {
+        p.log.warn(
+          'Docker Desktop is not installed.\n' +
+          '  Download it from https://www.docker.com/products/docker-desktop and try again.'
+        );
+      } else if (!dockerRunning) {
+        p.log.warn('Docker Desktop is installed but not running. Start it and try again.');
+      }
+      mode = 'docker';
+    }
+
+    // systemd path — warn about isolation, print install command and exit
+    if (mode === 'systemd') {
+      p.log.warn(
+        'systemd mode runs without container isolation.\n' +
+        '  The agent has full access to the host filesystem and can run arbitrary commands.\n' +
+        '  Use a dedicated machine or VPS — not your personal workstation.'
+      );
+      console.log();
+      p.log.info('Run the installer on your Linux VPS as root:');
+      console.log();
+      console.log(chalk.cyan('  curl -fsSL https://raw.githubusercontent.com/cyphercr0w/codeck/main/scripts/install.sh | sudo bash'));
+      console.log();
+      p.outro(chalk.green('That\'s it — the script handles everything.'));
+      process.exit(0);
+    }
+
+    // Docker mode — verify Docker is actually available now
+    if (!dockerInstalled) {
       p.log.error('Docker is not installed. Please install Docker and try again.');
       p.outro(chalk.red('Setup aborted.'));
       process.exit(1);
     }
-
-    const dockerRunning = await isDockerRunning();
     if (!dockerRunning) {
       p.log.error('Docker is not running. Please start Docker and try again.');
       p.outro(chalk.red('Setup aborted.'));

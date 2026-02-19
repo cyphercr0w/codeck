@@ -15,17 +15,18 @@ Runs inside a Docker container. Safe for local use on your main machine.
 
 ```bash
 git clone https://github.com/cyphercr0w/codeck
-cd codeck/cli && npm install && npm run build && npm link
-
-codeck init      # interactive setup wizard
-codeck start     # → http://localhost
-codeck stop
-codeck status
-codeck logs
-codeck open
+cd codeck && npm install && npm run build:cli
+npx -w @codeck/cli codeck init      # interactive setup wizard
+npx -w @codeck/cli codeck start     # → http://localhost
+npx -w @codeck/cli codeck stop
+npx -w @codeck/cli codeck status
+npx -w @codeck/cli codeck logs
+npx -w @codeck/cli codeck open
 ```
 
-`codeck init` detects your OS, lets you choose deployment mode (systemd or Docker on Linux), builds the base image, and starts the container. Re-running is safe — never destroys volumes.
+Or link globally: `npm link -w @codeck/cli` then use `codeck` directly.
+
+`codeck init` detects your OS, lets you choose deployment mode (local or gateway), builds the base image, and starts the container. Re-running is safe — never destroys volumes.
 
 ### Linux VPS — systemd service
 

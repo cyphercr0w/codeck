@@ -43,9 +43,11 @@ docker compose -f docker-compose.yml -f docker-compose.lan.yml up
 # Local build check:
 npm run build
 
-# CLI (separate package in cli/):
-cd cli && npm install && npm run build && npm link
+# CLI (workspace package in apps/cli/):
 npm run build:cli   # from project root
+
+# Gateway mode (daemon + runtime in separate containers):
+docker compose -f docker-compose.gateway.yml up --build
 ```
 
 ## LAN Access

@@ -659,12 +659,13 @@ Copy `docker-compose.override.yml.example` to `docker-compose.override.yml` and 
 
 ## Codeck CLI
 
-The `codeck` CLI is a separate package in `cli/` that automates setup and lifecycle management.
+The `codeck` CLI is a workspace package in `apps/cli/` (`@codeck/cli`) that automates setup and lifecycle management.
 
 ### Installation
 
 ```bash
-cd cli && npm install && npm run build && npm link
+npm run build:cli                # build from project root
+npm link -w @codeck/cli          # link globally (optional)
 ```
 
 ### Commands

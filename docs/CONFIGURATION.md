@@ -4,22 +4,44 @@
 
 ## Environment Variables
 
+### Runtime
+
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `CODECK_PORT` | `80` | Codeck server listening port. Set via env or `.env` file. docker-compose.yml uses `${CODECK_PORT:-80}` for port mapping. |
+| `CODECK_PORT` | `80` | Runtime HTTP listening port. In gateway mode, set to `7777` (internal). |
+| `CODECK_WS_PORT` | — | **Optional.** Separate WebSocket port. If set and differs from `CODECK_PORT`, creates a dedicated WS server. Required for gateway mode (e.g., `7778`). |
 | `WORKSPACE` | `/workspace` | Workspace directory for projects |
 | `CODECK_DIR` | `/workspace/.codeck` | Codeck data directory (auth, config, memory, rules, skills, preferences) |
-| `GITHUB_TOKEN` | — | **Optional.** Token for cloning private repos via HTTPS. **Security:** Use GitHub [fine-grained personal access tokens](https://github.com/settings/tokens?type=beta) with repository-scoped permissions. Regenerate periodically (no automated rotation). Never commit to git (covered by .gitignore). |
-| `ANTHROPIC_API_KEY` | — | **Optional.** Alternative to OAuth login. **Security:** Prefer OAuth login (automatic token refresh, encryption at rest). If using API key, ensure .env has 0600 permissions on host. Never commit to git. |
+| `GITHUB_TOKEN` | — | **Optional.** Token for cloning private repos via HTTPS. Use fine-grained PATs. |
+| `ANTHROPIC_API_KEY` | — | **Optional.** Alternative to OAuth login. Prefer OAuth. |
 | `NODE_ENV` | `production` | Set in Dockerfile |
 | `CLAUDE_CODE_OAUTH_TOKEN` | — | Auto-set per PTY session from .credentials.json |
 | `CODECK_NETWORK_MODE` | `bridge` | Docker network mode (bridge only, kept for compatibility) |
 | `CODECK_MAPPED_PORTS` | — | Comma-separated port ranges exposed from Docker (e.g., `80,3000-3009,5173-5179`) |
 | `SESSION_TTL_MS` | `604800000` | Session token lifetime in milliseconds (default: 7 days) |
-| `SESSION_RESTORE_DELAY` | `2000` | Delay in milliseconds before restoring PTY sessions on container startup (allows server initialization to complete) |
-| `CODECK_ENCRYPTION_KEY` | (hostname-based) | Encryption key for Claude OAuth token storage. If not set, a machine-specific key is derived from the hostname. **Recommended:** Set to a random 32+ character string for production. |
+| `SESSION_RESTORE_DELAY` | `2000` | Delay in ms before restoring PTY sessions on startup |
+| `CODECK_ENCRYPTION_KEY` | (hostname-based) | Encryption key for Claude OAuth token storage. **Recommended:** Set to a random 32+ character string for production. |
 | `AGENT_SIGKILL_GRACE_MS` | `15000` | Grace period (ms) between SIGTERM and SIGKILL for proactive agent timeouts. Clamped to 5000–60000. |
-| `GEMINI_API_KEY` | — | **Optional.** Gemini API key for embedding fallback (free tier `text-embedding-004`). Used when `@xenova/transformers` is not available. Enables semantic/hybrid search. |
+| `GEMINI_API_KEY` | — | **Optional.** Gemini API key for embedding fallback (free tier). Enables semantic/hybrid search. |
+
+### Daemon (gateway mode only)
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `CODECK_DAEMON_PORT` | `8080` | Daemon listening port (exposed to host) |
+| `CODECK_RUNTIME_URL` | `http://codeck-runtime:7777` | Runtime HTTP URL for proxy |
+| `CODECK_RUNTIME_WS_URL` | `CODECK_RUNTIME_URL` | Runtime WebSocket URL. Set separately when WS runs on a different port (e.g., `http://codeck-runtime:7778`). |
+| `CODECK_DIR` | `/workspace/.codeck` | Same as runtime — daemon reads `auth.json`, writes `daemon-sessions.json` and `audit.log` |
+| `SESSION_TTL_MS` | `604800000` | Daemon session lifetime (default: 7 days) |
+| `PROXY_TIMEOUT_MS` | `30000` | HTTP proxy timeout (ms) |
+| `MAX_WS_CONNECTIONS` | `20` | Max concurrent WebSocket connections |
+| `WS_PING_INTERVAL_MS` | `30000` | WebSocket keepalive ping interval (ms) |
+| `RATE_AUTH_MAX` | `10` | Auth endpoint rate limit (requests per window) |
+| `RATE_AUTH_WINDOW_MS` | `60000` | Auth rate limit window (ms) |
+| `RATE_WRITES_MAX` | `60` | Write endpoint rate limit (requests per window) |
+| `RATE_WRITES_WINDOW_MS` | `60000` | Write rate limit window (ms) |
+| `LOCKOUT_THRESHOLD` | `5` | Failed login attempts before lockout |
+| `LOCKOUT_DURATION_MS` | `900000` | Lockout duration (ms, default 15 min) |
 
 ### Configuration Validation
 

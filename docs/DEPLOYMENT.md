@@ -177,7 +177,62 @@ sudo systemctl restart codeck
 
 ## Docker Deployment
 
-This is the default mode. See the main [README.md](../README.md) for Docker Compose commands.
+### Local mode (default)
+
+Single container running the runtime with the SPA:
+
+```bash
+docker compose up --build              # → http://localhost:80
+```
+
+See the main [README.md](../README.md) for full commands.
+
+### Gateway mode
+
+Two containers: daemon (exposed) + runtime (private). Use when deploying behind nginx or exposing to the internet.
+
+```bash
+docker compose -f docker-compose.gateway.yml up --build   # → http://localhost:8080
+```
+
+**Architecture:**
+- **Daemon** (`:8080`, exposed): Auth, rate limiting, audit, proxies to runtime
+- **Runtime** (`:7777`/`:7778`, private `codeck_net`): All business logic, PTY, files, memory
+- Same Docker image, different entrypoints
+- Shared volumes: workspace, claude-config, ssh-data
+
+**Typical nginx config for gateway mode:**
+```nginx
+server {
+    listen 80;
+    server_name codeck.example.com;
+
+    location / {
+        proxy_pass http://localhost:8080;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
+```
+
+### CLI-managed deployment
+
+The `@codeck/cli` package automates Docker lifecycle:
+
+```bash
+npm run build:cli && npm link -w @codeck/cli
+codeck init           # Choose local or gateway mode
+codeck start          # Starts the correct compose file
+codeck stop
+codeck status
+```
+
+See [CONFIGURATION.md](CONFIGURATION.md#codeck-cli) for CLI details.
 
 ---
 
@@ -189,7 +244,7 @@ Codeck auto-detects its deployment mode at startup and logs it:
 [Startup] Starting Codeck in systemd mode
 ```
 
-The detection logic (in `src/services/environment.ts`):
+The detection logic (in `apps/runtime/src/services/environment.ts`):
 
 1. If `SYSTEMD_EXEC_PID` env var exists → `systemd`
 2. If `/.dockerenv` file exists → `docker`

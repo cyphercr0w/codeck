@@ -2,6 +2,99 @@
 
 All services are ES modules with pure functions (no classes). Mutable state is encapsulated in module-level variables.
 
+## Runtime vs Daemon
+
+Services are split across two processes:
+
+- **Runtime services** (`apps/runtime/src/services/`) — All business logic: PTY, files, memory, agents, Claude auth, git, presets. Runs in both local and gateway mode.
+- **Daemon services** (`apps/daemon/src/services/`) — Auth gating, rate limiting, audit logging, HTTP/WS proxy. Only runs in gateway mode.
+
+The daemon has zero code imports from the runtime. Communication between them is HTTP/WS over the network.
+
+---
+
+## Daemon Services
+
+### `daemon/services/auth.ts` — Daemon Password Authentication
+
+Validates passwords against the shared `auth.json` (read-only — password setup/change is runtime-only). Manages its own session store.
+
+| Function | Signature | Description |
+|----------|-----------|-------------|
+| `isPasswordConfigured` | `(): boolean` | Checks if `auth.json` exists with hash + salt |
+| `validatePassword` | `(password, ip, deviceId): Promise<{success, token?, sessionId?, deviceId?}>` | Verify password (scrypt + legacy SHA256), create daemon session |
+| `validateSession` | `(token): boolean` | Check token exists and not expired (7-day TTL) |
+| `touchSession` | `(token): void` | Update `lastSeen` (debounced, saves every 60s) |
+| `invalidateSession` | `(token): void` | Delete session, persist immediately |
+| `getActiveSessions` | `(currentToken?): SessionInfo[]` | All non-expired sessions, sorted by `lastSeen` DESC |
+| `revokeSessionById` | `(sessionId): boolean` | Delete by UUID |
+| `getAuthLog` | `(): AuthLogEntry[]` | Last 200 login/failure events (in-memory circular) |
+
+**Files:** Reads `CODECK_DIR/auth.json` (shared with runtime). Writes `CODECK_DIR/daemon-sessions.json` (daemon-only).
+
+**Env vars:** `CODECK_DIR` (default `/workspace/.codeck`), `SESSION_TTL_MS` (default 604800000 = 7 days)
+
+### `daemon/services/audit.ts` — Audit Logging
+
+Append-only JSONL log for auth events.
+
+| Function | Signature | Description |
+|----------|-----------|-------------|
+| `audit` | `(event, actor, opts?): void` | Queue audit entry. Flushes when buffer ≥ 20 or every 5s |
+| `flushAudit` | `(): void` | Force-flush buffer to disk (call on shutdown) |
+
+**Event types:** `auth.login`, `auth.login_failure`, `auth.logout`, `auth.session_revoked`
+
+**Entry format:** `{ timestamp, event, sessionId, deviceId, actor (IP), metadata? }`
+
+**File:** `CODECK_DIR/audit.log` (JSONL, mode 0600)
+
+### `daemon/services/rate-limit.ts` — Rate Limiting
+
+Per-IP sliding window rate limiter with brute-force lockout.
+
+| Export | Description |
+|--------|-------------|
+| `createAuthLimiter()` | Returns `RateLimiter` — 10 req/min per IP |
+| `createWritesLimiter()` | Returns `RateLimiter` — 60 req/min per IP |
+| `checkLockout(ip)` | Returns `{locked, retryAfter?}` — check brute-force lockout |
+| `recordFailedLogin(ip)` | Increment failure count for IP |
+| `clearFailedAttempts(ip)` | Clear failures after successful login |
+
+**Env vars:** `RATE_AUTH_MAX` (10), `RATE_AUTH_WINDOW_MS` (60000), `RATE_WRITES_MAX` (60), `RATE_WRITES_WINDOW_MS` (60000), `LOCKOUT_THRESHOLD` (5), `LOCKOUT_DURATION_MS` (900000)
+
+### `daemon/services/proxy.ts` — HTTP Reverse Proxy
+
+Forwards `/api/*` requests (not handled by daemon) to the runtime.
+
+| Function | Signature | Description |
+|----------|-----------|-------------|
+| `proxyToRuntime` | `(req, res): void` | Forward request to runtime, stream response |
+| `checkRuntime` | `(): Promise<boolean>` | Health check against runtime `/internal/status` |
+| `getRuntimeUrl` | `(): string` | Return configured runtime URL |
+
+**Behavior:** Strips `Authorization` header (daemon auth), adds `X-Forwarded-*` headers. Re-serializes `req.body` (consumed by `express.json()`). Returns 502 on connection error, 504 on timeout.
+
+**Env vars:** `CODECK_RUNTIME_URL` (default `http://codeck-runtime:7777`), `PROXY_TIMEOUT_MS` (default 30000)
+
+### `daemon/services/ws-proxy.ts` — WebSocket Proxy
+
+Handles HTTP upgrade on the daemon, authenticates, and creates a bidirectional socket pipe to the runtime.
+
+| Function | Signature | Description |
+|----------|-----------|-------------|
+| `handleWsUpgrade` | `(req, socket, head): void` | Validate token, proxy upgrade to runtime, pipe sockets |
+| `shutdownWsProxy` | `(): void` | Close all connections, stop ping interval |
+| `getWsConnectionCount` | `(): number` | Active connections (exposed in `/api/ui/status`) |
+
+**Behavior:** Validates daemon session token from `?token=` query param. Strips token before proxying. Bidirectional pipe via `socket.pipe()`. WebSocket ping frames every 30s, stale cleanup at 75s. Max 20 concurrent connections.
+
+**Env vars:** `CODECK_RUNTIME_WS_URL` (default = `CODECK_RUNTIME_URL`), `MAX_WS_CONNECTIONS` (20), `WS_PING_INTERVAL_MS` (30000)
+
+---
+
+## Runtime Services
+
 ---
 
 ## `services/agent.ts` — Claude CLI Configuration

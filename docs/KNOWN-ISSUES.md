@@ -1,6 +1,6 @@
 # Known Issues & Technical Debt — Codeck
 
-Last updated: 2026-02-15.
+Last updated: 2026-02-19.
 
 ---
 
@@ -22,7 +22,7 @@ Both have `POST /clone` with different behavior. `project.routes.ts` lacks timeo
 
 ### 3. `git.ts` is a god-module
 
-**File:** `src/services/git.ts` (500+ lines)
+**File:** `apps/runtime/src/services/git.ts` (500+ lines)
 
 Handles git, GitHub CLI auth, SSH keys, workspace CLAUDE.md, credentials, and repo listing. Split into `git.ts`, `ssh.ts`, `github.ts`, `workspace.ts`.
 
@@ -213,3 +213,23 @@ These were identified during a 124-item automated security audit. Implemented 86
 | Runtime testing | 1 | Remove `DAC_OVERRIDE` capability (requires Docker validation) |
 
 None are security-critical. Most are operational polish or would require significant architecture changes.
+
+---
+
+## Gateway Mode (daemon/runtime split)
+
+### Daemon/runtime session mismatch
+
+In gateway mode, the daemon and runtime maintain separate session stores. A user logs in once to the daemon — the runtime trusts the private network. If the runtime's `auth.json` password is changed, the daemon's validation still uses the old cached read. **Workaround:** Restart the daemon after password changes.
+
+### WS proxy reconnection on partial restart
+
+If the runtime restarts while the daemon is running, all proxied WS connections drop. The daemon returns 502 on new WS upgrades until the runtime is back. Clients auto-reconnect, but there's a visible disconnect period. If the daemon restarts, clients must re-authenticate (daemon sessions are lost unless persisted).
+
+### HTTP proxy body re-serialization
+
+The daemon's HTTP proxy re-serializes `req.body` after `express.json()` consumes the stream. This works for all current JSON-only API endpoints. If file upload endpoints are added to the runtime, the proxy will need raw body passthrough.
+
+### Audit log rotation
+
+The daemon's `audit.log` is append-only JSONL with no rotation. On busy systems this file grows indefinitely. **Workaround:** External logrotate or periodic manual truncation.

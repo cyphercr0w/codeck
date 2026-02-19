@@ -14,7 +14,7 @@
 ## Build
 
 - **Dev:** `vite dev` with proxy to Express at `:8080` (`/api` → HTTP, `/ws` → WebSocket)
-- **Prod:** `vite build` → output to `dist/web/public/`, served by Express static middleware
+- **Prod:** `vite build` → output to `apps/web/dist/`, served by runtime (local mode) or daemon (gateway mode) static middleware
 - **TSConfig:** `jsxImportSource: "preact"`, `moduleResolution: "bundler"`, `strict: true`
 
 ---

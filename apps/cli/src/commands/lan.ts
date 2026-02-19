@@ -1,6 +1,6 @@
 import { Command } from 'commander';
 import chalk from 'chalk';
-import { existsSync, readFileSync, statSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { spawn, execFileSync } from 'node:child_process';
@@ -10,6 +10,29 @@ import { detectOS } from '../lib/detect.js';
 
 const HEARTBEAT_PATH = join(tmpdir(), 'codeck-mdns.heartbeat');
 const HEARTBEAT_STALE_MS = 60_000; // consider heartbeat stale after 60s
+
+const HOSTS_PATH = process.platform === 'win32'
+  ? 'C:\\Windows\\System32\\drivers\\etc\\hosts'
+  : '/etc/hosts';
+const HOSTS_MARKER_START = '# codeck-ports-start';
+const HOSTS_MARKER_END = '# codeck-ports-end';
+
+/** Remove codeck entries from the hosts file. */
+function cleanupHostsFile(): void {
+  try {
+    const content = readFileSync(HOSTS_PATH, 'utf-8');
+    const startIdx = content.indexOf(HOSTS_MARKER_START);
+    const endIdx = content.indexOf(HOSTS_MARKER_END);
+    if (startIdx !== -1 && endIdx !== -1) {
+      const newContent = content.substring(0, startIdx) +
+        content.substring(endIdx + HOSTS_MARKER_END.length);
+      writeFileSync(HOSTS_PATH, newContent.replace(/\n{3,}/g, '\n\n'), 'utf-8');
+      console.log(chalk.dim('Cleaned up hosts file entries.'));
+    }
+  } catch {
+    // May need admin — hosts cleanup is best-effort from non-elevated terminal
+  }
+}
 
 /** Check if a PID belongs to a Node.js process (likely our mDNS advertiser). */
 function isNodeProcess(pid: number): boolean {
@@ -79,25 +102,50 @@ lanCommand
     }
 
     console.log(chalk.dim('Starting mDNS advertiser...'));
-    console.log(chalk.yellow('Note: Admin/sudo may be required for hosts file management.'));
 
-    // Use child_process.spawn for reliable detached process
-    // Pass daemon port so advertiser polls the correct URL
-    const child = spawn(process.execPath, [scriptPath], {
-      cwd: scriptsDir,
-      detached: true,
-      stdio: 'ignore',
-      env: {
-        ...process.env,
-        CODECK_DAEMON_PORT: String(config.port),
-      },
-    });
-    child.unref();
+    const portArg = String(config.port);
 
-    if (child.pid) {
-      setConfig({ lanPid: child.pid });
-      console.log(chalk.green(`mDNS advertiser started (PID ${child.pid}).`));
-      console.log(chalk.dim('  codeck.local and {port}.codeck.local now resolve on LAN.'));
+    if (process.platform === 'win32') {
+      // On Windows, elevate via UAC prompt so the advertiser can write the hosts file
+      try {
+        const { stdout } = await execa('powershell', [
+          '-NoProfile', '-Command',
+          // Start-Process -Verb RunAs triggers the UAC yes/no dialog
+          `$p = Start-Process -FilePath '${process.execPath}' ` +
+          `-ArgumentList '"${scriptPath}" ${portArg}' ` +
+          `-Verb RunAs -WindowStyle Hidden -PassThru; ` +
+          `Write-Output $p.Id`,
+        ]);
+        const pid = parseInt(stdout.trim(), 10);
+        if (!isNaN(pid) && pid > 0) {
+          setConfig({ lanPid: pid });
+          console.log(chalk.green(`mDNS advertiser started as admin (PID ${pid}).`));
+          console.log(chalk.dim('  codeck.local and {port}.codeck.local now resolve on LAN.'));
+        } else {
+          console.log(chalk.red('Failed to get advertiser PID.'));
+        }
+      } catch {
+        console.log(chalk.red('UAC elevation was denied or failed.'));
+        console.log(chalk.dim('You can also run `codeck lan start` from an admin terminal.'));
+      }
+    } else {
+      // macOS/Linux: spawn detached, pass port as argv
+      const child = spawn(process.execPath, [scriptPath, portArg], {
+        cwd: scriptsDir,
+        detached: true,
+        stdio: 'ignore',
+        env: {
+          ...process.env,
+          CODECK_DAEMON_PORT: portArg,
+        },
+      });
+      child.unref();
+
+      if (child.pid) {
+        setConfig({ lanPid: child.pid });
+        console.log(chalk.green(`mDNS advertiser started (PID ${child.pid}).`));
+        console.log(chalk.dim('  codeck.local and {port}.codeck.local now resolve on LAN.'));
+      }
     }
   });
 
@@ -106,6 +154,10 @@ lanCommand
   .description('Stop mDNS advertiser')
   .action(async () => {
     const config = getConfig();
+
+    // Always clean hosts file (process may have died without cleanup)
+    cleanupHostsFile();
+
     if (!config.lanPid) {
       console.log(chalk.dim('mDNS advertiser is not running.'));
       return;
@@ -120,7 +172,16 @@ lanCommand
 
     try {
       if (process.platform === 'win32') {
-        execFileSync('taskkill', ['/PID', String(config.lanPid), '/T'], { stdio: 'ignore' });
+        // Use /F (force) — elevated processes need it. Elevate if needed.
+        try {
+          execFileSync('taskkill', ['/PID', String(config.lanPid), '/F', '/T'], { stdio: 'ignore' });
+        } catch {
+          // Non-elevated terminal can't kill elevated process — try via PowerShell elevation
+          await execa('powershell', [
+            '-NoProfile', '-Command',
+            `Start-Process -FilePath 'taskkill' -ArgumentList '/PID ${config.lanPid} /F /T' -Verb RunAs -WindowStyle Hidden -Wait`,
+          ]);
+        }
       } else {
         process.kill(config.lanPid, 'SIGTERM');
       }

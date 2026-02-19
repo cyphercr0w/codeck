@@ -29,8 +29,9 @@ const HEARTBEAT_INTERVAL = 30000;
 const HOSTS_MARKER_START = '# codeck-ports-start';
 const HOSTS_MARKER_END = '# codeck-ports-end';
 
-// Daemon port for API polling — set by CLI via env, defaults to 80
-const CODECK_PORT = process.env.CODECK_DAEMON_PORT || process.env.CODECK_PORT || '80';
+// Daemon port for API polling — CLI passes as argv[2] (for Windows elevation)
+// or via env var, defaults to 80
+const CODECK_PORT = process.argv[2] || process.env.CODECK_DAEMON_PORT || process.env.CODECK_PORT || '80';
 
 const HEARTBEAT_PATH = path.join(os.tmpdir(), 'codeck-mdns.heartbeat');
 

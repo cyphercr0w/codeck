@@ -8,7 +8,7 @@ Este archivo registra el progreso y decisiones técnicas.
 
 Branch: refactor/daemon-runtime-gateway
 Modo objetivo: local + gateway
-Último bloque completado: MILESTONE 2.1 — RUNTIME SERVER BASE
+Último bloque completado: MILESTONE 2.2 — PTY
 
 ---
 
@@ -104,6 +104,40 @@ Modo objetivo: local + gateway
 - La ruta a `apps/web/dist/` se calcula con `WEB_DIST = join(__dirname, '../../../web/dist')` desde `apps/runtime/dist/web/server.js`
 
 **Smoke test:** `npm run build` — OK (frontend vite → apps/web/dist + backend tsc → apps/runtime/dist + copy:templates). Startup test en port 9999 confirmó: `/internal/status` → `{"status":"ok","uptime":3.02}`, `/api/auth/status` → `{"configured":true}`, SPA catch-all → HTTP 200. Shutdown limpio con todos los servicios.
+
+---
+
+### Iteración 4 — MILESTONE 2.2: PTY
+**Fecha:** 2026-02-19
+
+**Bloque:** Milestone 2.2 — PTY (node-pty, WS /internal/pty/:id, session limits)
+
+**Cambios:**
+- Refactorizado WebSocket upgrade handling: movido el `server.on('upgrade')` de `websocket.ts` a `server.ts` con ruteo por path
+  - `setupWebSocket()` ya no recibe `server` — crea el WSS sin binding automático
+  - Exportada `handleWsUpgrade(req, socket, head)` para manejar upgrades del endpoint `/ws` existente
+  - `server.ts` centraliza el upgrade routing: `/internal/pty/*` → internal PTY handler, todo lo demás → WS handler existente
+- Creado `apps/runtime/src/web/internal-pty.ts` — endpoint WebSocket per-session `/internal/pty/:id`
+  - Protocolo simplificado: `input`, `output`, `resize`, `exit`, `error` (sin sessionId en mensajes, implícito en URL)
+  - Auto-attach al conectar (sin necesidad de mensaje `console:attach`)
+  - Multi-client support con tracking de dimensiones y max resize (misma lógica que `/ws`)
+  - Rate limiting (300 msg/min), ping/pong keepalive (30s)
+  - Validación UUID del session ID en URL
+  - Sin auth — endpoint interno, el runtime no está expuesto en gateway mode
+- Hecho configurable el límite de sesiones concurrentes:
+  - `MAX_SESSIONS` exportado desde `console.ts`, lee de env var `MAX_SESSIONS` (default: 5)
+  - `console.routes.ts` usa `MAX_SESSIONS` en vez de `5` hardcodeado (ambas rutas: create y create-shell)
+
+**Problemas:** Ninguno.
+
+**Decisiones:**
+- El upgrade routing se centraliza en `server.ts` para permitir múltiples WebSocket servers en un solo HTTP server
+- `/internal/pty/:id` no requiere autenticación: es un endpoint interno para el daemon, el runtime no está expuesto en gateway mode
+- El protocolo de `/internal/pty/:id` es intencionalmente distinto al de `/ws` — más simple, sin prefijo `console:`, sin `sessionId` en los mensajes
+- Los dos endpoints (`/ws` y `/internal/pty/:id`) tienen tracking de estado independiente — son mutuamente excluyentes por diseño (local mode usa `/ws`, gateway mode usa `/internal/pty/:id`)
+- `MAX_SESSIONS` se lee una vez al startup desde env var — no es dinámico, pero es suficiente para configuración por deployment
+
+**Smoke test:** `npm run build` — OK. Startup en port 9999: `/internal/status` → `{"status":"ok","uptime":3.01}`, `/api/auth/status` → `{"configured":true}`. Shutdown limpio.
 
 ---
 

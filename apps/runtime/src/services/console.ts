@@ -16,6 +16,7 @@ import {
 } from './claude-env.js';
 
 const MAX_BUFFER_SIZE = 1024 * 1024; // 1MB max buffered output per session
+export const MAX_SESSIONS = parseInt(process.env.MAX_SESSIONS || '5', 10);
 
 interface ConsoleSession {
   id: string;

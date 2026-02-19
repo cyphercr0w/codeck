@@ -4,6 +4,7 @@ import {
   createConsoleSession,
   createShellSession,
   getSessionCount,
+  MAX_SESSIONS,
   resizeSession,
   destroySession,
   renameSession,
@@ -21,8 +22,8 @@ router.post('/create', (req, res) => {
     return;
   }
 
-  if (getSessionCount() >= 5) {
-    res.status(400).json({ error: 'Maximum 5 simultaneous sessions' });
+  if (getSessionCount() >= MAX_SESSIONS) {
+    res.status(400).json({ error: `Maximum ${MAX_SESSIONS} simultaneous sessions` });
     return;
   }
 
@@ -42,8 +43,8 @@ router.post('/create', (req, res) => {
 // Create shell session — does not require Claude OAuth (shells don't use Claude),
 // but is still protected by password auth middleware in server.ts
 router.post('/create-shell', (req, res) => {
-  if (getSessionCount() >= 5) {
-    res.status(400).json({ error: 'Maximum 5 simultaneous sessions' });
+  if (getSessionCount() >= MAX_SESSIONS) {
+    res.status(400).json({ error: `Maximum ${MAX_SESSIONS} simultaneous sessions` });
     return;
   }
 

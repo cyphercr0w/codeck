@@ -1,5 +1,5 @@
 import { WebSocketServer, WebSocket } from 'ws';
-import { Server } from 'http';
+import type { IncomingMessage } from 'http';
 import { getClaudeStatus, isClaudeAuthenticated, syncCredentialsAfterCLI } from '../services/auth-anthropic.js';
 import { ACTIVE_AGENT } from '../services/agent.js';
 import { getGitStatus, getWorkspacePath } from '../services/git.js';
@@ -47,39 +47,10 @@ function isRateLimited(ws: WebSocket): boolean {
   return rate.count > WS_RATE_LIMIT;
 }
 
-export function setupWebSocket(server: Server): void {
-  const wss = new WebSocketServer({ noServer: true, maxPayload: 64 * 1024 }); // 64KB per OWASP recommendation
+let wss: WebSocketServer;
 
-  server.on('upgrade', (req, socket, head) => {
-    // Origin header validation — defense-in-depth against Cross-Site WebSocket Hijacking
-    const origin = req.headers.origin;
-    const host = req.headers.host;
-    if (origin && host) {
-      try {
-        const originHost = new URL(origin).host;
-        // Allow same-origin, localhost variants, and *.codeck.local
-        const isAllowed = originHost === host
-          || originHost.includes('localhost')
-          || originHost.endsWith('.codeck.local')
-          || originHost === 'codeck.local';
-        if (!isAllowed) {
-          console.warn(`[WS] Rejected upgrade: origin "${origin}" does not match host "${host}"`);
-          socket.write('HTTP/1.1 403 Forbidden\r\n\r\n');
-          socket.destroy();
-          return;
-        }
-      } catch {
-        // Malformed origin header — reject
-        socket.write('HTTP/1.1 403 Forbidden\r\n\r\n');
-        socket.destroy();
-        return;
-      }
-    }
-
-    wss.handleUpgrade(req, socket as Socket, head, (ws) => {
-      wss.emit('connection', ws, req);
-    });
-  });
+export function setupWebSocket(): void {
+  wss = new WebSocketServer({ noServer: true, maxPayload: 64 * 1024 }); // 64KB per OWASP recommendation
 
   // --- Server-side ping/pong keepalive ---
   // Detects dead clients (e.g. mobile network drop) and terminates them.
@@ -296,6 +267,36 @@ function handleConsoleMessage(ws: WebSocket, msg: { type: string; sessionId: str
     // Resize PTY to max of all clients' dimensions (prevents mobile shrinking PC)
     recalcMaxDimensions(msg.sessionId);
   }
+}
+
+/** Handle WebSocket upgrade for the main /ws endpoint (origin validation + auth). */
+export function handleWsUpgrade(req: IncomingMessage, socket: Socket, head: Buffer): void {
+  // Origin header validation — defense-in-depth against Cross-Site WebSocket Hijacking
+  const origin = req.headers.origin;
+  const host = req.headers.host;
+  if (origin && host) {
+    try {
+      const originHost = new URL(origin).host;
+      const isAllowed = originHost === host
+        || originHost.includes('localhost')
+        || originHost.endsWith('.codeck.local')
+        || originHost === 'codeck.local';
+      if (!isAllowed) {
+        console.warn(`[WS] Rejected upgrade: origin "${origin}" does not match host "${host}"`);
+        socket.write('HTTP/1.1 403 Forbidden\r\n\r\n');
+        socket.destroy();
+        return;
+      }
+    } catch {
+      socket.write('HTTP/1.1 403 Forbidden\r\n\r\n');
+      socket.destroy();
+      return;
+    }
+  }
+
+  wss.handleUpgrade(req, socket, head, (ws) => {
+    wss.emit('connection', ws, req);
+  });
 }
 
 export function broadcastStatus(): void {

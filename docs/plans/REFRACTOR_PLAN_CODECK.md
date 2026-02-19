@@ -66,7 +66,7 @@ scripts/
 
 - [x] MILESTONE 0 — PREPARACIÓN (completado)
 - [x] MILESTONE 1 — WEBAPP (completado)
-- [ ] MILESTONE 2 — RUNTIME (en progreso: 2.1 completado, siguiente: 2.2)
+- [ ] MILESTONE 2 — RUNTIME (en progreso: 2.1–2.2 completados, siguiente: 2.3)
 
 ---
 
@@ -105,9 +105,9 @@ DONE cuando:
 - [x] Servir web en modo local
 
 ## 2.2 PTY
-- [ ] Migrar node-pty
-- [ ] WS /internal/pty/:id
-- [ ] Limitar sesiones concurrentes
+- [x] Migrar node-pty
+- [x] WS /internal/pty/:id
+- [x] Limitar sesiones concurrentes
 
 ## 2.3 Filesystem
 - [ ] read/write/list/delete/rename

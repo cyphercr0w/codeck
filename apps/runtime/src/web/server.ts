@@ -6,7 +6,8 @@ import { fileURLToPath } from 'url';
 import { readFileSync } from 'fs';
 import v8 from 'v8';
 import { installLogInterceptor, getLogBuffer, broadcast } from './logger.js';
-import { setupWebSocket } from './websocket.js';
+import { setupWebSocket, handleWsUpgrade } from './websocket.js';
+import { setupInternalPty, handlePtyUpgrade } from './internal-pty.js';
 import { isPasswordConfigured, setupPassword, validatePassword, validateSession, invalidateSession, changePassword, getActiveSessions, revokeSessionById, getAuthLog } from '../services/auth.js';
 import { getClaudeStatus, isClaudeAuthenticated, getAccountInfo, startTokenRefreshMonitor, stopTokenRefreshMonitor } from '../services/auth-anthropic.js';
 import { ACTIVE_AGENT } from '../services/agent.js';
@@ -307,8 +308,18 @@ export async function startWebServer(): Promise<void> {
     res.status(status).json({ error: message });
   });
 
-  // WebSocket
-  setupWebSocket(server);
+  // WebSocket — centralized upgrade routing
+  setupWebSocket();
+  setupInternalPty();
+
+  server.on('upgrade', (req, socket, head) => {
+    const pathname = (req.url || '').split('?')[0];
+    if (pathname.startsWith('/internal/pty/')) {
+      handlePtyUpgrade(req, socket as import('net').Socket, head);
+    } else {
+      handleWsUpgrade(req, socket as import('net').Socket, head);
+    }
+  });
 
   // Graceful shutdown
   function gracefulShutdown(signal: string): void {

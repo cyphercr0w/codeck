@@ -92,6 +92,21 @@ const MAX_LOG_BYTES = 50 * 1024 * 1024; // 50MB per-execution log size limit
 const AGENTS_DIR = resolve(process.env.WORKSPACE || '/workspace', '.codeck/agents');
 const MANIFEST_PATH = join(AGENTS_DIR, 'manifest.json');
 
+/**
+ * Remap a cwd stored with the host workspace path to the container path.
+ * Agent configs are created with the host path (e.g. /home/codeck/workspace/project)
+ * but inside the container the workspace is bind-mounted at /workspace.
+ * CODECK_HOST_WORKSPACE lets the runtime know the host prefix to strip.
+ */
+function resolveAgentCwd(cwd: string): string {
+  const containerWorkspace = process.env.WORKSPACE || '/workspace';
+  const hostWorkspace = process.env.CODECK_HOST_WORKSPACE;
+  if (hostWorkspace && cwd.startsWith(hostWorkspace)) {
+    return containerWorkspace + cwd.slice(hostWorkspace.length);
+  }
+  return cwd;
+}
+
 type BroadcastFn = (msg: object) => void;
 let broadcastFn: BroadcastFn = () => {};
 
@@ -385,7 +400,7 @@ function executeAgent(agentId: string): void {
   const finalEnv = { ...cleanEnv, ...oauthEnv, TERM: 'dumb' };
 
   const prompt = runtime.config.objective;
-  const cwd = runtime.config.cwd;
+  const cwd = resolveAgentCwd(runtime.config.cwd);
 
   const spawnArgs = ['-p', prompt, '--output-format', 'stream-json', '--verbose', '--no-session-persistence'];
   if (runtime.config.model) {

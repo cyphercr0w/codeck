@@ -152,19 +152,28 @@ export function fitTerminal(sessionId: string): void {
 }
 
 /**
- * Force xterm to repaint its canvas without changing PTY dimensions.
- * Needed when the container was hidden (display:none) during buffer replay:
- * xterm processes data but the WebGL/Canvas renderer defers painting.
- * When the container becomes visible, fitAddon.fit() may be a no-op (same dims)
- * so term.resize() doesn't trigger a repaint. term.refresh() marks all rows
- * as dirty and forces the renderer to redraw them on the next frame.
+ * Force xterm to reposition its viewport and repaint after a terminal container
+ * becomes visible (e.g. display:none → display:block).
+ *
+ * Problem: when the terminal was hidden, xterm's cols/rows are already at the
+ * correct values from a previous fit. When the container becomes visible and
+ * fitAddon.fit() runs, term.resize() receives the same dims → xterm skips the
+ * resize → syncScrollArea() never runs → viewport stays at scroll position 0
+ * (top of scrollback / blank area) → terminal appears black.
+ *
+ * Fix: micro-resize (+1 row then back). This forces two calls to syncScrollArea()
+ * with different dims, which repositions ydisp to show the cursor (bottom of
+ * buffer). Called directly on term — no WS message sent, no SIGWINCH to PTY.
  */
 export function repaintTerminal(sessionId: string): void {
   const instance = terminals.get(sessionId);
   if (!instance) return;
   if (instance.container.offsetWidth === 0 || instance.container.offsetHeight === 0) return;
-  instance.term.refresh(0, instance.term.rows - 1);
+  const { cols, rows } = instance.term;
+  instance.term.resize(cols, rows + 1);
+  instance.term.resize(cols, rows);
   if (!scrollLocked.get(sessionId)) instance.term.scrollToBottom();
+  instance.term.refresh(0, rows - 1);
 }
 
 /** Returns the current terminal dimensions, or null if not found / hidden. */

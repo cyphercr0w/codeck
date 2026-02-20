@@ -151,6 +151,22 @@ export function fitTerminal(sessionId: string): void {
   }
 }
 
+/**
+ * Force xterm to repaint its canvas without changing PTY dimensions.
+ * Needed when the container was hidden (display:none) during buffer replay:
+ * xterm processes data but the WebGL/Canvas renderer defers painting.
+ * When the container becomes visible, fitAddon.fit() may be a no-op (same dims)
+ * so term.resize() doesn't trigger a repaint. term.refresh() marks all rows
+ * as dirty and forces the renderer to redraw them on the next frame.
+ */
+export function repaintTerminal(sessionId: string): void {
+  const instance = terminals.get(sessionId);
+  if (!instance) return;
+  if (instance.container.offsetWidth === 0 || instance.container.offsetHeight === 0) return;
+  instance.term.refresh(0, instance.term.rows - 1);
+  if (!scrollLocked.get(sessionId)) instance.term.scrollToBottom();
+}
+
 /** Returns the current terminal dimensions, or null if not found / hidden. */
 export function getTerminalDimensions(sessionId: string): { cols: number; rows: number } | null {
   const instance = terminals.get(sessionId);

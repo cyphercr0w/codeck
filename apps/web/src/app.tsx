@@ -10,7 +10,7 @@ import {
 } from './state/store';
 import { apiFetch, getAuthToken, clearAuthToken } from './api';
 import { connectWebSocket } from './ws';
-import { fitTerminal, scrollToBottom } from './terminal';
+import { fitTerminal, scrollToBottom, repaintTerminal } from './terminal';
 import { LoadingView } from './components/LoadingView';
 import { AuthView } from './components/AuthView';
 import { SetupView } from './components/SetupView';
@@ -285,16 +285,22 @@ export function App() {
   }
 
   // ========== Section change ==========
-  // When section becomes 'claude', refit + scroll all active terminals.
-  // This runs for BOTH user navigation (handleSectionChange) and programmatic
-  // section changes (e.g. ws.ts calling setActiveSection after session restore).
-  // Without this, the terminal canvas stays black after restore because xterm
-  // wrote to its buffer while the container was display:none, and no render
-  // was triggered when the container became visible again.
+  // When section becomes 'claude', refit + repaint all active terminals.
+  // Covers BOTH user navigation and programmatic setActiveSection calls (e.g.
+  // sessions:restored from ws.ts). Without this, the canvas stays black because:
+  // 1. Container was display:none during buffer replay → xterm deferred painting
+  // 2. fitAddon.fit() with same dims is a no-op → term.resize() not called → no repaint
+  // repaintTerminal() calls term.refresh(0, rows-1) which forces the WebGL/Canvas
+  // renderer to redraw all rows, regardless of whether dimensions changed.
   useEffect(() => {
     if (section === 'claude') {
       const active = activeSessionId.value;
-      if (active) setTimeout(() => { fitTerminal(active); scrollToBottom(active); }, 50);
+      if (active) {
+        setTimeout(() => {
+          fitTerminal(active);
+          requestAnimationFrame(() => repaintTerminal(active));
+        }, 50);
+      }
     }
   }, [section]);
 

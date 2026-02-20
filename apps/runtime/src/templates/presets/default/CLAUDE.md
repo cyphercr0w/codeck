@@ -63,10 +63,10 @@ Every session, do this BEFORE responding to the user:
 1. Read the `## Recent Memory` section at the bottom of this file (if present)
 2. Read `/workspace/.codeck/memory/MEMORY.md`
 3. Read `/workspace/.codeck/preferences.md`
-4. Read rules: `/workspace/.codeck/rules/`
+4. Read rules: `/workspace/.codeck/rules/` and `/root/.claude/rules/` (if present)
 5. If working on a project: resolve path, read path memory
 6. If no path memory exists: explore codebase, create it before working
-7. Check skills: `/workspace/.codeck/skills/`
+7. Check skills: `/workspace/.codeck/skills/` and `/root/.claude/skills/` (knowledge packs — load on demand with `/learn <skill>`)
 
 ### Session end — BLOCKING
 
@@ -111,11 +111,12 @@ Read `/workspace/.codeck/preferences.md` at session start. Actively detect prefe
 
 ## Rules
 
-Follow all files in `/workspace/.codeck/rules/` at all times.
+Follow all files in `/workspace/.codeck/rules/` and `/root/.claude/rules/` at all times.
 
 ## Skills
 
-Check `/workspace/.codeck/skills/` before reinventing solutions.
+- **Codeck skills** (`/workspace/.codeck/skills/`): sandbox, docker, and workflow guides — always relevant.
+- **Knowledge packs** (`/root/.claude/skills/`): domain-specific guides (TDD, security, API design, etc.). Load on demand: `/learn <skill-name>` or read the SKILL.md directly when relevant.
 
 ## Full Reference
 

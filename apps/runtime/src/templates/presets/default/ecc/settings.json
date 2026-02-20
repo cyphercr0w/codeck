@@ -1,0 +1,68 @@
+{
+  "_attribution": "Source: affaan-m/everything-claude-code (MIT License) — https://github.com/affaan-m/everything-claude-code — Integrated into Codeck. Hook scripts installed to ~/.claude/ecc/hooks/ with lib/ dependencies.",
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node ~/.claude/ecc/hooks/session-start.js"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node ~/.claude/ecc/hooks/session-end.js"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": ".*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node ~/.claude/ecc/hooks/suggest-compact.js"
+          }
+        ]
+      },
+      {
+        "matcher": "Edit|Write|NotebookEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node -e \"const f=process.env.CLAUDE_TOOL_INPUT_FILE_PATH||'';if(/\\.(js|ts|jsx|tsx|mjs|cjs)$/.test(f)){try{const {execSync}=require('child_process');execSync('npx prettier --write \"'+f+'\" 2>/dev/null',{stdio:'inherit'});}catch(e){}}\""
+          },
+          {
+            "type": "command",
+            "command": "node -e \"const f=process.env.CLAUDE_TOOL_INPUT_FILE_PATH||'';if(/\\.tsx?$/.test(f)){try{const {execSync}=require('child_process');const r=execSync('npx tsc --noEmit 2>&1',{encoding:'utf8'});if(r.trim())console.warn('[tsc]',r.trim());}catch(e){if(e.stdout)console.warn('[tsc]',e.stdout.trim());}}\""
+          },
+          {
+            "type": "command",
+            "command": "node -e \"const f=process.env.CLAUDE_TOOL_INPUT_FILE_PATH||'';if(/\\.(js|ts|jsx|tsx)$/.test(f)){const {readFileSync}=require('fs');try{const src=readFileSync(f,'utf8');const m=src.match(/console\\.log\\(/g);if(m&&m.length>0)console.warn('[warn] '+f+' has '+m.length+' console.log() call(s). Consider removing before shipping.');}catch(e){}}\""
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node -e \"const cmd=(process.env.CLAUDE_TOOL_INPUT_COMMAND||'').trim();const devPat=[/npm.*dev/,/yarn.*dev/,/pnpm.*dev/,/next.*dev/,/vite/,/webpack.*serve/,/react-scripts start/];if(devPat.some(p=>p.test(cmd))&&!process.env.TMUX)console.warn('[warn] Dev server outside tmux — will die when session ends.')\""
+          },
+          {
+            "type": "command",
+            "command": "node -e \"const cmd=(process.env.CLAUDE_TOOL_INPUT_COMMAND||'').trim();if(/git push/.test(cmd))console.warn('[checkpoint] About to git push. Verify changes are reviewed and tests pass.')\""
+          }
+        ]
+      }
+    ]
+  }
+}

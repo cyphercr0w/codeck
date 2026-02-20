@@ -1,10 +1,10 @@
 {
   "id": "default",
   "name": "Default (Recommended)",
-  "description": "Persistent memory system, rules, and sandbox skills. Makes Claude productive immediately.",
-  "version": "3.0.0",
+  "description": "Persistent memory system, rules, sandbox skills, plus 13 sub-agents, 31+ slash commands, universal knowledge packs and dev hooks from everything-claude-code.",
+  "version": "4.0.0",
   "author": "codeck",
-  "icon": "\u26a1",
+  "icon": "⚡",
   "tags": ["general", "recommended"],
   "extends": null,
   "files": [
@@ -20,7 +20,8 @@
     { "src": "skills/docker.md",         "dest": "/workspace/.codeck/skills/docker.md" },
     { "src": "memory/summary.md",        "dest": "/workspace/.codeck/memory/summary.md" },
     { "src": "memory/decisions.md",      "dest": "/workspace/.codeck/memory/decisions.md" },
-    { "src": "memory/MEMORY.md",         "dest": "/workspace/.codeck/memory/MEMORY.md" }
+    { "src": "memory/MEMORY.md",         "dest": "/workspace/.codeck/memory/MEMORY.md" },
+    { "src": "ecc/settings.json",        "dest": "/root/.claude/settings.json", "skipIfExists": true }
   ],
   "directories": [
     "/workspace/.codeck/memory/daily",
@@ -32,5 +33,13 @@
     "/workspace/.codeck/rules",
     "/workspace/.codeck/skills",
     "/workspace/.codeck/agents"
+  ],
+  "recursive_dirs": [
+    { "src": "ecc/agents",   "dest": "/root/.claude/agents",       "recursive": true, "skipIfExists": true },
+    { "src": "ecc/commands", "dest": "/root/.claude/commands",      "recursive": true, "skipIfExists": true },
+    { "src": "ecc/skills",   "dest": "/root/.claude/skills",        "recursive": true, "skipIfExists": true },
+    { "src": "ecc/rules",    "dest": "/root/.claude/rules",         "recursive": true, "skipIfExists": true },
+    { "src": "ecc/hooks",    "dest": "/root/.claude/ecc/hooks",     "recursive": true, "skipIfExists": false },
+    { "src": "ecc/lib",      "dest": "/root/.claude/ecc/lib",       "recursive": true, "skipIfExists": false }
   ]
 }

@@ -6,7 +6,7 @@
   "main": "dist/index.js",
   "scripts": {
     "build": "tsc && npm run copy:templates",
-    "copy:templates": "node -e \"const {cpSync}=require('fs');cpSync('src/templates','dist/templates',{recursive:true})\"",
+    "copy:templates": "node -e \"const {cpSync,rmSync,existsSync}=require('fs');if(existsSync('dist/templates'))rmSync('dist/templates',{recursive:true,force:true});cpSync('src/templates','dist/templates',{recursive:true})\"",
     "clean": "rm -rf dist",
     "dev": "tsx watch src/index.ts"
   },

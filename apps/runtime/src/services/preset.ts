@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, writeFileSync, mkdirSync, readdirSync, copyFileSync, realpathSync } from 'fs';
+import { existsSync, readFileSync, writeFileSync, mkdirSync, readdirSync, copyFileSync, realpathSync, statSync } from 'fs';
 import { join, dirname, resolve } from 'path';
 import { fileURLToPath } from 'url';
 
@@ -41,6 +41,13 @@ function rewritePath(p: string): string {
 
 // ── Types ────────────────────────────────────────────────────────────
 
+export interface RecursiveDirEntry {
+  src: string;
+  dest: string;
+  recursive: boolean;
+  skipIfExists: boolean;
+}
+
 export interface PresetManifest {
   id: string;
   name: string;
@@ -50,8 +57,9 @@ export interface PresetManifest {
   icon: string;
   tags: string[];
   extends: string | null;
-  files: Array<{ src: string; dest: string }>;
+  files: Array<{ src: string; dest: string; skipIfExists?: boolean }>;
   directories: string[];
+  recursive_dirs?: RecursiveDirEntry[];
 }
 
 interface PresetConfig {
@@ -106,10 +114,22 @@ function validateManifest(data: unknown): PresetManifest | null {
     if (!f || typeof f !== 'object') return null;
     const file = f as Record<string, unknown>;
     if (typeof file.src !== 'string' || typeof file.dest !== 'string') return null;
+    if (file.skipIfExists !== undefined && typeof file.skipIfExists !== 'boolean') return null;
   }
   if (!Array.isArray(m.directories)) return null;
   for (const d of m.directories) {
     if (typeof d !== 'string') return null;
+  }
+  // Optional recursive_dirs
+  if (m.recursive_dirs !== undefined) {
+    if (!Array.isArray(m.recursive_dirs)) return null;
+    for (const rd of m.recursive_dirs) {
+      if (!rd || typeof rd !== 'object') return null;
+      const entry = rd as Record<string, unknown>;
+      if (typeof entry.src !== 'string' || typeof entry.dest !== 'string') return null;
+      if (typeof entry.recursive !== 'boolean') return null;
+      if (typeof entry.skipIfExists !== 'boolean') return null;
+    }
   }
   return data as PresetManifest;
 }
@@ -255,7 +275,9 @@ async function applyPresetRecursive(presetId: string, visited: Set<string>, dept
 
     // Write file (don't overwrite user edits for data files, unless force)
     const isDataFile = dest.includes('/memory/') || dest.endsWith('preferences.md') || dest.includes('/rules/');
-    if (!force && isDataFile && existsSync(dest)) {
+    if (!force && file.skipIfExists && existsSync(dest)) {
+      console.log(`[Preset]   KEEP ${dest} (skipIfExists)`);
+    } else if (!force && isDataFile && existsSync(dest)) {
       console.log(`[Preset]   KEEP ${dest} (user data exists)`);
     } else {
       // Backup data files before force-overwrite
@@ -274,6 +296,30 @@ async function applyPresetRecursive(presetId: string, visited: Set<string>, dept
       }
       writeFileSync(dest, fileContent);
       console.log(`[Preset]   WRITE ${dest}`);
+    }
+  }
+
+  // Copy recursive directories declared in the manifest
+  if (manifest.recursive_dirs && manifest.recursive_dirs.length > 0) {
+    console.log(`[Preset] Copying recursive directories for "${manifest.id}"...`);
+    for (const rd of manifest.recursive_dirs) {
+      const srcDir = join(presetDir, rd.src);
+      const destDir = rewritePath(rd.dest);
+
+      // Validate destination
+      if (!isAllowedDestPath(destDir)) {
+        console.warn(`[Preset]   BLOCKED: recursive_dirs dest "${destDir}" outside allowed prefixes`);
+        continue;
+      }
+
+      // Validate source path
+      const resolvedSrc = resolve(srcDir);
+      if (!resolvedSrc.startsWith(TEMPLATES_DIR + '/') && resolvedSrc !== TEMPLATES_DIR) {
+        console.warn(`[Preset]   BLOCKED: recursive_dirs src "${rd.src}" resolves outside templates directory`);
+        continue;
+      }
+
+      copyDirectoryRecursive(srcDir, destDir, manifest.id, { skipIfExists: rd.skipIfExists });
     }
   }
 
@@ -323,6 +369,73 @@ function loadManifest(presetId: string): PresetManifest | null {
   } catch (e) {
     console.warn(`[Preset] Failed to load manifest "${presetId}":`, (e as Error).message);
     return null;
+  }
+}
+
+/**
+ * Recursively copy a directory from srcDir (within TEMPLATES_DIR) to destDir.
+ * - Respects skipIfExists: skips files that already exist at the destination.
+ * - Applies path rewriting to .md files (same as individual file copy).
+ * - Validates all destination paths stay within ALLOWED_DEST_PREFIXES.
+ */
+function copyDirectoryRecursive(
+  srcDir: string,
+  destDir: string,
+  presetId: string,
+  opts: { skipIfExists: boolean },
+): void {
+  // Validate source path stays within TEMPLATES_DIR
+  const resolvedSrc = resolve(srcDir);
+  if (!resolvedSrc.startsWith(TEMPLATES_DIR + '/') && resolvedSrc !== TEMPLATES_DIR) {
+    console.warn(`[Preset]   BLOCKED: recursive src "${srcDir}" resolves outside templates directory`);
+    return;
+  }
+
+  if (!existsSync(srcDir)) {
+    console.warn(`[Preset]   SKIP recursive copy: source dir not found: ${srcDir}`);
+    return;
+  }
+
+  // Validate destination
+  if (!isAllowedDestPath(destDir)) {
+    console.warn(`[Preset]   BLOCKED: recursive dest "${destDir}" outside allowed prefixes`);
+    return;
+  }
+
+  if (!existsSync(destDir)) {
+    mkdirSync(destDir, { recursive: true });
+  }
+
+  for (const entry of readdirSync(srcDir)) {
+    const srcEntry = join(srcDir, entry);
+    const destEntry = join(destDir, entry);
+
+    const stat = statSync(srcEntry);
+    if (stat.isDirectory()) {
+      copyDirectoryRecursive(srcEntry, destEntry, presetId, opts);
+    } else {
+      if (opts.skipIfExists && existsSync(destEntry)) {
+        console.log(`[Preset]   KEEP ${destEntry} (skipIfExists)`);
+        continue;
+      }
+
+      // Ensure destination parent directory exists
+      const destEntryDir = dirname(destEntry);
+      if (!existsSync(destEntryDir)) {
+        mkdirSync(destEntryDir, { recursive: true });
+      }
+
+      let fileContent = readFileSync(srcEntry, 'utf-8');
+      // Rewrite template paths in .md files
+      if (destEntry.endsWith('.md') && (WORKSPACE !== '/workspace' || home !== '/root')) {
+        fileContent = fileContent
+          .replace(/\/workspace\//g, `${WORKSPACE}/`)
+          .replace(/\/workspace(?=\s|$|['"`,)])/g, WORKSPACE)
+          .replace(/\/root\//g, `${home}/`);
+      }
+      writeFileSync(destEntry, fileContent);
+      console.log(`[Preset]   WRITE ${destEntry}`);
+    }
   }
 }
 

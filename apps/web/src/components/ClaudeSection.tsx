@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
-import { sessions, activeSessionId, setActiveSessionId, addLocalLog, addSession, removeSession, renameSession, agentName, isMobile, restoringPending } from '../state/store';
+import { sessions, activeSessionId, setActiveSessionId, addLocalLog, addSession, removeSession, renameSession, agentName, isMobile, restoringPending, wsConnected } from '../state/store';
 import { apiFetch } from '../api';
 import { createTerminal, destroyTerminal, fitTerminal, repaintTerminal, focusTerminal, writeToTerminal, scrollToBottom, getTerminal, markSessionAttaching, clearSessionAttaching, onTerminalWrite } from '../terminal';
 import { wsSend, setTerminalHandlers, attachSession, setOnSessionReattached } from '../ws';
@@ -40,13 +40,20 @@ function attachSettleRepaint(sessionId: string): void {
     clearTimeout(maxTimer);
     unsub();
     clearSessionAttaching(sessionId);
+    console.debug(`[settle] ${sessionId.slice(0,6)} firing repaint`);
+    // fitTerminal first: sends SIGWINCH if canvas was at wrong dims (e.g. 80×24
+    // default because a previous fitTerminal bailed on a hidden container).
+    // repaintTerminal then calls fitAddon.fit() internally for belt-and-suspenders,
+    // does the micro-resize, and scrolls to bottom.
+    fitTerminal(sessionId);
     repaintTerminal(sessionId);
     // If the container was still hidden when repaintTerminal ran (it bails on
     // offsetHeight=0), retry once the active class has been applied by the
     // useEffect([activeId]) cycle which runs after sessionList.length effect.
     const el = document.getElementById('term-' + sessionId);
     if (el && el.offsetHeight === 0) {
-      setTimeout(() => repaintTerminal(sessionId), 200);
+      console.debug(`[settle] ${sessionId.slice(0,6)} container still 0 — retry in 200ms`);
+      setTimeout(() => { fitTerminal(sessionId); repaintTerminal(sessionId); }, 200);
     }
   };
 }
@@ -139,6 +146,23 @@ export function ClaudeSection({ onNewSession, onNewShell }: ClaudeSectionProps) 
     }
 
   }, [sessionList.length]);
+
+  // After WS reconnect completes (overlay disappears), repaint the active terminal.
+  // The reconnect flow may have left the terminal in a stale state (wrong scroll
+  // position, wrong dims) especially if it went through the restoring overlay.
+  const isRestoring = restoringPending.value;
+  const isConnected = wsConnected.value;
+  useEffect(() => {
+    // Fire when connection is established AND restore overlay has cleared.
+    if (!isConnected || isRestoring) return;
+    if (!activeId) return;
+    // Small delay to let buffer replay and WS attach settle.
+    const t = setTimeout(() => {
+      fitTerminal(activeId);
+      repaintTerminal(activeId);
+    }, 800);
+    return () => clearTimeout(t);
+  }, [isConnected, isRestoring, activeId]);
 
   // Toggle visible terminal when active tab changes
   useEffect(() => {

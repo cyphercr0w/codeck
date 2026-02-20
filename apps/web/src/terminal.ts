@@ -121,6 +121,7 @@ export function createTerminal(sessionId: string, container: HTMLElement): Termi
   // explicitly from recalcLayout as a fallback without risking double SIGWINCH.
   let resizeTimer: ReturnType<typeof setTimeout> | null = null;
   const resizeObserver = new ResizeObserver(() => {
+    console.debug(`[ResizeObserver] ${sessionId.slice(0,6)} container=${container.offsetWidth}x${container.offsetHeight}`);
     if (resizeTimer) clearTimeout(resizeTimer);
     resizeTimer = setTimeout(() => {
       if (container.offsetWidth > 0 && container.offsetHeight > 0) {
@@ -128,6 +129,7 @@ export function createTerminal(sessionId: string, container: HTMLElement): Termi
         const prevRows = term.rows;
         fitAddon.fit();
         if (term.cols !== prevCols || term.rows !== prevRows) {
+          console.debug(`[ResizeObserver] RESIZE ${prevCols}x${prevRows} → ${term.cols}x${term.rows}`);
           wsSend({ type: 'console:resize', sessionId, cols: term.cols, rows: term.rows });
         }
         // After fit, scroll to bottom so content is visible (fit may change row count).
@@ -163,7 +165,9 @@ export function fitTerminal(sessionId: string): void {
   if (!instance) return;
   // Don't fit against a hidden container — FitAddon gets 0-size dimensions
   // and would send incorrect cols/rows to the PTY (display:none → offsetWidth=0).
-  if (instance.container.offsetWidth === 0 || instance.container.offsetHeight === 0) return;
+  const cw = instance.container.offsetWidth, ch = instance.container.offsetHeight;
+  console.debug(`[fit] ${sessionId.slice(0,6)} container=${cw}x${ch} term=${instance.term.cols}x${instance.term.rows}`);
+  if (cw === 0 || ch === 0) { console.debug(`[fit] BAIL zero dims`); return; }
   const prevCols = instance.term.cols;
   const prevRows = instance.term.rows;
   instance.fitAddon.fit();
@@ -172,7 +176,10 @@ export function fitTerminal(sessionId: string): void {
   // This prevents unnecessary process redraws (and brief input freezes) when
   // fitTerminal is called redundantly on WS reconnect, section switch, etc.
   if (instance.term.cols !== prevCols || instance.term.rows !== prevRows) {
+    console.debug(`[fit] RESIZE ${prevCols}x${prevRows} → ${instance.term.cols}x${instance.term.rows}`);
     wsSend({ type: 'console:resize', sessionId, cols: instance.term.cols, rows: instance.term.rows });
+  } else {
+    console.debug(`[fit] same dims ${instance.term.cols}x${instance.term.rows} — no resize sent`);
   }
 }
 
@@ -193,7 +200,16 @@ export function fitTerminal(sessionId: string): void {
 export function repaintTerminal(sessionId: string): void {
   const instance = terminals.get(sessionId);
   if (!instance) return;
-  if (instance.container.offsetWidth === 0 || instance.container.offsetHeight === 0) return;
+  const cw2 = instance.container.offsetWidth, ch2 = instance.container.offsetHeight;
+  console.debug(`[repaint] ${sessionId.slice(0,6)} container=${cw2}x${ch2} term=${instance.term.cols}x${instance.term.rows} scrollLocked=${scrollLocked.get(sessionId)}`);
+  if (cw2 === 0 || ch2 === 0) { console.debug(`[repaint] BAIL zero dims`); return; }
+  // Ensure terminal canvas matches the current container size before micro-resizing.
+  // If fitTerminal previously bailed (container was hidden → 0 height), the canvas
+  // might be at xterm's default 80×24 even though the container is now 600px tall.
+  // fitAddon.fit() recalculates correct cols/rows from the container and resizes
+  // internally. This does NOT send SIGWINCH — callers should call fitTerminal()
+  // first if they also need the server/PTY to know the new dimensions.
+  instance.fitAddon.fit();
   const { cols, rows } = instance.term;
   instance.term.resize(cols, rows + 1);
   instance.term.resize(cols, rows);

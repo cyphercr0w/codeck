@@ -69,6 +69,7 @@ function recalcLayout(sessionId: string | undefined) {
 
   const available = Math.max(50, vh - tabsH - toolbarH - 2);
 
+  console.debug(`[recalcLayout] vh=${vh} tabsH=${tabsH} toolbarH=${toolbarH} available=${available} sessionId=${sessionId?.slice(0,6)}`);
   instances.style.height = `${available}px`;
   instances.style.maxHeight = `${available}px`;
 

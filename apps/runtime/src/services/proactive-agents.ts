@@ -318,7 +318,8 @@ function enqueueExecution(agentId: string): void {
     return;
   }
 
-  const cwd = runtime.config.cwd;
+  // Use resolved cwd as the lock key — must match the key used in executeAgent's close/error handlers
+  const cwd = resolveAgentCwd(runtime.config.cwd);
 
   if (cwdLocks.has(cwd)) {
     const queue = cwdQueues.get(cwd) || [];

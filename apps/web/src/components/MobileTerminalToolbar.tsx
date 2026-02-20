@@ -57,7 +57,16 @@ function recalcLayout(sessionId: string | undefined) {
   if (!instances) return;
 
   const tabsH = tabs?.getBoundingClientRect().height ?? 0;
-  const toolbarH = toolbar?.getBoundingClientRect().height ?? 0;
+
+  // getBoundingClientRect() returns coordinates relative to the visual viewport.
+  // When the keyboard is open, the toolbar (position:fixed; bottom:0) may be below
+  // the visual viewport on Android (fixed to layout viewport, not visual viewport).
+  // On iOS Safari it stays above the keyboard. Only subtract toolbar height if it's
+  // actually visible in the current visual viewport.
+  const toolbarRect = toolbar?.getBoundingClientRect();
+  const toolbarInView = toolbarRect ? toolbarRect.top < vh - 10 : false;
+  const toolbarH = toolbarInView ? (toolbarRect?.height ?? 0) : 0;
+
   const available = Math.max(50, vh - tabsH - toolbarH - 2);
 
   instances.style.height = `${available}px`;
@@ -243,6 +252,14 @@ export function MobileTerminalToolbar() {
         onFocus={() => {
           resetInput();
           if (sessionId) scrollToBottom(sessionId);
+          // Fallback: visualViewport.resize may fire late or not at all on some
+          // mobile browsers during keyboard animation. Recalc after the keyboard
+          // finishes opening (~300ms) to catch any missed resize events.
+          setTimeout(() => recalcLayout(sessionId), 300);
+        }}
+        onBlur={() => {
+          // Keyboard closing — recalc after animation so terminal expands back.
+          setTimeout(() => recalcLayout(sessionId), 300);
         }}
       />
 

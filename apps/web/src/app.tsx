@@ -285,12 +285,21 @@ export function App() {
   }
 
   // ========== Section change ==========
-  function handleSectionChange(s: Section) {
-    setActiveSection(s);
-    if (s === 'claude') {
+  // When section becomes 'claude', refit + scroll all active terminals.
+  // This runs for BOTH user navigation (handleSectionChange) and programmatic
+  // section changes (e.g. ws.ts calling setActiveSection after session restore).
+  // Without this, the terminal canvas stays black after restore because xterm
+  // wrote to its buffer while the container was display:none, and no render
+  // was triggered when the container became visible again.
+  useEffect(() => {
+    if (section === 'claude') {
       const active = activeSessionId.value;
       if (active) setTimeout(() => { fitTerminal(active); scrollToBottom(active); }, 50);
     }
+  }, [section]);
+
+  function handleSectionChange(s: Section) {
+    setActiveSection(s);
   }
 
   // ========== New session ==========

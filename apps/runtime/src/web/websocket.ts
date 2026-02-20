@@ -3,7 +3,7 @@ import type { IncomingMessage } from 'http';
 import { getClaudeStatus, isClaudeAuthenticated, syncCredentialsAfterCLI } from '../services/auth-anthropic.js';
 import { ACTIVE_AGENT } from '../services/agent.js';
 import { getGitStatus, getWorkspacePath } from '../services/git.js';
-import { getSession, writeToSession, resizeSession, destroySession, markSessionAttached, listSessions, hasSavedSessions } from '../services/console.js';
+import { getSession, writeToSession, resizeSession, destroySession, markSessionAttached, resetSessionAttachment, listSessions, hasSavedSessions } from '../services/console.js';
 import { getLogBuffer, setWsClients, broadcast } from './logger.js';
 import { isPasswordConfigured, validateSession, consumeWsTicket } from '../services/auth.js';
 import { detectDockerSocketMount } from '../services/environment.js';
@@ -18,8 +18,14 @@ let clients: WebSocket[] = [];
 // sessionId → Set<WebSocket> (all clients attached to this session)
 const sessionClients = new Map<string, Set<WebSocket>>();
 
-// sessionId → disposables (ONE onData + onExit handler per session, broadcasts to all)
-const sessionHandlers = new Map<string, Array<{ dispose: () => void }>>();
+// sessionId → data disposable (ONE onData handler per session, broadcasts to all clients).
+// Disposed when all WS clients disconnect; recreated on next console:attach.
+const sessionHandlers = new Map<string, { dispose: () => void }>();
+
+// sessionId → exit disposable (ONE onExit handler per session).
+// Kept alive even when no WS clients are connected so PTY death is always detected.
+// Only cleaned up when the PTY actually exits.
+const sessionExitHandlers = new Map<string, { dispose: () => void }>();
 
 // ws → Map<sessionId, { cols, rows }> (per-client dimensions for each session)
 const clientDimensions = new Map<WebSocket, Map<string, { cols: number; rows: number }>>();
@@ -73,9 +79,23 @@ export function setupWebSocket(): void {
     broadcast({ type: 'heartbeat' });
   }, 25000);
 
+  // Monitor Claude auth state — detect token expiry between explicit status broadcasts.
+  // When isClaudeAuthenticated() flips to false, broadcast status immediately so the
+  // frontend's claudeAuthenticated signal updates and the LoginModal auto-opens.
+  let lastAuthState: boolean | null = null;
+  const authMonitorInterval = setInterval(() => {
+    if (clients.length === 0) return;
+    const current = isClaudeAuthenticated();
+    if (current !== lastAuthState) {
+      lastAuthState = current;
+      broadcastStatus();
+    }
+  }, 15000);
+
   wss.on('close', () => {
     clearInterval(pingInterval);
     clearInterval(heartbeatInterval);
+    clearInterval(authMonitorInterval);
   });
 
   const INTERNAL_SECRET = process.env.CODECK_INTERNAL_SECRET || '';
@@ -145,12 +165,17 @@ export function setupWebSocket(): void {
       for (const [sessionId, clientSet] of sessionClients) {
         clientSet.delete(ws);
         if (clientSet.size === 0) {
-          // No clients left — dispose PTY handlers for this session
-          const handlers = sessionHandlers.get(sessionId);
-          if (handlers) {
-            handlers.forEach(d => d.dispose());
+          // No clients left — dispose only the data handler.
+          // The exit handler (sessionExitHandlers) stays alive so PTY death is
+          // detected even when no browser tab is connected.
+          const dataHandler = sessionHandlers.get(sessionId);
+          if (dataHandler) {
+            dataHandler.dispose();
             sessionHandlers.delete(sessionId);
           }
+          // Reset attachment so future PTY output is buffered again.
+          // On next console:attach, markSessionAttached replays the buffer.
+          resetSessionAttachment(sessionId);
           sessionClients.delete(sessionId);
           sessionMaxDimensions.delete(sessionId);
         } else {
@@ -219,11 +244,40 @@ function handleConsoleMessage(ws: WebSocket, msg: { type: string; sessionId: str
     }
     clientSet.add(ws);
 
-    // Only create PTY handlers if this is the first client attaching to this session
-    // (or if handlers were previously cleaned up after all clients disconnected)
-    if (!sessionHandlers.has(msg.sessionId)) {
-      const sid = msg.sessionId; // capture for closures
+    const sid = msg.sessionId; // capture for closures
 
+    // Exit handler: created once per session, kept alive even when no WS clients are
+    // connected.  This ensures PTY death is always detected (e.g. Claude exits while
+    // the user has no browser tab open).
+    if (!sessionExitHandlers.has(sid)) {
+      const exitDisposable = session.pty.onExit(({ exitCode }: { exitCode: number }) => {
+        const currentClients = sessionClients.get(sid);
+        if (currentClients) {
+          const payload = JSON.stringify({ type: 'console:exit', sessionId: sid, exitCode });
+          for (const client of currentClients) {
+            if (client.readyState === WebSocket.OPEN) client.send(payload);
+          }
+        }
+        // Sync credentials — CLI may have refreshed the OAuth token during the session.
+        // Broadcast status so the frontend's claudeAuthenticated signal stays accurate
+        // (e.g. if the token expired and Claude exited, the LoginModal opens).
+        syncCredentialsAfterCLI();
+        broadcastStatus();
+        // Clean up all tracking for this session.
+        // Note: no need to call .dispose() on the exit handler here — this callback
+        // IS the handler; it has already fired and cannot fire again.
+        sessionExitHandlers.delete(sid);
+        sessionHandlers.delete(sid);
+        sessionClients.delete(sid);
+        sessionMaxDimensions.delete(sid);
+        destroySession(sid);
+      });
+      sessionExitHandlers.set(sid, exitDisposable);
+    }
+
+    // Data handler: created when the first client attaches (or re-created after all
+    // clients disconnected and the session is being re-attached on WS reconnect).
+    if (!sessionHandlers.has(sid)) {
       const dataDisposable = session.pty.onData((data: string) => {
         const currentClients = sessionClients.get(sid);
         if (!currentClients) return;
@@ -237,28 +291,12 @@ function handleConsoleMessage(ws: WebSocket, msg: { type: string; sessionId: str
           }
         }
       });
-
-      const exitDisposable = session.pty.onExit(({ exitCode }: { exitCode: number }) => {
-        const currentClients = sessionClients.get(sid);
-        if (currentClients) {
-          const payload = JSON.stringify({ type: 'console:exit', sessionId: sid, exitCode });
-          for (const client of currentClients) {
-            if (client.readyState === WebSocket.OPEN) client.send(payload);
-          }
-        }
-        // Sync credentials after CLI exit — CLI may have refreshed the token during the session
-        syncCredentialsAfterCLI();
-        // Clean up all tracking for this session
-        sessionHandlers.delete(sid);
-        sessionClients.delete(sid);
-        sessionMaxDimensions.delete(sid);
-        destroySession(sid);
-      });
-
-      sessionHandlers.set(msg.sessionId, [dataDisposable, exitDisposable]);
+      sessionHandlers.set(sid, dataDisposable);
     }
 
-    // Replay any buffered output to THIS client only
+    // Replay any output buffered while no WS client was connected.
+    // markSessionAttached clears the buffer and sets session.attached = true so
+    // future output goes directly to the data handler above (not buffered again).
     const buffered = markSessionAttached(msg.sessionId);
     for (const chunk of buffered) {
       if (ws.readyState === WebSocket.OPEN)

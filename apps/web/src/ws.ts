@@ -203,13 +203,11 @@ function openWs(wsUrl: string): void {
 
   ws.onclose = () => {
     setWsConnected(false);
-    // If sessions were active, assume they'll need to be restored on reconnect.
-    // Set restoringPending immediately so the overlay shows "Restoring sessions..."
-    // as soon as the WS comes back — eliminating the gap between reconnection
-    // and the server's pendingRestore status message arriving.
-    if (sessions.value.length > 0) {
-      setRestoringPending(true);
-    }
+    // Do NOT set restoringPending here — a transient WS disconnect does not mean
+    // sessions need to be restored (PTY is still running on the server).
+    // restoringPending is only set when the server explicitly sends pendingRestore:true
+    // in its status message (which happens only after a service restart).
+    // The ReconnectOverlay handles "Reconnecting..." display while WS is down.
     ws = null;
     if (staleCheckTimer) { clearInterval(staleCheckTimer); staleCheckTimer = null; }
 

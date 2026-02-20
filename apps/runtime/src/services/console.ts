@@ -335,6 +335,17 @@ export function markSessionAttached(id: string): string[] {
   return buffered;
 }
 
+/**
+ * Reset attachment state so PTY output is buffered again.
+ * Called when all WS clients disconnect — ensures that output produced while
+ * no client is connected is buffered and replayed on the next console:attach.
+ */
+export function resetSessionAttachment(id: string): void {
+  const session = sessions.get(id);
+  if (!session) return;
+  session.attached = false;
+}
+
 export function renameSession(id: string, name: string): boolean {
   const session = sessions.get(id);
   if (!session) return false;

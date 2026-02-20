@@ -3,7 +3,7 @@ import type { IncomingMessage } from 'http';
 import { getClaudeStatus, isClaudeAuthenticated, syncCredentialsAfterCLI } from '../services/auth-anthropic.js';
 import { ACTIVE_AGENT } from '../services/agent.js';
 import { getGitStatus, getWorkspacePath } from '../services/git.js';
-import { getSession, writeToSession, resizeSession, destroySession, markSessionAttached, resetSessionAttachment, listSessions, hasSavedSessions } from '../services/console.js';
+import { getSession, writeToSession, resizeSession, destroySession, markSessionAttached, resetSessionAttachment, listSessions, isPendingRestore } from '../services/console.js';
 import { getLogBuffer, setWsClients, broadcast } from './logger.js';
 import { isPasswordConfigured, validateSession, consumeWsTicket } from '../services/auth.js';
 import { detectDockerSocketMount } from '../services/environment.js';
@@ -138,7 +138,7 @@ export function setupWebSocket(): void {
         workspace: getWorkspacePath(),
         agent: { name: ACTIVE_AGENT.name, id: ACTIVE_AGENT.id },
         sessions: listSessions(),
-        pendingRestore: hasSavedSessions(),
+        pendingRestore: isPendingRestore(),
         dockerExperimental: detectDockerSocketMount(),
       },
     }));

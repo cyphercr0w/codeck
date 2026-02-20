@@ -483,6 +483,20 @@ export function hasSavedSessions(): boolean {
   return existsSync(SESSIONS_STATE_PATH);
 }
 
+// True only while a session restore from the previous lifecycle is genuinely in progress.
+// Set at module load (if sessions.json exists) and cleared after restoreSavedSessions() runs.
+// Unlike hasSavedSessions(), this flag is NOT affected by saveSessionState() calls during
+// normal operation — prevents new WS clients from seeing pendingRestore:true after startup.
+let _pendingRestore: boolean = existsSync(SESSIONS_STATE_PATH);
+
+export function isPendingRestore(): boolean {
+  return _pendingRestore;
+}
+
+export function clearPendingRestore(): void {
+  _pendingRestore = false;
+}
+
 export function restoreSavedSessions(): Array<{ id: string; type: string; cwd: string; name: string }> {
   if (!existsSync(SESSIONS_STATE_PATH)) return [];
 

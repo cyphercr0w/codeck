@@ -12,7 +12,7 @@ import { isPasswordConfigured, setupPassword, validatePassword, validateSession,
 import { getClaudeStatus, isClaudeAuthenticated, getAccountInfo, startTokenRefreshMonitor, stopTokenRefreshMonitor } from '../services/auth-anthropic.js';
 import { ACTIVE_AGENT } from '../services/agent.js';
 import { getGitStatus, updateClaudeMd, initGitHub } from '../services/git.js';
-import { destroyAllSessions, hasSavedSessions, restoreSavedSessions, saveSessionState, updateAgentBinary } from '../services/console.js';
+import { destroyAllSessions, hasSavedSessions, restoreSavedSessions, saveSessionState, updateAgentBinary, clearPendingRestore } from '../services/console.js';
 import { getPresetStatus } from '../services/preset.js';
 import agentRoutes from '../routes/agent.routes.js';
 import githubRoutes from '../routes/github.routes.js';
@@ -438,6 +438,9 @@ export async function startWebServer(): Promise<void> {
       const restoreDelayMs = parseInt(process.env.SESSION_RESTORE_DELAY || '2000', 10);
       setTimeout(() => {
         const restored = restoreSavedSessions();
+        // Clear the pending restore flag BEFORE broadcasting so that any client
+        // connecting after this point sees pendingRestore:false in the status message.
+        clearPendingRestore();
         // Always broadcast sessions:restored, even if empty.
         // The frontend keeps the "Restoring sessions..." overlay visible until it
         // receives this message. If we only broadcast on restored.length > 0, an empty

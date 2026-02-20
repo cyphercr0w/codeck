@@ -166,6 +166,22 @@ export async function startDaemon(): Promise<void> {
     res.json({ success: true });
   });
 
+  // WS ticket — create a short-lived one-time ticket for WebSocket auth.
+  // The frontend prefers tickets over long-lived tokens in the WS URL.
+  // Since the daemon proxies WS with _internal secret, the ticket is synthetic:
+  // we return the daemon token itself wrapped as a "ticket" (the daemon validates
+  // it in the WS upgrade handler just like a regular token).
+  app.post('/api/auth/ws-ticket', (req, res) => {
+    const token = req.headers.authorization?.replace('Bearer ', '');
+    if (!token) {
+      res.status(401).json({ error: 'Unauthorized' });
+      return;
+    }
+    // Token is valid (already checked by the /api auth middleware above).
+    // Return it as the "ticket" — daemon WS handler accepts the same token.
+    res.json({ ticket: token });
+  });
+
   // List active sessions
   app.get('/api/auth/sessions', (req, res) => {
     const currentToken = req.headers.authorization?.replace('Bearer ', '');

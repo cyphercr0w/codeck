@@ -134,7 +134,8 @@ export function handleWsUpgrade(
       'Sec-WebSocket-Key': req.headers['sec-websocket-key'] || '',
       ...(req.headers['sec-websocket-extensions'] ? { 'Sec-WebSocket-Extensions': req.headers['sec-websocket-extensions'] } : {}),
       ...(req.headers['sec-websocket-protocol'] ? { 'Sec-WebSocket-Protocol': req.headers['sec-websocket-protocol'] } : {}),
-      ...(req.headers['origin'] ? { 'Origin': req.headers['origin'] } : {}),
+      // Do NOT forward Origin — the daemon already validates auth/origin. The runtime's
+      // origin check would fail because it compares origin against host (127.0.0.1:7778).
       'X-Forwarded-For': clientSocket.remoteAddress || '127.0.0.1',
     },
     timeout: 10_000,

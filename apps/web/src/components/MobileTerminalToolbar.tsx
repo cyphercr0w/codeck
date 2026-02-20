@@ -197,10 +197,18 @@ export function MobileTerminalToolbar() {
   }, [expanded, sessionId]);
 
   useEffect(() => {
-    const handler = () => recalcLayout(sessionId);
+    let settleTimer: ReturnType<typeof setTimeout>;
+    const handler = () => {
+      // Fire immediately for a responsive feel during keyboard animation,
+      // then schedule a final recalc after events settle (keyboard fully open/closed).
+      recalcLayout(sessionId);
+      clearTimeout(settleTimer);
+      settleTimer = setTimeout(() => recalcLayout(sessionId), 150);
+    };
     window.visualViewport?.addEventListener('resize', handler);
     window.addEventListener('resize', handler);
     return () => {
+      clearTimeout(settleTimer);
       window.visualViewport?.removeEventListener('resize', handler);
       window.removeEventListener('resize', handler);
     };
@@ -252,14 +260,16 @@ export function MobileTerminalToolbar() {
         onFocus={() => {
           resetInput();
           if (sessionId) scrollToBottom(sessionId);
-          // Fallback: visualViewport.resize may fire late or not at all on some
-          // mobile browsers during keyboard animation. Recalc after the keyboard
-          // finishes opening (~300ms) to catch any missed resize events.
+          // Belt-and-suspenders fallback: some Android keyboards take >300ms to fully
+          // open. Fire at 300ms, 500ms, and 700ms to catch slow animations.
           setTimeout(() => recalcLayout(sessionId), 300);
+          setTimeout(() => recalcLayout(sessionId), 500);
+          setTimeout(() => recalcLayout(sessionId), 700);
         }}
         onBlur={() => {
-          // Keyboard closing — recalc after animation so terminal expands back.
+          // Keyboard closing — recalc at multiple points to catch slow animations.
           setTimeout(() => recalcLayout(sessionId), 300);
+          setTimeout(() => recalcLayout(sessionId), 500);
         }}
       />
 

@@ -192,8 +192,13 @@ export function MobileTerminalToolbar() {
   // --- Layout: calculate terminal height to fill space above fixed toolbar ---
 
   useEffect(() => {
-    // Recalc on mount and whenever toolbar expands/collapses
-    const timer = setTimeout(() => recalcLayout(sessionId), 50);
+    // Call immediately so .terminal-instances gets its explicit height BEFORE any
+    // rAF callbacks run (fitTerminal bails if container height is 0). The 50ms
+    // delay that was here caused fitTerminal to bail in ClaudeSection's useEffect
+    // rAF (~16ms), leaving the terminal at xterm's default 80×24 dims → black screen.
+    recalcLayout(sessionId);
+    // Schedule a settle recalc for after fonts/layout finish loading.
+    const timer = setTimeout(() => recalcLayout(sessionId), 150);
     return () => clearTimeout(timer);
   }, [expanded, sessionId]);
 

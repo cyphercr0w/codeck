@@ -95,16 +95,20 @@ export function createTerminal(sessionId: string, container: HTMLElement): Termi
   });
 
   // Debounce resize to avoid excessive events on mobile orientation changes.
-  // On mobile this is the ONLY place fitAddon.fit() is called — recalcLayout
-  // intentionally skips fitTerminal to prevent multiple SIGWINCH signals (which
-  // cause brief input freezes while the PTY process redraws).
+  // Deduplicates SIGWINCH: only sends console:resize when cols/rows actually change,
+  // matching the same guard in fitTerminal(). This makes it safe to call fitTerminal
+  // explicitly from recalcLayout as a fallback without risking double SIGWINCH.
   let resizeTimer: ReturnType<typeof setTimeout> | null = null;
   const resizeObserver = new ResizeObserver(() => {
     if (resizeTimer) clearTimeout(resizeTimer);
     resizeTimer = setTimeout(() => {
       if (container.offsetWidth > 0 && container.offsetHeight > 0) {
+        const prevCols = term.cols;
+        const prevRows = term.rows;
         fitAddon.fit();
-        wsSend({ type: 'console:resize', sessionId, cols: term.cols, rows: term.rows });
+        if (term.cols !== prevCols || term.rows !== prevRows) {
+          wsSend({ type: 'console:resize', sessionId, cols: term.cols, rows: term.rows });
+        }
         // After fit, scroll to bottom so content is visible (fit may change row count).
         if (isMobile.value && !scrollLocked.get(sessionId)) {
           term.scrollToBottom();

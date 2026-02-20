@@ -32,7 +32,11 @@ export const startCommand = new Command('start')
       // so daemon and runtime container share auth.json, sessions, etc.
       let sharedDataDir: string | undefined;
       if (mode === 'managed') {
-        sharedDataDir = join(config.projectPath, '.codeck-data');
+        // Allow CODECK_DATA_DIR env var to override the default location.
+        // On VPS/systemd deployments this points to the persistent host dir
+        // (e.g. /home/codeck/.codeck) so proactive agents, memory, and auth.json
+        // survive service restarts without being reset to a project-relative path.
+        sharedDataDir = process.env.CODECK_DATA_DIR || join(config.projectPath, '.codeck-data');
         if (!existsSync(sharedDataDir)) {
           mkdirSync(sharedDataDir, { recursive: true });
         }

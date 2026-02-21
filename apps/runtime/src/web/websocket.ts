@@ -503,37 +503,8 @@ function handleConsoleMessage(ws: WebSocket, msg: { type: string; sessionId: str
         `cpu=${processCpuPct} nodeRSS=${Math.round(process.memoryUsage().rss / 1024 / 1024)}MB`
       );
 
-      // PTY echo probe: write a known marker and measure if/when it echoes back.
-      // This distinguishes "PTY not responsive" from "child process discarding input."
-      // Uses BEL character (0x07) — terminal beep, harmless, and uniquely identifiable
-      // in onData output. If we see it echo within 2s, the PTY path works and the
-      // freeze is the child process not echoing user input.
-      if (ptyAlive && session) {
-        const probeId = Date.now().toString(36);
-        const probeSentAt = Date.now();
-        // Write a OSC sequence that most terminal apps pass through or ignore:
-        // \x1b]999;probe-{id}\x07 — won't display anything visible
-        const probe = `\x1b]999;probe-${probeId}\x07`;
-        try {
-          writeToSession(msg.sessionId, probe);
-          // Check if probe echoes within 2s
-          const checkProbe = () => {
-            const elapsed = Date.now() - probeSentAt;
-            const lastOut = lastPtyOutputTime.get(msg.sessionId);
-            const outputSince = lastOut ? lastOut > probeSentAt : false;
-            if (outputSince) {
-              console.log(`[WS] PROBE echoed in ${elapsed}ms — PTY responsive, child process ignoring user input`);
-            } else if (elapsed < 2000) {
-              setTimeout(checkProbe, 200);
-            } else {
-              console.warn(`[WS] PROBE no echo after 2s — PTY or child process completely blocked`);
-            }
-          };
-          setTimeout(checkProbe, 200);
-        } catch (e) {
-          console.warn(`[WS] PROBE write failed: ${(e as Error).message}`);
-        }
-      }
+      // PTY echo probe removed — confirmed PTY is responsive (probe echoed back
+      // as visible text in terminal). The freeze is in the browser→server path.
 
       // Attempt recovery: send SIGWINCH to the child process.
       if (ptyAlive && silentMs > 8000) {

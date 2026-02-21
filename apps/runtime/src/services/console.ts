@@ -1,5 +1,6 @@
 import { spawn as ptySpawn, type IPty } from 'node-pty';
 import { readFileSync, existsSync, readdirSync, mkdirSync, unlinkSync, renameSync, statSync } from 'fs';
+import { readdir as readdirAsync, stat as statAsync, readFile as readFileAsync } from 'fs/promises';
 import { randomUUID } from 'crypto';
 import { resolve } from 'path';
 import { realpathSync } from 'fs';
@@ -56,69 +57,84 @@ interface CreateSessionOptions {
  *   (Claude writes to it when the conversation is resumed).
  * Runs async (fire-and-forget) — does not block session creation.
  */
+/**
+ * Detect the conversation ID using fully async I/O.
+ * Previous implementation used readdirSync/statSync/readFileSync inside a 500ms setInterval,
+ * which blocked the Node.js event loop for seconds when project directories had many .jsonl files.
+ * This caused the runtime to stop processing WS messages (including console:input) → input freeze.
+ */
 function detectConversationId(session: ConsoleSession, watchExisting = false): void {
   const encoded = encodeProjectPath(session.cwd);
   const projectDir = `${ACTIVE_AGENT.projectsDir}/${encoded}`;
 
-  // Snapshot existing .jsonl files (and their mtimes for resume detection)
-  const existingFiles = new Set<string>();
-  const existingMtimes = new Map<string, number>();
-  try {
-    if (existsSync(projectDir)) {
-      for (const f of readdirSync(projectDir)) {
+  (async () => {
+    // Snapshot existing .jsonl files (and their mtimes for resume detection)
+    const existingFiles = new Set<string>();
+    const existingMtimes = new Map<string, number>();
+    try {
+      const entries = await readdirAsync(projectDir).catch(() => [] as string[]);
+      for (const f of entries) {
         if (!f.endsWith('.jsonl')) continue;
         existingFiles.add(f);
         if (watchExisting) {
-          try { existingMtimes.set(f, statSync(`${projectDir}/${f}`).mtimeMs); } catch { /* ignore */ }
-        }
-      }
-    }
-  } catch { /* ignore */ }
-
-  // Poll (500ms intervals, up to 15s)
-  let attempts = 0;
-  const maxAttempts = 30;
-  const interval = setInterval(() => {
-    attempts++;
-    try {
-      if (!existsSync(projectDir)) {
-        if (attempts >= maxAttempts) clearInterval(interval);
-        return;
-      }
-      const files = readdirSync(projectDir).filter(f => f.endsWith('.jsonl'));
-
-      let found: string | undefined;
-      if (watchExisting) {
-        // Resume mode: look for a file whose mtime has changed (Claude wrote to it)
-        found = files.find(f => {
           try {
-            const mtime = statSync(`${projectDir}/${f}`).mtimeMs;
-            return mtime > (existingMtimes.get(f) ?? 0);
-          } catch { return false; }
-        });
-      } else {
-        // Fresh session: look for a brand-new file
-        found = files.find(f => !existingFiles.has(f));
-      }
-
-      if (found) {
-        // Validate the file has real conversation messages (not just metadata like file-history-snapshot)
-        if (!hasRealMessages(`${projectDir}/${found}`)) {
-          // Not a real conversation yet — keep polling
-          return;
+            const s = await statAsync(`${projectDir}/${f}`);
+            existingMtimes.set(f, s.mtimeMs);
+          } catch { /* ignore */ }
         }
-        session.conversationId = found.replace('.jsonl', '');
-        saveSessionState('conversation_detected');
-        console.log(`[Console] Detected conversation: ${session.conversationId} (${watchExisting ? 'resume' : 'new'})`);
-        clearInterval(interval);
-      } else if (attempts >= maxAttempts) {
-        console.warn(`[Console] Could not detect conversation ID for session ${session.id}`);
-        clearInterval(interval);
       }
-    } catch {
-      clearInterval(interval);
-    }
-  }, 500);
+    } catch { /* ignore */ }
+
+    // Poll (500ms intervals, up to 15s) — fully async to avoid blocking event loop
+    let attempts = 0;
+    const maxAttempts = 30;
+    let polling = false;
+    const interval = setInterval(async () => {
+      if (polling) return; // Skip if previous async iteration still running
+      polling = true;
+      attempts++;
+      try {
+        const files = await readdirAsync(projectDir).catch(() => [] as string[]);
+        const jsonlFiles = files.filter(f => f.endsWith('.jsonl'));
+
+        let found: string | undefined;
+        if (watchExisting) {
+          // Resume mode: look for a file whose mtime has changed (Claude wrote to it)
+          for (const f of jsonlFiles) {
+            try {
+              const s = await statAsync(`${projectDir}/${f}`);
+              if (s.mtimeMs > (existingMtimes.get(f) ?? 0)) {
+                found = f;
+                break;
+              }
+            } catch { /* ignore */ }
+          }
+        } else {
+          // Fresh session: look for a brand-new file
+          found = jsonlFiles.find(f => !existingFiles.has(f));
+        }
+
+        if (found) {
+          // Validate the file has real conversation messages (not just metadata like file-history-snapshot)
+          if (!(await hasRealMessagesAsync(`${projectDir}/${found}`))) {
+            // Not a real conversation yet — keep polling
+            return;
+          }
+          session.conversationId = found.replace('.jsonl', '');
+          saveSessionState('conversation_detected');
+          console.log(`[Console] Detected conversation: ${session.conversationId} (${watchExisting ? 'resume' : 'new'})`);
+          clearInterval(interval);
+        } else if (attempts >= maxAttempts) {
+          console.warn(`[Console] Could not detect conversation ID for session ${session.id}`);
+          clearInterval(interval);
+        }
+      } catch {
+        clearInterval(interval);
+      } finally {
+        polling = false;
+      }
+    }, 500);
+  })();
 }
 
 export function createConsoleSession(options?: string | CreateSessionOptions): ConsoleSession {
@@ -294,7 +310,11 @@ export function writeToSession(id: string, data: string): void {
     console.warn(`[Console] writeToSession: session ${id.slice(0,8)} NOT FOUND — input discarded (${data.length}B)`);
     return;
   }
-  session.pty.write(data);
+  try {
+    session.pty.write(data);
+  } catch (e) {
+    console.error(`[Console] pty.write FAILED for ${id.slice(0,8)}: ${(e as Error).message} — PTY may be dead`);
+  }
 }
 
 export function destroySession(id: string): void {
@@ -385,11 +405,29 @@ function encodeProjectPath(cwd: string): string {
 /**
  * Check if a .jsonl file contains at least one real conversation message (user or assistant type).
  * Filters out files that only contain metadata entries like file-history-snapshot.
+ * Sync version — used only in startup paths (restoreSavedSessions).
  */
 function hasRealMessages(filePath: string): boolean {
   try {
     const lines = readFileSync(filePath, 'utf8').split('\n').filter(Boolean);
     return lines.some(line => {
+      try {
+        const d = JSON.parse(line);
+        return d.type === 'user' || d.type === 'assistant';
+      } catch { return false; }
+    });
+  } catch { return false; }
+}
+
+/**
+ * Async version of hasRealMessages — used in polling paths to avoid blocking the event loop.
+ * Reading large .jsonl conversation files synchronously was blocking for 100ms+ per file.
+ */
+async function hasRealMessagesAsync(filePath: string): Promise<boolean> {
+  try {
+    const content = await readFileAsync(filePath, 'utf8');
+    return content.split('\n').some(line => {
+      if (!line) return false;
       try {
         const d = JSON.parse(line);
         return d.type === 'user' || d.type === 'assistant';
@@ -425,12 +463,11 @@ function findMostRecentConversation(cwd: string): string | undefined {
 /**
  * Check if a directory has previous Claude Code conversations that can be resumed.
  */
-export function hasResumableConversations(cwd: string): boolean {
+export async function hasResumableConversations(cwd: string): Promise<boolean> {
   const encoded = encodeProjectPath(cwd);
   const projectDir = `${ACTIVE_AGENT.projectsDir}/${encoded}`;
   try {
-    if (!existsSync(projectDir)) return false;
-    const files = readdirSync(projectDir);
+    const files = await readdirAsync(projectDir).catch(() => [] as string[]);
     return files.some(f => f.endsWith('.jsonl'));
   } catch {
     return false;

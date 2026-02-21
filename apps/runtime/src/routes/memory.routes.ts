@@ -104,16 +104,16 @@ router.get('/projects/:name', (req, res) => {
 
 // ── Status ──
 
-router.get('/status', (_req, res) => {
-  res.json(getMemoryStatus());
+router.get('/status', async (_req, res) => {
+  res.json(await getMemoryStatus());
 });
 
-router.get('/stats', (_req, res) => {
-  res.json(getMemoryStats());
+router.get('/stats', async (_req, res) => {
+  res.json(await getMemoryStats());
 });
 
-router.get('/files', (_req, res) => {
-  res.json({ files: listMemoryFiles() });
+router.get('/files', async (_req, res) => {
+  res.json({ files: await listMemoryFiles() });
 });
 
 // ── Durable Memory (MEMORY.md) ──

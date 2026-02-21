@@ -1,4 +1,5 @@
 import { existsSync, readFileSync, writeFileSync, mkdirSync, readdirSync, statSync, renameSync, unlinkSync } from 'fs';
+import { readdir as readdirAsync, stat as statAsync } from 'fs/promises';
 import { join, resolve, dirname } from 'path';
 import { createHash, randomBytes } from 'crypto';
 import { sanitizeSecrets } from './session-writer.js';
@@ -488,12 +489,16 @@ export function assembleContext(pathId?: string): string {
 
 // ── Status ──
 
-export function getMemoryStatus(): Record<string, unknown> {
+export async function getMemoryStatus(): Promise<Record<string, unknown>> {
   const flushState = loadFlushState();
   const pathsMap = loadPathsMap();
-  const dailyCount = existsSync(DAILY_DIR) ? readdirSync(DAILY_DIR).filter(f => f.endsWith('.md')).length : 0;
-  const decisionsCount = existsSync(DECISIONS_DIR) ? readdirSync(DECISIONS_DIR).filter(f => f.endsWith('.md')).length : 0;
-  const sessionsCount = existsSync(SESSIONS_DIR) ? readdirSync(SESSIONS_DIR).filter(f => f.endsWith('.jsonl')).length : 0;
+  const safeReaddir = (dir: string, ext: string) =>
+    readdirAsync(dir).then(files => files.filter(f => f.endsWith(ext)).length).catch(() => 0);
+  const [dailyCount, decisionsCount, sessionsCount] = await Promise.all([
+    safeReaddir(DAILY_DIR, '.md'),
+    safeReaddir(DECISIONS_DIR, '.md'),
+    safeReaddir(SESSIONS_DIR, '.jsonl'),
+  ]);
   const pathScopes = Object.keys(pathsMap).length;
 
   return {
@@ -508,67 +513,58 @@ export function getMemoryStatus(): Record<string, unknown> {
 
 // ── Memory stats (detailed) ──
 
-export function getMemoryStats(): Record<string, unknown> {
+export async function getMemoryStats(): Promise<Record<string, unknown>> {
   let totalSize = 0;
   let fileCount = 0;
   let oldestDaily: string | null = null;
   let newestDaily: string | null = null;
 
+  // Helper: safely readdir + stat files with given extension
+  const scanDir = async (dir: string, ext: string): Promise<{ names: string[]; size: number; count: number }> => {
+    try {
+      const files = (await readdirAsync(dir)).filter(f => f.endsWith(ext)).sort();
+      let size = 0;
+      for (const f of files) {
+        try { size += (await statAsync(join(dir, f))).size; } catch { /* ignore */ }
+      }
+      return { names: files, size, count: files.length };
+    } catch { return { names: [], size: 0, count: 0 }; }
+  };
+
   // Scan daily dir
-  if (existsSync(DAILY_DIR)) {
-    const files = readdirSync(DAILY_DIR).filter(f => f.endsWith('.md')).sort();
-    for (const f of files) {
-      const s = statSync(join(DAILY_DIR, f));
-      totalSize += s.size;
-      fileCount++;
-    }
-    if (files.length > 0) {
-      oldestDaily = files[0].replace('.md', '');
-      newestDaily = files[files.length - 1].replace('.md', '');
-    }
+  const daily = await scanDir(DAILY_DIR, '.md');
+  totalSize += daily.size;
+  fileCount += daily.count;
+  if (daily.names.length > 0) {
+    oldestDaily = daily.names[0].replace('.md', '');
+    newestDaily = daily.names[daily.names.length - 1].replace('.md', '');
   }
 
   // Scan durable
-  if (existsSync(DURABLE_PATH)) {
-    totalSize += statSync(DURABLE_PATH).size;
-    fileCount++;
-  }
+  try { totalSize += (await statAsync(DURABLE_PATH)).size; fileCount++; } catch { /* doesn't exist */ }
 
   // Scan decisions
-  if (existsSync(DECISIONS_DIR)) {
-    const files = readdirSync(DECISIONS_DIR).filter(f => f.endsWith('.md'));
-    for (const f of files) {
-      totalSize += statSync(join(DECISIONS_DIR, f)).size;
-      fileCount++;
-    }
-  }
+  const decisions = await scanDir(DECISIONS_DIR, '.md');
+  totalSize += decisions.size;
+  fileCount += decisions.count;
 
-  // Scan paths
-  if (existsSync(PATHS_DIR)) {
-    const scan = (dir: string) => {
-      if (!existsSync(dir)) return;
-      for (const entry of readdirSync(dir, { withFileTypes: true })) {
+  // Scan paths (recursive)
+  const scanRecursive = async (dir: string): Promise<void> => {
+    try {
+      const entries = await readdirAsync(dir, { withFileTypes: true });
+      for (const entry of entries) {
         const full = join(dir, entry.name);
-        if (entry.isDirectory()) scan(full);
+        if (entry.isDirectory()) { await scanRecursive(full); }
         else if (entry.name.endsWith('.md')) {
-          totalSize += statSync(full).size;
-          fileCount++;
+          try { totalSize += (await statAsync(full)).size; fileCount++; } catch { /* ignore */ }
         }
       }
-    };
-    scan(PATHS_DIR);
-  }
+    } catch { /* ignore */ }
+  };
+  await scanRecursive(PATHS_DIR);
 
   // Sessions
-  let sessionCount = 0;
-  let sessionsTotalSize = 0;
-  if (existsSync(SESSIONS_DIR)) {
-    const files = readdirSync(SESSIONS_DIR).filter(f => f.endsWith('.jsonl'));
-    sessionCount = files.length;
-    for (const f of files) {
-      sessionsTotalSize += statSync(join(SESSIONS_DIR, f)).size;
-    }
-  }
+  const sessions = await scanDir(SESSIONS_DIR, '.jsonl');
 
   return {
     totalSizeBytes: totalSize,
@@ -576,65 +572,58 @@ export function getMemoryStats(): Record<string, unknown> {
     fileCount,
     oldestDaily,
     newestDaily,
-    sessionCount,
-    sessionsTotalSizeKB: Math.round(sessionsTotalSize / 1024),
+    sessionCount: sessions.count,
+    sessionsTotalSizeKB: Math.round(sessions.size / 1024),
   };
 }
 
 // ── File listing for UI ──
 
-export function listMemoryFiles(): { type: string; path: string; size: number; modified: number }[] {
+export async function listMemoryFiles(): Promise<{ type: string; path: string; size: number; modified: number }[]> {
   const files: { type: string; path: string; size: number; modified: number }[] = [];
 
+  // Helper: readdir + stat for a directory of files with given extension
+  const scanDir = async (dir: string, ext: string, type: string, prefix: string) => {
+    try {
+      const entries = await readdirAsync(dir);
+      for (const f of entries.filter(x => x.endsWith(ext))) {
+        try {
+          const s = await statAsync(join(dir, f));
+          files.push({ type, path: `${prefix}${f}`, size: s.size, modified: s.mtimeMs });
+        } catch { /* ignore */ }
+      }
+    } catch { /* dir doesn't exist */ }
+  };
+
   // Durable
-  if (existsSync(DURABLE_PATH)) {
-    const s = statSync(DURABLE_PATH);
+  try {
+    const s = await statAsync(DURABLE_PATH);
     files.push({ type: 'durable', path: 'MEMORY.md', size: s.size, modified: s.mtimeMs });
-  }
+  } catch { /* doesn't exist */ }
 
-  // Daily
-  if (existsSync(DAILY_DIR)) {
-    for (const f of readdirSync(DAILY_DIR).filter(x => x.endsWith('.md'))) {
-      const s = statSync(join(DAILY_DIR, f));
-      files.push({ type: 'daily', path: `daily/${f}`, size: s.size, modified: s.mtimeMs });
-    }
-  }
-
-  // Decisions
-  if (existsSync(DECISIONS_DIR)) {
-    for (const f of readdirSync(DECISIONS_DIR).filter(x => x.endsWith('.md'))) {
-      const s = statSync(join(DECISIONS_DIR, f));
-      files.push({ type: 'decision', path: `decisions/${f}`, size: s.size, modified: s.mtimeMs });
-    }
-  }
+  // Daily + Decisions + Sessions in parallel
+  await Promise.all([
+    scanDir(DAILY_DIR, '.md', 'daily', 'daily/'),
+    scanDir(DECISIONS_DIR, '.md', 'decision', 'decisions/'),
+    scanDir(SESSIONS_DIR, '.jsonl', 'session', 'sessions/'),
+  ]);
 
   // Path scopes
-  if (existsSync(PATHS_DIR)) {
-    for (const pid of readdirSync(PATHS_DIR)) {
+  try {
+    const pathEntries = await readdirAsync(PATHS_DIR);
+    for (const pid of pathEntries) {
       const pidDir = join(PATHS_DIR, pid);
-      if (!statSync(pidDir).isDirectory()) continue;
-      const memPath = join(pidDir, 'MEMORY.md');
-      if (existsSync(memPath)) {
-        const s = statSync(memPath);
+      try {
+        const s = await statAsync(pidDir);
+        if (!s.isDirectory()) continue;
+      } catch { continue; }
+      try {
+        const s = await statAsync(join(pidDir, 'MEMORY.md'));
         files.push({ type: 'path', path: `paths/${pid}/MEMORY.md`, size: s.size, modified: s.mtimeMs });
-      }
-      const dailyDir = join(pidDir, 'daily');
-      if (existsSync(dailyDir)) {
-        for (const f of readdirSync(dailyDir).filter(x => x.endsWith('.md'))) {
-          const s = statSync(join(dailyDir, f));
-          files.push({ type: 'path-daily', path: `paths/${pid}/daily/${f}`, size: s.size, modified: s.mtimeMs });
-        }
-      }
+      } catch { /* no MEMORY.md */ }
+      await scanDir(join(pidDir, 'daily'), '.md', 'path-daily', `paths/${pid}/daily/`);
     }
-  }
-
-  // Sessions
-  if (existsSync(SESSIONS_DIR)) {
-    for (const f of readdirSync(SESSIONS_DIR).filter(x => x.endsWith('.jsonl'))) {
-      const s = statSync(join(SESSIONS_DIR, f));
-      files.push({ type: 'session', path: `sessions/${f}`, size: s.size, modified: s.mtimeMs });
-    }
-  }
+  } catch { /* PATHS_DIR doesn't exist */ }
 
   return files.sort((a, b) => b.modified - a.modified);
 }

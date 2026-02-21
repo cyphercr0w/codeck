@@ -84,13 +84,13 @@ router.get('/sessions', (_req, res) => {
 });
 
 // Check if a directory has resumable conversations
-router.get('/has-conversations', (req, res) => {
+router.get('/has-conversations', async (req, res) => {
   const cwd = req.query.cwd as string;
   if (!cwd) {
     res.status(400).json({ error: 'cwd query param required' });
     return;
   }
-  res.json({ hasConversations: hasResumableConversations(cwd) });
+  res.json({ hasConversations: await hasResumableConversations(cwd) });
 });
 
 // Rename console session

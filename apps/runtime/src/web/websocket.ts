@@ -39,6 +39,36 @@ const sessionMaxDimensions = new Map<string, { cols: number; rows: number }>();
 // (Claude Code not echoing) from routing issues (sessionClients missing).
 const lastPtyOutputTime = new Map<string, number>();
 
+// Event loop lag monitor: measures actual event loop delays to detect blocking.
+// A setTimeout(fn, 200) that takes 5000ms means the event loop was blocked for ~4800ms.
+let _eventLoopLagMs = 0;
+let _eventLoopLagPeak = 0;
+let _lastBlockTimestamp = 0; // When the most recent >1s block ended
+let _lastBlockDuration = 0; // How long that block lasted
+(function measureEventLoopLag() {
+  const INTERVAL = 200;
+  let last = Date.now();
+  const tick = () => {
+    const now = Date.now();
+    const lag = now - last - INTERVAL;
+    _eventLoopLagMs = Math.max(0, lag);
+    if (lag > _eventLoopLagPeak) _eventLoopLagPeak = lag;
+    if (lag > 1000) {
+      _lastBlockTimestamp = now;
+      _lastBlockDuration = lag;
+      console.error(`[EventLoop] BLOCKED for ${lag}ms (peak: ${_eventLoopLagPeak}ms)`);
+      // Broadcast to clients so it shows in Logs panel
+      broadcast({
+        type: 'log',
+        data: { level: 'error', message: `[EventLoop] BLOCKED for ${lag}ms — input may have been delayed`, ts: now },
+      });
+    }
+    last = now;
+    setTimeout(tick, INTERVAL);
+  };
+  setTimeout(tick, INTERVAL);
+})();
+
 // Max input payload size per WS message (64KB per OWASP recommendation)
 const MAX_INPUT_SIZE = 65536;
 
@@ -382,16 +412,75 @@ function handleConsoleMessage(ws: WebSocket, msg: { type: string; sessionId: str
   }
 
   if (msg.type === 'console:input') {
-    // Freeze detector: if PTY has been silent for >5s while input is arriving,
-    // log a warning in the Codeck Logs panel. This distinguishes:
-    //   - PTY not echoing (Claude Code blocked / raw mode) → lastPtyOutputTime is stale
-    //   - sessionClients race (no clients) → clients=0 in the log
+    // Freeze detector: if PTY has been silent for >5s OR the event loop was recently blocked
+    // (>1s block within the last 10s), diagnose the cause and notify the client.
+    //
+    // Race condition note: when the event loop unblocks after a stall, libuv processes
+    // ALL queued callbacks. PTY onData fires before WS message handlers, so
+    // lastPtyOutputTime gets updated right before this check — making the silence
+    // appear short even though the user experienced a multi-second freeze.
+    // Checking _lastBlockTimestamp catches this case.
     const lastOut = lastPtyOutputTime.get(msg.sessionId);
     const silentMs = lastOut !== undefined ? Date.now() - lastOut : -1;
-    if (silentMs > 5000) {
-      const clients = sessionClients.get(msg.sessionId)?.size ?? 0;
+    const recentBlockMs = Date.now() - _lastBlockTimestamp;
+    const hadRecentBlock = recentBlockMs < 10000 && _lastBlockDuration > 1000;
+    if (silentMs > 5000 || hadRecentBlock) {
+      const clientSet = sessionClients.get(msg.sessionId);
+      const clientCount = clientSet?.size ?? 0;
       const handlerExists = sessionHandlers.has(msg.sessionId);
-      console.warn(`[WS] FREEZE DETECTED session=${msg.sessionId.slice(0,8)} PTY silent=${Math.round(silentMs/1000)}s clients=${clients} handler=${handlerExists}`);
+      const session = getSession(msg.sessionId);
+      let ptyAlive = false;
+      let ptyPid = -1;
+
+      if (session) {
+        ptyPid = session.pty.pid;
+        try {
+          // process.kill(pid, 0) throws if process doesn't exist — doesn't send a signal
+          process.kill(ptyPid, 0);
+          ptyAlive = true;
+        } catch { ptyAlive = false; }
+      }
+
+      console.warn(
+        `[WS] FREEZE session=${msg.sessionId.slice(0,8)} silent=${Math.round(silentMs/1000)}s ` +
+        `clients=${clientCount} handler=${handlerExists} ptyAlive=${ptyAlive} pid=${ptyPid} ` +
+        `evLoopLag=${_eventLoopLagMs}ms peak=${_eventLoopLagPeak}ms ` +
+        `recentBlock=${hadRecentBlock ? `${_lastBlockDuration}ms@${Math.round(recentBlockMs/1000)}s_ago` : 'none'}`
+      );
+
+      // Notify connected clients about the freeze so frontend can show an indicator
+      if (clientSet) {
+        const freezeMsg = JSON.stringify({
+          type: 'console:freeze',
+          sessionId: msg.sessionId,
+          durationMs: Math.round(silentMs),
+          ptyAlive,
+          eventLoopLagMs: _eventLoopLagMs,
+          recentBlockMs: hadRecentBlock ? _lastBlockDuration : 0,
+        });
+        for (const client of clientSet) {
+          if (client.readyState === WebSocket.OPEN) client.send(freezeMsg);
+        }
+      }
+
+      // If PTY child process died, destroy the session and notify
+      if (!ptyAlive && session) {
+        console.error(`[WS] PTY process ${ptyPid} is dead — destroying session ${msg.sessionId.slice(0,8)}`);
+        destroySession(msg.sessionId);
+        const exitMsg = JSON.stringify({
+          type: 'console:exit',
+          sessionId: msg.sessionId,
+          exitCode: -1,
+          reason: 'PTY process died unexpectedly',
+        });
+        if (clientSet) {
+          for (const client of clientSet) {
+            if (client.readyState === WebSocket.OPEN) client.send(exitMsg);
+          }
+        }
+        broadcastStatus();
+        return; // Don't write to dead PTY
+      }
     }
     writeToSession(msg.sessionId, msg.data || '');
   }

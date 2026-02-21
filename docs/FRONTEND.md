@@ -223,6 +223,8 @@ Multi-tab terminal interface:
 - Terminal containers with xterm.js instances
 - Browser notifications on session exit (if tab hidden)
 
+**Stabilization retries** (`attachSettleRepaint`): after a WS reconnect settles, `fitTerminal` + `repaintTerminal` are retried at `[500, 1500]` ms as a safety net for cases where the container was hidden or had estimated dimensions during initial settle. `repaintTerminal` is skipped if the mobile hidden input is active (`document.activeElement?.id === 'mobile-hidden-input'`) — the micro-resize+full-refresh causes reflow freeze during typing.
+
 **Exported functions** (outside component):
 - `mountTerminalForSession(id, cwd, name)` — creates DOM element, xterm instance, attaches to PTY via WS
 - `restoreSessions()` — fetches existing sessions from API and re-mounts terminals
@@ -273,11 +275,13 @@ Collapsible bottom drawer:
 Adaptive toolbar for mobile terminal interaction:
 - **Default mode**: Navigation keys (arrows, Enter, Tab, Esc) + shortcuts (^C, ^U, ^D, ^L, ^A, ^E, ^R, ^W, ^V)
 - **Y/N mode**: Large Y/N buttons when terminal buffer contains prompt patterns like `(y/n)`, `[Y/n]`, `[y/N]`
-- Event-driven detection via `onTerminalWrite` subscription (real-time, not polling)
+- Event-driven Y/N detection via `onTerminalWrite` subscription (real-time, not polling)
 - Unified Pointer Events API for touch/mouse/stylus input
-- Hidden input field captures native keyboard with sentinel character
+- Hidden input field captures native keyboard with sentinel character (`\u200B`) that keeps the backspace event firing even on empty input
 - Collapsible with localStorage persistence
 - Visual feedback popup for key actions
+- **Debounced `fitTerminal`**: a module-level `debouncedFitTerminal` (350ms) ensures all overlapping `recalcLayout` calls collapse into a single `fitAddon.fit()` call after layout settles — prevents reflow thrashing during keyboard animation
+- `onFocus` does NOT schedule `recalcLayout` timers; `visualViewport.resize` handles keyboard-open layout with its own debounce, making the `onFocus` timers redundant and a source of main-thread stall during typing
 
 ### `ConfirmModal.tsx` — Confirmation Dialog
 
@@ -358,8 +362,8 @@ This defeats xterm's internal auto-scroll while preserving normal behavior when 
 The mobile toolbar automatically adapts to terminal prompts:
 - **Default mode**: Shows shortcuts (^C, ^U, ^D, ^L, ^A, ^E, ^R, ^W, ^V)
 - **Y/N mode**: When terminal buffer contains patterns like `(y/n)`, `[Y/n]`, `[y/N]`, shows large Y/N buttons
-- Detection runs every 1.5s via `getTerminalBuffer(sessionId, 5)` — reads last 5 lines
-- Mode switches instantly when prompt pattern appears/disappears
+- Detection is **event-driven** via `onTerminalWrite` subscription — incoming data chunks are tested directly; on newlines, the full buffer is re-checked at a 300ms throttle to avoid main-thread pressure during heavy streaming output
+- Mode switches as soon as a matching chunk arrives (fast path) or within 300ms of the newline that produces the prompt (slow path)
 
 ### Mobile terminal known limitations
 
@@ -370,6 +374,8 @@ The mobile terminal has known limitations inherited from xterm.js:
 - **Touch events**: xterm.js has no dedicated touch gesture support; relies on mouse event emulation, which can cause inconsistent behavior on mobile browsers.
 - **Custom toolbar mitigation**: The fixed-bottom toolbar with virtual keys (ESC, Tab, Ctrl+C, arrow keys, shortcuts) provides reliable input for common operations that would otherwise be unreliable via the on-screen keyboard.
 - **Safe-area insets**: The toolbar uses `env(safe-area-inset-bottom)` for iPhone notch/home indicator support.
+
+**Fixed (2026-02-21)**: Input freeze during typing. Multiple overlapping `recalcLayout` timers (from `onFocus` and `visualViewport.resize`) were scheduling concurrent `fitAddon.fit()` calls, causing DOM reflow thrashing that stalled the main thread for 1–10s. Fixed by: (1) module-level debounced `fitTerminal` collapsing all calls into one, (2) removing redundant `onFocus` timers, (3) reducing stabilization retry delays from `[500,1500,4000,10000]` to `[500,1500]`, (4) skipping `repaintTerminal` while mobile input is focused.
 
 For upstream tracking, see: [xterm.js #2403](https://github.com/xtermjs/xterm.js/issues/2403), [#5377](https://github.com/xtermjs/xterm.js/issues/5377), [#1101](https://github.com/xtermjs/xterm.js/issues/1101).
 

@@ -210,11 +210,36 @@ export function setupWebSocket(): void {
     }));
     ws.send(JSON.stringify({ type: 'logs', data: getLogBuffer() }));
 
-    // Console messages
+    // Track browser heartbeat and last known focus state per client
+    (ws as any)._lastBrowserHeartbeat = 0;
+    (ws as any)._terminalFocused = true; // assume focused initially
+
+    // Console messages + browser diagnostics
     ws.on('message', (raw) => {
       if (isRateLimited(ws)) return; // Drop messages exceeding rate limit
       try {
         const msg = JSON.parse(raw.toString());
+
+        // --- Browser diagnostic messages (no sessionId validation needed) ---
+        if (msg.type === 'client:block') {
+          const dur = typeof msg.durationMs === 'number' ? msg.durationMs : '?';
+          console.warn(`[Browser] Main thread BLOCKED for ${dur}ms — keystrokes may have been lost`);
+          return;
+        }
+        if (msg.type === 'client:heartbeat') {
+          (ws as any)._lastBrowserHeartbeat = Date.now();
+          return;
+        }
+        if (msg.type === 'client:focus') {
+          (ws as any)._terminalFocused = !!msg.focused;
+          if (msg.focused) {
+            console.log(`[Browser] Terminal ${(msg.sessionId || '').slice(0,8)} FOCUSED`);
+          } else {
+            console.warn(`[Browser] Terminal ${(msg.sessionId || '').slice(0,8)} LOST FOCUS → ${msg.activeElement || 'unknown'} — input will freeze until re-focused`);
+          }
+          return;
+        }
+
         handleConsoleMessage(ws, msg);
       } catch (e) {
         console.warn('[WS] Failed to parse client message:', (e as Error).message);
@@ -464,11 +489,17 @@ function handleConsoleMessage(ws: WebSocket, msg: { type: string; sessionId: str
         processCpuPct = `sys=${Math.round((1 - cpuIdle / cpuTotal) * 100)}%`;
       } catch { /* ignore */ }
 
+      // Check browser-side state: heartbeat recency + focus state
+      const lastBrowserHb = (ws as any)?._lastBrowserHeartbeat ?? 0;
+      const browserSilentMs = lastBrowserHb > 0 ? Date.now() - lastBrowserHb : -1;
+      const termFocused = (ws as any)?._terminalFocused ?? 'unknown';
+
       console.warn(
         `[WS] FREEZE session=${msg.sessionId.slice(0,8)} silent=${Math.round(silentMs/1000)}s ` +
         `clients=${clientCount} handler=${handlerExists} ptyAlive=${ptyAlive} pid=${ptyPid} ` +
         `evLoopLag=${_eventLoopLagMs}ms peak=${_eventLoopLagPeak}ms ` +
         `recentBlock=${hadRecentBlock ? `${_lastBlockDuration}ms@${Math.round(recentBlockMs/1000)}s_ago` : 'none'} ` +
+        `browserHB=${browserSilentMs > 0 ? Math.round(browserSilentMs/1000) + 's_ago' : 'none'} termFocused=${termFocused} ` +
         `cpu=${processCpuPct} nodeRSS=${Math.round(process.memoryUsage().rss / 1024 / 1024)}MB`
       );
 

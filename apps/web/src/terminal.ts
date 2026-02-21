@@ -82,10 +82,13 @@ export function createTerminal(sessionId: string, container: HTMLElement): Termi
     // Open DevTools Console to see these events if input freezes while output works.
     textarea.addEventListener('focus', () => {
       console.debug(`[xterm] ${sessionId.slice(0,6)} textarea FOCUS`);
+      wsSend({ type: 'client:focus', sessionId, focused: true });
     });
     textarea.addEventListener('blur', () => {
       const active = document.activeElement;
-      console.warn(`[xterm] ${sessionId.slice(0,6)} textarea BLUR — input will freeze until re-focused. activeElement=${active?.tagName}#${(active as HTMLElement)?.id || ''}.${(active as HTMLElement)?.className?.toString().split(' ').slice(0,2).join('.')}`);
+      const activeInfo = `${active?.tagName}#${(active as HTMLElement)?.id || ''}.${(active as HTMLElement)?.className?.toString().split(' ').slice(0,2).join('.')}`;
+      console.warn(`[xterm] ${sessionId.slice(0,6)} textarea BLUR — input will freeze until re-focused. activeElement=${activeInfo}`);
+      wsSend({ type: 'client:focus', sessionId, focused: false, activeElement: activeInfo });
     });
   }
 

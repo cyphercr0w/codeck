@@ -30,6 +30,33 @@ let reconnectBackoff = 500; // Exponential backoff: 0.5s → 1s → 2s → ... �
 let reconnectAttempts = 0;
 const MAX_RECONNECT_ATTEMPTS = 15;
 
+// --- Browser event loop monitor ---
+// Detects main thread blocks (>1s) and reports them to the server so they
+// appear in the Codeck Logs panel. If the main thread is blocked, keyboard
+// events queue up and input appears frozen.
+let _browserLastTick = performance.now();
+setInterval(() => {
+  const now = performance.now();
+  const lag = now - _browserLastTick - 200;
+  _browserLastTick = now;
+  if (lag > 1000) {
+    console.warn(`[Browser] Main thread blocked for ${lag.toFixed(0)}ms — input may have frozen`);
+    // Report to server — appears in Codeck Logs panel
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({ type: 'client:block', durationMs: Math.round(lag) }));
+    }
+  }
+}, 200);
+
+// --- Browser heartbeat ---
+// Sends a periodic heartbeat to the server. If the server detects a gap
+// (>15s between heartbeats), it knows the browser was blocked or disconnected.
+setInterval(() => {
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify({ type: 'client:heartbeat', ts: Date.now() }));
+  }
+}, 5000);
+
 // True only on the first status message after a WS reconnect.
 // Prevents onSessionReattached from firing on every status broadcast
 // (auth monitor, session events, etc.) — it should only fire after a real reconnect.

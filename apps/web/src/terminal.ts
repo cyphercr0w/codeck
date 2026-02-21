@@ -156,6 +156,12 @@ export function createTerminal(sessionId: string, container: HTMLElement): Termi
       if (container.offsetWidth > 0 && container.offsetHeight > 0) {
         const prevCols = term.cols;
         const prevRows = term.rows;
+        // Capture focus state before calling fitAddon.fit(). When fitAddon
+        // finds a dimension change it calls term.resize() internally, which
+        // does DOM operations that can move focus from the xterm textarea to
+        // document.body — causing the terminal to stop receiving keyboard
+        // input until the user clicks. We restore focus after the resize.
+        const wasTerminalFocused = !isMobile.value && !!textarea && document.activeElement === textarea;
         fitAddon.fit();
         // Guard: reject implausible dimensions from mid-transition containers.
         // During CSS animations the container can briefly report near-zero width,
@@ -168,6 +174,11 @@ export function createTerminal(sessionId: string, container: HTMLElement): Termi
         if (term.cols !== prevCols || term.rows !== prevRows) {
           console.debug(`[ResizeObserver] RESIZE ${prevCols}x${prevRows} → ${term.cols}x${term.rows}`);
           wsSend({ type: 'console:resize', sessionId, cols: term.cols, rows: term.rows });
+        }
+        // Restore focus if term.resize() stole it from the textarea.
+        if (wasTerminalFocused && document.activeElement !== textarea) {
+          console.debug(`[ResizeObserver] ${sessionId.slice(0,6)} restoring focus after resize`);
+          term.focus();
         }
         // After fit, scroll to bottom so content is visible (fit may change row count).
         if (isMobile.value && !scrollLocked.get(sessionId)) {

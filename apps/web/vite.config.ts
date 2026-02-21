@@ -7,6 +7,7 @@ export default defineConfig({
   build: {
     outDir: 'dist',
     emptyOutDir: true,
+    copyPublicDir: false, // Copied manually post-build to avoid EPERM on overlayfs (copy_file_range)
   },
   server: {
     proxy: {

@@ -3,7 +3,7 @@
   "version": "0.0.1",
   "private": true,
   "scripts": {
-    "build": "vite build",
+    "build": "vite build && cp -r public/. dist/",
     "dev": "vite",
     "clean": "rm -rf dist"
   },

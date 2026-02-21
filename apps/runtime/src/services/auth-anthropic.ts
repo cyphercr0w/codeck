@@ -666,6 +666,13 @@ export function invalidateAuthCache(): void {
  * This forces isClaudeAuthenticated() to return false until a new login.
  */
 export function markTokenExpired(): void {
+  // Guard: if a token was saved very recently, this expiry signal is a stale PTY output
+  // from before re-authentication — ignore it to prevent wiping fresh credentials.
+  const FRESH_TOKEN_GRACE_MS = 10_000;
+  if (lastTokenSaveAt > 0 && Date.now() - lastTokenSaveAt < FRESH_TOKEN_GRACE_MS) {
+    console.log('[Claude] markTokenExpired ignored — token was just saved (<10s ago), stale PTY signal discarded');
+    return;
+  }
   console.log('[Claude] ⚠ Token marked as expired (API returned 401)');
   tokenMarkedExpired = true;
   inMemoryToken = null;

@@ -1,6 +1,6 @@
 import { WebSocketServer, WebSocket } from 'ws';
 import type { IncomingMessage } from 'http';
-import { getClaudeStatus, isClaudeAuthenticated, syncCredentialsAfterCLI } from '../services/auth-anthropic.js';
+import { getClaudeStatus, isClaudeAuthenticated, syncCredentialsAfterCLI, markTokenExpired } from '../services/auth-anthropic.js';
 import { ACTIVE_AGENT } from '../services/agent.js';
 import { getGitStatus, getWorkspacePath } from '../services/git.js';
 import { getSession, writeToSession, resizeSession, destroySession, markSessionAttached, resetSessionAttachment, listSessions, isPendingRestore } from '../services/console.js';
@@ -55,6 +55,25 @@ function isRateLimited(ws: WebSocket): boolean {
 
 let wss: WebSocketServer;
 
+// Auth recovery poller: started when PTY output contains an auth error.
+// Lives at module level so handleConsoleMessage (defined outside setupWebSocket)
+// can access it without needing to thread it as a parameter.
+let authRecoveryPoller: ReturnType<typeof setInterval> | null = null;
+
+function startAuthRecoveryPoller(): void {
+  if (authRecoveryPoller) return; // Already polling
+  console.log('[WS] Auth recovery poller started (3s interval)');
+  authRecoveryPoller = setInterval(() => {
+    syncCredentialsAfterCLI();
+    if (isClaudeAuthenticated()) {
+      console.log('[WS] Auth recovered after re-login — stopping recovery poller');
+      clearInterval(authRecoveryPoller!);
+      authRecoveryPoller = null;
+      broadcastStatus();
+    }
+  }, 3000);
+}
+
 export function setupWebSocket(): void {
   wss = new WebSocketServer({ noServer: true, maxPayload: 64 * 1024 }); // 64KB per OWASP recommendation
 
@@ -82,9 +101,19 @@ export function setupWebSocket(): void {
   // Monitor Claude auth state — detect token expiry between explicit status broadcasts.
   // When isClaudeAuthenticated() flips to false, broadcast status immediately so the
   // frontend's claudeAuthenticated signal updates and the LoginModal auto-opens.
+  // When auth is already broken, also call syncCredentialsAfterCLI() to catch
+  // the case where the user ran /login inside a PTY session and the recovery
+  // poller hasn't started yet (e.g. error was in buffered output, not real-time).
   let lastAuthState: boolean | null = null;
   const authMonitorInterval = setInterval(() => {
     if (clients.length === 0) return;
+    // When auth is known-broken: attempt credential sync to detect in-terminal re-login.
+    // This is belt-and-suspenders alongside the recovery poller — covers the edge case
+    // where the auth error appeared in buffered replay (not intercepted by the PTY
+    // data handler) so the recovery poller was never started.
+    if (!isClaudeAuthenticated()) {
+      syncCredentialsAfterCLI();
+    }
     const current = isClaudeAuthenticated();
     if (current !== lastAuthState) {
       lastAuthState = current;
@@ -96,6 +125,7 @@ export function setupWebSocket(): void {
     clearInterval(pingInterval);
     clearInterval(heartbeatInterval);
     clearInterval(authMonitorInterval);
+    if (authRecoveryPoller) { clearInterval(authRecoveryPoller); authRecoveryPoller = null; }
   });
 
   const INTERNAL_SECRET = process.env.CODECK_INTERNAL_SECRET || '';
@@ -244,6 +274,21 @@ function handleConsoleMessage(ws: WebSocket, msg: { type: string; sessionId: str
     }
     clientSet.add(ws);
 
+    // Apply this client's previously stored dimensions (sent via console:resize before attach)
+    // so the PTY is resized to the correct size BEFORE buffer replay starts.
+    // Without this, recalcMaxDimensions is a no-op when resize arrives (no clients yet),
+    // and the replay happens at the PTY's old/default dimensions → content wraps at wrong
+    // column width → black terminal / line duplication on the client.
+    //
+    // Guard: only resize if this client actually sent a console:resize before attaching.
+    // If fitTerminal bailed on a hidden container (0-height), no dims are stored and
+    // we must NOT resize to the 1×1 fallback. The client's stabilization retries will
+    // send the correct dims after recalcLayout runs and the subsequent console:resize
+    // will fix the PTY via the normal recalcMaxDimensions path.
+    if (clientDimensions.get(ws)?.has(msg.sessionId)) {
+      recalcMaxDimensions(msg.sessionId);
+    }
+
     const sid = msg.sessionId; // capture for closures
 
     // Exit handler: created once per session, kept alive even when no WS clients are
@@ -279,6 +324,31 @@ function handleConsoleMessage(ws: WebSocket, msg: { type: string; sessionId: str
     // clients disconnected and the session is being re-attached on WS reconnect).
     if (!sessionHandlers.has(sid)) {
       const dataDisposable = session.pty.onData((data: string) => {
+        // Detect OAuth token revocation errors emitted by Claude CLI in real-time.
+        // When the CLI outputs "OAuth token revoked", it means the token was revoked
+        // server-side (e.g. user logged in from another device). We immediately:
+        //   1. Mark the token expired in-memory (isClaudeAuthenticated() → false)
+        //   2. Broadcast status so the frontend opens the LoginModal
+        //   3. Start the recovery poller so re-login inside the PTY is detected fast
+        //
+        // Without this, the auth monitor would only catch the change every 15s, and
+        // syncCredentialsAfterCLI() was only called on PTY exit — meaning the user
+        // would have to restart the terminal after /login to pick up new credentials.
+        if (data.includes('OAuth token revoked') || data.includes('Please run /login')) {
+          if (isClaudeAuthenticated()) {
+            // Token is currently valid — user just re-authenticated while this PTY was
+            // still outputting a stale error from the old session. Don't wipe the fresh
+            // credentials. Start the recovery poller as a safety net only.
+            console.log(`[WS] Auth error in PTY output for session ${sid.slice(0, 8)} but token is valid — skipping markTokenExpired`);
+            startAuthRecoveryPoller();
+          } else {
+            console.log(`[WS] Auth error detected in PTY output for session ${sid.slice(0, 8)} — marking token expired`);
+            markTokenExpired();
+            broadcastStatus();
+            startAuthRecoveryPoller();
+          }
+        }
+
         const currentClients = sessionClients.get(sid);
         if (!currentClients) return;
 

@@ -43,8 +43,7 @@ function attachSettleRepaint(sessionId: string): void {
     console.debug(`[settle] ${sessionId.slice(0,6)} firing repaint`);
     // fitTerminal first: sends SIGWINCH if canvas was at wrong dims (e.g. 80×24
     // default because a previous fitTerminal bailed on a hidden container).
-    // repaintTerminal then calls fitAddon.fit() internally for belt-and-suspenders,
-    // does the micro-resize, and scrolls to bottom.
+    // repaintTerminal: scroll sync + canvas refresh — O(visible rows), no resize.
     fitTerminal(sessionId);
     repaintTerminal(sessionId);
 

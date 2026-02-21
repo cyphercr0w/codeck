@@ -245,9 +245,12 @@ export function fitTerminal(sessionId: string): void {
  * force syncScrollArea(). This caused O(N) scrollback buffer reallocation — with
  * 1000 lines of output it blocked the main thread for 1–5 seconds, freezing input.
  *
- * Fix: fitAddon.fit() handles any dimension mismatch. The manual viewport.scrollTop
- * assignment and term.scrollToBottom() achieve the same scroll sync, and term.refresh()
- * redraws the canvas — without touching the buffer.
+ * fitAddon.fit() was also removed from this function: even without the micro-resize,
+ * fitAddon.fit() internally calls term.resize() when computed dims differ from current
+ * (e.g. after a tab switch rAF or a concurrent layout reflow), which is O(N) in the
+ * scrollback buffer. All call sites already call fitTerminal() first, so dims are
+ * always correct when repaintTerminal runs. This function's only job is scroll sync
+ * + canvas refresh — both O(visible rows), never O(scrollback).
  */
 export function repaintTerminal(sessionId: string): void {
   const instance = terminals.get(sessionId);
@@ -255,13 +258,7 @@ export function repaintTerminal(sessionId: string): void {
   const cw = instance.container.offsetWidth, ch = instance.container.offsetHeight;
   console.debug(`[repaint] ${sessionId.slice(0,6)} container=${cw}x${ch} term=${instance.term.cols}x${instance.term.rows} scrollLocked=${scrollLocked.get(sessionId)}`);
   if (cw === 0 || ch === 0) { console.debug(`[repaint] BAIL zero dims`); return; }
-  // fitAddon.fit() is a no-op if dims haven't changed (deduplication guard inside FitAddon).
-  // Calling it here handles the case where the container was resized after the last fitTerminal.
-  // Does NOT send SIGWINCH — callers should call fitTerminal() first if they need PTY to know
-  // the new dimensions.
   const t0 = performance.now();
-  instance.fitAddon.fit();
-  const t1 = performance.now();
   const { rows } = instance.term;
   // repaintTerminal is called explicitly to bring the terminal into view —
   // always scroll to bottom regardless of scroll lock. The scroll lock reflects
@@ -276,14 +273,13 @@ export function repaintTerminal(sessionId: string): void {
   const viewport = instance.container.querySelector('.xterm-viewport') as HTMLElement | null;
   if (viewport) { suppressScrollEvents(sessionId); viewport.scrollTop = viewport.scrollHeight; }
   instance.term.refresh(0, rows - 1);
-  const t2 = performance.now();
-  const fitMs = (t1 - t0).toFixed(1), refreshMs = (t2 - t1).toFixed(1), totalMs = (t2 - t0).toFixed(1);
+  const totalMs = (performance.now() - t0).toFixed(1);
   // Warn on any repaint >20ms — these show up in DevTools Console without verbose enabled
   // and help correlate slow repaints with user-reported input freeze moments.
   if (parseFloat(totalMs) > 20) {
-    console.warn(`[repaint] ${sessionId.slice(0,6)} SLOW ${totalMs}ms (fit=${fitMs}ms refresh=${refreshMs}ms rows=${rows})`);
+    console.warn(`[repaint] ${sessionId.slice(0,6)} SLOW ${totalMs}ms (refresh rows=${rows})`);
   } else {
-    console.debug(`[repaint] ${sessionId.slice(0,6)} done ${totalMs}ms (fit=${fitMs}ms refresh=${refreshMs}ms)`);
+    console.debug(`[repaint] ${sessionId.slice(0,6)} done ${totalMs}ms`);
   }
 }
 

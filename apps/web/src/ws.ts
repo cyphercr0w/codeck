@@ -30,33 +30,6 @@ let reconnectBackoff = 500; // Exponential backoff: 0.5s → 1s → 2s → ... �
 let reconnectAttempts = 0;
 const MAX_RECONNECT_ATTEMPTS = 15;
 
-// --- Browser event loop monitor ---
-// Detects main thread blocks (>1s) and reports them to the server so they
-// appear in the Codeck Logs panel. If the main thread is blocked, keyboard
-// events queue up and input appears frozen.
-let _browserLastTick = performance.now();
-setInterval(() => {
-  const now = performance.now();
-  const lag = now - _browserLastTick - 200;
-  _browserLastTick = now;
-  if (lag > 1000) {
-    console.warn(`[Browser] Main thread blocked for ${lag.toFixed(0)}ms — input may have frozen`);
-    // Report to server — appears in Codeck Logs panel
-    if (ws && ws.readyState === WebSocket.OPEN) {
-      ws.send(JSON.stringify({ type: 'client:block', durationMs: Math.round(lag) }));
-    }
-  }
-}, 200);
-
-// --- Browser heartbeat ---
-// Sends a periodic heartbeat to the server. If the server detects a gap
-// (>15s between heartbeats), it knows the browser was blocked or disconnected.
-setInterval(() => {
-  if (ws && ws.readyState === WebSocket.OPEN) {
-    ws.send(JSON.stringify({ type: 'client:heartbeat', ts: Date.now() }));
-  }
-}, 5000);
-
 // True only on the first status message after a WS reconnect.
 // Prevents onSessionReattached from firing on every status broadcast
 // (auth monitor, session events, etc.) — it should only fire after a real reconnect.
@@ -71,14 +44,10 @@ const attachedSessions = new Set<string>();
 // gets its correct dimensions — not just the last one that fired.
 const pendingResizes = new Map<string, object>();
 
-// Buffer console:input messages sent while disconnected so keystrokes
-// aren't silently dropped during brief reconnects. Capped per session to
-// prevent unbounded growth during long disconnects.
+// Buffer console:input messages sent while disconnected or pre-attach so
+// keystrokes aren't silently dropped during brief reconnects.
 // Keyed by sessionId so inputs can be flushed per-session inside attachSession
 // (AFTER console:attach is sent) rather than in onopen (BEFORE attach).
-// Flushing inputs in onopen is a race: the server receives input before it has
-// registered this client in sessionClients, so PTY output has no recipient and
-// is silently dropped — the user sees typed text permanently disappear.
 const MAX_PENDING_INPUTS = 200;
 const pendingInputs = new Map<string, object[]>();
 
@@ -104,46 +73,28 @@ export function wsSend(msg: object): void {
   const msgType = (msg as any).type;
   if (ws && ws.readyState === WebSocket.OPEN) {
     // Buffer console:input if this session hasn't been re-attached yet.
-    // This covers two races:
-    //   (1) pendingReattach window: WS just reconnected, status message not yet
-    //       received — attachedSessions was cleared in onopen.
-    //   (2) status→rAF gap (~16ms): status message clears pendingReattach and
-    //       schedules attachSession in a rAF, but inputs fired in those 16ms
-    //       would arrive at the server before console:attach is processed —
-    //       server writes to PTY but this client isn't in sessionClients yet
-    //       → PTY echo has no recipient → input appears frozen.
-    // Checking attachedSessions.has(sid) catches both races: it's false from
-    // onopen.clear() until attachSession() calls attachedSessions.add().
+    // Covers the pendingReattach window and the status→rAF gap (~16ms).
     if (msgType === 'console:input') {
       const sid = (msg as any).sessionId;
       if (typeof sid === 'string' && !attachedSessions.has(sid)) {
         const arr = pendingInputs.get(sid) ?? [];
         if (!pendingInputs.has(sid)) pendingInputs.set(sid, arr);
-        if (arr.length === 0) console.warn(`[WS] Input buffering started for session ${sid.slice(0,8)} — WS connected but session not yet re-attached. Input will appear frozen until attach completes.`);
         if (arr.length < MAX_PENDING_INPUTS) arr.push(msg);
         return;
       }
     }
-    // Add timestamp to input messages for client→server latency measurement.
-    // If the server sees a large gap (>2s) between sentAt and its own Date.now(),
-    // the delay is in the browser→daemon→runtime path (browser busy, WS stall, etc.)
-    if (msgType === 'console:input') {
-      (msg as any).sentAt = Date.now();
-    }
     ws.send(JSON.stringify(msg));
   } else if (msgType === 'console:resize') {
-    // Buffer resize per session — replaces any previous buffered resize for
-    // this session. On reconnect, all sessions get their dimensions flushed.
+    // Buffer resize per session — replaces any previous buffered resize
     const sessionId = (msg as any).sessionId;
     if (typeof sessionId === 'string') {
       pendingResizes.set(sessionId, msg);
     }
   } else if (msgType === 'console:input') {
-    // Buffer input so keystrokes typed during a brief disconnect aren't lost.
+    // Buffer input so keystrokes typed during a brief disconnect aren't lost
     const sid = (msg as any).sessionId;
     if (typeof sid === 'string') {
       const arr = pendingInputs.get(sid) ?? [];
-      if (arr.length === 0) console.warn(`[WS] Input buffering started for session ${sid.slice(0,8)} — WS disconnected. Input will appear frozen until WS reconnects and re-attaches.`);
       if (arr.length < MAX_PENDING_INPUTS) {
         if (!pendingInputs.has(sid)) pendingInputs.set(sid, arr);
         arr.push(msg);
@@ -153,20 +104,14 @@ export function wsSend(msg: object): void {
 }
 
 /** Send console:attach only once per session per WS connection.
- *  Prevents duplicate attach when multiple code paths fire on reconnect.
- *  After attaching, flushes any inputs buffered while the WS was down —
- *  with a small delay so the server can process the attach and register
- *  this client in sessionClients before the buffered input arrives. */
+ *  After attaching, flushes any inputs buffered while the WS was down. */
 export function attachSession(sessionId: string): void {
   if (attachedSessions.has(sessionId)) return;
   attachedSessions.add(sessionId);
   wsSend({ type: 'console:attach', sessionId });
 
-  // Flush pending inputs for this session after a brief delay.
-  // Without the delay: inputs arrive before the server processes console:attach
-  // → PTY writes succeed but sessionClients doesn't include this client yet
-  // → output broadcast finds no recipient → output silently dropped
-  // → typed text never appears (not delayed — permanently lost).
+  // Flush pending inputs after a brief delay so the server can process
+  // the attach and register this client in sessionClients first.
   const pending = pendingInputs.get(sessionId);
   if (pending && pending.length > 0) {
     pendingInputs.delete(sessionId);
@@ -183,31 +128,24 @@ function openWs(wsUrl: string): void {
   ws.onopen = () => {
     setWsConnected(true);
     lastMessageAt = Date.now();
-    reconnectBackoff = 500; // Reset backoff on successful connection
+    reconnectBackoff = 500;
     reconnectAttempts = 0;
-    attachedSessions.clear(); // New connection — reset attach tracking
-    pendingReattach = true;   // Next status message should trigger session reattachment
+    attachedSessions.clear();
+    pendingReattach = true;
     addLog({ type: 'info', message: 'Connected to server', timestamp: Date.now() });
-    // Don't re-attach here — wait for the 'status' message which includes
-    // the server's current session list. Attaching stale IDs after a
-    // container restart causes frozen terminals.
 
-    // Flush all buffered resize messages (one per session) so every terminal
-    // gets its correct dimensions on reconnect, not just the last one.
+    // Flush all buffered resize messages
     for (const msg of pendingResizes.values()) {
       ws!.send(JSON.stringify(msg));
     }
     pendingResizes.clear();
-    // NOTE: pendingInputs are NOT flushed here. They are flushed per-session
-    // inside attachSession() after console:attach is sent, so the server has
-    // time to register this client before input arrives.
+    // pendingInputs are flushed per-session inside attachSession()
 
-    // Start stale connection detector — if server stops sending heartbeats,
-    // the connection is dead and we need to reconnect.
+    // Stale connection detector
     if (staleCheckTimer) clearInterval(staleCheckTimer);
     staleCheckTimer = setInterval(() => {
       if (ws && ws.readyState === WebSocket.OPEN && Date.now() - lastMessageAt > 45000) {
-        console.warn('[WS] Connection stale (no data in 45s) — closing to reconnect. If you see input freeze after this, the freeze is WS-reconnect latency, not JS.');
+        console.warn('[WS] Connection stale (no data in 45s), reconnecting');
         ws.close();
       }
     }, 10000);
@@ -222,25 +160,17 @@ function openWs(wsUrl: string): void {
         return;
       }
       const msg = raw as { type: string; data?: any; sessionId?: string };
-      // Ignore server heartbeats — they're just for stale detection
       if (msg.type === 'heartbeat') return;
       if (msg.type === 'status') {
         if (typeof msg.data !== 'object' || msg.data === null) return;
         updateStateFromServer(msg.data);
-        // Only reattach terminals on the first status after a real WS reconnect.
-        // Subsequent status broadcasts (auth monitor, session events) must NOT
-        // trigger fitTerminal/scrollToBottom — those calls block the main thread
-        // briefly and cause intermittent input freezes.
+        // Only reattach terminals on the first status after a real WS reconnect
         if (pendingReattach) {
           pendingReattach = false;
           sessions.value.forEach(s => {
             onSessionReattached?.(s.id);
           });
         }
-        // Clear the restoring overlay only when the server confirms sessions are
-        // already ready (pendingRestore absent or false).  When pendingRestore is
-        // true the server still has PTY sessions in flight — the sessions:restored
-        // message will clear the overlay once they're actually ready.
         if (!msg.data.pendingRestore) {
           setRestoringPending(false);
         }
@@ -260,19 +190,13 @@ function openWs(wsUrl: string): void {
         );
         for (const s of restored) {
           addSession({ id: s.id, type: s.type as 'agent' | 'shell', cwd: s.cwd, name: s.name, createdAt: Date.now() });
-          // Do NOT call attachSession here — the terminal DOM element doesn't exist yet.
-          // ClaudeSection's useEffect handles attachment after it mounts the terminal.
         }
         if (restored.length > 0) {
           if (!activeSessionId.value) setActiveSessionId(restored[0].id);
           setActiveSection('claude');
         }
-        // Always clear the overlay immediately — don't wait for ClaudeSection's useEffect.
-        // Delegating to the useEffect is fragile: if it doesn't fire (e.g. section already
-        // mounted, same sessionList.length), the overlay stays stuck forever.
         setRestoringPending(false);
       } else if (msg.type === 'console:error') {
-        // Session not found on server (e.g., after container restart) — remove ghost
         if (typeof msg.sessionId === 'string') {
           removeSession(msg.sessionId);
         }
@@ -312,7 +236,6 @@ function openWs(wsUrl: string): void {
         const minutes = typeof msg.data?.minutesLeft === 'number' ? msg.data.minutesLeft : '?';
         addLog({ type: 'warn', message: `Claude session expires in ${minutes} minutes. Please re-login to avoid interruptions.`, timestamp: Date.now() });
       } else if (msg.type === 'auth:expired') {
-        // Mark as unauthenticated — app.tsx subscribes to this and opens the login modal
         claudeAuthenticated.value = false;
       }
     } catch (err) {
@@ -321,23 +244,16 @@ function openWs(wsUrl: string): void {
   };
 
   ws.onclose = () => {
-    console.warn(`[WS] Disconnected. reconnectAttempt=${reconnectAttempts} backoff=${reconnectBackoff}ms`);
     setWsConnected(false);
-    // Do NOT set restoringPending here — a transient WS disconnect does not mean
-    // sessions need to be restored (PTY is still running on the server).
-    // restoringPending is only set when the server explicitly sends pendingRestore:true
-    // in its status message (which happens only after a service restart).
-    // The ReconnectOverlay handles "Reconnecting..." display while WS is down.
     ws = null;
     if (staleCheckTimer) { clearInterval(staleCheckTimer); staleCheckTimer = null; }
 
     if (reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
       addLog({ type: 'error', message: 'Unable to reach server after multiple attempts', timestamp: Date.now() });
       setRestoringPending(false);
-      return; // Stop retrying — user can reload or the overlay shows failure
+      return;
     }
 
-    // First attempt: near-instant (50ms). Subsequent attempts: exponential backoff.
     const delay = reconnectAttempts === 0 ? 50 : reconnectBackoff * (0.5 + Math.random() * 0.5);
     reconnectAttempts++;
     reconnectTimer = setTimeout(connectWebSocket, delay);
@@ -358,9 +274,6 @@ export function connectWebSocket(): void {
     return;
   }
 
-  // Exchange session token for a one-time short-lived ticket.
-  // Avoids long-lived tokens appearing in proxy logs and browser history.
-  // Falls back to ?token= if the ticket endpoint is unavailable.
   fetch('/api/auth/ws-ticket', { method: 'POST', headers: { Authorization: `Bearer ${token}` } })
     .then(r => r.ok ? r.json() : null)
     .then(data => {

@@ -24,7 +24,6 @@ const sessionHandlers = new Map<string, { dispose: () => void }>();
 
 // sessionId → exit disposable (ONE onExit handler per session).
 // Kept alive even when no WS clients are connected so PTY death is always detected.
-// Only cleaned up when the PTY actually exits.
 const sessionExitHandlers = new Map<string, { dispose: () => void }>();
 
 // ws → Map<sessionId, { cols, rows }> (per-client dimensions for each session)
@@ -33,71 +32,20 @@ const clientDimensions = new Map<WebSocket, Map<string, { cols: number; rows: nu
 // sessionId → { cols, rows } (current max dimensions applied to PTY)
 const sessionMaxDimensions = new Map<string, { cols: number; rows: number }>();
 
-// Freeze detector: tracks last time PTY produced output per session.
-// When console:input arrives but PTY has been silent for >5s, logs a warning
-// visible in the Codeck Logs panel — helps distinguish PTY-silent freezes
-// (Claude Code not echoing) from routing issues (sessionClients missing).
-const lastPtyOutputTime = new Map<string, number>();
-
-// Event loop lag monitor: measures actual event loop delays to detect blocking.
-// A setTimeout(fn, 200) that takes 5000ms means the event loop was blocked for ~4800ms.
-let _eventLoopLagMs = 0;
-let _eventLoopLagPeak = 0;
-let _lastBlockTimestamp = 0; // When the most recent >1s block ended
-let _lastBlockDuration = 0; // How long that block lasted
-(function measureEventLoopLag() {
-  const INTERVAL = 200;
-  let last = Date.now();
-  const tick = () => {
-    const now = Date.now();
-    const lag = now - last - INTERVAL;
-    _eventLoopLagMs = Math.max(0, lag);
-    if (lag > _eventLoopLagPeak) _eventLoopLagPeak = lag;
-    if (lag > 1000) {
-      _lastBlockTimestamp = now;
-      _lastBlockDuration = lag;
-      console.error(`[EventLoop] BLOCKED for ${lag}ms (peak: ${_eventLoopLagPeak}ms)`);
-      // Broadcast to clients so it shows in Logs panel
-      broadcast({
-        type: 'log',
-        data: { level: 'error', message: `[EventLoop] BLOCKED for ${lag}ms — input may have been delayed`, ts: now },
-      });
-    }
-    last = now;
-    setTimeout(tick, INTERVAL);
-  };
-  setTimeout(tick, INTERVAL);
-})();
-
 // Max input payload size per WS message (64KB per OWASP recommendation)
 const MAX_INPUT_SIZE = 65536;
 
-// Per-connection message rate limiting (300 msg/min — higher than OWASP baseline of 100
-// because terminal input generates rapid keystroke messages)
-const WS_RATE_LIMIT = 300;
-const WS_RATE_WINDOW_MS = 60000;
-const messageRates = new Map<WebSocket, { count: number; resetAt: number }>();
-
-function isRateLimited(ws: WebSocket): boolean {
-  const now = Date.now();
-  let rate = messageRates.get(ws);
-  if (!rate || now > rate.resetAt) {
-    rate = { count: 0, resetAt: now + WS_RATE_WINDOW_MS };
-  }
-  rate.count++;
-  messageRates.set(ws, rate);
-  return rate.count > WS_RATE_LIMIT;
-}
+// Rate limiting removed — single-user terminal app where 300 msg/min was too low
+// for normal typing speed (60 WPM = 300 keystrokes/min). MaxPayload (64KB) is
+// sufficient protection against abuse.
 
 let wss: WebSocketServer;
 
 // Auth recovery poller: started when PTY output contains an auth error.
-// Lives at module level so handleConsoleMessage (defined outside setupWebSocket)
-// can access it without needing to thread it as a parameter.
 let authRecoveryPoller: ReturnType<typeof setInterval> | null = null;
 
 function startAuthRecoveryPoller(): void {
-  if (authRecoveryPoller) return; // Already polling
+  if (authRecoveryPoller) return;
   console.log('[WS] Auth recovery poller started (3s interval)');
   authRecoveryPoller = setInterval(() => {
     syncCredentialsAfterCLI();
@@ -111,11 +59,9 @@ function startAuthRecoveryPoller(): void {
 }
 
 export function setupWebSocket(): void {
-  wss = new WebSocketServer({ noServer: true, maxPayload: 64 * 1024 }); // 64KB per OWASP recommendation
+  wss = new WebSocketServer({ noServer: true, maxPayload: 64 * 1024 });
 
   // --- Server-side ping/pong keepalive ---
-  // Detects dead clients (e.g. mobile network drop) and terminates them.
-  // Browser WebSocket auto-responds to ping frames with pong.
   const pingInterval = setInterval(() => {
     for (const ws of clients) {
       if ((ws as any)._isAlive === false) {
@@ -128,25 +74,16 @@ export function setupWebSocket(): void {
     }
   }, 30000);
 
-  // Send application-level heartbeat so the client can detect stale connections
-  // (browser JS can't see protocol-level ping frames)
+  // Application-level heartbeat for client stale detection
   const heartbeatInterval = setInterval(() => {
     broadcast({ type: 'heartbeat' });
   }, 25000);
 
   // Monitor Claude auth state — detect token expiry between explicit status broadcasts.
-  // When isClaudeAuthenticated() flips to false, broadcast status immediately so the
-  // frontend's claudeAuthenticated signal updates and the LoginModal auto-opens.
-  // When auth is already broken, also call syncCredentialsAfterCLI() to catch
-  // the case where the user ran /login inside a PTY session and the recovery
-  // poller hasn't started yet (e.g. error was in buffered output, not real-time).
+  // When auth is broken, also call syncCredentialsAfterCLI() to catch in-terminal re-login.
   let lastAuthState: boolean | null = null;
   const authMonitorInterval = setInterval(() => {
     if (clients.length === 0) return;
-    // When auth is known-broken: attempt credential sync to detect in-terminal re-login.
-    // This is belt-and-suspenders alongside the recovery poller — covers the edge case
-    // where the auth error appeared in buffered replay (not intercepted by the PTY
-    // data handler) so the recovery poller was never started.
     if (!isClaudeAuthenticated()) {
       syncCredentialsAfterCLI();
     }
@@ -171,7 +108,6 @@ export function setupWebSocket(): void {
     if (isPasswordConfigured()) {
       const url = new URL(req.url || '', `http://${req.headers.host}`);
 
-      // Trusted proxy bypass — daemon has already authenticated the WS connection
       const internalParam = url.searchParams.get('_internal');
       const isTrustedProxy = INTERNAL_SECRET && internalParam === INTERNAL_SECRET;
 
@@ -179,7 +115,6 @@ export function setupWebSocket(): void {
         const ticket = url.searchParams.get('ticket');
         const token = url.searchParams.get('token');
 
-        // Prefer one-time ticket (short-lived, consumed on use — avoids long-lived token in URL)
         const authorized = ticket ? consumeWsTicket(ticket) : (!!token && validateSession(token));
         if (!authorized) {
           ws.close(4001, 'Unauthorized');
@@ -210,36 +145,10 @@ export function setupWebSocket(): void {
     }));
     ws.send(JSON.stringify({ type: 'logs', data: getLogBuffer() }));
 
-    // Track browser heartbeat and last known focus state per client
-    (ws as any)._lastBrowserHeartbeat = 0;
-    (ws as any)._terminalFocused = true; // assume focused initially
-
-    // Console messages + browser diagnostics
+    // Console messages
     ws.on('message', (raw) => {
-      if (isRateLimited(ws)) return; // Drop messages exceeding rate limit
       try {
         const msg = JSON.parse(raw.toString());
-
-        // --- Browser diagnostic messages (no sessionId validation needed) ---
-        if (msg.type === 'client:block') {
-          const dur = typeof msg.durationMs === 'number' ? msg.durationMs : '?';
-          console.warn(`[Browser] Main thread BLOCKED for ${dur}ms — keystrokes may have been lost`);
-          return;
-        }
-        if (msg.type === 'client:heartbeat') {
-          (ws as any)._lastBrowserHeartbeat = Date.now();
-          return;
-        }
-        if (msg.type === 'client:focus') {
-          (ws as any)._terminalFocused = !!msg.focused;
-          if (msg.focused) {
-            console.log(`[Browser] Terminal ${(msg.sessionId || '').slice(0,8)} FOCUSED`);
-          } else {
-            console.warn(`[Browser] Terminal ${(msg.sessionId || '').slice(0,8)} LOST FOCUS → ${msg.activeElement || 'unknown'} — input will freeze until re-focused`);
-          }
-          return;
-        }
-
         handleConsoleMessage(ws, msg);
       } catch (e) {
         console.warn('[WS] Failed to parse client message:', (e as Error).message);
@@ -249,28 +158,20 @@ export function setupWebSocket(): void {
     ws.on('close', () => {
       console.log('[WS] Client disconnected');
       clients = clients.filter(c => c !== ws);
-      messageRates.delete(ws);
       setWsClients(clients);
 
-      // Remove this client from all session client sets
       for (const [sessionId, clientSet] of sessionClients) {
         clientSet.delete(ws);
         if (clientSet.size === 0) {
-          // No clients left — dispose only the data handler.
-          // The exit handler (sessionExitHandlers) stays alive so PTY death is
-          // detected even when no browser tab is connected.
           const dataHandler = sessionHandlers.get(sessionId);
           if (dataHandler) {
             dataHandler.dispose();
             sessionHandlers.delete(sessionId);
           }
-          // Reset attachment so future PTY output is buffered again.
-          // On next console:attach, markSessionAttached replays the buffer.
           resetSessionAttachment(sessionId);
           sessionClients.delete(sessionId);
           sessionMaxDimensions.delete(sessionId);
         } else {
-          // Recalculate max dimensions with remaining clients
           recalcMaxDimensions(sessionId);
         }
       }
@@ -300,10 +201,6 @@ function recalcMaxDimensions(sessionId: string): void {
   }
 }
 
-// Note: WS message-level authorization (per-session ownership) is intentionally
-// not implemented. Codeck is a single-user sandbox — all authenticated clients
-// have equal access to all sessions. If multi-user support is added, session
-// ownership tracking and per-message authorization should be implemented.
 function handleConsoleMessage(ws: WebSocket, msg: { type: string; sessionId: string; data?: string; cols?: number; rows?: number }): void {
   // Validate message structure
   if (!msg || typeof msg !== 'object' || typeof msg.type !== 'string') return;
@@ -327,7 +224,6 @@ function handleConsoleMessage(ws: WebSocket, msg: { type: string; sessionId: str
       return;
     }
 
-    // Add this client to the session's client set
     let clientSet = sessionClients.get(msg.sessionId);
     if (!clientSet) {
       clientSet = new Set();
@@ -335,26 +231,14 @@ function handleConsoleMessage(ws: WebSocket, msg: { type: string; sessionId: str
     }
     clientSet.add(ws);
 
-    // Apply this client's previously stored dimensions (sent via console:resize before attach)
-    // so the PTY is resized to the correct size BEFORE buffer replay starts.
-    // Without this, recalcMaxDimensions is a no-op when resize arrives (no clients yet),
-    // and the replay happens at the PTY's old/default dimensions → content wraps at wrong
-    // column width → black terminal / line duplication on the client.
-    //
-    // Guard: only resize if this client actually sent a console:resize before attaching.
-    // If fitTerminal bailed on a hidden container (0-height), no dims are stored and
-    // we must NOT resize to the 1×1 fallback. The client's stabilization retries will
-    // send the correct dims after recalcLayout runs and the subsequent console:resize
-    // will fix the PTY via the normal recalcMaxDimensions path.
+    // Apply pre-stored dimensions before replay so PTY is at correct size
     if (clientDimensions.get(ws)?.has(msg.sessionId)) {
       recalcMaxDimensions(msg.sessionId);
     }
 
-    const sid = msg.sessionId; // capture for closures
+    const sid = msg.sessionId;
 
-    // Exit handler: created once per session, kept alive even when no WS clients are
-    // connected.  This ensures PTY death is always detected (e.g. Claude exits while
-    // the user has no browser tab open).
+    // Exit handler: created once per session, kept alive even when no WS clients
     if (!sessionExitHandlers.has(sid)) {
       const exitDisposable = session.pty.onExit(({ exitCode }: { exitCode: number }) => {
         const currentClients = sessionClients.get(sid);
@@ -364,14 +248,8 @@ function handleConsoleMessage(ws: WebSocket, msg: { type: string; sessionId: str
             if (client.readyState === WebSocket.OPEN) client.send(payload);
           }
         }
-        // Sync credentials — CLI may have refreshed the OAuth token during the session.
-        // Broadcast status so the frontend's claudeAuthenticated signal stays accurate
-        // (e.g. if the token expired and Claude exited, the LoginModal opens).
         syncCredentialsAfterCLI();
         broadcastStatus();
-        // Clean up all tracking for this session.
-        // Note: no need to call .dispose() on the exit handler here — this callback
-        // IS the handler; it has already fired and cannot fire again.
         sessionExitHandlers.delete(sid);
         sessionHandlers.delete(sid);
         sessionClients.delete(sid);
@@ -381,26 +259,12 @@ function handleConsoleMessage(ws: WebSocket, msg: { type: string; sessionId: str
       sessionExitHandlers.set(sid, exitDisposable);
     }
 
-    // Data handler: created when the first client attaches (or re-created after all
-    // clients disconnected and the session is being re-attached on WS reconnect).
+    // Data handler: created when the first client attaches
     if (!sessionHandlers.has(sid)) {
       const dataDisposable = session.pty.onData((data: string) => {
-        lastPtyOutputTime.set(sid, Date.now());
-        // Detect OAuth token revocation errors emitted by Claude CLI in real-time.
-        // When the CLI outputs "OAuth token revoked", it means the token was revoked
-        // server-side (e.g. user logged in from another device). We immediately:
-        //   1. Mark the token expired in-memory (isClaudeAuthenticated() → false)
-        //   2. Broadcast status so the frontend opens the LoginModal
-        //   3. Start the recovery poller so re-login inside the PTY is detected fast
-        //
-        // Without this, the auth monitor would only catch the change every 15s, and
-        // syncCredentialsAfterCLI() was only called on PTY exit — meaning the user
-        // would have to restart the terminal after /login to pick up new credentials.
+        // Detect OAuth token revocation errors in real-time
         if (data.includes('OAuth token revoked') || data.includes('Please run /login')) {
           if (isClaudeAuthenticated()) {
-            // Token is currently valid — user just re-authenticated while this PTY was
-            // still outputting a stale error from the old session. Don't wipe the fresh
-            // credentials. Start the recovery poller as a safety net only.
             console.log(`[WS] Auth error in PTY output for session ${sid.slice(0, 8)} but token is valid — skipping markTokenExpired`);
             startAuthRecoveryPoller();
           } else {
@@ -426,9 +290,7 @@ function handleConsoleMessage(ws: WebSocket, msg: { type: string; sessionId: str
       sessionHandlers.set(sid, dataDisposable);
     }
 
-    // Replay any output buffered while no WS client was connected.
-    // markSessionAttached clears the buffer and sets session.attached = true so
-    // future output goes directly to the data handler above (not buffered again).
+    // Replay buffered output
     const buffered = markSessionAttached(msg.sessionId);
     for (const chunk of buffered) {
       if (ws.readyState === WebSocket.OPEN)
@@ -436,128 +298,9 @@ function handleConsoleMessage(ws: WebSocket, msg: { type: string; sessionId: str
     }
   }
 
-  if (msg.type === 'console:input') {
-    // Measure client→server latency: if the browser added a sentAt timestamp,
-    // calculate the one-way delay. A spike (>2s) means the delay is in the
-    // browser (main thread busy) or daemon proxy (event loop blocked), not the runtime.
-    const sentAt = (msg as any).sentAt;
-    if (typeof sentAt === 'number') {
-      const clientServerDelay = Date.now() - sentAt;
-      if (clientServerDelay > 2000) {
-        console.warn(`[WS] HIGH LATENCY: client→server delay=${clientServerDelay}ms for session ${msg.sessionId.slice(0,8)} — freeze is in browser or daemon, not runtime`);
-      }
-    }
-
-    // Freeze detector: if PTY has been silent for >5s OR the event loop was recently blocked
-    // (>1s block within the last 10s), diagnose the cause and notify the client.
-    //
-    // Race condition note: when the event loop unblocks after a stall, libuv processes
-    // ALL queued callbacks. PTY onData fires before WS message handlers, so
-    // lastPtyOutputTime gets updated right before this check — making the silence
-    // appear short even though the user experienced a multi-second freeze.
-    // Checking _lastBlockTimestamp catches this case.
-    const lastOut = lastPtyOutputTime.get(msg.sessionId);
-    const silentMs = lastOut !== undefined ? Date.now() - lastOut : -1;
-    const recentBlockMs = Date.now() - _lastBlockTimestamp;
-    const hadRecentBlock = recentBlockMs < 10000 && _lastBlockDuration > 1000;
-    if (silentMs > 5000 || (hadRecentBlock && silentMs > 2000)) {
-      const clientSet = sessionClients.get(msg.sessionId);
-      const clientCount = clientSet?.size ?? 0;
-      const handlerExists = sessionHandlers.has(msg.sessionId);
-      const session = getSession(msg.sessionId);
-      let ptyAlive = false;
-      let ptyPid = -1;
-
-      if (session) {
-        ptyPid = session.pty.pid;
-        try {
-          // process.kill(pid, 0) throws if process doesn't exist — doesn't send a signal
-          process.kill(ptyPid, 0);
-          ptyAlive = true;
-        } catch { ptyAlive = false; }
-      }
-
-      // Capture CPU usage at freeze time
-      const cpuUsage = process.cpuUsage();
-      let processCpuPct = 'N/A';
-      try {
-        // Read /proc/stat for system-wide CPU
-        const { readFileSync: rfs } = require('fs');
-        const procStat = rfs('/proc/stat', 'utf8').split('\n')[0].split(/\s+/);
-        const cpuTotal = procStat.slice(1, 8).reduce((a: number, b: string) => a + parseInt(b), 0);
-        const cpuIdle = parseInt(procStat[4]);
-        processCpuPct = `sys=${Math.round((1 - cpuIdle / cpuTotal) * 100)}%`;
-      } catch { /* ignore */ }
-
-      // Check browser-side state: heartbeat recency + focus state
-      const lastBrowserHb = (ws as any)?._lastBrowserHeartbeat ?? 0;
-      const browserSilentMs = lastBrowserHb > 0 ? Date.now() - lastBrowserHb : -1;
-      const termFocused = (ws as any)?._terminalFocused ?? 'unknown';
-
-      console.warn(
-        `[WS] FREEZE session=${msg.sessionId.slice(0,8)} silent=${Math.round(silentMs/1000)}s ` +
-        `clients=${clientCount} handler=${handlerExists} ptyAlive=${ptyAlive} pid=${ptyPid} ` +
-        `evLoopLag=${_eventLoopLagMs}ms peak=${_eventLoopLagPeak}ms ` +
-        `recentBlock=${hadRecentBlock ? `${_lastBlockDuration}ms@${Math.round(recentBlockMs/1000)}s_ago` : 'none'} ` +
-        `browserHB=${browserSilentMs > 0 ? Math.round(browserSilentMs/1000) + 's_ago' : 'none'} termFocused=${termFocused} ` +
-        `cpu=${processCpuPct} nodeRSS=${Math.round(process.memoryUsage().rss / 1024 / 1024)}MB`
-      );
-
-      // PTY echo probe removed — confirmed PTY is responsive (probe echoed back
-      // as visible text in terminal). The freeze is in the browser→server path.
-
-      // Attempt recovery: send SIGWINCH to the child process.
-      if (ptyAlive && silentMs > 8000) {
-        try {
-          const dims = sessionMaxDimensions.get(msg.sessionId);
-          if (dims) {
-            resizeSession(msg.sessionId, dims.cols, dims.rows);
-          }
-          console.log(`[WS] SIGWINCH recovery sent to pid ${ptyPid}`);
-        } catch (e) {
-          console.warn(`[WS] SIGWINCH recovery failed: ${(e as Error).message}`);
-        }
-      }
-
-      // Notify connected clients about the freeze so frontend can show an indicator
-      if (clientSet) {
-        const freezeMsg = JSON.stringify({
-          type: 'console:freeze',
-          sessionId: msg.sessionId,
-          durationMs: Math.round(silentMs),
-          ptyAlive,
-          eventLoopLagMs: _eventLoopLagMs,
-          recentBlockMs: hadRecentBlock ? _lastBlockDuration : 0,
-        });
-        for (const client of clientSet) {
-          if (client.readyState === WebSocket.OPEN) client.send(freezeMsg);
-        }
-      }
-
-      // If PTY child process died, destroy the session and notify
-      if (!ptyAlive && session) {
-        console.error(`[WS] PTY process ${ptyPid} is dead — destroying session ${msg.sessionId.slice(0,8)}`);
-        destroySession(msg.sessionId);
-        const exitMsg = JSON.stringify({
-          type: 'console:exit',
-          sessionId: msg.sessionId,
-          exitCode: -1,
-          reason: 'PTY process died unexpectedly',
-        });
-        if (clientSet) {
-          for (const client of clientSet) {
-            if (client.readyState === WebSocket.OPEN) client.send(exitMsg);
-          }
-        }
-        broadcastStatus();
-        return; // Don't write to dead PTY
-      }
-    }
-    writeToSession(msg.sessionId, msg.data || '');
-  }
+  if (msg.type === 'console:input') writeToSession(msg.sessionId, msg.data || '');
 
   if (msg.type === 'console:resize') {
-    // Store this client's dimensions
     let dims = clientDimensions.get(ws);
     if (!dims) {
       dims = new Map();
@@ -565,14 +308,12 @@ function handleConsoleMessage(ws: WebSocket, msg: { type: string; sessionId: str
     }
     dims.set(msg.sessionId, { cols: msg.cols || 80, rows: msg.rows || 24 });
 
-    // Resize PTY to max of all clients' dimensions (prevents mobile shrinking PC)
     recalcMaxDimensions(msg.sessionId);
   }
 }
 
 /** Handle WebSocket upgrade for the main /ws endpoint (origin validation + auth). */
 export function handleWsUpgrade(req: IncomingMessage, socket: Socket, head: Buffer): void {
-  // Origin header validation — defense-in-depth against Cross-Site WebSocket Hijacking
   const origin = req.headers.origin;
   const host = req.headers.host;
   if (origin && host) {

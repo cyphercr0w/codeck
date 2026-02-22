@@ -71,11 +71,22 @@ export function isGhInstalled(): boolean {
 }
 
 /**
- * Check if authenticated with GitHub (gh auth status)
+ * Check if authenticated with GitHub (gh auth status).
+ * Cached permanently — spawnSync blocks the event loop for up to 10s and
+ * getGitStatus() is called from broadcastStatus() every 15s via the auth
+ * monitor. Only re-checked at startup and after explicit login/logout.
  */
+let ghAuthCache: { result: boolean; checked: boolean } = { result: false, checked: false };
+
 export function isGhAuthenticated(): boolean {
+  if (ghAuthCache.checked) return ghAuthCache.result;
   const result = spawnSync('gh', ['auth', 'status'], { stdio: 'pipe', timeout: 10000 });
-  return result.status === 0;
+  ghAuthCache = { result: result.status === 0, checked: true };
+  return ghAuthCache.result;
+}
+
+export function invalidateGhAuthCache(): void {
+  ghAuthCache = { result: false, checked: false };
 }
 
 /**
@@ -250,6 +261,7 @@ export function startGitHubFullLogin(callbacks: {
     proc.on('close', (code) => {
       if (code === 0) {
         gitHubConfig.authenticated = true;
+        invalidateGhAuthCache();
         loadGitHubAccountInfo();
         console.log('\n✓ GitHub authenticated successfully\n');
         if (callbacks.onSuccess) callbacks.onSuccess();
@@ -658,26 +670,22 @@ export function getSSHPublicKey(): string | null {
 }
 
 /**
- * Check if we can connect to GitHub via SSH (with 30s cache)
+ * Check if we can connect to GitHub via SSH.
+ * Cached permanently — spawnSync blocks the event loop for up to 10s.
+ * Only re-checked after explicit SSH key generation/deletion.
  */
-let sshTestCache = { result: false, checkedAt: 0 };
-const SSH_TEST_CACHE_TTL = 30000;
+let sshTestCache: { result: boolean; checked: boolean } = { result: false, checked: false };
 
 export function testSSHConnection(): boolean {
-  const now = Date.now();
-  if (now - sshTestCache.checkedAt < SSH_TEST_CACHE_TTL) {
-    return sshTestCache.result;
-  }
-
-  // ssh -T git@github.com returns exit code 1 but prints "successfully authenticated" to stderr
+  if (sshTestCache.checked) return sshTestCache.result;
   const result = spawnSync('ssh', ['-T', 'git@github.com'], { stdio: 'pipe', timeout: 10000 });
   const output = (result.stdout?.toString() || '') + (result.stderr?.toString() || '');
-  sshTestCache = { result: output.includes('successfully authenticated'), checkedAt: now };
+  sshTestCache = { result: output.includes('successfully authenticated'), checked: true };
   return sshTestCache.result;
 }
 
 export function invalidateSSHCache(): void {
-  sshTestCache = { result: false, checkedAt: 0 };
+  sshTestCache = { result: false, checked: false };
 }
 
 /**

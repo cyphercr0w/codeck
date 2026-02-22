@@ -24,9 +24,8 @@ import { syncCredentialsAfterCLI } from '../services/auth-anthropic.js';
 // Max input payload size per WS message (64KB per OWASP recommendation)
 const MAX_INPUT_SIZE = 65536;
 
-// Per-connection message rate limiting (300 msg/min — terminal keystroke input is rapid)
-const WS_RATE_LIMIT = 300;
-const WS_RATE_WINDOW_MS = 60000;
+// Rate limiting removed — single-user terminal app where 300 msg/min was too low
+// for normal typing speed. MaxPayload (64KB) is sufficient protection.
 
 // UUID v4 pattern for session ID validation
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
@@ -36,20 +35,7 @@ const sessionClients = new Map<string, Set<WebSocket>>();
 const sessionHandlers = new Map<string, Array<{ dispose: () => void }>>();
 const clientDimensions = new Map<WebSocket, Map<string, { cols: number; rows: number }>>();
 const sessionMaxDimensions = new Map<string, { cols: number; rows: number }>();
-const messageRates = new Map<WebSocket, { count: number; resetAt: number }>();
-
 let wss: WebSocketServer;
-
-function isRateLimited(ws: WebSocket): boolean {
-  const now = Date.now();
-  let rate = messageRates.get(ws);
-  if (!rate || now > rate.resetAt) {
-    rate = { count: 0, resetAt: now + WS_RATE_WINDOW_MS };
-  }
-  rate.count++;
-  messageRates.set(ws, rate);
-  return rate.count > WS_RATE_LIMIT;
-}
 
 function recalcMaxDimensions(sessionId: string): void {
   const clientSet = sessionClients.get(sessionId);
@@ -185,7 +171,6 @@ export function setupInternalPty(): void {
 
     // Handle incoming messages
     ws.on('message', (raw) => {
-      if (isRateLimited(ws)) return;
       try {
         const msg = JSON.parse(raw.toString());
         handleMessage(ws, sessionId, msg);
@@ -197,7 +182,6 @@ export function setupInternalPty(): void {
     // Cleanup on disconnect
     ws.on('close', () => {
       console.log(`[Internal PTY] Client disconnected from session ${sessionId}`);
-      messageRates.delete(ws);
 
       const set = sessionClients.get(sessionId);
       if (set) {

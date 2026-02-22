@@ -90,13 +90,20 @@ export function proxyToRuntime(req: Request, res: Response): void {
   });
 
   // Forward request body
-  // express.json() has already consumed the stream, so we re-serialize req.body
-  if (req.body && typeof req.body === 'object' && Object.keys(req.body).length > 0) {
+  // express.json() has already consumed the stream, so we re-serialize req.body.
+  // IMPORTANT: Always forward if req.body is an object (even empty `{}`), because the
+  // original Content-Type and Content-Length headers are copied to the proxy request.
+  // If we skip the body but keep those headers, the runtime's express.json() hangs
+  // waiting for bytes that never arrive → "request aborted" → 504.
+  if (req.body !== undefined && req.body !== null && typeof req.body === 'object') {
     const bodyStr = JSON.stringify(req.body);
     proxyReq.setHeader('content-type', 'application/json');
     proxyReq.setHeader('content-length', Buffer.byteLength(bodyStr));
     proxyReq.end(bodyStr);
   } else {
+    // No body — strip content headers to avoid confusing the runtime
+    proxyReq.removeHeader('content-type');
+    proxyReq.removeHeader('content-length');
     proxyReq.end();
   }
 }

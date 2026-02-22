@@ -249,31 +249,40 @@ const AUTO_KEY_PATH = join(CODECK_DIR, '.encryption-key');
 /**
  * Derive an encryption key from a stable source.
  * Priority: CODECK_ENCRYPTION_KEY env var > auto-generated persisted key > hostname fallback.
+ * Result is cached — scryptSync is CPU-intensive and blocks the event loop.
  */
+let _cachedEncryptionKey: Buffer | null = null;
 function deriveEncryptionKey(): Buffer {
+  if (_cachedEncryptionKey) return _cachedEncryptionKey;
+
+  let key: Buffer;
   if (process.env.CODECK_ENCRYPTION_KEY) {
-    return scryptSync(process.env.CODECK_ENCRYPTION_KEY, ENCRYPTION_SALT, 32);
+    key = scryptSync(process.env.CODECK_ENCRYPTION_KEY, ENCRYPTION_SALT, 32);
+  } else {
+    // Auto-generate and persist a random key on first use
+    try {
+      if (!existsSync(AUTO_KEY_PATH)) {
+        if (!existsSync(CODECK_DIR)) mkdirSync(CODECK_DIR, { recursive: true, mode: 0o700 });
+        const randomKey = randomBytes(32).toString('hex');
+        writeFileSync(AUTO_KEY_PATH, randomKey, { mode: 0o600 });
+        console.log('[Security] Generated new encryption key at .codeck/.encryption-key');
+      }
+      const persistedKey = readFileSync(AUTO_KEY_PATH, 'utf8').trim();
+      if (persistedKey.length >= 32) {
+        key = scryptSync(persistedKey, ENCRYPTION_SALT, 32);
+      } else {
+        throw new Error('Key too short');
+      }
+    } catch (e) {
+      console.warn('[Security] Could not read/write auto-generated encryption key:', (e as Error).message);
+      // Final fallback: hostname-based (least secure)
+      console.warn('[Security] Using hostname-based encryption key. Set CODECK_ENCRYPTION_KEY for production.');
+      key = scryptSync(`codeck-${process.env.HOSTNAME || 'local'}-credential-key`, ENCRYPTION_SALT, 32);
+    }
   }
 
-  // Auto-generate and persist a random key on first use
-  try {
-    if (!existsSync(AUTO_KEY_PATH)) {
-      if (!existsSync(CODECK_DIR)) mkdirSync(CODECK_DIR, { recursive: true, mode: 0o700 });
-      const randomKey = randomBytes(32).toString('hex');
-      writeFileSync(AUTO_KEY_PATH, randomKey, { mode: 0o600 });
-      console.log('[Security] Generated new encryption key at .codeck/.encryption-key');
-    }
-    const persistedKey = readFileSync(AUTO_KEY_PATH, 'utf8').trim();
-    if (persistedKey.length >= 32) {
-      return scryptSync(persistedKey, ENCRYPTION_SALT, 32);
-    }
-  } catch (e) {
-    console.warn('[Security] Could not read/write auto-generated encryption key:', (e as Error).message);
-  }
-
-  // Final fallback: hostname-based (least secure)
-  console.warn('[Security] Using hostname-based encryption key. Set CODECK_ENCRYPTION_KEY for production.');
-  return scryptSync(`codeck-${process.env.HOSTNAME || 'local'}-credential-key`, ENCRYPTION_SALT, 32);
+  _cachedEncryptionKey = key;
+  return key;
 }
 
 function encryptValue(value: string): EncryptedValue {

@@ -77,6 +77,9 @@ export async function startWebServer(): Promise<void> {
   app.set('trust proxy', 1);
   const server = createServer(app);
 
+  // Disable Nagle's algorithm for low-latency terminal I/O
+  server.on('connection', (socket) => socket.setNoDelay(true));
+
   // Security headers FIRST — must apply to ALL responses (static + dynamic)
   app.use(helmet({
     // CSP in report-only mode: logs violations to browser console without blocking.
@@ -354,6 +357,8 @@ export async function startWebServer(): Promise<void> {
       res.writeHead(426, { 'Content-Type': 'text/plain' });
       res.end('WebSocket upgrade required');
     });
+    // Disable Nagle for low-latency terminal I/O on WS port
+    wsServer.on('connection', (socket) => socket.setNoDelay(true));
     return wsServer;
   })() : server;
 

@@ -39,6 +39,10 @@ export async function startDaemon(): Promise<void> {
   app.set('trust proxy', 1);
   const server = createServer(app);
 
+  // Disable Nagle's algorithm — send every TCP packet immediately.
+  // Critical for interactive terminal I/O where each keystroke is a tiny packet.
+  server.on('connection', (socket) => socket.setNoDelay(true));
+
   // Initialize port manager (requires CODECK_PROJECT_DIR)
   initDaemonPortManager();
 

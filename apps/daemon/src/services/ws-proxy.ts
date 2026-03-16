@@ -144,6 +144,10 @@ export function handleWsUpgrade(
   });
 
   proxyReq.on('upgrade', (proxyRes: IncomingMessage, runtimeSocket: Socket, proxyHead: Buffer) => {
+    // Disable Nagle on both sockets for low-latency terminal I/O
+    clientSocket.setNoDelay(true);
+    runtimeSocket.setNoDelay(true);
+
     // Forward the 101 Switching Protocols response to the client
     let responseHeaders = 'HTTP/1.1 101 Switching Protocols\r\n';
     for (const [key, value] of Object.entries(proxyRes.headers)) {

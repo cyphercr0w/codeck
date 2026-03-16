@@ -113,10 +113,50 @@ Read `/workspace/.codeck/preferences.md` at session start. Actively detect prefe
 
 Follow all files in `/workspace/.codeck/rules/` and `/root/.claude/rules/` at all times.
 
-## Skills
+## Skills — USE PROACTIVELY
 
-- **Codeck skills** (`/workspace/.codeck/skills/`): sandbox, docker, and workflow guides — always relevant.
-- **Knowledge packs** (`/root/.claude/skills/`): domain-specific guides (TDD, security, API design, etc.). Load on demand: `/learn <skill-name>` or read the SKILL.md directly when relevant.
+Skills are knowledge packs that make your output significantly better. **Load the relevant skill BEFORE starting work, not after.**
+
+- **Codeck skills** (`/workspace/.codeck/skills/`): sandbox, docker — always relevant for this environment.
+- **Knowledge packs** (`/root/.claude/skills/`): domain-specific guides. Load with `/learn <skill-name>`.
+
+### When to load which skill
+
+| Trigger | Skill(s) to load |
+|---------|-----------------|
+| Building any frontend/UI | `frontend-design`, `frontend-patterns` |
+| Designing or modifying an API | `api-design`, `backend-patterns` |
+| Writing tests | `tdd-workflow`, `e2e-testing` |
+| Security-sensitive code (auth, crypto, input handling) | `security-review`, `security-scan` |
+| Database schema changes or migrations | `database-migrations` |
+| Docker/deployment work | `docker-patterns`, `deployment-patterns` |
+| Code quality review | `coding-standards` |
+| LLM/AI pipeline work | `cost-aware-llm-pipeline` |
+| Refactoring | `coding-standards`, `verification-loop` |
+
+**Rule**: If you're about to do significant work in any of these areas and haven't loaded the skill, STOP and load it first. The 30 seconds of reading saves minutes of rework.
+
+## Agents — USE PROACTIVELY
+
+Sub-agents (`/root/.claude/agents/`) handle specialized tasks in parallel. Don't do everything yourself. Key triggers:
+
+| Trigger | Agent |
+|---------|-------|
+| Complex feature request | `planner` — create implementation plan first |
+| Code just written or modified | `code-reviewer` — review before committing |
+| Bug fix or new feature | `tdd-guide` — test-driven approach |
+| Architecture decision | `architect` — evaluate trade-offs |
+| Security-sensitive change | `security-reviewer` — check before commit |
+| Build failure | `build-error-resolver` — diagnose and fix |
+
+**Rule**: For complex tasks, ALWAYS spawn the planner agent first. For any code change, spawn the code-reviewer agent after. These are not optional — they catch issues you'll miss.
+
+## Parallelization — ALWAYS
+
+- Multiple file reads → parallel Glob/Grep/Read calls
+- Independent research → parallel Agent calls
+- Multiple code edits to unrelated files → one message with multiple Edit calls
+- **Never do sequentially what can be done in parallel**
 
 ## Full Reference
 

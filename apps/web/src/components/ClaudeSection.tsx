@@ -258,6 +258,11 @@ export function ClaudeSection({ onNewSession, onNewShell }: ClaudeSectionProps) 
       if (target.closest('button')) return;
       if (activeId) focusTerminal(activeId);
     }
+    // Notify server this client is now active — triggers PTY resize to
+    // match this client's dimensions. Critical for mobile/desktop coexistence.
+    if (activeId) {
+      wsSend({ type: 'console:focus', sessionId: activeId });
+    }
   }
 
   const mobile = isMobile.value;
@@ -392,9 +397,10 @@ export function mountTerminalForSession(sessionId: string, cwd: string, name?: s
   setActiveSessionId(sessionId);
 
   attachSession(sessionId);
+  // Use ensureTerminalVisible instead of a single rAF — on mobile the container
+  // may not have final dimensions yet (header hiding, toolbar appearing, layout shift).
+  ensureTerminalVisible(sessionId);
   requestAnimationFrame(() => {
-    instance.fitAddon.fit();
-    wsSend({ type: 'console:resize', sessionId, cols: instance.term.cols, rows: instance.term.rows });
     instance.term.focus();
   });
 

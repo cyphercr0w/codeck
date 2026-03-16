@@ -176,15 +176,46 @@ export function setupWebSocket(): void {
         }
       }
       clientDimensions.delete(ws);
+      // Clear active client tracking for this ws
+      for (const [sid, activeWs] of sessionActiveClient) {
+        if (activeWs === ws) sessionActiveClient.delete(sid);
+      }
     });
   });
 }
 
-/** Recalculate max dimensions across all clients attached to a session and resize PTY if changed. */
+// sessionId → ws (last client that sent input or resize — their dims win)
+const sessionActiveClient = new Map<string, WebSocket>();
+
+/**
+ * Recalculate PTY dimensions for a session.
+ * Strategy: use the dimensions of the client that most recently interacted
+ * (sent input or resize). When only one client is connected, always use it.
+ * Fallback to max dimensions if no active client is tracked.
+ */
 function recalcMaxDimensions(sessionId: string): void {
   const clientSet = sessionClients.get(sessionId);
   if (!clientSet || clientSet.size === 0) return;
 
+  // Single client — always use its dimensions
+  if (clientSet.size === 1) {
+    const [client] = clientSet;
+    const dims = clientDimensions.get(client)?.get(sessionId);
+    if (dims) applyDimensions(sessionId, dims.cols, dims.rows);
+    return;
+  }
+
+  // Multiple clients — use the active client's dimensions
+  const activeClient = sessionActiveClient.get(sessionId);
+  if (activeClient && clientSet.has(activeClient)) {
+    const dims = clientDimensions.get(activeClient)?.get(sessionId);
+    if (dims) {
+      applyDimensions(sessionId, dims.cols, dims.rows);
+      return;
+    }
+  }
+
+  // Fallback: max dimensions
   let maxCols = 1, maxRows = 1;
   for (const client of clientSet) {
     const dims = clientDimensions.get(client)?.get(sessionId);
@@ -193,11 +224,14 @@ function recalcMaxDimensions(sessionId: string): void {
       maxRows = Math.max(maxRows, dims.rows);
     }
   }
+  applyDimensions(sessionId, maxCols, maxRows);
+}
 
+function applyDimensions(sessionId: string, cols: number, rows: number): void {
   const prev = sessionMaxDimensions.get(sessionId);
-  if (!prev || prev.cols !== maxCols || prev.rows !== maxRows) {
-    sessionMaxDimensions.set(sessionId, { cols: maxCols, rows: maxRows });
-    resizeSession(sessionId, maxCols, maxRows);
+  if (!prev || prev.cols !== cols || prev.rows !== rows) {
+    sessionMaxDimensions.set(sessionId, { cols, rows });
+    resizeSession(sessionId, cols, rows);
   }
 }
 
@@ -298,7 +332,24 @@ function handleConsoleMessage(ws: WebSocket, msg: { type: string; sessionId: str
     }
   }
 
-  if (msg.type === 'console:input') writeToSession(msg.sessionId, msg.data || '');
+  if (msg.type === 'console:focus') {
+    // User tapped/clicked the terminal — mark this client as active and
+    // resize the PTY to match their dimensions. This is the primary
+    // mechanism for mobile/desktop coexistence: whichever device the user
+    // interacts with gets the correct terminal dimensions.
+    const prevActive = sessionActiveClient.get(msg.sessionId);
+    sessionActiveClient.set(msg.sessionId, ws);
+    if (prevActive !== ws) recalcMaxDimensions(msg.sessionId);
+    return;
+  }
+
+  if (msg.type === 'console:input') {
+    // Also track input as active — covers keyboard-only navigation
+    const prevActive = sessionActiveClient.get(msg.sessionId);
+    sessionActiveClient.set(msg.sessionId, ws);
+    if (prevActive && prevActive !== ws) recalcMaxDimensions(msg.sessionId);
+    writeToSession(msg.sessionId, msg.data || '');
+  }
 
   if (msg.type === 'console:resize') {
     let dims = clientDimensions.get(ws);
@@ -308,6 +359,10 @@ function handleConsoleMessage(ws: WebSocket, msg: { type: string; sessionId: str
     }
     dims.set(msg.sessionId, { cols: msg.cols || 80, rows: msg.rows || 24 });
 
+    // Don't mark resize sender as the active client — that would cause
+    // mobile connecting to steal dimensions from desktop. Only console:input
+    // (actual typing) promotes a client to active. The resize is stored per-client
+    // and applied when that client becomes active via typing.
     recalcMaxDimensions(msg.sessionId);
   }
 }

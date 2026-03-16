@@ -259,21 +259,17 @@ export function fitTerminal(sessionId: string): void {
   if (!instance) return;
   // Don't fit against a hidden container — FitAddon gets 0-size dimensions
   if (instance.container.offsetWidth === 0 || instance.container.offsetHeight === 0) return;
+  // Pre-check: if proposed dimensions are implausible, skip entirely.
+  // This prevents fitAddon.fit() from resizing xterm to cols=1 during
+  // layout transitions (especially on mobile), which causes 1-char-per-line.
+  const proposed = instance.fitAddon.proposeDimensions();
+  if (proposed && (proposed.cols < 10 || proposed.rows < 2)) return;
   const prevCols = instance.term.cols;
   const prevRows = instance.term.rows;
-  // Capture focus state before fit — term.resize() can steal focus
   const wasTerminalFocused = !isMobile.value && !!instance.textarea && document.activeElement === instance.textarea;
   instance.fitAddon.fit();
-  // Guard: reject implausible dimensions from mid-transition containers
-  if (instance.term.cols < 10 || instance.term.rows < 2) {
-    if (instance.term.cols !== prevCols || instance.term.rows !== prevRows) {
-      instance.term.resize(prevCols, prevRows);
-    }
-    return;
-  }
   // Only send console:resize if dimensions actually changed
   if (instance.term.cols !== prevCols || instance.term.rows !== prevRows) {
-    // Restore focus if the resize stole it
     if (wasTerminalFocused && document.activeElement !== instance.textarea) {
       instance.term.focus();
     }
@@ -316,15 +312,31 @@ export function ensureTerminalVisible(sessionId: string, maxWaitMs = 2000): () =
   const instance = terminals.get(sessionId);
   if (!instance) return () => {};
 
-  // If container already has dimensions, fit + repaint immediately
-  if (instance.container.offsetWidth > 0 && instance.container.offsetHeight > 0) {
+  let cancelled = false;
+  let stabilizeTimer: ReturnType<typeof setTimeout> | null = null;
+
+  // After the initial fit, schedule a second fit to catch layout shifts
+  // (e.g., mobile: header hides, toolbar appears, keyboard opens).
+  function fitAndStabilize() {
     fitTerminal(sessionId);
     requestAnimationFrame(() => repaintTerminal(sessionId));
-    return () => {};
+    // Second fit after layout settles (covers mobile transitions)
+    stabilizeTimer = setTimeout(() => {
+      if (cancelled) return;
+      if (terminals.get(sessionId)) {
+        fitTerminal(sessionId);
+        repaintTerminal(sessionId);
+      }
+    }, 300);
+  }
+
+  // If container already has dimensions, fit immediately + stabilize
+  if (instance.container.offsetWidth > 0 && instance.container.offsetHeight > 0) {
+    fitAndStabilize();
+    return () => { cancelled = true; if (stabilizeTimer) clearTimeout(stabilizeTimer); };
   }
 
   // Poll until container becomes visible
-  let cancelled = false;
   const deadline = Date.now() + maxWaitMs;
 
   function poll() {
@@ -333,8 +345,7 @@ export function ensureTerminalVisible(sessionId: string, maxWaitMs = 2000): () =
     if (!inst) return;
 
     if (inst.container.offsetWidth > 0 && inst.container.offsetHeight > 0) {
-      fitTerminal(sessionId);
-      requestAnimationFrame(() => repaintTerminal(sessionId));
+      fitAndStabilize();
       return;
     }
 
@@ -345,7 +356,7 @@ export function ensureTerminalVisible(sessionId: string, maxWaitMs = 2000): () =
 
   requestAnimationFrame(poll);
 
-  return () => { cancelled = true; };
+  return () => { cancelled = true; if (stabilizeTimer) clearTimeout(stabilizeTimer); };
 }
 
 /** Returns the current terminal dimensions, or null if not found / hidden. */

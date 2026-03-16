@@ -14,6 +14,15 @@ interface TerminalInstance {
 
 const terminals = new Map<string, TerminalInstance>();
 
+// Image paste callback — set by ClaudeSection to handle image uploads.
+// When set, Ctrl+V in xterm checks the clipboard for images first.
+let onImagePaste: ((file: File) => void) | null = null;
+
+/** Register a callback for image paste events from the terminal. */
+export function setOnImagePaste(handler: ((file: File) => void) | null): void {
+  onImagePaste = handler;
+}
+
 // Mobile scroll lock: when user scrolls up to read history, prevent
 // xterm's internal auto-scroll from yanking them back to the bottom.
 const scrollLocked = new Map<string, boolean>();
@@ -68,6 +77,19 @@ export function createTerminal(sessionId: string, container: HTMLElement): Termi
   term.loadAddon(fitAddon);
   term.open(container);
 
+  // Prevent xterm from handling Ctrl+V / Cmd+V at the keyboard level.
+  // By returning false, xterm doesn't send ^V (0x16) to the PTY.
+  // Instead, the browser's default Ctrl+V behavior fires a paste event
+  // on the textarea, which our paste listener below handles:
+  //   - If clipboard has an image → show upload overlay
+  //   - If clipboard has text → xterm's own paste handler inserts it
+  term.attachCustomKeyEventHandler((e: KeyboardEvent) => {
+    if ((e.ctrlKey || e.metaKey) && e.key === 'v' && e.type === 'keydown') {
+      return false; // let browser handle → triggers paste event
+    }
+    return true; // let xterm handle all other keys
+  });
+
   // Configure xterm textarea for keyboard handling
   const textarea = container.querySelector('textarea.xterm-helper-textarea') as HTMLTextAreaElement | null;
   if (textarea) {
@@ -76,6 +98,29 @@ export function createTerminal(sessionId: string, container: HTMLElement): Termi
     textarea.setAttribute('autocapitalize', 'off');
     textarea.setAttribute('spellcheck', 'false');
     textarea.setAttribute('enterkeyhint', 'send');
+
+    // Intercept paste events on xterm's textarea to detect clipboard images.
+    // Uses capture phase to fire BEFORE xterm's own paste handler.
+    // The paste event has synchronous access to clipboardData (no permissions needed).
+    // If the clipboard contains an image, we block xterm from pasting and show
+    // the upload overlay. If it's text-only, we let the event propagate normally.
+    textarea.addEventListener('paste', (e: ClipboardEvent) => {
+      if (!onImagePaste) return;
+      const items = e.clipboardData?.items;
+      if (!items) return;
+      for (let i = 0; i < items.length; i++) {
+        if (items[i].type.startsWith('image/')) {
+          const file = items[i].getAsFile();
+          if (file) {
+            e.preventDefault();
+            e.stopImmediatePropagation();
+            onImagePaste(file);
+            return;
+          }
+        }
+      }
+      // No image found — let xterm handle the text paste normally
+    }, true); // capture phase
 
     // Log blur events to DevTools — useful for diagnosing input freezes locally
     // without any network overhead (no WS message sent).
@@ -145,13 +190,15 @@ export function createTerminal(sessionId: string, container: HTMLElement): Termi
   let lastContainerWidth = -1;
   let lastContainerHeight = -1;
   const resizeObserver = new ResizeObserver((entries) => {
-    // Dedup: skip if container dimensions haven't actually changed.
+    // Dedup: skip if container dimensions haven't meaningfully changed.
     // This prevents feedback loops where fitAddon.fit() adjusts xterm's
     // internal canvas, triggering another ResizeObserver notification.
+    // A 3px threshold filters out sub-character noise (scrollbar appearance,
+    // layout micro-shifts during agent output) that would cause canvas flicker.
     const entry = entries[0];
     const w = entry?.contentRect?.width ?? container.offsetWidth;
     const h = entry?.contentRect?.height ?? container.offsetHeight;
-    if (w === lastContainerWidth && h === lastContainerHeight) return;
+    if (Math.abs(w - lastContainerWidth) < 3 && Math.abs(h - lastContainerHeight) < 3) return;
     lastContainerWidth = w;
     lastContainerHeight = h;
 
@@ -167,9 +214,14 @@ export function createTerminal(sessionId: string, container: HTMLElement): Termi
         if (term.cols !== prevCols || term.rows !== prevRows) term.resize(prevCols, prevRows);
         return;
       }
-      if (term.cols !== prevCols || term.rows !== prevRows) {
-        wsSend({ type: 'console:resize', sessionId, cols: term.cols, rows: term.rows });
+      // If cols/rows didn't change, skip everything — avoids canvas repaint
+      // flicker when the container changes by sub-character pixels (e.g., during
+      // agent output that pushes the layout by a few pixels).
+      if (term.cols === prevCols && term.rows === prevRows) {
+        // Restore dimensions in case fitAddon internally changed something
+        return;
       }
+      wsSend({ type: 'console:resize', sessionId, cols: term.cols, rows: term.rows });
       if (wasTerminalFocused && document.activeElement !== textarea) {
         term.focus();
       }

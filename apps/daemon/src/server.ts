@@ -55,7 +55,8 @@ export async function startDaemon(): Promise<void> {
     crossOriginOpenerPolicy: false,
   }));
 
-  app.use(express.json());
+  // 15MB limit to support base64-encoded image uploads proxied to the runtime
+  app.use(express.json({ limit: '15mb' }));
 
   // ── Rate limiters (configurable via env vars) ──
 

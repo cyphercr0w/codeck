@@ -1,10 +1,25 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { sessions, activeSessionId, setActiveSessionId, addLocalLog, addSession, removeSession, renameSession, agentName, isMobile, restoringPending, wsConnected } from '../state/store';
 import { apiFetch } from '../api';
-import { createTerminal, destroyTerminal, fitTerminal, repaintTerminal, focusTerminal, writeToTerminal, scrollToBottom, getTerminal, markSessionAttaching, clearSessionAttaching, onTerminalWrite, ensureTerminalVisible } from '../terminal';
+import { createTerminal, destroyTerminal, fitTerminal, repaintTerminal, focusTerminal, writeToTerminal, scrollToBottom, getTerminal, markSessionAttaching, clearSessionAttaching, onTerminalWrite, ensureTerminalVisible, setOnImagePaste } from '../terminal';
 import { wsSend, setTerminalHandlers, attachSession, setOnSessionReattached } from '../ws';
 import { IconPlus, IconX, IconShell, IconTerminal } from './Icons';
 import { MobileTerminalToolbar } from './MobileTerminalToolbar';
+import { ImageUploadOverlay } from './ImageUploadOverlay';
+
+const IMAGE_MIME_TYPES = new Set(['image/png', 'image/jpeg', 'image/gif', 'image/webp']);
+
+/** Extract an image File from a DragEvent, or null if none found. */
+function getImageFromDrop(e: DragEvent): File | null {
+  const files = e.dataTransfer?.files;
+  if (!files) return null;
+  for (let i = 0; i < files.length; i++) {
+    if (IMAGE_MIME_TYPES.has(files[i].type)) {
+      return files[i];
+    }
+  }
+  return null;
+}
 
 interface ClaudeSectionProps {
   onNewSession: () => void;
@@ -50,6 +65,8 @@ export function ClaudeSection({ onNewSession, onNewShell }: ClaudeSectionProps) 
   const [editingTabId, setEditingTabId] = useState<string | null>(null);
   const [editValue, setEditValue] = useState('');
   const editInputRef = useRef<HTMLInputElement>(null);
+  const [pendingImage, setPendingImage] = useState<File | null>(null);
+  const [dragOver, setDragOver] = useState(false);
   const sessionList = sessions.value;
   const activeId = activeSessionId.value;
 
@@ -136,13 +153,49 @@ export function ClaudeSection({ onNewSession, onNewShell }: ClaudeSectionProps) 
     container.querySelectorAll('.terminal-instance').forEach(el => el.classList.remove('active'));
     const activeEl = document.getElementById('term-' + activeId);
     if (activeEl) activeEl.classList.add('active');
-    requestAnimationFrame(() => {
-      fitTerminal(activeId);
-      repaintTerminal(activeId);
-      scrollToBottom(activeId);
-      focusTerminal(activeId);
-    });
+    // Use ensureTerminalVisible instead of bare rAF — handles the case where
+    // the container has 0x0 dims (e.g., after session restore while section
+    // was hidden). Polls until visible, then fits + repaints.
+    const cancel = ensureTerminalVisible(activeId);
+    focusTerminal(activeId);
+    return cancel;
   }, [activeId]);
+
+  // Register image paste handler — terminal.ts intercepts Ctrl+V on xterm's
+  // textarea, checks the clipboard for images, and calls this callback.
+  useEffect(() => {
+    setOnImagePaste((file: File) => {
+      if (activeSessionId.value) {
+        setPendingImage(file);
+      }
+    });
+    return () => setOnImagePaste(null);
+  }, []);
+
+  // Drag & drop image detection
+  function handleDragOver(e: DragEvent) {
+    if (e.dataTransfer?.types.includes('Files')) {
+      e.preventDefault();
+      setDragOver(true);
+    }
+  }
+
+  function handleDragLeave(e: DragEvent) {
+    // Only clear when leaving the container (not entering a child)
+    const related = e.relatedTarget as HTMLElement | null;
+    if (!related || !instancesRef.current?.contains(related)) {
+      setDragOver(false);
+    }
+  }
+
+  function handleDrop(e: DragEvent) {
+    e.preventDefault();
+    setDragOver(false);
+    const img = getImageFromDrop(e);
+    if (img && activeSessionId.value) {
+      setPendingImage(img);
+    }
+  }
 
   function startEditingTab(id: string, currentName: string) {
     setEditingTabId(id);
@@ -262,9 +315,12 @@ export function ClaudeSection({ onNewSession, onNewShell }: ClaudeSectionProps) 
           </button>
         </div>
         <div
-          class="terminal-instances"
+          class={`terminal-instances${dragOver ? ' drag-over' : ''}`}
           ref={instancesRef}
           onClick={handleTerminalTap}
+          onDragOver={handleDragOver}
+          onDragLeave={handleDragLeave}
+          onDrop={handleDrop}
         >
           {sessionList.length === 0 && !restoringPending.value && (
             <div class="claude-empty">
@@ -287,7 +343,13 @@ export function ClaudeSection({ onNewSession, onNewShell }: ClaudeSectionProps) 
           )}
         </div>
         {mobile && activeId && <MobileTerminalToolbar />}
+        {dragOver && (
+          <div class="image-drop-indicator">
+            <div class="image-drop-indicator-text">Drop image here</div>
+          </div>
+        )}
       </div>
+      <ImageUploadOverlay file={pendingImage} onDone={() => setPendingImage(null)} />
     </div>
   );
 }

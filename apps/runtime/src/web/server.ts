@@ -94,7 +94,8 @@ export async function startWebServer(): Promise<void> {
     crossOriginOpenerPolicy: false,
   }));
 
-  app.use(express.json());
+  // 15MB limit to support base64-encoded image uploads (~10MB image → ~13.3MB base64)
+  app.use(express.json({ limit: '15mb' }));
 
   // Internal health endpoint — used by daemon for runtime health checks
   // Registered before auth middleware; not exposed via /api prefix

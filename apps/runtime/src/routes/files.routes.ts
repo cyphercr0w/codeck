@@ -1,10 +1,24 @@
 import { Router } from 'express';
 import { readdir, stat, readFile, writeFile, mkdir, unlink, rmdir, rename } from 'fs/promises';
-import { join, resolve, sep } from 'path';
+import { existsSync } from 'fs';
+import { join, resolve, sep, extname } from 'path';
 import { broadcastStatus } from '../web/websocket.js';
 
 // Resolve WORKSPACE to absolute path at startup for consistent path traversal checks
 const WORKSPACE = resolve(process.env.WORKSPACE || '/workspace');
+
+// Image uploads directory
+const UPLOADS_DIR = join(WORKSPACE, '.codeck', 'uploads');
+
+// Allowed image MIME types → file extension mapping
+const IMAGE_TYPES: Record<string, string> = {
+  'image/png': '.png',
+  'image/jpeg': '.jpg',
+  'image/gif': '.gif',
+  'image/webp': '.webp',
+};
+
+const MAX_IMAGE_SIZE = 10 * 1024 * 1024; // 10 MB
 const router = Router();
 
 /**
@@ -248,6 +262,57 @@ router.post('/rename', async (req, res) => {
     } else {
       res.status(500).json({ error: 'Error renaming file' });
     }
+  }
+});
+
+// Upload image — accepts base64-encoded image data, saves to .codeck/uploads/,
+// returns the absolute path for injection into Claude Code's stdin.
+router.post('/upload-image', async (req, res) => {
+  const { data, mimeType, fileName } = req.body;
+
+  if (!data || typeof data !== 'string') {
+    res.status(400).json({ error: 'Base64 image data required' });
+    return;
+  }
+
+  const ext = IMAGE_TYPES[mimeType];
+  if (!ext) {
+    res.status(400).json({ error: `Unsupported image type: ${mimeType}. Supported: ${Object.keys(IMAGE_TYPES).join(', ')}` });
+    return;
+  }
+
+  // Decode and validate size
+  const buffer = Buffer.from(data, 'base64');
+  if (buffer.length > MAX_IMAGE_SIZE) {
+    res.status(400).json({ error: `Image too large (${(buffer.length / 1024 / 1024).toFixed(1)} MB). Max: 10 MB` });
+    return;
+  }
+
+  if (buffer.length === 0) {
+    res.status(400).json({ error: 'Empty image data' });
+    return;
+  }
+
+  try {
+    // Ensure uploads directory exists
+    if (!existsSync(UPLOADS_DIR)) {
+      await mkdir(UPLOADS_DIR, { recursive: true });
+    }
+
+    // Generate unique filename: timestamp + optional original name
+    const timestamp = Date.now();
+    const safeName = fileName
+      ? fileName.replace(/[^a-zA-Z0-9_\-]/g, '_').slice(0, 50)
+      : 'image';
+    const fullName = `${timestamp}-${safeName}${ext}`;
+    const filePath = join(UPLOADS_DIR, fullName);
+
+    await writeFile(filePath, buffer);
+
+    res.json({ success: true, filePath });
+  } catch (e) {
+    console.error('[Files] Image upload failed:', (e as Error).message);
+    res.status(500).json({ error: 'Failed to save image' });
   }
 });
 

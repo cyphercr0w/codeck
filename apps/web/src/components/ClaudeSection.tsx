@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'preact/hooks';
 import { sessions, activeSessionId, setActiveSessionId, addLocalLog, addSession, removeSession, renameSession, agentName, isMobile, restoringPending, wsConnected } from '../state/store';
 import { apiFetch } from '../api';
 import { createTerminal, destroyTerminal, fitTerminal, repaintTerminal, focusTerminal, writeToTerminal, scrollToBottom, getTerminal, markSessionAttaching, clearSessionAttaching, onTerminalWrite, ensureTerminalVisible, setOnImagePaste } from '../terminal';
-import { wsSend, setTerminalHandlers, attachSession, setOnSessionReattached } from '../ws';
+import { wsSend, setTerminalHandlers, attachSession, setOnSessionReattached, setOnBeforeSessionsRestored } from '../ws';
 import { IconPlus, IconX, IconShell, IconTerminal } from './Icons';
 import { MobileTerminalToolbar } from './MobileTerminalToolbar';
 import { ImageUploadOverlay } from './ImageUploadOverlay';
@@ -72,6 +72,17 @@ export function ClaudeSection({ onNewSession, onNewShell }: ClaudeSectionProps) 
 
   // Register terminal handlers for WS output/exit and post-reconnect resync
   useEffect(() => {
+    // Clean up stale terminals when sessions are restored after a container restart.
+    // Without this, old terminal DOM elements remain in the DOM covering new ones.
+    setOnBeforeSessionsRestored(() => {
+      const container = instancesRef.current;
+      for (const s of sessions.value) {
+        destroyTerminal(s.id);
+        const el = document.getElementById('term-' + s.id);
+        if (el) el.remove();
+      }
+    });
+
     setOnSessionReattached((sessionId) => {
       if (!getTerminal(sessionId)) return;
 

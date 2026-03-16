@@ -57,6 +57,13 @@ export function setOnSessionReattached(handler: (sessionId: string) => void): vo
   onSessionReattached = handler;
 }
 
+// Called before sessions:restored adds new sessions, so the terminal layer
+// can destroy stale terminals from a previous container lifecycle.
+let onBeforeSessionsRestored: (() => void) | null = null;
+export function setOnBeforeSessionsRestored(handler: () => void): void {
+  onBeforeSessionsRestored = handler;
+}
+
 type OutputHandler = (sessionId: string, data: string) => void;
 type ExitHandler = (sessionId: string) => void;
 
@@ -187,6 +194,11 @@ function openWs(wsUrl: string): void {
         const restored = msg.data.filter(
           (s: any) => typeof s.id === 'string' && typeof s.cwd === 'string' && typeof s.name === 'string'
         );
+        // Clean up stale sessions from a previous container lifecycle.
+        // Without this, old terminal DOM elements cover the new ones → black screen.
+        onBeforeSessionsRestored?.();
+        const staleIds = sessions.value.map(s => s.id);
+        for (const id of staleIds) removeSession(id);
         for (const s of restored) {
           addSession({ id: s.id, type: s.type as 'agent' | 'shell', cwd: s.cwd, name: s.name, createdAt: Date.now() });
         }

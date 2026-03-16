@@ -249,6 +249,8 @@ export function destroyTerminal(sessionId: string): void {
     instance.term.dispose();
     terminals.delete(sessionId);
     scrollLocked.delete(sessionId);
+    const raf = pendingScrollRaf.get(sessionId);
+    if (raf) { cancelAnimationFrame(raf); pendingScrollRaf.delete(sessionId); }
   }
 }
 
@@ -353,6 +355,13 @@ export function getTerminalDimensions(sessionId: string): { cols: number; rows: 
   return { cols: instance.term.cols, rows: instance.term.rows };
 }
 
+// Pending scroll-to-bottom per session, batched via rAF to avoid the "jump up
+// then snap back" effect when many write chunks arrive in rapid succession.
+// Without batching, each write callback calls scrollToBottom() independently,
+// and xterm's internal buffer expansion between callbacks can temporarily move
+// the viewport up — the next scrollToBottom() snaps it back, causing visible jitter.
+const pendingScrollRaf = new Map<string, number>();
+
 export function writeToTerminal(sessionId: string, data: string): void {
   const instance = terminals.get(sessionId);
   if (!instance) return;
@@ -372,14 +381,20 @@ export function writeToTerminal(sessionId: string, data: string): void {
     return;
   }
 
-  // Not scroll-locked: write and follow output to the bottom.
-  // Callback fires after xterm actually processes and renders the data.
-  instance.term.write(sanitized, () => {
-    if (!scrollLocked.get(sessionId)) {
-      suppressScrollEvents(sessionId);
-      instance.term.scrollToBottom();
-    }
-  });
+  // Write data, then schedule a single scroll-to-bottom per animation frame.
+  // Multiple writes within the same frame share one scrollToBottom() call,
+  // eliminating the visible up-down jitter during rapid agent output.
+  instance.term.write(sanitized);
+  if (!pendingScrollRaf.has(sessionId)) {
+    const raf = requestAnimationFrame(() => {
+      pendingScrollRaf.delete(sessionId);
+      if (!scrollLocked.get(sessionId)) {
+        suppressScrollEvents(sessionId);
+        instance.term.scrollToBottom();
+      }
+    });
+    pendingScrollRaf.set(sessionId, raf);
+  }
 }
 
 export function focusTerminal(sessionId: string): void {

@@ -191,7 +191,10 @@ function openWs(wsUrl: string): void {
           addSession({ id: s.id, type: s.type as 'agent' | 'shell', cwd: s.cwd, name: s.name, createdAt: Date.now() });
         }
         if (restored.length > 0) {
-          if (!activeSessionId.value) setActiveSessionId(restored[0].id);
+          // Always set activeSessionId — after a container restart, the old
+          // activeSessionId points to a dead session. Force-update to the
+          // first restored session so the terminal gets properly mounted.
+          setActiveSessionId(restored[0].id);
           setActiveSection('claude');
         }
         setRestoringPending(false);

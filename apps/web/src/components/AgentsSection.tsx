@@ -313,7 +313,7 @@ function CreateAgentModal({ visible, onClose, onCreate }: {
     <div class="modal-backdrop" onClick={onClose}>
       <div class="modal agent-form" onClick={e => e.stopPropagation()}>
         <div class="modal-header">
-          <h3>New Proactive Agent</h3>
+          <h3>New Scheduled Agent</h3>
           <button class="btn-sm btn-ghost" onClick={onClose}><IconX size={18} /></button>
         </div>
 
@@ -849,7 +849,7 @@ export function AgentsSection() {
         <div class="home-header">
           <div class="home-title">
             <IconBot size={20} />
-            <span>Proactive Agents</span>
+            <span>Scheduled Agents</span>
           </div>
           <button class="btn-sm btn-primary" onClick={() => setCreateOpen(true)}>
             <IconPlus size={14} /> New Agent
@@ -859,8 +859,8 @@ export function AgentsSection() {
         {agents.length === 0 ? (
           <div class="agents-empty">
             <IconBot size={48} class="agents-empty-icon" />
-            <h3>No Proactive Agents</h3>
-            <p>Create autonomous agents that run tasks on a schedule using Claude CLI in non-interactive mode.</p>
+            <h3>No Scheduled Agents</h3>
+            <p>Create agents that run a prompt on a recurring schedule. Define the prompt, set the interval, and the agent executes automatically using Claude CLI — no manual intervention needed.</p>
             <button class="btn-sm btn-primary" onClick={() => setCreateOpen(true)}>
               Create Your First Agent
             </button>

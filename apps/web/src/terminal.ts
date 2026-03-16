@@ -205,22 +205,16 @@ export function createTerminal(sessionId: string, container: HTMLElement): Termi
     if (resizeTimer) clearTimeout(resizeTimer);
     resizeTimer = setTimeout(() => {
       if (container.offsetWidth === 0 || container.offsetHeight === 0) return;
-      const prevCols = term.cols;
-      const prevRows = term.rows;
+      // Check proposed dimensions BEFORE calling fit() — fitAddon.fit()
+      // triggers a canvas repaint even when cols/rows don't change, which
+      // causes visible flicker during rapid agent output. proposeDimensions()
+      // calculates what fit() would produce without touching the canvas.
+      const proposed = fitAddon.proposeDimensions();
+      if (proposed && proposed.cols === term.cols && proposed.rows === term.rows) return;
+      // Guard: reject implausible dimensions from mid-transition containers
+      if (proposed && (proposed.cols < 10 || proposed.rows < 2)) return;
       const wasTerminalFocused = !isMobile.value && !!textarea && document.activeElement === textarea;
       fitAddon.fit();
-      // Guard: reject implausible dimensions from mid-transition containers
-      if (term.cols < 10 || term.rows < 2) {
-        if (term.cols !== prevCols || term.rows !== prevRows) term.resize(prevCols, prevRows);
-        return;
-      }
-      // If cols/rows didn't change, skip everything — avoids canvas repaint
-      // flicker when the container changes by sub-character pixels (e.g., during
-      // agent output that pushes the layout by a few pixels).
-      if (term.cols === prevCols && term.rows === prevRows) {
-        // Restore dimensions in case fitAddon internally changed something
-        return;
-      }
       wsSend({ type: 'console:resize', sessionId, cols: term.cols, rows: term.rows });
       if (wasTerminalFocused && document.activeElement !== textarea) {
         term.focus();

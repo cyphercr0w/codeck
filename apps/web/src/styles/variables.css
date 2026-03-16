@@ -1,32 +1,47 @@
 :root {
-  --bg-primary: #0a0a0b;
-  --bg-secondary: #111113;
-  --bg-tertiary: #18181b;
-  --bg-card: #16161a;
-  --bg-hover: #252529;
-  --bg-active: #2a2a30;
-  --border: #2a2a2e;
-  --border-light: #3a3a40;
-  --text-primary: #fafafa;
-  --text-secondary: #a0a0a8;
-  --text-muted: #606068;
+  /* ── Surfaces ── */
+  --bg-primary: #09090b;
+  --bg-secondary: #0f0f12;
+  --bg-tertiary: #161619;
+  --bg-card: #121215;
+  --bg-hover: #1c1c21;
+  --bg-active: #222228;
+
+  /* ── Borders ── */
+  --border: #1f1f24;
+  --border-light: #2a2a31;
+
+  /* ── Text ── */
+  --text-primary: #e8e8ed;
+  --text-secondary: #8a8a96;
+  --text-muted: #505060;
+
+  /* ── Accent: indigo (brand color) ── */
   --accent: #6366f1;
   --accent-hover: #5558e3;
-  --accent-subtle: rgba(99, 102, 241, 0.12);
-  --success: #22c55e;
-  --success-subtle: rgba(34, 197, 94, 0.12);
-  --warning: #eab308;
-  --warning-subtle: rgba(234, 179, 8, 0.12);
-  --error: #ef4444;
-  --error-subtle: rgba(239, 68, 68, 0.12);
-  --info: #3b82f6;
-  --info-subtle: rgba(59, 130, 246, 0.12);
-  --radius: 8px;
-  --radius-lg: 12px;
-  --shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
-  --sidebar-width: 260px;
-  --sidebar-collapsed-width: 56px;
-  --font-sans: 'Inter', system-ui, sans-serif;
-  --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
-  --transition: 150ms ease;
+  --accent-subtle: rgba(99, 102, 241, 0.10);
+
+  /* ── Semantic ── */
+  --success: #34d399;
+  --success-subtle: rgba(52, 211, 153, 0.10);
+  --warning: #fbbf24;
+  --warning-subtle: rgba(251, 191, 36, 0.10);
+  --error: #f87171;
+  --error-subtle: rgba(248, 113, 113, 0.10);
+  --info: #60a5fa;
+  --info-subtle: rgba(96, 165, 250, 0.10);
+
+  /* ── Shape ── */
+  --radius: 6px;
+  --radius-lg: 10px;
+  --shadow: 0 2px 12px rgba(0, 0, 0, 0.5);
+
+  /* ── Layout ── */
+  --sidebar-width: 240px;
+  --sidebar-collapsed-width: 52px;
+
+  /* ── Typography ── */
+  --font-sans: 'IBM Plex Sans', 'SF Pro Text', system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', 'IBM Plex Mono', 'Fira Code', monospace;
+  --transition: 120ms ease;
 }

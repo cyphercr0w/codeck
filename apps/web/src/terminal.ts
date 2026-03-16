@@ -255,6 +255,51 @@ export function repaintTerminal(sessionId: string): void {
   instance.term.refresh(0, rows - 1);
 }
 
+/**
+ * Wait for the terminal container to have non-zero dimensions, then fit + repaint.
+ * Solves the "black terminal" bug: when xterm is inside a display:none parent,
+ * fitAddon.fit() silently no-ops (0x0 container). This function polls with rAF
+ * until the container is visible, then triggers the full fit→resize→repaint cycle.
+ *
+ * @param maxWaitMs - Maximum time to wait for dimensions (default 2000ms)
+ * @returns cleanup function that cancels pending polls
+ */
+export function ensureTerminalVisible(sessionId: string, maxWaitMs = 2000): () => void {
+  const instance = terminals.get(sessionId);
+  if (!instance) return () => {};
+
+  // If container already has dimensions, fit + repaint immediately
+  if (instance.container.offsetWidth > 0 && instance.container.offsetHeight > 0) {
+    fitTerminal(sessionId);
+    requestAnimationFrame(() => repaintTerminal(sessionId));
+    return () => {};
+  }
+
+  // Poll until container becomes visible
+  let cancelled = false;
+  const deadline = Date.now() + maxWaitMs;
+
+  function poll() {
+    if (cancelled) return;
+    const inst = terminals.get(sessionId);
+    if (!inst) return;
+
+    if (inst.container.offsetWidth > 0 && inst.container.offsetHeight > 0) {
+      fitTerminal(sessionId);
+      requestAnimationFrame(() => repaintTerminal(sessionId));
+      return;
+    }
+
+    if (Date.now() < deadline) {
+      requestAnimationFrame(poll);
+    }
+  }
+
+  requestAnimationFrame(poll);
+
+  return () => { cancelled = true; };
+}
+
 /** Returns the current terminal dimensions, or null if not found / hidden. */
 export function getTerminalDimensions(sessionId: string): { cols: number; rows: number } | null {
   const instance = terminals.get(sessionId);

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { sessions, activeSessionId, setActiveSessionId, addLocalLog, addSession, removeSession, renameSession, agentName, isMobile, restoringPending, wsConnected } from '../state/store';
 import { apiFetch } from '../api';
-import { createTerminal, destroyTerminal, fitTerminal, repaintTerminal, focusTerminal, writeToTerminal, scrollToBottom, getTerminal, markSessionAttaching, clearSessionAttaching, onTerminalWrite } from '../terminal';
+import { createTerminal, destroyTerminal, fitTerminal, repaintTerminal, focusTerminal, writeToTerminal, scrollToBottom, getTerminal, markSessionAttaching, clearSessionAttaching, onTerminalWrite, ensureTerminalVisible } from '../terminal';
 import { wsSend, setTerminalHandlers, attachSession, setOnSessionReattached } from '../ws';
 import { IconPlus, IconX, IconShell, IconTerminal } from './Icons';
 import { MobileTerminalToolbar } from './MobileTerminalToolbar';
@@ -39,18 +39,9 @@ function attachSettleRepaint(sessionId: string): void {
     clearTimeout(maxTimer);
     unsub();
     clearSessionAttaching(sessionId);
-    fitTerminal(sessionId);
-    repaintTerminal(sessionId);
-
-    // Single stabilization retry — safety net for hidden containers or slow layout.
-    // Only on mobile — desktop ResizeObserver handles layout changes reliably.
-    if (isMobile.value) {
-      setTimeout(() => {
-        if (!getTerminal(sessionId)) return;
-        fitTerminal(sessionId);
-        repaintTerminal(sessionId);
-      }, 500);
-    }
+    // Use ensureTerminalVisible instead of direct fit+repaint — it handles
+    // the case where the container still has 0x0 dimensions (display:none parent).
+    ensureTerminalVisible(sessionId);
   };
 }
 
@@ -129,25 +120,11 @@ export function ClaudeSection({ onNewSession, onNewShell }: ClaudeSectionProps) 
     // Safety repaint for the active terminal — catches cases where the initial
     // attach/settle/repaint cycle doesn't paint (e.g., idle session with no buffer
     // replay, or xterm canvas not ready during the first fit cycle).
-    // Only on mobile — desktop ResizeObserver handles it reliably.
-    // Retries up to 3 times (500ms apart) if the container still has zero dimensions.
-    if (isMobile.value && activeId && getTerminal(activeId)) {
-      let attempts = 0;
-      const maxAttempts = 3;
-      let safetyTimer: ReturnType<typeof setTimeout>;
-      const tryRepaint = () => {
-        const inst = getTerminal(activeId);
-        if (!inst) return;
-        attempts++;
-        if (inst.container.offsetWidth === 0 || inst.container.offsetHeight === 0) {
-          if (attempts < maxAttempts) { safetyTimer = setTimeout(tryRepaint, 500); }
-          return;
-        }
-        fitTerminal(activeId);
-        repaintTerminal(activeId);
-      };
-      safetyTimer = setTimeout(tryRepaint, 500);
-      return () => clearTimeout(safetyTimer);
+    // Applies to BOTH mobile and desktop: ResizeObserver can miss the transition
+    // from display:none → visible due to dedup logic (same cached dimensions).
+    if (activeId && getTerminal(activeId)) {
+      const cancel = ensureTerminalVisible(activeId);
+      return cancel;
     }
   }, [sessionList.length]);
 

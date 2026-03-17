@@ -8,7 +8,7 @@
  * This hook reads critical context and re-injects it via additionalContext.
  */
 
-import { readFileSync, existsSync } from 'fs';
+import { readFileSync, existsSync, readdirSync } from 'fs';
 import { join } from 'path';
 
 let input = '';
@@ -48,7 +48,6 @@ if (projectName && projectName !== 'workspace') {
   // Try to find path memory by scanning paths directory
   const pathsDir = '/workspace/.codeck/memory/paths';
   if (existsSync(pathsDir)) {
-    const { readdirSync } = await import('fs');
     for (const pathId of readdirSync(pathsDir)) {
       const pathMemory = join(pathsDir, pathId, 'MEMORY.md');
       if (existsSync(pathMemory)) {

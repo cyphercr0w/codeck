@@ -1,7 +1,10 @@
 import { Router } from 'express';
-import { spawn, execFileSync } from 'child_process';
+import { spawn, execFile } from 'child_process';
 import { existsSync } from 'fs';
 import { resolve } from 'path';
+import { promisify } from 'util';
+
+const execFileAsync = promisify(execFile);
 
 const WORKSPACE = resolve(process.env.WORKSPACE || '/workspace');
 const router = Router();
@@ -12,7 +15,7 @@ const EXPORT_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
 
 // Export workspace as tar.gz
 // Agent data (.codeck/) is inside /workspace, so it's included naturally.
-router.get('/export', (_req, res) => {
+router.get('/export', async (_req, res) => {
   if (exportInProgress) {
     res.status(429).json({ error: 'Export already in progress' });
     return;
@@ -26,10 +29,11 @@ router.get('/export', (_req, res) => {
   // Pre-flight workspace size check (approximate via du)
   const MAX_EXPORT_SIZE_GB = parseInt(process.env.MAX_EXPORT_SIZE_GB || '10', 10);
   try {
-    const sizeKB = execFileSync('du', ['-sk', '--exclude=.git', '--exclude=node_modules', WORKSPACE], {
+    const { stdout: duOutput } = await execFileAsync('du', ['-sk', '--exclude=.git', '--exclude=node_modules', WORKSPACE], {
       encoding: 'utf-8',
       timeout: 30000,
-    }).split('\t')[0];
+    });
+    const sizeKB = duOutput.split('\t')[0];
     const sizeGB = parseInt(sizeKB, 10) / 1024 / 1024;
     if (sizeGB > MAX_EXPORT_SIZE_GB) {
       res.status(413).json({

@@ -29,6 +29,27 @@ All commands are available after `npm run build:cli` and linking globally (`npm 
 
 ---
 
+## Pre-built Image
+
+The fastest way to get started. Pull the image from GitHub Container Registry — no cloning, no building.
+
+```bash
+docker pull ghcr.io/cyphercr0w/codeck:latest
+docker run -d --name codeck \
+  -p 80:80 \
+  -v codeck-workspace:/workspace \
+  -v codeck-claude:/root/.claude \
+  --restart unless-stopped \
+  ghcr.io/cyphercr0w/codeck:latest --web
+```
+
+Available tags:
+- `latest` — latest push to `main`
+- `<sha>` — pinned to a specific commit (e.g., `ghcr.io/cyphercr0w/codeck:a1b2c3d`)
+- `<version>` — semver release tag (e.g., `ghcr.io/cyphercr0w/codeck:1.0.0`)
+
+---
+
 ## Isolated Mode
 
 Single container running the runtime with the webapp. No daemon, no Docker socket. Simple and secure.

@@ -9,6 +9,22 @@ Give the agent its own machine. Let it live there.
 
 ## Deploy
 
+### Quick start — pre-built image
+
+Pull the image directly from GitHub Container Registry. No build step required.
+
+```bash
+docker pull ghcr.io/cyphercr0w/codeck:latest
+docker run -d --name codeck \
+  -p 80:80 \
+  -v codeck-workspace:/workspace \
+  -v codeck-claude:/root/.claude \
+  --restart unless-stopped \
+  ghcr.io/cyphercr0w/codeck:latest --web
+```
+
+Then open `http://localhost` in your browser. That's it.
+
 ### Isolated mode — single container
 
 Runs inside a Docker container. No daemon, no Docker socket. Safe for local use on any platform.

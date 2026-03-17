@@ -7,7 +7,8 @@
 # Then build normally:
 #   docker compose -f docker/compose.yml build
 
-FROM codeck-base:latest
+ARG BASE_IMAGE=codeck-base:latest
+FROM ${BASE_IMAGE}
 
 # Copy package.json files for all workspaces so npm ci installs everything
 COPY package.json package-lock.json ./

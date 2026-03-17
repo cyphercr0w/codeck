@@ -31,7 +31,7 @@ const BLOCKED = [
   { pattern: /DELETE\s+FROM\s+\w+\s*;?\s*$/i, msg: 'DELETE without WHERE clause' },
 
   // Git destructive operations on main/master
-  { pattern: /git\s+push\s+.*--force.*\s+(main|master)\b/i, msg: 'force push to main/master' },
+  { pattern: /git\s+push\s+.*--force(?!-with-lease).*\s+(main|master)\b/i, msg: 'force push to main/master' },
   { pattern: /git\s+push\s+-f\s+(origin\s+)?(main|master)\b/i, msg: 'force push to main/master' },
   { pattern: /git\s+reset\s+--hard\s+origin/i, msg: 'hard reset to remote (destroys local changes)' },
 
@@ -49,6 +49,7 @@ const BLOCKED = [
   { pattern: /curl\s+[^|]*\|\s*(sudo\s+)?bash/i, msg: 'piping curl to bash' },
   { pattern: /wget\s+[^|]*\|\s*(sudo\s+)?bash/i, msg: 'piping wget to bash' },
   { pattern: /curl\s+[^|]*\|\s*(sudo\s+)?sh/i, msg: 'piping curl to sh' },
+  { pattern: /wget\s+[^|]*\|\s*(sudo\s+)?sh/i, msg: 'piping wget to sh' },
 ];
 
 for (const { pattern, msg } of BLOCKED) {

@@ -1,6 +1,7 @@
 import { Router } from 'express';
-import { spawn, spawnSync } from 'child_process';
-import { existsSync, mkdirSync } from 'fs';
+import { spawn } from 'child_process';
+import { existsSync } from 'fs';
+import { mkdir, rm } from 'fs/promises';
 import { join, resolve } from 'path';
 import { updateClaudeMd, isValidGitUrl, checkDiskSpace } from '../services/git.js';
 import { broadcastStatus } from '../web/websocket.js';
@@ -12,7 +13,7 @@ const WORKSPACE = resolve(process.env.WORKSPACE || '/workspace');
 const router = Router();
 
 // Create a new empty project directory
-router.post('/create', (req, res) => {
+router.post('/create', async (req, res) => {
   const { name } = req.body;
   if (!name || typeof name !== 'string') {
     res.status(400).json({ error: 'name is required' });
@@ -32,8 +33,8 @@ router.post('/create', (req, res) => {
   const fullPath = join(WORKSPACE, sanitized);
 
   try {
-    // Atomic: mkdirSync with recursive:false throws EEXIST if directory exists
-    mkdirSync(fullPath, { recursive: false });
+    // Atomic: mkdir with recursive:false throws EEXIST if directory exists
+    await mkdir(fullPath, { recursive: false });
     broadcastStatus();
     res.json({ success: true, path: fullPath, name: sanitized });
   } catch (err: unknown) {
@@ -47,7 +48,7 @@ router.post('/create', (req, res) => {
 });
 
 // Clone a repository
-router.post('/clone', (req, res) => {
+router.post('/clone', async (req, res) => {
   const { url, name, branch } = req.body;
   if (!url || typeof url !== 'string') {
     res.status(400).json({ error: 'url is required' });
@@ -78,7 +79,7 @@ router.post('/clone', (req, res) => {
 
   // Atomic claim: create directory to prevent concurrent clones to same path
   try {
-    mkdirSync(targetPath, { recursive: false });
+    await mkdir(targetPath, { recursive: false });
   } catch (err: unknown) {
     const code = (err as NodeJS.ErrnoException).code;
     if (code === 'EEXIST') {
@@ -89,16 +90,16 @@ router.post('/clone', (req, res) => {
     return;
   }
 
-  function removePartialClone(): void {
+  async function removePartialClone(): Promise<void> {
     if (existsSync(targetPath)) {
-      spawnSync('rm', ['-rf', targetPath], { stdio: 'pipe' });
+      await rm(targetPath, { recursive: true, force: true });
     }
   }
 
   // Pre-flight disk space check
   const diskError = checkDiskSpace(WORKSPACE);
   if (diskError) {
-    removePartialClone();
+    await removePartialClone();
     res.status(507).json({ success: false, error: diskError });
     return;
   }
@@ -134,12 +135,12 @@ router.post('/clone', (req, res) => {
   proc.stdout.on('data', (data: Buffer) => { stdout += data.toString(); });
   proc.stderr.on('data', (data: Buffer) => { stderr += data.toString(); });
 
-  proc.on('close', (code) => {
+  proc.on('close', async (code) => {
     clearTimeout(timeoutHandle);
     if (killTimer) clearTimeout(killTimer);
 
     if (timedOut) {
-      removePartialClone();
+      await removePartialClone();
       res.status(504).json({ success: false, error: 'Clone timed out (exceeded 10 minutes)' });
       return;
     }
@@ -151,15 +152,15 @@ router.post('/clone', (req, res) => {
       res.json({ success: true, path: targetPath, name: sanitized, output: stdout + stderr });
     } else {
       console.log(`[Project] ✗ Clone failed: ${stderr}`);
-      removePartialClone();
+      await removePartialClone();
       res.status(500).json({ success: false, error: stderr.trim() || 'Clone failed', output: stdout + stderr });
     }
   });
 
-  proc.on('error', (err) => {
+  proc.on('error', async (err) => {
     clearTimeout(timeoutHandle);
     if (killTimer) clearTimeout(killTimer);
-    removePartialClone();
+    await removePartialClone();
     res.status(500).json({ success: false, error: err.message });
   });
 });

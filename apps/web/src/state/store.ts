@@ -77,6 +77,23 @@ export const accountUuid = signal<string | null>(null);
 export const sessions = signal<TerminalSession[]>([]);
 export const activeSessionId = signal<string | null>(null);
 
+// Session status indicators: tracks whether each session is actively producing
+// output, idle, waiting for user input, or has exited.
+export type SessionStatus = 'active' | 'idle' | 'waiting' | 'exited';
+export const sessionStatus = signal<Record<string, SessionStatus>>({});
+
+export function setSessionStatus(sessionId: string, status: SessionStatus): void {
+  const current = sessionStatus.value[sessionId];
+  if (current === status) return;
+  sessionStatus.value = { ...sessionStatus.value, [sessionId]: status };
+}
+
+export function clearSessionStatus(sessionId: string): void {
+  const copy = { ...sessionStatus.value };
+  delete copy[sessionId];
+  sessionStatus.value = copy;
+}
+
 // Derived session state
 export const activeSession = computed(() =>
   sessions.value.find(s => s.id === activeSessionId.value) ?? null

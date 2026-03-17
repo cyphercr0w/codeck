@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
-import { sessions, activeSessionId, setActiveSessionId, addLocalLog, addSession, removeSession, renameSession, agentName, isMobile, restoringPending, wsConnected } from '../state/store';
+import { sessions, activeSessionId, setActiveSessionId, addLocalLog, addSession, removeSession, renameSession, agentName, isMobile, restoringPending, wsConnected, sessionStatus, setSessionStatus, clearSessionStatus } from '../state/store';
 import { apiFetch } from '../api';
-import { createTerminal, destroyTerminal, fitTerminal, repaintTerminal, focusTerminal, writeToTerminal, scrollToBottom, getTerminal, markSessionAttaching, clearSessionAttaching, onTerminalWrite, ensureTerminalVisible, setOnImagePaste } from '../terminal';
+import { createTerminal, destroyTerminal, fitTerminal, repaintTerminal, focusTerminal, writeToTerminal, scrollToBottom, getTerminal, markSessionAttaching, clearSessionAttaching, onTerminalWrite, ensureTerminalVisible, setOnImagePaste, getTerminalBuffer } from '../terminal';
 import { wsSend, setTerminalHandlers, attachSession, setOnSessionReattached, setOnBeforeSessionsRestored } from '../ws';
 import { IconPlus, IconX, IconShell, IconTerminal } from './Icons';
 import { MobileTerminalToolbar } from './MobileTerminalToolbar';
@@ -107,11 +107,13 @@ export function ClaudeSection({ onNewSession, onNewShell }: ClaudeSectionProps) 
           new Notification('Codeck', { body: `Terminal "${cwdShort}" finished` });
         }
 
+        setSessionStatus(sessionId, 'exited');
         addLocalLog('info', 'Session exited: ' + sessionId);
         destroyTerminal(sessionId);
         const el = document.getElementById('term-' + sessionId);
         if (el) el.remove();
         removeSession(sessionId);
+        clearSessionStatus(sessionId);
       },
     );
   }, []);
@@ -183,6 +185,51 @@ export function ClaudeSection({ onNewSession, onNewShell }: ClaudeSectionProps) 
     return () => setOnImagePaste(null);
   }, []);
 
+  // ── Session status tracking ──
+  // Listen for terminal writes to detect active/idle/waiting states.
+  // Each write sets status to 'active'; after 5s of silence, transitions to 'idle'.
+  // If terminal buffer contains a y/n prompt pattern, status becomes 'waiting'.
+  useEffect(() => {
+    const YN_PATTERN = /\(y\/n\)|\[y\/n\]|\[Y\/n\]|\[y\/N\]|\? $/i;
+    const IDLE_TIMEOUT = 5000;
+    const idleTimers = new Map<string, ReturnType<typeof setTimeout>>();
+
+    const unsub = onTerminalWrite((sid, data) => {
+      // Clear previous idle timer for this session
+      const prev = idleTimers.get(sid);
+      if (prev) clearTimeout(prev);
+
+      // Fast path: check incoming chunk for y/n pattern
+      if (YN_PATTERN.test(data)) {
+        setSessionStatus(sid, 'waiting');
+      } else {
+        // Check buffer for prompt patterns (handles multi-chunk prompts)
+        const lines = getTerminalBuffer(sid, 3);
+        const tail = lines.join('\n');
+        setSessionStatus(sid, YN_PATTERN.test(tail) ? 'waiting' : 'active');
+      }
+
+      // Schedule idle transition
+      idleTimers.set(sid, setTimeout(() => {
+        idleTimers.delete(sid);
+        // Only transition to idle if still active/waiting (not exited)
+        const current = sessionStatus.value[sid];
+        if (current === 'active' || current === 'waiting') {
+          // Re-check buffer — prompt may still be visible
+          const lines = getTerminalBuffer(sid, 3);
+          const tail = lines.join('\n');
+          setSessionStatus(sid, YN_PATTERN.test(tail) ? 'waiting' : 'idle');
+        }
+      }, IDLE_TIMEOUT));
+    });
+
+    return () => {
+      unsub();
+      for (const timer of idleTimers.values()) clearTimeout(timer);
+      idleTimers.clear();
+    };
+  }, []);
+
   // Drag & drop image detection
   function handleDragOver(e: DragEvent) {
     if (e.dataTransfer?.types.includes('Files')) {
@@ -247,6 +294,7 @@ export function ClaudeSection({ onNewSession, onNewShell }: ClaudeSectionProps) 
     const el = document.getElementById('term-' + id);
     if (el) el.remove();
     removeSession(id);
+    clearSessionStatus(id);
   }
 
   function handleTerminalTap(e: MouseEvent) {
@@ -297,6 +345,7 @@ export function ClaudeSection({ onNewSession, onNewShell }: ClaudeSectionProps) 
                   />
                 ) : (
                   <span onDblClick={(e) => { e.stopPropagation(); startEditingTab(s.id, s.name); }}>
+                    <span class={`tab-status-dot ${sessionStatus.value[s.id] || 'idle'}`} />
                     {s.type === 'shell' && <span class="tab-shell-badge"><IconShell size={12} /></span>}
                     {s.name}
                   </span>

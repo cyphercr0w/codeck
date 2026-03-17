@@ -28,10 +28,12 @@ export function ConfigSection() {
   const [saving, setSaving] = useState(false);
   const [saveMsg, setSaveMsg] = useState('');
 
-  // Reset state
+  // Reset / Update state
   const [showResetConfirm, setShowResetConfirm] = useState(false);
   const [resetting, setResetting] = useState(false);
   const [resetMsg, setResetMsg] = useState('');
+  const [updating, setUpdating] = useState(false);
+  const [updateMsg, setUpdateMsg] = useState('');
 
   async function loadFiles(path: string) {
     setDirPath(path);
@@ -110,6 +112,25 @@ export function ConfigSection() {
       setResetMsg('Reset failed');
     }
     setResetting(false);
+  }
+
+  async function handleUpdate() {
+    setUpdating(true);
+    setUpdateMsg('');
+    try {
+      const res = await apiFetch('/api/presets/update', { method: 'POST' });
+      const data = await res.json();
+      if (data.success) {
+        setUpdateMsg('Preset updated');
+        loadFiles(dirPath);
+        setTimeout(() => setUpdateMsg(''), 3000);
+      } else {
+        setUpdateMsg(data.error || 'Update failed');
+      }
+    } catch {
+      setUpdateMsg('Update failed');
+    }
+    setUpdating(false);
   }
 
   useEffect(() => {
@@ -204,24 +225,35 @@ export function ConfigSection() {
           </div>
         )}
 
-        {/* Reset to defaults */}
+        {/* Update preset (safe) + Reset to defaults (destructive) */}
         {!viewingFile && !loading && items.length > 0 && (
           <div class="config-reset-section">
-            {resetMsg && <span class={`config-save-msg ${resetMsg === 'Defaults restored' ? 'success' : 'error'}`}>{resetMsg}</span>}
-            {showResetConfirm ? (
-              <div class="config-reset-confirm">
-                <span>This will overwrite all config files (CLAUDE.md, rules, skills, preferences, memory) with defaults. Continue?</span>
-                <div class="config-reset-actions">
-                  <button class="btn btn-sm btn-secondary" onClick={() => setShowResetConfirm(false)} disabled={resetting}>Cancel</button>
-                  <button class="btn btn-sm btn-danger" onClick={handleReset} disabled={resetting}>
-                    {resetting ? <span class="loading" /> : null}
-                    Reset
-                  </button>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+              <button class="btn btn-sm btn-primary" onClick={handleUpdate} disabled={updating}>
+                {updating ? <span class="loading" /> : null}
+                Update Preset
+              </button>
+              <span class="dash-meta">Updates scripts, hooks, skills, CLAUDE.md. Your memory, preferences, and rules are kept.</span>
+              {updateMsg && <span class={`config-save-msg ${updateMsg === 'Preset updated' ? 'success' : 'error'}`}>{updateMsg}</span>}
+            </div>
+
+            <div style={{ marginTop: '12px' }}>
+              {resetMsg && <span class={`config-save-msg ${resetMsg === 'Defaults restored' ? 'success' : 'error'}`}>{resetMsg}</span>}
+              {showResetConfirm ? (
+                <div class="config-reset-confirm">
+                  <span>This will overwrite ALL config files including memory and preferences with defaults. Continue?</span>
+                  <div class="config-reset-actions">
+                    <button class="btn btn-sm btn-secondary" onClick={() => setShowResetConfirm(false)} disabled={resetting}>Cancel</button>
+                    <button class="btn btn-sm btn-danger" onClick={handleReset} disabled={resetting}>
+                      {resetting ? <span class="loading" /> : null}
+                      Full Reset
+                    </button>
+                  </div>
                 </div>
-              </div>
-            ) : (
-              <button class="btn btn-sm btn-secondary" onClick={() => setShowResetConfirm(true)}>Restore defaults</button>
-            )}
+              ) : (
+                <button class="btn btn-sm btn-secondary" onClick={() => setShowResetConfirm(true)}>Full Reset (overwrites everything)</button>
+              )}
+            </div>
           </div>
         )}
 

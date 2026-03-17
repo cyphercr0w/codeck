@@ -39,6 +39,26 @@ router.post('/apply', async (req, res) => {
   }
 });
 
+// Update preset: re-apply current preset without force.
+// Overwrites scripts/hooks/configs but preserves user data (memory, preferences, rules).
+router.post('/update', async (_req, res) => {
+  const status = getPresetStatus();
+  if (!status.configured || !status.presetId) {
+    res.status(400).json({ error: 'No preset configured' });
+    return;
+  }
+
+  try {
+    await applyPreset(status.presetId); // no force = preserves data files
+    updateClaudeMd();
+    broadcastStatus();
+    res.json({ success: true, presetId: status.presetId, message: 'Preset updated. Scripts and hooks refreshed, user data preserved.' });
+  } catch (err) {
+    console.error('[Preset] Error updating preset:', (err as Error).message);
+    res.status(500).json({ error: 'Failed to update preset. Check server logs for details.' });
+  }
+});
+
 // Reset current preset to defaults (force re-apply, overwrites all files including user data)
 router.post('/reset', async (_req, res) => {
   const status = getPresetStatus();

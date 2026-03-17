@@ -75,6 +75,8 @@ export interface PresetStatus {
   presetName: string | null;
   configuredAt: string | null;
   version: string | null;
+  availableVersion: string | null;
+  updateAvailable: boolean;
 }
 
 // ── Validation ──────────────────────────────────────────────────────
@@ -176,21 +178,26 @@ export function listPresets(): PresetManifest[] {
  * Read /workspace/.codeck/config.json to check if a preset has been applied.
  */
 export function getPresetStatus(): PresetStatus {
-  if (!existsSync(CONFIG_FILE)) {
-    return { configured: false, presetId: null, presetName: null, configuredAt: null, version: null };
-  }
+  const empty: PresetStatus = { configured: false, presetId: null, presetName: null, configuredAt: null, version: null, availableVersion: null, updateAvailable: false };
+  if (!existsSync(CONFIG_FILE)) return empty;
   try {
     const config: PresetConfig = JSON.parse(readFileSync(CONFIG_FILE, 'utf-8'));
+    // Check if the template has a newer version than what's installed
+    const manifest = config.presetId ? loadManifest(config.presetId) : null;
+    const availableVersion = manifest?.version ?? null;
+    const updateAvailable = !!(availableVersion && config.version && availableVersion !== config.version);
     return {
       configured: true,
       presetId: config.presetId,
       presetName: config.presetName,
       configuredAt: config.configuredAt,
       version: config.version,
+      availableVersion,
+      updateAvailable,
     };
   } catch (e) {
     console.warn('[Preset] Failed to read config:', (e as Error).message);
-    return { configured: false, presetId: null, presetName: null, configuredAt: null, version: null };
+    return empty;
   }
 }
 

@@ -1,11 +1,21 @@
 import { useEffect, useState } from 'preact/hooks';
 import { apiFetch } from '../api';
+import { ConfirmModal } from './ConfirmModal';
 import { IconFolder, IconRefresh, IconArrowUp, IconEdit, IconSave, IconX, getFileIcon } from './Icons';
 
 interface FileItem {
   name: string;
   isDirectory: boolean;
   size: number;
+}
+
+interface PresetStatus {
+  configured: boolean;
+  presetId: string | null;
+  presetName: string | null;
+  version: string | null;
+  availableVersion: string | null;
+  updateAvailable: boolean;
 }
 
 function formatSize(bytes: number): string {
@@ -28,13 +38,13 @@ export function ConfigSection() {
   const [saving, setSaving] = useState(false);
   const [saveMsg, setSaveMsg] = useState('');
 
-  // Reset / Update state
-  const [showResetConfirm, setShowResetConfirm] = useState(false);
-  const [resetting, setResetting] = useState(false);
-  const [resetMsg, setResetMsg] = useState('');
+  // Preset state
+  const [presetStatus, setPresetStatus] = useState<PresetStatus | null>(null);
+  const [showUpdateModal, setShowUpdateModal] = useState(false);
+  const [showResetModal, setShowResetModal] = useState(false);
   const [updating, setUpdating] = useState(false);
-  const [updateMsg, setUpdateMsg] = useState('');
-  const [showUpdateConfirm, setShowUpdateConfirm] = useState(false);
+  const [resetting, setResetting] = useState(false);
+  const [actionMsg, setActionMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   async function loadFiles(path: string) {
     setDirPath(path);
@@ -53,6 +63,14 @@ export function ConfigSection() {
       setError('Could not load config files');
     }
     setLoading(false);
+  }
+
+  async function loadPresetStatus() {
+    try {
+      const res = await apiFetch('/api/presets/status');
+      const data = await res.json();
+      setPresetStatus(data);
+    } catch { /* non-fatal */ }
   }
 
   async function openFile(relativePath: string) {
@@ -95,47 +113,51 @@ export function ConfigSection() {
     setSaving(false);
   }
 
-  async function handleReset() {
-    setResetting(true);
-    setResetMsg('');
-    try {
-      const res = await apiFetch('/api/presets/reset', { method: 'POST' });
-      const data = await res.json();
-      if (data.success) {
-        setResetMsg('Defaults restored');
-        setShowResetConfirm(false);
-        loadFiles(dirPath);
-        setTimeout(() => setResetMsg(''), 3000);
-      } else {
-        setResetMsg(data.error || 'Reset failed');
-      }
-    } catch {
-      setResetMsg('Reset failed');
-    }
-    setResetting(false);
-  }
-
   async function handleUpdate() {
     setUpdating(true);
-    setUpdateMsg('');
+    setShowUpdateModal(false);
+    setActionMsg(null);
     try {
       const res = await apiFetch('/api/presets/update', { method: 'POST' });
       const data = await res.json();
       if (data.success) {
-        setUpdateMsg('Preset updated');
+        setActionMsg({ type: 'success', text: 'Preset updated successfully' });
         loadFiles(dirPath);
-        setTimeout(() => setUpdateMsg(''), 3000);
+        loadPresetStatus();
       } else {
-        setUpdateMsg(data.error || 'Update failed');
+        setActionMsg({ type: 'error', text: data.error || 'Update failed' });
       }
     } catch {
-      setUpdateMsg('Update failed');
+      setActionMsg({ type: 'error', text: 'Update failed' });
     }
     setUpdating(false);
+    setTimeout(() => setActionMsg(null), 4000);
+  }
+
+  async function handleReset() {
+    setResetting(true);
+    setShowResetModal(false);
+    setActionMsg(null);
+    try {
+      const res = await apiFetch('/api/presets/reset', { method: 'POST' });
+      const data = await res.json();
+      if (data.success) {
+        setActionMsg({ type: 'success', text: 'Factory defaults restored' });
+        loadFiles(dirPath);
+        loadPresetStatus();
+      } else {
+        setActionMsg({ type: 'error', text: data.error || 'Reset failed' });
+      }
+    } catch {
+      setActionMsg({ type: 'error', text: 'Reset failed' });
+    }
+    setResetting(false);
+    setTimeout(() => setActionMsg(null), 4000);
   }
 
   useEffect(() => {
     loadFiles('');
+    loadPresetStatus();
   }, []);
 
   function navigateUp() {
@@ -154,9 +176,50 @@ export function ConfigSection() {
     breadcrumbs.push({ label: part, path: accumulated });
   }
 
+  const hasUpdate = presetStatus?.updateAvailable ?? false;
+
   return (
     <div class="content-section">
       <div class="config-content">
+        {/* Preset management card */}
+        {!viewingFile && presetStatus?.configured && (
+          <div class="preset-card">
+            <div class="preset-card-header">
+              <div class="preset-card-info">
+                <span class="preset-card-name">{presetStatus.presetName || 'Preset'}</span>
+                <span class="preset-card-version">
+                  v{presetStatus.version}
+                  {hasUpdate && (
+                    <span class="preset-update-badge">v{presetStatus.availableVersion} available</span>
+                  )}
+                </span>
+              </div>
+              {actionMsg && (
+                <span class={`config-save-msg ${actionMsg.type}`}>{actionMsg.text}</span>
+              )}
+            </div>
+            <div class="preset-card-actions">
+              <button
+                class={`btn btn-sm ${hasUpdate ? 'btn-primary' : 'btn-secondary'}`}
+                onClick={() => setShowUpdateModal(true)}
+                disabled={updating || (!hasUpdate)}
+              >
+                {updating ? <span class="loading" /> : null}
+                {hasUpdate ? 'Update Available' : 'Up to Date'}
+              </button>
+              <button
+                class="btn btn-sm btn-ghost"
+                onClick={() => setShowResetModal(true)}
+                disabled={resetting}
+              >
+                {resetting ? <span class="loading" /> : null}
+                Factory Reset
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* File browser header */}
         <div class="config-header">
           <div class="config-breadcrumb">
             {breadcrumbs.map((b, i) => (
@@ -226,47 +289,6 @@ export function ConfigSection() {
           </div>
         )}
 
-        {/* Update preset (safe) + Reset to defaults (destructive) */}
-        {!viewingFile && !loading && items.length > 0 && (
-          <div class="config-reset-section">
-            {/* Update Preset (safe — preserves user data) */}
-            {updateMsg && <span class={`config-save-msg ${updateMsg === 'Preset updated' ? 'success' : 'error'}`}>{updateMsg}</span>}
-            {showUpdateConfirm ? (
-              <div class="config-reset-confirm">
-                <span>This will update scripts, hooks, skills, and CLAUDE.md to the latest version. Your memory, daily logs, preferences, and rules are NOT touched.</span>
-                <div class="config-reset-actions">
-                  <button class="btn btn-sm btn-secondary" onClick={() => setShowUpdateConfirm(false)} disabled={updating}>Cancel</button>
-                  <button class="btn btn-sm btn-primary" onClick={() => { setShowUpdateConfirm(false); handleUpdate(); }} disabled={updating}>
-                    {updating ? <span class="loading" /> : null}
-                    Update
-                  </button>
-                </div>
-              </div>
-            ) : (
-              <button class="btn btn-sm btn-primary" onClick={() => setShowUpdateConfirm(true)}>Update Preset</button>
-            )}
-
-            {/* Full Reset (destructive — overwrites everything) */}
-            <div style={{ marginTop: '12px' }}>
-              {resetMsg && <span class={`config-save-msg ${resetMsg === 'Defaults restored' ? 'success' : 'error'}`}>{resetMsg}</span>}
-              {showResetConfirm ? (
-                <div class="config-reset-confirm">
-                  <span>This will DELETE all memory, daily logs, preferences, and rules, and replace everything with factory defaults. This cannot be undone.</span>
-                  <div class="config-reset-actions">
-                    <button class="btn btn-sm btn-secondary" onClick={() => setShowResetConfirm(false)} disabled={resetting}>Cancel</button>
-                    <button class="btn btn-sm btn-danger" onClick={handleReset} disabled={resetting}>
-                      {resetting ? <span class="loading" /> : null}
-                      Full Reset
-                    </button>
-                  </div>
-                </div>
-              ) : (
-                <button class="btn btn-sm btn-secondary" onClick={() => setShowResetConfirm(true)}>Full Reset</button>
-              )}
-            </div>
-          </div>
-        )}
-
         {/* File list */}
         {!viewingFile && (
           <div class="files-list">
@@ -294,6 +316,26 @@ export function ConfigSection() {
           </div>
         )}
       </div>
+
+      {/* Update Preset Modal */}
+      <ConfirmModal
+        visible={showUpdateModal}
+        title="Update Preset"
+        message="This will update scripts, hooks, skills, and CLAUDE.md to the latest version. Your memory, daily logs, preferences, and rules will NOT be touched."
+        confirmLabel="Update"
+        onConfirm={handleUpdate}
+        onCancel={() => setShowUpdateModal(false)}
+      />
+
+      {/* Factory Reset Modal */}
+      <ConfirmModal
+        visible={showResetModal}
+        title="Factory Reset"
+        message="This will DELETE all memory, daily logs, preferences, and rules, and replace everything with factory defaults. This action cannot be undone."
+        confirmLabel="Reset Everything"
+        onConfirm={handleReset}
+        onCancel={() => setShowResetModal(false)}
+      />
     </div>
   );
 }

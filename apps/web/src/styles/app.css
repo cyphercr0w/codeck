@@ -1932,21 +1932,51 @@
 }
 .config-save-msg.success { color: var(--success); }
 .config-save-msg.error { color: var(--error); }
-.config-reset-section {
+/* Preset management card */
+.preset-card {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 12px 16px;
-  border-bottom: 1px solid var(--border);
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 16px;
+  margin-bottom: 8px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 8px;
 }
-.config-reset-confirm {
+.preset-card-header {
   display: flex;
   align-items: center;
   gap: 12px;
-  font-size: 13px;
+  flex: 1;
+  min-width: 0;
+}
+.preset-card-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.preset-card-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.preset-card-version {
+  font-size: 12px;
   color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
-.config-reset-actions {
+.preset-update-badge {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  padding: 1px 8px;
+  border-radius: 10px;
+}
+.preset-card-actions {
   display: flex;
   gap: 8px;
   flex-shrink: 0;

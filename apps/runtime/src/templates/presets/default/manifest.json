@@ -21,7 +21,10 @@
     { "src": "memory/summary.md",        "dest": "/workspace/.codeck/memory/summary.md" },
     { "src": "memory/decisions.md",      "dest": "/workspace/.codeck/memory/decisions.md" },
     { "src": "memory/MEMORY.md",         "dest": "/workspace/.codeck/memory/MEMORY.md" },
-    { "src": "ecc/settings.json",        "dest": "/root/.claude/settings.json", "skipIfExists": true }
+    { "src": "ecc/settings.json",        "dest": "/root/.claude/settings.json", "skipIfExists": true },
+    { "src": "scripts/skill-reminder-hook.mjs",    "dest": "/workspace/.codeck/scripts/skill-reminder-hook.mjs" },
+    { "src": "scripts/post-compact-hook.mjs",      "dest": "/workspace/.codeck/scripts/post-compact-hook.mjs" },
+    { "src": "scripts/dangerous-cmd-guard.mjs",    "dest": "/workspace/.codeck/scripts/dangerous-cmd-guard.mjs" }
   ],
   "directories": [
     "/workspace/.codeck/memory/daily",
@@ -32,6 +35,7 @@
     "/workspace/.codeck/state",
     "/workspace/.codeck/rules",
     "/workspace/.codeck/skills",
+    "/workspace/.codeck/scripts",
     "/workspace/.codeck/agents"
   ],
   "recursive_dirs": [

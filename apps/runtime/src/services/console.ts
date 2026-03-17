@@ -362,12 +362,8 @@ export function destroySession(id: string): void {
   const sessionCwd = session.cwd;
   sessions.delete(id);
 
-  // Auto-summarize session transcript in background
-  setImmediate(() => {
-    summarizeSession(id, sessionCwd).catch(err =>
-      console.warn(`[SessionSummarizer] Failed for ${id}: ${err.message}`)
-    );
-  });
+  // Session summarization is handled by the memory-stop-hook.mjs (Haiku LLM).
+  // The old template-based auto-summary was too noisy and generic — disabled.
 
   // Send SIGTERM first to allow graceful shutdown (flush buffers, close files)
   try {

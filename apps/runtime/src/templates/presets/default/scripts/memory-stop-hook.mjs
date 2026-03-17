@@ -75,20 +75,29 @@ async function main() {
   const userMessages = [];
   const assistantMessages = [];
 
+  /** Strip ANSI escapes, control chars, and PTY noise from a string */
+  function sanitize(raw) {
+    return raw
+      .replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '')   // ANSI CSI
+      .replace(/\x1b\][^\x07]*\x07/g, '')       // OSC
+      .replace(/\x1b\(B/g, '')                   // charset switch
+      .replace(/\x1b./g, '')                     // other escapes
+      .replace(/[\x00-\x08\x0b\x0c\x0e-\x1f]/g, '') // control chars (keep \n \r \t)
+      .replace(/\r\n?/g, '\n')                   // normalize line endings
+      .replace(/\n{3,}/g, '\n\n')                // collapse blank lines
+      .trim();
+  }
+
   for (const line of lines) {
     try {
       const obj = JSON.parse(line);
       if (obj.role === 'system' && obj.event === 'start') cwd = obj.cwd || '';
       if (obj.role === 'input' && obj.data?.trim().length > 2) {
-        userMessages.push(obj.data.trim().slice(0, 300));
+        const clean = sanitize(obj.data);
+        if (clean.length > 2) userMessages.push(clean.slice(0, 300));
       }
       if (obj.role === 'output' && obj.data?.trim().length > 10) {
-        // Strip ANSI escapes
-        const clean = obj.data
-          .replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '')
-          .replace(/\x1b\][^\x07]*\x07/g, '')
-          .replace(/\r/g, ' ')
-          .trim();
+        const clean = sanitize(obj.data);
         if (clean.length > 10) assistantMessages.push(clean.slice(0, 500));
       }
     } catch { /* skip malformed lines */ }
@@ -101,12 +110,13 @@ async function main() {
   // Build a compact transcript digest for Haiku
   const transcriptDigest = [
     `Project: ${project} (${cwd})`,
+    `Session duration: ${lines.length} transcript lines`,
     '',
     'User messages:',
-    ...userMessages.slice(0, 10).map((m, i) => `${i + 1}. ${m}`),
+    ...userMessages.slice(0, 15).map((m, i) => `${i + 1}. ${m}`),
     '',
     'Key assistant responses (excerpts):',
-    ...assistantMessages.slice(0, 5).map((m, i) => `${i + 1}. ${m.slice(0, 300)}`),
+    ...assistantMessages.slice(0, 8).map((m, i) => `${i + 1}. ${m.slice(0, 400)}`),
   ].join('\n').slice(0, MAX_TRANSCRIPT_CHARS);
 
   // Call Claude Haiku for semantic summary
@@ -125,15 +135,21 @@ async function main() {
         max_tokens: 600,
         messages: [{
           role: 'user',
-          content: `You are a memory system for an AI agent named Claude running inside Codeck (a developer sandbox).
+          content: `You are a memory system for a developer sandbox called Codeck. Your job is to extract the USEFUL information from this session transcript and write a concise summary that will help the AI agent (Claude) in future sessions.
 
-Analyze this session transcript and write a concise memory entry in Spanish (the user communicates in Spanish). Focus on:
-- Decisions made (technical or product)
-- Problems identified and solutions found
-- New information or context established
-- Next steps discussed
+Write in English. Focus ONLY on:
+1. **What was built/changed** — specific features, fixes, files modified
+2. **Decisions made** — technical or product choices and their rationale
+3. **Problems found** — bugs, blockers, and how they were resolved (or not)
+4. **Current state** — what works, what's broken, what's in progress
+5. **Next steps** — what was discussed as pending or planned
 
-Be specific and useful. Skip small talk. Format as bullet points under clear headers. Max 400 words.
+Rules:
+- Be SPECIFIC: mention file names, function names, error messages, version numbers
+- Skip greetings, small talk, typos, and meta-conversation
+- If the session was trivial (just a greeting, quick question), write "No significant activity."
+- Use bullet points, no prose. Max 300 words.
+- Do NOT include the project name or duration — those are added automatically.
 
 TRANSCRIPT:
 ${transcriptDigest}`,

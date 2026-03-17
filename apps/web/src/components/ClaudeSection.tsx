@@ -425,8 +425,21 @@ export function ClaudeSection({ onNewSession, onNewShell }: ClaudeSectionProps) 
           {sessionList.length === 0 && !restoringPending.value && (
             <div class="claude-empty">
               <div class="claude-empty-icon"><IconTerminal size={48} /></div>
-              <div class="claude-empty-title">{agentName.value} CLI Console</div>
-              <div class="claude-empty-desc">{mobile ? 'Tap + to start a session' : 'Click + to start a new session'}</div>
+              <div class="claude-empty-title">Ready when you are</div>
+              {mobile ? (
+                <div class="claude-empty-desc">Tap + to start</div>
+              ) : (
+                <>
+                  <div class="claude-empty-desc">
+                    Start a new session to begin coding with Claude.<br />
+                    Your agent has persistent memory — it remembers your projects and preferences.
+                  </div>
+                  <div class="claude-empty-actions">
+                    <button class="claude-empty-btn primary" onClick={onNewSession}>New Agent Session</button>
+                    <button class="claude-empty-btn secondary" onClick={onNewShell}>New Shell</button>
+                  </div>
+                </>
+              )}
             </div>
           )}
           {activeId && sessionList.find(s => s.id === activeId)?.loading && (

@@ -176,6 +176,8 @@ try {
             }
           }, 500);
         } else if (eventType === 'change' || eventType === 'rename') {
+          // Skip if user explicitly logged out — don't re-sync deleted credentials
+          if (loggedOut) return;
           // File was rewritten — sync to in-memory state if it contains a valid token.
           // This handles the case where the Claude CLI refreshes its own token and writes
           // back a new plaintext .credentials.json.
@@ -461,6 +463,7 @@ function saveOAuthToken(token: string, refreshToken = '', accountInfo?: AccountI
   inMemoryTokenExpiresAt = expiresAt;
 
   tokenMarkedExpired = false;
+  loggedOut = false; // Clear logout flag — user has re-authenticated
   lastTokenSaveAt = Date.now();
   invalidateAuthCache();
 
@@ -665,6 +668,8 @@ export function isClaudeInstalled(): boolean {
 
 let authCache = { checked: false, authenticated: false, checkedAt: 0 };
 let tokenMarkedExpired = false;
+// Set by logoutClaude() to prevent file watcher from re-syncing deleted credentials
+let loggedOut = false;
 // Timestamp of the last successful token save — used to distinguish fresh logins from stale cache
 let lastTokenSaveAt = 0;
 const AUTH_CACHE_TTL = 5000;
@@ -798,7 +803,34 @@ function clearAllCredentialFiles(): void {
   try { if (existsSync(TOKEN_CACHE_PATH)) unlinkSync(TOKEN_CACHE_PATH); } catch { /* ignore */ }
   try { if (existsSync(CREDENTIALS_BACKUP)) unlinkSync(CREDENTIALS_BACKUP); } catch { /* ignore */ }
   try { if (existsSync(CLAUDE_CREDENTIALS_PATH)) unlinkSync(CLAUDE_CREDENTIALS_PATH); } catch { /* ignore */ }
+  try { if (existsSync(ACCOUNT_INFO_CACHE_PATH)) unlinkSync(ACCOUNT_INFO_CACHE_PATH); } catch { /* ignore */ }
   console.log('[Claude] Cleared all cached credentials');
+}
+
+/** Full Claude logout: clear all auth state (tokens, caches, monitors) but keep workspace data. */
+export function logoutClaude(): void {
+  console.log('[Claude] Logging out — clearing all OAuth state');
+
+  // Prevent file watcher from re-syncing deleted credentials
+  loggedOut = true;
+
+  // Clear in-memory state
+  inMemoryToken = null;
+  inMemoryTokenExpiresAt = 0;
+  tokenMarkedExpired = false;
+  lastTokenSaveAt = 0;
+  invalidateAuthCache();
+
+  // Stop background monitors
+  stopTokenRefreshMonitor();
+
+  // Clear all credential files on disk
+  clearAllCredentialFiles();
+
+  // Clear PKCE login state if active
+  cleanupLogin();
+
+  console.log('[Claude] ✓ Logged out — ready for new login');
 }
 
 // ============ Login Flow (direct OAuth PKCE) ============

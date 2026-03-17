@@ -32,6 +32,7 @@ interface MemoryStats {
 
 interface HomeSectionProps {
   onRelogin: () => void;
+  onLogout: () => void;
 }
 
 const PERMISSION_LABELS: Record<string, string> = {
@@ -100,7 +101,7 @@ function buildPortUrl(port: number): string | null {
   }
 }
 
-export function HomeSection({ onRelogin }: HomeSectionProps) {
+export function HomeSection({ onRelogin, onLogout }: HomeSectionProps) {
   const email = accountEmail.value;
   const org = accountOrg.value;
   const sessionCount = sessions.value.length;
@@ -117,6 +118,7 @@ export function HomeSection({ onRelogin }: HomeSectionProps) {
   const [addingPort, setAddingPort] = useState(false);
   const [removingPort, setRemovingPort] = useState<number | null>(null);
   const [confirmAction, setConfirmAction] = useState<{ type: 'add' | 'remove'; port: number } | null>(null);
+  const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
   const [memoryStats, setMemoryStats] = useState<MemoryStats | null>(null);
   const [welcomeDismissed, setWelcomeDismissed] = useState(() => localStorage.getItem('codeck-welcome-dismissed') === '1');
 
@@ -389,6 +391,15 @@ export function HomeSection({ onRelogin }: HomeSectionProps) {
           </div>
         )}
 
+        <div style={{ marginTop: '12px' }}>
+          <button class="btn btn-sm btn-danger" onClick={() => setShowLogoutConfirm(true)}>
+            Disconnect Account
+          </button>
+          <span class="dash-meta" style={{ marginLeft: '8px' }}>
+            Clears auth tokens. Workspace data is kept.
+          </span>
+        </div>
+
         {/* Dashboard */}
         <div class="dash-section">
           <h3 class="dash-title">Dashboard</h3>
@@ -617,6 +628,16 @@ export function HomeSection({ onRelogin }: HomeSectionProps) {
         confirmLabel={confirmAction?.type === 'add' ? 'Map Port & Restart' : 'Remove & Restart'}
         onConfirm={handleConfirmAction}
         onCancel={() => setConfirmAction(null)}
+      />
+
+      {/* Confirm modal for account disconnect */}
+      <ConfirmModal
+        visible={showLogoutConfirm}
+        title="Disconnect Claude Account"
+        message={`This will clear all OAuth tokens and sign you out of Claude.${sessionCount > 0 ? ` ${sessionCount} active session(s) will lose authentication.` : ''} Your workspace files, memory, and settings are kept.`}
+        confirmLabel="Disconnect"
+        onConfirm={() => { setShowLogoutConfirm(false); onLogout(); }}
+        onCancel={() => setShowLogoutConfirm(false)}
       />
     </div>
   );

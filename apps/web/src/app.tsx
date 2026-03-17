@@ -2,6 +2,7 @@ import { Component } from 'preact';
 import { useEffect, useState, useRef } from 'preact/hooks';
 import {
   view, activeSection, claudeAuthenticated, presetConfigured, isMobile, mobileKeyboardOpen,
+  accountEmail, accountOrg,
   updateStateFromServer, setView, setActiveSection, setAuthMode, setActiveSessionId,
   setPresetConfigured, setAccountInfo,
   sessions, activeSessionId, addSession, removeSession, replaceSession,
@@ -322,6 +323,17 @@ export function App() {
     setLoginModalOpen(true);
   }
 
+  async function handleLogout() {
+    try {
+      await apiFetch('/api/claude/logout', { method: 'POST' });
+    } catch { /* ignore */ }
+    // Reset client-side auth state and show login view
+    claudeAuthenticated.value = false;
+    accountEmail.value = null;
+    accountOrg.value = null;
+    setView('auth');
+  }
+
   async function handleLoginSuccess() {
     setLoginModalOpen(false);
     // Reload status from server and transition
@@ -501,7 +513,7 @@ export function App() {
         </header>
         <main id="main-content">
           <ErrorBoundary>
-            {section === 'home' && <HomeSection onRelogin={startLogin} />}
+            {section === 'home' && <HomeSection onRelogin={startLogin} onLogout={handleLogout} />}
             {section === 'filesystem' && <FilesSection />}
             {/* ClaudeSection is always mounted — never unmount it.
                 Unmounting destroys xterm instances (expensive WebGL teardown + init on remount,

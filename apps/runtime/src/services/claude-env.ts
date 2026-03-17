@@ -121,6 +121,7 @@ export function ensureOnboardingComplete(): void {
 // An allowlist would break custom user env vars, DBUS, keyring, etc.
 const BLOCKED_ENV_VARS = new Set([
   'ANTHROPIC_API_KEY', 'GITHUB_TOKEN', 'GIT_TOKEN',
+  'CLAUDE_CODE_OAUTH_TOKEN', // Prevent frozen token; CLI reads .credentials.json instead
   'NODE_ENV', 'PORT',
   'AWS_SECRET_ACCESS_KEY', 'AWS_SESSION_TOKEN',
   'DATABASE_URL', 'REDIS_URL',

@@ -40,8 +40,21 @@ async function main() {
   const sessionId = payload?.session_id;
   if (!sessionId) process.exit(0);
 
-  // Get OAuth token
-  const token = process.env.CLAUDE_CODE_OAUTH_TOKEN;
+  // Get OAuth token — read from disk (env var may not be set)
+  let token = process.env.CLAUDE_CODE_OAUTH_TOKEN;
+  if (!token) {
+    // Try plaintext cache first, then credentials file
+    const tokenCachePath = join(process.env.HOME || '/root', '.claude', '.codeck-oauth-token');
+    const credentialsPath = join(process.env.HOME || '/root', '.claude', '.credentials.json');
+    try {
+      if (existsSync(tokenCachePath)) {
+        token = readFileSync(tokenCachePath, 'utf-8').trim();
+      } else if (existsSync(credentialsPath)) {
+        const creds = JSON.parse(readFileSync(credentialsPath, 'utf-8'));
+        token = creds?.claudeAiOauth?.accessToken;
+      }
+    } catch { /* non-fatal */ }
+  }
   if (!token) process.exit(0);
 
   // Read transcript

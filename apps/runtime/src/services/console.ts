@@ -13,7 +13,7 @@ import { summarizeSession } from './session-summarizer.js';
 import { broadcast } from '../web/logger.js';
 import { injectContextIntoCLAUDEMd, type ContextInjectionStats } from './memory-context.js';
 import {
-  getValidAgentBinary, resolveAgentBinary, getOAuthEnv, ensureOnboardingComplete,
+  getValidAgentBinary, resolveAgentBinary, ensureOnboardingComplete,
   buildCleanEnv, getAgentBinaryPath, setAgentBinaryPath,
 } from './claude-env.js';
 
@@ -66,7 +66,15 @@ interface CreateSessionOptions {
  */
 function detectConversationId(session: ConsoleSession, watchExisting = false): void {
   const encoded = encodeProjectPath(session.cwd);
-  const projectDir = `${ACTIVE_AGENT.projectsDir}/${encoded}`;
+  const projectDir = resolve(`${ACTIVE_AGENT.projectsDir}/${encoded}`);
+
+  // Validate the resolved path stays within projectsDir to prevent path injection
+  if (!ACTIVE_AGENT.projectsDir) return;
+  const resolvedBase = resolve(ACTIVE_AGENT.projectsDir);
+  if (!projectDir.startsWith(resolvedBase + '/') && projectDir !== resolvedBase) {
+    console.warn(`[Console] Path injection blocked: ${projectDir} is outside ${resolvedBase}`);
+    return;
+  }
 
   (async () => {
     // Snapshot existing .jsonl files (and their mtimes for resume detection)
@@ -92,6 +100,11 @@ function detectConversationId(session: ConsoleSession, watchExisting = false): v
     let polling = false;
     const interval = setInterval(async () => {
       if (polling) return; // Skip if previous async iteration still running
+      // Stop polling if session was destroyed
+      if (!sessions.has(session.id)) {
+        clearInterval(interval);
+        return;
+      }
       polling = true;
       attempts++;
       try {
@@ -153,8 +166,14 @@ export function createConsoleSession(options?: string | CreateSessionOptions): C
   ensureOnboardingComplete();
   syncToClaudeSettings();
 
-  const oauthEnv = getOAuthEnv();
-  const finalEnv = { ...buildCleanEnv(), ...oauthEnv, TERM: 'xterm-256color' };
+  // Do NOT pass CLAUDE_CODE_OAUTH_TOKEN as env var.
+  // If set, Claude CLI uses it as a static frozen token for the entire session.
+  // Without it, CLI reads from .credentials.json on each API call, which the
+  // runtime keeps updated via token refresh. This allows running sessions to
+  // seamlessly pick up refreshed tokens without restart.
+  const finalEnv: Record<string, string> = { ...buildCleanEnv(), TERM: 'xterm-256color' };
+  // Ensure CLAUDE_CODE_OAUTH_TOKEN is not inherited from parent process
+  delete finalEnv.CLAUDE_CODE_OAUTH_TOKEN;
 
   // Build CLI args from launch options
   const args: string[] = [];
@@ -183,7 +202,7 @@ export function createConsoleSession(options?: string | CreateSessionOptions): C
   }
 
   const binary = getValidAgentBinary();
-  console.log(`[Console] Spawning claude PTY: binary=${binary}, cwd=${workDir}, args=[${args.join(', ')}], sessions=${sessions.size}, OAUTH_TOKEN=${oauthEnv.CLAUDE_CODE_OAUTH_TOKEN ? 'set' : 'NOT SET'}`);
+  console.log(`[Console] Spawning claude PTY: binary=${binary}, cwd=${workDir}, args=[${args.join(', ')}], sessions=${sessions.size}, OAUTH_TOKEN=delegated-to-credentials-file`);
 
   let pty: IPty;
   try {
@@ -249,7 +268,13 @@ export function createConsoleSession(options?: string | CreateSessionOptions): C
 export function createShellSession(cwd?: string): ConsoleSession {
   const t0 = Date.now();
   const id = randomUUID();
-  const workDir = resolve(cwd || process.env.WORKSPACE || '/workspace');
+  const workspace = resolve(process.env.WORKSPACE || '/workspace');
+  const workDir = resolve(cwd || workspace);
+
+  // Validate cwd stays within workspace to prevent path traversal
+  if (!workDir.startsWith(workspace + '/') && workDir !== workspace) {
+    throw new Error(`Working directory must be within workspace: ${workDir}`);
+  }
 
   if (!existsSync(workDir)) {
     throw new Error(`Working directory does not exist: ${workDir}`);
@@ -607,7 +632,8 @@ export function restoreSavedSessions(): Array<{ id: string; type: string; cwd: s
         restored.push({ id: session.id, type: session.type, cwd: session.cwd, name: session.name });
       }
     } catch (e) {
-      console.log(`[Console] Failed to restore session ${saved.id.slice(0, 8)}:`, (e as Error).message);
+      const errMsg = (e as Error).message;
+      console.warn(`[Console] Failed to restore session ${saved.id.slice(0, 8)}: ${errMsg}`);
     }
   }
 

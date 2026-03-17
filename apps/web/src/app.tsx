@@ -2,7 +2,7 @@ import { Component } from 'preact';
 import { useEffect, useState, useRef } from 'preact/hooks';
 import {
   view, activeSection, claudeAuthenticated, presetConfigured, isMobile, mobileKeyboardOpen,
-  accountEmail, accountOrg,
+  accountEmail, accountOrg, wsConnected,
   updateStateFromServer, setView, setActiveSection, setAuthMode, setActiveSessionId,
   setPresetConfigured, setAccountInfo,
   sessions, activeSessionId, addSession, removeSession, replaceSession,
@@ -62,7 +62,7 @@ class ErrorBoundary extends Component<{ children: any }, { hasError: boolean }> 
   }
 }
 
-const MAX_INIT_RETRIES = 5;
+const MAX_INIT_RETRIES = 15;
 const SESSION_LIMIT = 5;
 
 export function App() {
@@ -199,6 +199,25 @@ export function App() {
     return () => controller.abort();
   }, []);
 
+  // ========== Auto-recover on WS reconnect ==========
+  // If the view is stuck on 'setup' or 'loading' when WS reconnects with
+  // claudeAuthenticated=true, re-run initialization to transition to 'main'.
+  const initInProgress = useRef(false);
+  useEffect(() => {
+    let skipInitial = true; // Ignore the immediate subscribe callback
+    const unsub = wsConnected.subscribe(connected => {
+      if (skipInitial) { skipInitial = false; return; }
+      if (connected && claudeAuthenticated.value &&
+          (view.value === 'setup' || view.value === 'loading') &&
+          !initInProgress.current) {
+        initRetryCount.current = 0;
+        initInProgress.current = true;
+        initializeApp().finally(() => { initInProgress.current = false; });
+      }
+    });
+    return unsub;
+  }, []);
+
   async function initializeApp(signal?: AbortSignal) {
     setView('loading');
 
@@ -215,19 +234,19 @@ export function App() {
           setAuthMode('login');
           return;
         }
-        try {
-          const testRes = await apiFetch('/api/status', { signal });
-          if (testRes.status === 401) {
-            setView('auth');
-            setAuthMode('login');
-            return;
-          }
-          const data = await testRes.json();
-          updateStateFromServer(data);
-        } catch (e: any) {
-          if (e?.name === 'AbortError') return;
-          return; // apiFetch handles 401 redirect
+        const testRes = await apiFetch('/api/status', { signal });
+        if (testRes.status === 401) {
+          setView('auth');
+          setAuthMode('login');
+          return;
         }
+        // Treat gateway errors as "runtime not ready" — propagate to outer
+        // catch which handles exponential backoff retries
+        if (testRes.status >= 500) {
+          throw new Error(`Server returned ${testRes.status} — runtime not ready`);
+        }
+        const data = await testRes.json();
+        updateStateFromServer(data);
       } else {
         // Server says password not configured. If we have a stale token, clear it
         // so we don't confuse the user — they need to set up the password again.
@@ -262,6 +281,8 @@ export function App() {
       }
     } catch (e: any) {
       if (e?.name === 'AbortError') return;
+      // 401 from apiFetch already set the auth view — don't retry
+      if (e?.message === 'Unauthorized') return;
 
       // Exponential backoff with max retries — stay on loading view while retrying
       // so the user doesn't see a flash of "Connect Claude Code" during startup

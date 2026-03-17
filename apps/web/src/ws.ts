@@ -287,8 +287,28 @@ function openWs(wsUrl: string): void {
   ws.onerror = () => ws?.close();
 }
 
-export function connectWebSocket(): void {
+export async function connectWebSocket(): Promise<void> {
+  // Clear any pending reconnect timer to prevent overlapping attempts
+  if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
   if (ws && ws.readyState !== WebSocket.CLOSED) return;
+
+  // Pre-flight: check if runtime is ready before attempting WS upgrade
+  try {
+    const healthRes = await fetch('/api/runtime/health');
+    const health = await healthRes.json();
+    if (!health.ready) {
+      // Schedule retry without attempting noisy WS upgrade
+      const delay = reconnectBackoff * (0.5 + Math.random() * 0.5);
+      reconnectTimer = setTimeout(connectWebSocket, delay);
+      reconnectBackoff = Math.min(reconnectBackoff * 2, 15000);
+      return;
+    }
+  } catch {
+    const delay = reconnectBackoff * (0.5 + Math.random() * 0.5);
+    reconnectTimer = setTimeout(connectWebSocket, delay);
+    reconnectBackoff = Math.min(reconnectBackoff * 2, 15000);
+    return;
+  }
 
   const token = getAuthToken();
   const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';

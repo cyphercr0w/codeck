@@ -124,6 +124,17 @@ export async function startDaemon(): Promise<void> {
     }
   });
 
+  // Runtime health check — not proxied, not auth-protected.
+  // Used by the frontend to pre-flight WS connections and avoid noisy upgrade failures.
+  app.get('/api/runtime/health', async (_req, res) => {
+    try {
+      const resp = await fetch(`${getRuntimeUrl()}/api/status`, { signal: AbortSignal.timeout(2000) });
+      res.json({ ready: resp.ok });
+    } catch {
+      res.json({ ready: false });
+    }
+  });
+
   // ── Auth middleware (protects all /api/* below) ──
 
   app.use('/api', (req, res, next) => {

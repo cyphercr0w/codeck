@@ -34,6 +34,7 @@ export function ConfigSection() {
   const [resetMsg, setResetMsg] = useState('');
   const [updating, setUpdating] = useState(false);
   const [updateMsg, setUpdateMsg] = useState('');
+  const [showUpdateConfirm, setShowUpdateConfirm] = useState(false);
 
   async function loadFiles(path: string) {
     setDirPath(path);
@@ -228,20 +229,29 @@ export function ConfigSection() {
         {/* Update preset (safe) + Reset to defaults (destructive) */}
         {!viewingFile && !loading && items.length > 0 && (
           <div class="config-reset-section">
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-              <button class="btn btn-sm btn-primary" onClick={handleUpdate} disabled={updating}>
-                {updating ? <span class="loading" /> : null}
-                Update Preset
-              </button>
-              <span class="dash-meta">Updates scripts, hooks, skills, CLAUDE.md. Your memory, preferences, and rules are kept.</span>
-              {updateMsg && <span class={`config-save-msg ${updateMsg === 'Preset updated' ? 'success' : 'error'}`}>{updateMsg}</span>}
-            </div>
+            {/* Update Preset (safe — preserves user data) */}
+            {updateMsg && <span class={`config-save-msg ${updateMsg === 'Preset updated' ? 'success' : 'error'}`}>{updateMsg}</span>}
+            {showUpdateConfirm ? (
+              <div class="config-reset-confirm">
+                <span>This will update scripts, hooks, skills, and CLAUDE.md to the latest version. Your memory, daily logs, preferences, and rules are NOT touched.</span>
+                <div class="config-reset-actions">
+                  <button class="btn btn-sm btn-secondary" onClick={() => setShowUpdateConfirm(false)} disabled={updating}>Cancel</button>
+                  <button class="btn btn-sm btn-primary" onClick={() => { setShowUpdateConfirm(false); handleUpdate(); }} disabled={updating}>
+                    {updating ? <span class="loading" /> : null}
+                    Update
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <button class="btn btn-sm btn-primary" onClick={() => setShowUpdateConfirm(true)}>Update Preset</button>
+            )}
 
+            {/* Full Reset (destructive — overwrites everything) */}
             <div style={{ marginTop: '12px' }}>
               {resetMsg && <span class={`config-save-msg ${resetMsg === 'Defaults restored' ? 'success' : 'error'}`}>{resetMsg}</span>}
               {showResetConfirm ? (
                 <div class="config-reset-confirm">
-                  <span>This will overwrite ALL config files including memory and preferences with defaults. Continue?</span>
+                  <span>This will DELETE all memory, daily logs, preferences, and rules, and replace everything with factory defaults. This cannot be undone.</span>
                   <div class="config-reset-actions">
                     <button class="btn btn-sm btn-secondary" onClick={() => setShowResetConfirm(false)} disabled={resetting}>Cancel</button>
                     <button class="btn btn-sm btn-danger" onClick={handleReset} disabled={resetting}>
@@ -251,7 +261,7 @@ export function ConfigSection() {
                   </div>
                 </div>
               ) : (
-                <button class="btn btn-sm btn-secondary" onClick={() => setShowResetConfirm(true)}>Full Reset (overwrites everything)</button>
+                <button class="btn btn-sm btn-secondary" onClick={() => setShowResetConfirm(true)}>Full Reset</button>
               )}
             </div>
           </div>

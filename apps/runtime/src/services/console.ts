@@ -10,7 +10,8 @@ import { syncToClaudeSettings } from './permissions.js';
 import { startSessionCapture, captureInput, captureOutput, endSessionCapture } from './session-writer.js';
 import { atomicWriteFileSync } from './memory.js';
 import { summarizeSession } from './session-summarizer.js';
-import { injectContextIntoCLAUDEMd } from './memory-context.js';
+import { broadcast } from '../web/logger.js';
+import { injectContextIntoCLAUDEMd, type ContextInjectionStats } from './memory-context.js';
 import {
   getValidAgentBinary, resolveAgentBinary, getOAuthEnv, ensureOnboardingComplete,
   buildCleanEnv, getAgentBinaryPath, setAgentBinaryPath,
@@ -174,8 +175,9 @@ export function createConsoleSession(options?: string | CreateSessionOptions): C
   }
 
   // Inject memory context into workspace CLAUDE.md before spawning
+  let contextStats: ContextInjectionStats | null = null;
   try {
-    injectContextIntoCLAUDEMd(workDir);
+    contextStats = injectContextIntoCLAUDEMd(workDir);
   } catch (e) {
     console.warn(`[Console] Memory context injection failed: ${(e as Error).message}`);
   }
@@ -231,6 +233,16 @@ export function createConsoleSession(options?: string | CreateSessionOptions): C
 
   sessions.set(id, session);
   saveSessionState('session_created');
+
+  // Broadcast context injection stats so the frontend can show a "Context Loaded" banner
+  if (contextStats) {
+    broadcast({
+      type: 'console:context_loaded',
+      sessionId: id,
+      data: contextStats,
+    });
+  }
+
   return session;
 }
 

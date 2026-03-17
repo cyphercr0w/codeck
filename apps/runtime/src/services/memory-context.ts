@@ -18,14 +18,22 @@ const MAX_CONTEXT_CHARS = 30000;
 const MAX_DAILY_CHARS = 6000;
 const WORKSPACE_CLAUDE_MD = join(PATHS.WORKSPACE, 'CLAUDE.md');
 
+export interface ContextInjectionStats {
+  charsInjected: number;
+  projectName: string;
+  sources: string[];
+}
+
 /**
  * Build a memory context string from available sources.
+ * Returns the context string and metadata about what was included.
  */
-export function buildSessionContext(cwd: string): string {
+export function buildSessionContext(cwd: string): { context: string; stats: ContextInjectionStats } {
   const parts: string[] = [];
+  const sources: string[] = [];
   let totalLen = 0;
 
-  const addPart = (label: string, content: string): boolean => {
+  const addPart = (label: string, content: string, source?: string): boolean => {
     const trimmed = content.trim();
     if (!trimmed) return true;
     if (totalLen + trimmed.length + label.length + 10 > MAX_CONTEXT_CHARS) {
@@ -34,11 +42,13 @@ export function buildSessionContext(cwd: string): string {
       if (remaining > 100) {
         parts.push(`**${label}:**\n${trimmed.slice(0, remaining)}...`);
         totalLen = MAX_CONTEXT_CHARS;
+        if (source && !sources.includes(source)) sources.push(source);
       }
       return false;
     }
     parts.push(`**${label}:**\n${trimmed}`);
     totalLen += trimmed.length + label.length + 10;
+    if (source && !sources.includes(source)) sources.push(source);
     return true;
   };
 
@@ -60,13 +70,13 @@ export function buildSessionContext(cwd: string): string {
 
     const pathMemory = getDurableMemory(pathId);
     if (pathMemory.content) {
-      addPart('Project Memory', pathMemory.content);
+      addPart('Project Memory', pathMemory.content, 'path');
     }
 
     // Path-scoped daily (recent portion only)
     const pathDaily = getDailyEntry(today, pathId);
     if (pathDaily.content) {
-      addPart('Project Today', trimDaily(pathDaily.content));
+      addPart('Project Today', trimDaily(pathDaily.content), 'path');
     }
   } catch {
     // Path resolution can fail on first use, that's fine
@@ -75,19 +85,19 @@ export function buildSessionContext(cwd: string): string {
   // 2. Global durable memory (curated long-term knowledge)
   const globalMemory = getDurableMemory();
   if (globalMemory.content) {
-    addPart('Durable Memory', globalMemory.content);
+    addPart('Durable Memory', globalMemory.content, 'durable');
   }
 
   // 3. Global daily — recent portion only (auto-summaries can be verbose/noisy)
   const todayEntry = getDailyEntry(today);
   if (todayEntry.content) {
-    addPart(`Today (${today})`, trimDaily(todayEntry.content));
+    addPart(`Today (${today})`, trimDaily(todayEntry.content), 'daily');
   } else {
     // Fallback: yesterday when today is empty
     const yesterday = new Date(Date.now() - 86_400_000).toISOString().slice(0, 10);
     const yesterdayEntry = getDailyEntry(yesterday);
     if (yesterdayEntry.content) {
-      addPart(`Yesterday (${yesterday})`, trimDaily(yesterdayEntry.content));
+      addPart(`Yesterday (${yesterday})`, trimDaily(yesterdayEntry.content), 'daily');
     }
   }
 
@@ -101,7 +111,7 @@ export function buildSessionContext(cwd: string): string {
           const snippets = results
             .map(r => r.snippet.replace(/<\/?mark>/g, ''))
             .join('\n');
-          addPart('Related Memory', snippets);
+          addPart('Related Memory', snippets, 'search');
         }
       } catch {
         // Search failure is non-fatal
@@ -109,24 +119,29 @@ export function buildSessionContext(cwd: string): string {
     }
   }
 
-  return parts.join('\n\n');
+  const context = parts.join('\n\n');
+  const projectName = cwd.split('/').pop() || 'workspace';
+  return {
+    context,
+    stats: { charsInjected: context.length, projectName, sources },
+  };
 }
 
 /**
  * Inject memory context into /workspace/CLAUDE.md.
  * Uses marker comments to replace only the memory section.
  */
-export function injectContextIntoCLAUDEMd(cwd: string): void {
+export function injectContextIntoCLAUDEMd(cwd: string): ContextInjectionStats | null {
   if (!existsSync(WORKSPACE_CLAUDE_MD)) {
     console.log('[MemoryContext] No workspace CLAUDE.md found, skipping injection');
-    return;
+    return null;
   }
 
-  const context = buildSessionContext(cwd);
+  const { context, stats } = buildSessionContext(cwd);
   if (!context) {
     // Remove existing context section if present
     removeContextSection();
-    return;
+    return null;
   }
 
   const contextBlock = `\n## Recent Memory\n${MARKER_START}\n${context}\n${MARKER_END}\n`;
@@ -149,7 +164,8 @@ export function injectContextIntoCLAUDEMd(cwd: string): void {
   }
 
   writeFileSync(WORKSPACE_CLAUDE_MD, content);
-  console.log(`[MemoryContext] Injected ${context.length} chars of context into CLAUDE.md`);
+  console.log(`[MemoryContext] Injected ${stats.charsInjected} chars of context into CLAUDE.md (sources: ${stats.sources.join(', ')})`);
+  return stats;
 }
 
 /**

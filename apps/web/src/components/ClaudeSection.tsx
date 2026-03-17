@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'preact/hooks';
 import { sessions, activeSessionId, setActiveSessionId, addLocalLog, addSession, removeSession, renameSession, agentName, isMobile, restoringPending, wsConnected, sessionStatus, setSessionStatus, clearSessionStatus } from '../state/store';
 import { apiFetch } from '../api';
 import { createTerminal, destroyTerminal, fitTerminal, repaintTerminal, focusTerminal, writeToTerminal, scrollToBottom, getTerminal, markSessionAttaching, clearSessionAttaching, onTerminalWrite, ensureTerminalVisible, setOnImagePaste, getTerminalBuffer } from '../terminal';
-import { wsSend, setTerminalHandlers, attachSession, setOnSessionReattached, setOnBeforeSessionsRestored } from '../ws';
+import { wsSend, setTerminalHandlers, attachSession, setOnSessionReattached, setOnBeforeSessionsRestored, setOnContextLoaded, type ContextLoadedData } from '../ws';
 import { IconPlus, IconX, IconShell, IconTerminal } from './Icons';
 import { MobileTerminalToolbar } from './MobileTerminalToolbar';
 import { ImageUploadOverlay } from './ImageUploadOverlay';
@@ -67,6 +67,8 @@ export function ClaudeSection({ onNewSession, onNewShell }: ClaudeSectionProps) 
   const editInputRef = useRef<HTMLInputElement>(null);
   const [pendingImage, setPendingImage] = useState<File | null>(null);
   const [dragOver, setDragOver] = useState(false);
+  const [contextBanner, setContextBanner] = useState<{ sessionId: string; projectName: string; kb: string } | null>(null);
+  const [bannerFading, setBannerFading] = useState(false);
   const sessionList = sessions.value;
   const activeId = activeSessionId.value;
 
@@ -230,6 +232,35 @@ export function ClaudeSection({ onNewSession, onNewShell }: ClaudeSectionProps) 
     };
   }, []);
 
+  // Context Loaded banner — shows briefly when memory is injected into a new session
+  useEffect(() => {
+    let fadeTimer: ReturnType<typeof setTimeout> | null = null;
+    let removeTimer: ReturnType<typeof setTimeout> | null = null;
+
+    setOnContextLoaded((sessionId: string, data: ContextLoadedData) => {
+      // Clear any existing timers from a previous banner
+      if (fadeTimer) clearTimeout(fadeTimer);
+      if (removeTimer) clearTimeout(removeTimer);
+
+      const kb = (data.charsInjected / 1024).toFixed(1);
+      setContextBanner({ sessionId, projectName: data.projectName, kb });
+      setBannerFading(false);
+
+      // Start fade-out after 3s, then remove after animation completes (1s)
+      fadeTimer = setTimeout(() => setBannerFading(true), 3000);
+      removeTimer = setTimeout(() => {
+        setContextBanner(null);
+        setBannerFading(false);
+      }, 4000);
+    });
+
+    return () => {
+      if (fadeTimer) clearTimeout(fadeTimer);
+      if (removeTimer) clearTimeout(removeTimer);
+      setOnContextLoaded(() => {});
+    };
+  }, []);
+
   // Drag & drop image detection
   function handleDragOver(e: DragEvent) {
     if (e.dataTransfer?.types.includes('Files')) {
@@ -386,6 +417,11 @@ export function ClaudeSection({ onNewSession, onNewShell }: ClaudeSectionProps) 
           onDragLeave={handleDragLeave}
           onDrop={handleDrop}
         >
+          {contextBanner && (
+            <div class={`context-loaded-banner${bannerFading ? ' fade-out' : ''}`}>
+              Context loaded: {contextBanner.projectName} &middot; {contextBanner.kb} KB of memory injected
+            </div>
+          )}
           {sessionList.length === 0 && !restoringPending.value && (
             <div class="claude-empty">
               <div class="claude-empty-icon"><IconTerminal size={48} /></div>

@@ -5,6 +5,7 @@ import { getAuthToken } from './api';
 const KNOWN_MSG_TYPES = new Set([
   'heartbeat', 'status', 'log', 'logs', 'ports', 'sessions:restored',
   'console:error', 'console:output', 'console:exit', 'console:freeze',
+  'console:context_loaded',
   'agent:update', 'agent:output', 'agent:execution:start', 'agent:execution:complete',
   'auth:expiring', 'auth:expired',
 ]);
@@ -62,6 +63,17 @@ export function setOnSessionReattached(handler: (sessionId: string) => void): vo
 let onBeforeSessionsRestored: (() => void) | null = null;
 export function setOnBeforeSessionsRestored(handler: () => void): void {
   onBeforeSessionsRestored = handler;
+}
+
+// Called when the server broadcasts context injection stats for a session
+export interface ContextLoadedData {
+  charsInjected: number;
+  projectName: string;
+  sources: string[];
+}
+let onContextLoaded: ((sessionId: string, data: ContextLoadedData) => void) | null = null;
+export function setOnContextLoaded(handler: (sessionId: string, data: ContextLoadedData) => void): void {
+  onContextLoaded = handler;
 }
 
 type OutputHandler = (sessionId: string, data: string) => void;
@@ -217,6 +229,10 @@ function openWs(wsUrl: string): void {
       } else if (msg.type === 'console:output') {
         if (typeof msg.sessionId === 'string' && typeof msg.data === 'string') {
           onOutput?.(msg.sessionId, msg.data);
+        }
+      } else if (msg.type === 'console:context_loaded') {
+        if (typeof msg.sessionId === 'string' && typeof msg.data === 'object' && msg.data !== null) {
+          onContextLoaded?.(msg.sessionId, msg.data as ContextLoadedData);
         }
       } else if (msg.type === 'console:freeze') {
         // Server detected PTY freeze — log diagnostic info

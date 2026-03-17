@@ -921,6 +921,39 @@
   font-size: 14px;
 }
 
+/* Context Loaded banner — appears briefly when memory is injected */
+.context-loaded-banner {
+  position: absolute;
+  top: 8px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 2;
+  padding: 6px 16px;
+  background: rgba(79, 70, 229, 0.15);
+  border: 1px solid rgba(99, 102, 241, 0.3);
+  border-radius: 6px;
+  color: rgba(199, 210, 254, 0.9);
+  font-size: 12px;
+  line-height: 1.4;
+  white-space: nowrap;
+  pointer-events: none;
+  animation: contextBannerFadeIn 0.3s ease-out;
+}
+
+.context-loaded-banner.fade-out {
+  animation: contextBannerFadeOut 1s ease-in forwards;
+}
+
+@keyframes contextBannerFadeIn {
+  from { opacity: 0; transform: translateX(-50%) translateY(-8px); }
+  to { opacity: 1; transform: translateX(-50%) translateY(0); }
+}
+
+@keyframes contextBannerFadeOut {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+
 @keyframes spin {
   to { transform: rotate(360deg); }
 }

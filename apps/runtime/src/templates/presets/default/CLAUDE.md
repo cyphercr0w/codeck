@@ -158,6 +158,17 @@ Sub-agents (`/root/.claude/agents/`) handle specialized tasks in parallel. Don't
 - Multiple code edits to unrelated files → one message with multiple Edit calls
 - **Never do sequentially what can be done in parallel**
 
+## Context Compaction
+
+When your context is compacted, PRESERVE these in the summary:
+- Current task and its state (what you're doing, what's left)
+- File paths you've modified in this session
+- Any test commands that were working
+- User preferences and communication language
+- Key decisions made during this session
+
+The PostCompact hook will re-inject memory context automatically. But your compaction summary is what carries the session-specific state.
+
 ## Full Reference
 
 For advanced memory operations, detailed API docs, and search syntax, see `/workspace/.codeck/AGENTS.md`.

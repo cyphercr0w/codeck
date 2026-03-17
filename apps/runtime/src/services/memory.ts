@@ -1,5 +1,5 @@
 import { existsSync, readFileSync, writeFileSync, mkdirSync, readdirSync, statSync, renameSync, unlinkSync } from 'fs';
-import { readdir as readdirAsync, stat as statAsync } from 'fs/promises';
+import { readdir as readdirAsync, stat as statAsync, unlink as unlinkAsync } from 'fs/promises';
 import { join, resolve, dirname } from 'path';
 import { createHash, randomBytes } from 'crypto';
 import { sanitizeSecrets } from './session-writer.js';
@@ -133,6 +133,37 @@ export function ensureDirectories(): void {
 
   // Migrate legacy files
   migrateLegacy();
+
+  // Async cleanup of old session files (fire-and-forget, non-blocking)
+  cleanupOldSessions().catch(err => console.error('[Memory] Session cleanup failed:', err));
+}
+
+const SESSION_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
+
+/** Delete JSONL session files older than 30 days. Async, non-blocking. */
+async function cleanupOldSessions(): Promise<void> {
+  if (!existsSync(SESSIONS_DIR)) return;
+  const now = Date.now();
+  const files = await readdirAsync(SESSIONS_DIR);
+  const jsonlFiles = files.filter(f => f.endsWith('.jsonl'));
+  let cleaned = 0;
+
+  for (const f of jsonlFiles) {
+    const fullPath = join(SESSIONS_DIR, f);
+    try {
+      const s = await statAsync(fullPath);
+      if (now - s.mtimeMs > SESSION_MAX_AGE_MS) {
+        await unlinkAsync(fullPath);
+        cleaned++;
+      }
+    } catch {
+      // Skip files that can't be stat'd or deleted
+    }
+  }
+
+  if (cleaned > 0) {
+    console.log(`[Memory] Cleaned up ${cleaned} session file(s) older than 30 days`);
+  }
 }
 
 function migrateLegacy(): void {
@@ -285,12 +316,14 @@ export function createDecision(
   title: string, context: string, decision: string, consequences: string,
   project?: string, pathId?: string,
 ): { filename: string } {
-  const date = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+  const now = new Date();
+  const date = now.toISOString().slice(0, 10).replace(/-/g, '');
+  const time = now.toISOString().slice(11, 19).replace(/:/g, '');
   const slug = slugify(title);
-  const filename = `ADR-${date}-${slug}.md`;
+  const filename = `ADR-${date}-${time}-${slug}.md`;
 
   let content = `# ${title}\n\n`;
-  content += `**Date**: ${new Date().toISOString().slice(0, 10)}\n`;
+  content += `**Date**: ${now.toISOString().slice(0, 10)}\n`;
   if (project) content += `**Project**: ${project}\n`;
   if (pathId) content += `**Scope**: ${pathId}\n`;
   content += `**Status**: Accepted\n\n`;

@@ -151,6 +151,18 @@ Sub-agents (`/root/.claude/agents/`) handle specialized tasks in parallel. Don't
 
 **Rule**: For complex tasks, ALWAYS spawn the planner agent first. For any code change, spawn the code-reviewer agent after. These are not optional — they catch issues you'll miss.
 
+## Workflow: Implement → Review → Iterate
+
+Every implementation follows this cycle:
+
+1. **Implement** the requested change
+2. **Build/test** — verify it compiles and basic tests pass
+3. **Review** — spawn a `code-reviewer` sub-agent with the changed files
+4. **Fix** — address CRITICAL and HIGH issues from the review
+5. **Done** — only then present the work as complete
+
+Never skip step 3. A 30-second review catches bugs that take hours to debug in production.
+
 ## Parallelization — ALWAYS
 
 - Multiple file reads → parallel Glob/Grep/Read calls

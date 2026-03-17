@@ -106,13 +106,13 @@ async function sessionBytesTotal(): Promise<number> {
   return total;
 }
 
-// Sonnet pricing per million tokens (USD)
+// Sonnet 4.5 pricing per million tokens (USD)
 const SONNET_INPUT_PER_MTOK = 3;
 const SONNET_OUTPUT_PER_MTOK = 15;
-// Assume 50/50 input/output mix → blended rate
-const BLENDED_PER_MTOK = (SONNET_INPUT_PER_MTOK + SONNET_OUTPUT_PER_MTOK) / 2;
-// Rough conversion: 1 byte ≈ 0.25 tokens
-const BYTES_TO_TOKENS = 0.25;
+// Typical coding session is ~80% input (context), 20% output (responses)
+const BLENDED_PER_MTOK = SONNET_INPUT_PER_MTOK * 0.8 + SONNET_OUTPUT_PER_MTOK * 0.2; // $5.40
+// Claude tokenization: ~1 token per 3.5 characters (bytes ≈ chars for UTF-8 code/english)
+const BYTES_PER_TOKEN = 3.5;
 
 /** Count path memory directories (each represents a tracked project) */
 async function countProjects(): Promise<number> {
@@ -146,7 +146,7 @@ export async function getMemoryStats(): Promise<MemoryStats> {
     sessionBytesTotal(),
   ]);
 
-  const estimatedTokens = Math.round(totalSessionBytes * BYTES_TO_TOKENS);
+  const estimatedTokens = Math.ceil(totalSessionBytes / BYTES_PER_TOKEN);
   const estimatedCostUsd = parseFloat(((estimatedTokens / 1_000_000) * BLENDED_PER_MTOK).toFixed(2));
 
   return {

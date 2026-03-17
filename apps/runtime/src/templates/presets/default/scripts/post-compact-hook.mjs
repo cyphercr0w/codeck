@@ -8,8 +8,14 @@
  * This hook reads critical context and re-injects it via additionalContext.
  */
 
-import { readFileSync, existsSync, readdirSync } from 'fs';
+import { readFileSync, existsSync } from 'fs';
 import { join } from 'path';
+import { createHash } from 'crypto';
+
+/** Compute path-scoped ID — mirrors resolvePathId() in memory.ts */
+function computePathId(absPath) {
+  return createHash('sha256').update(absPath).digest('hex').slice(0, 12);
+}
 
 let input = '';
 for await (const chunk of process.stdin) input += chunk;
@@ -41,23 +47,22 @@ if (existsSync(prefsPath)) {
   sections.push('## User Preferences\n' + prefs);
 }
 
-// 4. Path-scoped memory for cwd (if available)
+// 4. Path-scoped memory for cwd (computed via SHA256 pathId)
 const cwd = parsed.cwd || process.env.WORKSPACE || '/workspace';
 const projectName = cwd.split('/').pop();
-if (projectName && projectName !== 'workspace') {
-  // Try to find path memory by scanning paths directory
-  const pathsDir = '/workspace/.codeck/memory/paths';
-  if (existsSync(pathsDir)) {
-    for (const pathId of readdirSync(pathsDir)) {
-      const pathMemory = join(pathsDir, pathId, 'MEMORY.md');
-      if (existsSync(pathMemory)) {
-        const content = readFileSync(pathMemory, 'utf-8');
-        if (content.toLowerCase().includes(projectName.toLowerCase())) {
-          sections.push(`## Project Memory (${projectName})\n` + content.slice(0, 2000));
-          break;
-        }
-      }
-    }
+if (cwd && cwd !== '/workspace') {
+  const pathId = computePathId(cwd);
+  const pathMemory = join('/workspace/.codeck/memory/paths', pathId, 'MEMORY.md');
+  if (existsSync(pathMemory)) {
+    const content = readFileSync(pathMemory, 'utf-8');
+    sections.push(`## Project Memory (${projectName})\n` + content.slice(0, 2000));
+  }
+
+  // Also inject path-scoped daily log
+  const pathDailyPath = join('/workspace/.codeck/memory/paths', pathId, 'daily', `${today}.md`);
+  if (existsSync(pathDailyPath)) {
+    const pathDaily = readFileSync(pathDailyPath, 'utf-8').slice(-1500);
+    sections.push(`## Project Today (${projectName})\n` + pathDaily);
   }
 }
 

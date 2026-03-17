@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'preact/hooks';
 import { apiFetch, setAuthToken } from '../api';
+import { IconShield, IconKey, IconList } from './Icons';
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -81,25 +82,28 @@ function ChangePasswordCard() {
   }
 
   return (
-    <div class="settings-card">
-      <div class="settings-card-title">Change Password</div>
+    <div class="dash-card">
+      <div class="dash-card-title">
+        <IconKey size={14} />
+        <span>Change Password</span>
+      </div>
       <form onSubmit={handleSubmit}>
-        <div class="settings-form-group">
-          <label>Current password</label>
+        <div class="form-group">
+          <label class="form-label">Current password</label>
           <input
             type="password"
-            class="input-field"
+            class="input"
             value={current}
             onInput={(e) => setCurrent((e.target as HTMLInputElement).value)}
             required
             autocomplete="current-password"
           />
         </div>
-        <div class="settings-form-group">
-          <label>New password</label>
+        <div class="form-group">
+          <label class="form-label">New password</label>
           <input
             type="password"
-            class="input-field"
+            class="input"
             value={next}
             onInput={(e) => setNext((e.target as HTMLInputElement).value)}
             required
@@ -107,21 +111,21 @@ function ChangePasswordCard() {
             autocomplete="new-password"
           />
         </div>
-        <div class="settings-form-group">
-          <label>Confirm new password</label>
+        <div class="form-group">
+          <label class="form-label">Confirm new password</label>
           <input
             type="password"
-            class="input-field"
+            class="input"
             value={confirm}
             onInput={(e) => setConfirm((e.target as HTMLInputElement).value)}
             required
             autocomplete="new-password"
           />
         </div>
-        {error && <div class="settings-error">{error}</div>}
-        {success && <div class="settings-success">Password updated successfully.</div>}
-        <button type="submit" class="btn-primary" disabled={loading}>
-          {loading ? 'Saving...' : 'Change Password'}
+        {error && <div class="alert alert-error" style="margin-bottom: 12px">{error}</div>}
+        {success && <div class="form-success">Password updated successfully.</div>}
+        <button type="submit" class="btn btn-sm btn-primary" disabled={loading}>
+          {loading ? <><span class="loading" /> Saving...</> : 'Change Password'}
         </button>
       </form>
     </div>
@@ -163,15 +167,18 @@ function ActiveSessionsCard() {
   }
 
   return (
-    <div class="settings-card">
-      <div class="settings-card-title">Active Sessions</div>
+    <div class="dash-card">
+      <div class="dash-card-title">
+        <IconShield size={14} />
+        <span>Active Sessions</span>
+      </div>
       {loading ? (
-        <div class="settings-muted">Loading...</div>
+        <div class="dash-loading"><span class="loading" /> Loading...</div>
       ) : sessions.length === 0 ? (
-        <div class="settings-muted">No active sessions.</div>
+        <div class="dash-meta" style="border-top: none; margin-top: 0; padding-top: 0">No active sessions.</div>
       ) : (
-        <div class="settings-table-wrap">
-          <table class="settings-table">
+        <div class="dash-table-wrap">
+          <table class="dash-table">
             <thead>
               <tr>
                 <th>IP</th>
@@ -186,23 +193,23 @@ function ActiveSessionsCard() {
                 const exp = expiresIn(s.expiresAt);
                 return (
                   <tr key={s.id}>
-                    <td>{s.ip}</td>
+                    <td><code>{s.ip}</code></td>
                     <td title={absoluteTime(s.createdAt)}>{relativeTime(s.createdAt)}</td>
                     <td title={absoluteTime(s.expiresAt)}>
-                      <span class={exp.urgent ? 'settings-expires-urgent' : ''}>
+                      <span class={exp.urgent ? 'text-error' : ''}>
                         {exp.label}
                       </span>
                     </td>
                     <td>
-                      {s.current && <span class="settings-badge">Current</span>}
+                      {s.current && <span class="badge badge-success">Current</span>}
                     </td>
                     <td>
                       <button
-                        class="btn-danger-sm"
+                        class="btn btn-xs btn-ghost danger"
                         disabled={s.current || revoking === s.id}
                         onClick={() => revoke(s.id)}
                       >
-                        {revoking === s.id ? '...' : 'Revoke'}
+                        {revoking === s.id ? <span class="loading" /> : 'Revoke'}
                       </button>
                     </td>
                   </tr>
@@ -231,15 +238,18 @@ function AuthLogCard() {
   }, []);
 
   return (
-    <div class="settings-card">
-      <div class="settings-card-title">Authentication Log</div>
+    <div class="dash-card">
+      <div class="dash-card-title">
+        <IconList size={14} />
+        <span>Authentication Log</span>
+      </div>
       {loading ? (
-        <div class="settings-muted">Loading...</div>
+        <div class="dash-loading"><span class="loading" /> Loading...</div>
       ) : events.length === 0 ? (
-        <div class="settings-muted">No authentication events.</div>
+        <div class="dash-meta" style="border-top: none; margin-top: 0; padding-top: 0">No authentication events.</div>
       ) : (
-        <div class="settings-table-wrap">
-          <table class="settings-table">
+        <div class="dash-table-wrap">
+          <table class="dash-table">
             <thead>
               <tr>
                 <th>Result</th>
@@ -252,11 +262,11 @@ function AuthLogCard() {
                 <tr key={i}>
                   <td>
                     {e.type === 'login_success'
-                      ? <span class="settings-log-ok">Success</span>
-                      : <span class="settings-log-fail">Failed</span>
+                      ? <span class="badge badge-success">Success</span>
+                      : <span class="badge badge-error">Failed</span>
                     }
                   </td>
-                  <td>{e.ip}</td>
+                  <td><code>{e.ip}</code></td>
                   <td title={absoluteTime(e.timestamp)}>{relativeTime(e.timestamp)}</td>
                 </tr>
               ))}
@@ -272,10 +282,22 @@ function AuthLogCard() {
 
 export function SettingsSection() {
   return (
-    <div class="settings-content">
-      <ChangePasswordCard />
-      <ActiveSessionsCard />
-      <AuthLogCard />
+    <div class="content-section">
+      <div class="home-content">
+        <div class="home-header">
+          <div class="home-title">
+            <IconShield size={20} />
+            <span>Settings</span>
+          </div>
+        </div>
+        <div class="dash-grid">
+          <ChangePasswordCard />
+          <ActiveSessionsCard />
+        </div>
+        <div style="margin-top: 16px">
+          <AuthLogCard />
+        </div>
+      </div>
     </div>
   );
 }

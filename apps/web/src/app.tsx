@@ -6,6 +6,7 @@ import {
   setPresetConfigured, setAccountInfo,
   sessions, activeSessionId, addSession, removeSession, replaceSession,
   addLocalLog,
+  sessionStatus,
   type View, type Section,
 } from './state/store';
 import { apiFetch, getAuthToken, clearAuthToken } from './api';
@@ -127,6 +128,66 @@ export function App() {
     });
     return unsub;
   }, [loginModalOpen]);
+
+  // ========== Tab title flash when agent needs attention ==========
+  // When any session is 'waiting' or 'idle' and the user has switched tabs,
+  // flash the browser tab title to attract attention. Zero-config: works for
+  // all users with no permissions or setup required.
+  useEffect(() => {
+    const ORIGINAL_TITLE = 'Codeck';
+    const FLASH_TITLES = ['\u26A1 Codeck', '\uD83D\uDCAC Input needed'];
+    const FLASH_INTERVAL_MS = 1000;
+
+    let flashTimer: ReturnType<typeof setInterval> | null = null;
+    let flashIndex = 0;
+
+    function startFlash() {
+      if (flashTimer) return; // already flashing
+      flashIndex = 0;
+      flashTimer = setInterval(() => {
+        document.title = FLASH_TITLES[flashIndex % FLASH_TITLES.length];
+        flashIndex++;
+      }, FLASH_INTERVAL_MS);
+    }
+
+    function stopFlash() {
+      if (flashTimer) {
+        clearInterval(flashTimer);
+        flashTimer = null;
+      }
+      document.title = ORIGINAL_TITLE;
+    }
+
+    function needsAttention(): boolean {
+      const statuses = sessionStatus.value;
+      return Object.values(statuses).some(s => s === 'waiting' || s === 'idle');
+    }
+
+    // React to session status changes: start flash if tab is hidden + needs attention
+    const unsubStatus = sessionStatus.subscribe(() => {
+      if (document.hidden && needsAttention()) {
+        startFlash();
+      } else if (!needsAttention()) {
+        stopFlash();
+      }
+    });
+
+    // React to visibility changes: stop flash when user returns
+    function onVisibilityChange() {
+      if (!document.hidden) {
+        stopFlash();
+      } else if (needsAttention()) {
+        startFlash();
+      }
+    }
+    document.addEventListener('visibilitychange', onVisibilityChange);
+
+    return () => {
+      unsubStatus();
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+      stopFlash();
+    };
+  }, []);
 
   // ========== Initialization ==========
   const initRetryCount = useRef(0);

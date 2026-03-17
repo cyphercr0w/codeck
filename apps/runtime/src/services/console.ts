@@ -13,7 +13,7 @@ import { summarizeSession } from './session-summarizer.js';
 import { broadcast } from '../web/logger.js';
 import { injectContextIntoCLAUDEMd, type ContextInjectionStats } from './memory-context.js';
 import {
-  getValidAgentBinary, resolveAgentBinary, ensureOnboardingComplete,
+  getValidAgentBinary, resolveAgentBinary, getOAuthEnv, ensureOnboardingComplete,
   buildCleanEnv, getAgentBinaryPath, setAgentBinaryPath,
 } from './claude-env.js';
 
@@ -166,14 +166,8 @@ export function createConsoleSession(options?: string | CreateSessionOptions): C
   ensureOnboardingComplete();
   syncToClaudeSettings();
 
-  // Do NOT pass CLAUDE_CODE_OAUTH_TOKEN as env var.
-  // If set, Claude CLI uses it as a static frozen token for the entire session.
-  // Without it, CLI reads from .credentials.json on each API call, which the
-  // runtime keeps updated via token refresh. This allows running sessions to
-  // seamlessly pick up refreshed tokens without restart.
-  const finalEnv: Record<string, string> = { ...buildCleanEnv(), TERM: 'xterm-256color' };
-  // Ensure CLAUDE_CODE_OAUTH_TOKEN is not inherited from parent process
-  delete finalEnv.CLAUDE_CODE_OAUTH_TOKEN;
+  const oauthEnv = getOAuthEnv();
+  const finalEnv = { ...buildCleanEnv(), ...oauthEnv, TERM: 'xterm-256color' };
 
   // Build CLI args from launch options
   const args: string[] = [];
@@ -202,7 +196,7 @@ export function createConsoleSession(options?: string | CreateSessionOptions): C
   }
 
   const binary = getValidAgentBinary();
-  console.log(`[Console] Spawning claude PTY: binary=${binary}, cwd=${workDir}, args=[${args.join(', ')}], sessions=${sessions.size}, OAUTH_TOKEN=delegated-to-credentials-file`);
+  console.log(`[Console] Spawning claude PTY: binary=${binary}, cwd=${workDir}, args=[${args.join(', ')}], sessions=${sessions.size}, OAUTH_TOKEN=${oauthEnv.CLAUDE_CODE_OAUTH_TOKEN ? 'set' : 'NOT SET'}`);
 
   let pty: IPty;
   try {

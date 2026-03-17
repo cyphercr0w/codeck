@@ -142,6 +142,7 @@ describe('services/console.ts - Session Management', () => {
           rows: 30,
           cwd: TEST_WORKSPACE,
           env: expect.objectContaining({
+            CLAUDE_CODE_OAUTH_TOKEN: 'mock-token-12345',
             TERM: 'xterm-256color',
             PATH: '/usr/bin',
             HOME: '/root',
@@ -198,6 +199,7 @@ describe('services/console.ts - Session Management', () => {
         expect.any(Array),
         expect.objectContaining({
           env: expect.objectContaining({
+            CLAUDE_CODE_OAUTH_TOKEN: 'mock-token-12345',  // OAuth token
             PATH: '/usr/bin',  // Clean env preserved
             HOME: '/root',     // Clean env preserved
             TERM: 'xterm-256color',  // TERM added
@@ -212,9 +214,6 @@ describe('services/console.ts - Session Management', () => {
       expect(spawnedEnv.NODE_ENV).toBeUndefined();
       expect(spawnedEnv.PORT).toBeUndefined();
       expect(spawnedEnv.ANTHROPIC_API_KEY).toBeUndefined();
-      // CLAUDE_CODE_OAUTH_TOKEN should NOT be set — CLI reads from .credentials.json
-      // so running sessions pick up refreshed tokens automatically
-      expect(spawnedEnv.CLAUDE_CODE_OAUTH_TOKEN).toBeUndefined();
     });
 
     it('should set TERM=xterm-256color in environment', () => {

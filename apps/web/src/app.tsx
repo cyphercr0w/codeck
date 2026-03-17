@@ -262,16 +262,18 @@ export function App() {
       }
     } catch (e: any) {
       if (e?.name === 'AbortError') return;
-      setView('setup');
 
-      // Exponential backoff with max retries
+      // Exponential backoff with max retries — stay on loading view while retrying
+      // so the user doesn't see a flash of "Connect Claude Code" during startup
       if (initRetryCount.current < MAX_INIT_RETRIES) {
         const delay = Math.min(1000 * Math.pow(2, initRetryCount.current), 30000);
         initRetryCount.current++;
-        addLocalLog('warn', `Initialization failed, retrying in ${Math.round(delay / 1000)}s (attempt ${initRetryCount.current}/${MAX_INIT_RETRIES})`);
+        addLocalLog('warn', `Server not ready, retrying in ${Math.round(delay / 1000)}s (attempt ${initRetryCount.current}/${MAX_INIT_RETRIES})`);
         setTimeout(() => initializeApp(signal), delay);
       } else {
-        addLocalLog('error', 'Initialization failed after maximum retries. Please reload the page.');
+        // Only show setup view after all retries exhausted
+        setView('setup');
+        addLocalLog('error', 'Could not connect to server. Please reload the page.');
       }
     }
   }

@@ -21,10 +21,10 @@ interface AuthLogEntry {
 
 function relativeTime(ts: number): string {
   const diff = Math.floor((Date.now() - ts) / 1000);
-  if (diff < 60) return 'hace un momento';
-  if (diff < 3600) return `hace ${Math.floor(diff / 60)} min`;
-  if (diff < 86400) return `hace ${Math.floor(diff / 3600)} h`;
-  return `hace ${Math.floor(diff / 86400)} d`;
+  if (diff < 60) return 'just now';
+  if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+  if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
+  return `${Math.floor(diff / 86400)}d ago`;
 }
 
 function absoluteTime(ts: number): string {
@@ -33,10 +33,10 @@ function absoluteTime(ts: number): string {
 
 function expiresIn(expiresAt: number): { label: string; urgent: boolean } {
   const diff = Math.floor((expiresAt - Date.now()) / 1000);
-  if (diff <= 0) return { label: 'Expirada', urgent: true };
-  if (diff < 3600) return { label: `${Math.floor(diff / 60)} min`, urgent: true };
-  if (diff < 86400) return { label: `${Math.floor(diff / 3600)} h`, urgent: true };
-  return { label: `${Math.floor(diff / 86400)} d`, urgent: false };
+  if (diff <= 0) return { label: 'Expired', urgent: true };
+  if (diff < 3600) return { label: `${Math.floor(diff / 60)}m`, urgent: true };
+  if (diff < 86400) return { label: `${Math.floor(diff / 3600)}h`, urgent: true };
+  return { label: `${Math.floor(diff / 86400)}d`, urgent: false };
 }
 
 // ── Change Password Card ───────────────────────────────────────────────────
@@ -54,8 +54,8 @@ function ChangePasswordCard() {
     setError('');
     setSuccess(false);
 
-    if (next.length < 8) { setError('La nueva contraseña debe tener al menos 8 caracteres.'); return; }
-    if (next !== confirm) { setError('Las contraseñas no coinciden.'); return; }
+    if (next.length < 8) { setError('New password must be at least 8 characters.'); return; }
+    if (next !== confirm) { setError('Passwords do not match.'); return; }
 
     setLoading(true);
     try {
@@ -71,10 +71,10 @@ function ChangePasswordCard() {
         setNext('');
         setConfirm('');
       } else {
-        setError(data.error || 'Error al cambiar la contraseña.');
+        setError(data.error || 'Failed to change password.');
       }
     } catch {
-      setError('Error de red. Inténtalo de nuevo.');
+      setError('Network error. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -82,10 +82,10 @@ function ChangePasswordCard() {
 
   return (
     <div class="settings-card">
-      <div class="settings-card-title">Cambiar contraseña</div>
+      <div class="settings-card-title">Change Password</div>
       <form onSubmit={handleSubmit}>
         <div class="settings-form-group">
-          <label>Contraseña actual</label>
+          <label>Current password</label>
           <input
             type="password"
             class="input-field"
@@ -96,7 +96,7 @@ function ChangePasswordCard() {
           />
         </div>
         <div class="settings-form-group">
-          <label>Nueva contraseña</label>
+          <label>New password</label>
           <input
             type="password"
             class="input-field"
@@ -108,7 +108,7 @@ function ChangePasswordCard() {
           />
         </div>
         <div class="settings-form-group">
-          <label>Confirmar nueva contraseña</label>
+          <label>Confirm new password</label>
           <input
             type="password"
             class="input-field"
@@ -119,9 +119,9 @@ function ChangePasswordCard() {
           />
         </div>
         {error && <div class="settings-error">{error}</div>}
-        {success && <div class="settings-success">Contraseña actualizada correctamente.</div>}
+        {success && <div class="settings-success">Password updated successfully.</div>}
         <button type="submit" class="btn-primary" disabled={loading}>
-          {loading ? 'Guardando…' : 'Cambiar contraseña'}
+          {loading ? 'Saving...' : 'Change Password'}
         </button>
       </form>
     </div>
@@ -164,19 +164,19 @@ function ActiveSessionsCard() {
 
   return (
     <div class="settings-card">
-      <div class="settings-card-title">Sesiones activas</div>
+      <div class="settings-card-title">Active Sessions</div>
       {loading ? (
-        <div class="settings-muted">Cargando…</div>
+        <div class="settings-muted">Loading...</div>
       ) : sessions.length === 0 ? (
-        <div class="settings-muted">No hay sesiones activas.</div>
+        <div class="settings-muted">No active sessions.</div>
       ) : (
         <div class="settings-table-wrap">
           <table class="settings-table">
             <thead>
               <tr>
                 <th>IP</th>
-                <th>Creada</th>
-                <th>Expira</th>
+                <th>Created</th>
+                <th>Expires</th>
                 <th></th>
                 <th></th>
               </tr>
@@ -194,7 +194,7 @@ function ActiveSessionsCard() {
                       </span>
                     </td>
                     <td>
-                      {s.current && <span class="settings-badge">Sesión actual</span>}
+                      {s.current && <span class="settings-badge">Current</span>}
                     </td>
                     <td>
                       <button
@@ -202,7 +202,7 @@ function ActiveSessionsCard() {
                         disabled={s.current || revoking === s.id}
                         onClick={() => revoke(s.id)}
                       >
-                        {revoking === s.id ? '…' : 'Revocar'}
+                        {revoking === s.id ? '...' : 'Revoke'}
                       </button>
                     </td>
                   </tr>
@@ -232,19 +232,19 @@ function AuthLogCard() {
 
   return (
     <div class="settings-card">
-      <div class="settings-card-title">Registro de autenticación</div>
+      <div class="settings-card-title">Authentication Log</div>
       {loading ? (
-        <div class="settings-muted">Cargando…</div>
+        <div class="settings-muted">Loading...</div>
       ) : events.length === 0 ? (
-        <div class="settings-muted">No hay registros de autenticación.</div>
+        <div class="settings-muted">No authentication events.</div>
       ) : (
         <div class="settings-table-wrap">
           <table class="settings-table">
             <thead>
               <tr>
-                <th>Resultado</th>
+                <th>Result</th>
                 <th>IP</th>
-                <th>Fecha</th>
+                <th>Time</th>
               </tr>
             </thead>
             <tbody>
@@ -252,8 +252,8 @@ function AuthLogCard() {
                 <tr key={i}>
                   <td>
                     {e.type === 'login_success'
-                      ? <span class="settings-log-ok">✓ Éxito</span>
-                      : <span class="settings-log-fail">✗ Fallo</span>
+                      ? <span class="settings-log-ok">Success</span>
+                      : <span class="settings-log-fail">Failed</span>
                     }
                   </td>
                   <td>{e.ip}</td>

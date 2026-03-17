@@ -76,6 +76,7 @@ export interface SessionData {
 const activeSessions = new Map<string, SessionData>(); // token → data
 const sessionById = new Map<string, string>();          // id → token
 const SESSION_TTL = parseInt(process.env.SESSION_TTL_MS || '604800000', 10); // 7 days
+const MAX_SESSIONS = 1000;
 
 function saveSessions(): void {
   try {
@@ -120,6 +121,39 @@ function loadSessions(): void {
 
 // Load persisted sessions on startup
 loadSessions();
+
+/** Remove the oldest session by createdAt when the map exceeds MAX_SESSIONS. */
+function evictOldestSession(): void {
+  if (activeSessions.size <= MAX_SESSIONS) return;
+  let oldestToken: string | null = null;
+  let oldestTime = Infinity;
+  for (const [token, session] of activeSessions) {
+    if (session.createdAt < oldestTime) {
+      oldestTime = session.createdAt;
+      oldestToken = token;
+    }
+  }
+  if (oldestToken) {
+    const session = activeSessions.get(oldestToken);
+    if (session) sessionById.delete(session.id);
+    activeSessions.delete(oldestToken);
+  }
+}
+
+/** Periodic sweep: remove expired sessions every 60 seconds. */
+const sessionSweepInterval = setInterval(() => {
+  const now = Date.now();
+  let changed = false;
+  for (const [token, session] of activeSessions) {
+    if (now - session.createdAt > SESSION_TTL) {
+      sessionById.delete(session.id);
+      activeSessions.delete(token);
+      changed = true;
+    }
+  }
+  if (changed) saveSessions();
+}, 60_000);
+sessionSweepInterval.unref();
 
 // ── Auth Event Log ──
 
@@ -189,6 +223,7 @@ export async function validatePassword(
       deviceId,
       lastSeen: now,
     };
+    evictOldestSession();
     activeSessions.set(token, sessionData);
     sessionById.set(sessionData.id, token);
     saveSessions();

@@ -206,6 +206,10 @@ export function addSession(s: TerminalSession): void {
   // Deduplicate: skip if session with same ID already exists
   if (sessions.value.some(existing => existing.id === s.id)) return;
   sessions.value = [...sessions.value, s];
+  // Initialize session status so tab indicators work from the start
+  if (!sessionStatus.value[s.id]) {
+    setSessionStatus(s.id, 'idle');
+  }
 }
 
 export function setSessions(list: TerminalSession[]): void {
@@ -217,6 +221,16 @@ export function setSessions(list: TerminalSession[]): void {
   if (same) return;
 
   sessions.value = list;
+  // Initialize status for any new sessions
+  const statusUpdates: Record<string, SessionStatus> = { ...sessionStatus.value };
+  let statusChanged = false;
+  for (const s of list) {
+    if (!statusUpdates[s.id]) {
+      statusUpdates[s.id] = 'idle';
+      statusChanged = true;
+    }
+  }
+  if (statusChanged) sessionStatus.value = statusUpdates;
   // If active session is gone, switch to first available
   if (activeSessionId.value && !list.find(s => s.id === activeSessionId.value)) {
     activeSessionId.value = list.length > 0 ? list[0].id : null;

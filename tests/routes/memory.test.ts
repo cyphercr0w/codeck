@@ -208,7 +208,7 @@ describe('Memory API', () => {
         .expect(200);
 
       expect(res.body.success).toBe(true);
-      expect(res.body.filename).toMatch(/^ADR-\d{8}-use-vitest\.md$/);
+      expect(res.body.filename).toMatch(/^ADR-\d{8}-(\d{6}-)?use-vitest\.md$/);
     });
 
     it('should list decisions after creation', async () => {

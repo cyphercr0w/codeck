@@ -1,5 +1,5 @@
 import { readFileSync, writeFileSync, existsSync, unlinkSync, mkdirSync } from 'fs';
-import { join, dirname } from 'path';
+import { join, dirname, resolve, isAbsolute } from 'path';
 import { execFileSync } from 'child_process';
 
 // ── Config ──
@@ -7,6 +7,28 @@ import { execFileSync } from 'child_process';
 const PROJECT_DIR = process.env.CODECK_PROJECT_DIR || '';
 const COMPOSE_FILE = process.env.CODECK_COMPOSE_FILE || 'docker/compose.managed.yml';
 const CODECK_PORT = parseInt(process.env.CODECK_DAEMON_PORT || '8080', 10);
+
+// Safe parent directories for path validation (C2 fix)
+const ALLOWED_PROJECT_PARENTS = ['/opt', '/home', '/workspace', '/var/lib'];
+
+/**
+ * Validate that a path is absolute, contains no traversal sequences,
+ * and resolves within an allowed parent directory.
+ */
+function validatePath(rawPath: string, label: string): string {
+  const resolved = resolve(rawPath);
+  if (!isAbsolute(resolved)) {
+    throw new Error(`${label} must be an absolute path, got: ${rawPath}`);
+  }
+  if (rawPath.includes('..')) {
+    throw new Error(`${label} contains path traversal (..), rejected: ${rawPath}`);
+  }
+  const withinAllowed = ALLOWED_PROJECT_PARENTS.some(parent => resolved.startsWith(parent + '/') || resolved === parent);
+  if (!withinAllowed) {
+    throw new Error(`${label} resolves outside allowed directories (${ALLOWED_PROJECT_PARENTS.join(', ')}): ${resolved}`);
+  }
+  return resolved;
+}
 
 let mappedPorts: Set<number> = new Set();
 let initialized = false;
@@ -23,6 +45,14 @@ export function initDaemonPortManager(opts?: DaemonPortManagerOpts): void {
   const projectDir = opts?.projectDir || PROJECT_DIR;
   if (!projectDir) {
     console.log('[Daemon/PortManager] CODECK_PROJECT_DIR not set — port management disabled');
+    return;
+  }
+
+  // C2: Validate project directory before using it in Docker commands
+  try {
+    validatePath(projectDir, 'CODECK_PROJECT_DIR');
+  } catch (e) {
+    console.error(`[Daemon/PortManager] ${(e as Error).message} — port management disabled`);
     return;
   }
 
@@ -57,13 +87,25 @@ export function addPort(port: number): { success: boolean; restarting?: boolean;
     return { success: true, alreadyMapped: true };
   }
 
+  // C6: Two-phase commit — write override with new state, restart,
+  // then commit to in-memory set only on success. Restore file on failure.
+  const previousPorts = new Set(mappedPorts);
+  const nextPorts = new Set(mappedPorts);
+  nextPorts.add(port);
+
   try {
-    mappedPorts.add(port);
-    writeOverride();
+    writeOverrideForPorts(nextPorts);
     restartRuntimeContainer();
+    // Restart succeeded — commit the new state
+    mappedPorts = nextPorts;
     return { success: true, restarting: true };
   } catch (e) {
-    mappedPorts.delete(port);
+    // Restart failed — restore the override file to previous state
+    try {
+      writeOverrideForPorts(previousPorts);
+    } catch {
+      console.error('[Daemon/PortManager] Failed to restore override after failed restart');
+    }
     return { success: false, error: (e as Error).message };
   }
 }
@@ -77,13 +119,25 @@ export function removePort(port: number): { success: boolean; restarting?: boole
     return { success: true, notMapped: true };
   }
 
+  // C6: Two-phase commit — write override with new state, restart,
+  // then commit to in-memory set only on success. Restore file on failure.
+  const previousPorts = new Set(mappedPorts);
+  const nextPorts = new Set(mappedPorts);
+  nextPorts.delete(port);
+
   try {
-    mappedPorts.delete(port);
-    writeOverride();
+    writeOverrideForPorts(nextPorts);
     restartRuntimeContainer();
+    // Restart succeeded — commit the new state
+    mappedPorts = nextPorts;
     return { success: true, restarting: true };
   } catch (e) {
-    mappedPorts.add(port);
+    // Restart failed — restore the override file to previous state
+    try {
+      writeOverrideForPorts(previousPorts);
+    } catch {
+      console.error('[Daemon/PortManager] Failed to restore override after failed restart');
+    }
     return { success: false, error: (e as Error).message };
   }
 }
@@ -102,9 +156,9 @@ export function isPortManagerEnabled(): boolean {
 
 // ── Internal ──
 
-function writeOverride(): void {
+function writeOverrideForPorts(ports: Set<number>): void {
   const overridePath = join(PROJECT_DIR, 'docker/compose.override.yml');
-  const extraPorts = Array.from(mappedPorts).sort((a, b) => a - b);
+  const extraPorts = Array.from(ports).sort((a, b) => a - b);
 
   if (extraPorts.length === 0) {
     // No extra ports — remove override

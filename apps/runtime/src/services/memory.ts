@@ -43,16 +43,27 @@ const STATE_DIR = join(CODECK_DIR, 'state');
 const PATHS_MAP_FILE = join(STATE_DIR, 'paths.json');
 const FLUSH_STATE_FILE = join(STATE_DIR, 'flush_state.json');
 
-// ── File write lock (canary: detects re-entrant writes if code goes async) ──
+// ── Async file write lock ──
+// Promise-based mutex keyed by filepath. Concurrent writers queue up
+// instead of throwing. 5-second timeout prevents deadlocks.
 
-const activeLocks = new Set<string>();
-function withWriteLock<T>(filepath: string, fn: () => T): T {
-  if (activeLocks.has(filepath)) {
-    throw new Error(`[memory] Concurrent write to ${filepath} — serialize callers`);
+// Promise-chain mutex: each writer awaits the previous, then runs.
+// No TOCTOU race — lock is acquired atomically via Map.set before any await.
+const locks = new Map<string, Promise<void>>();
+
+async function withWriteLock<T>(filepath: string, fn: () => T | Promise<T>): Promise<T> {
+  const prev = locks.get(filepath) ?? Promise.resolve();
+  let resolve!: () => void;
+  const next = new Promise<void>(r => { resolve = r; });
+  locks.set(filepath, next);
+  try {
+    await prev;
+    return await fn();
+  } finally {
+    resolve();
+    // Only delete if we're still the current lock holder
+    if (locks.get(filepath) === next) locks.delete(filepath);
   }
-  activeLocks.add(filepath);
-  try { return fn(); }
-  finally { activeLocks.delete(filepath); }
 }
 
 // ── Path ID system ──
@@ -226,18 +237,18 @@ export function getDurableMemory(pathId?: string): { exists: boolean; content: s
   return { exists: true, content: readFileSync(path, 'utf-8') };
 }
 
-export function writeDurableMemory(content: string, pathId?: string): void {
+export async function writeDurableMemory(content: string, pathId?: string): Promise<void> {
   const path = pathId ? join(PATHS_DIR, pathId, 'MEMORY.md') : DURABLE_PATH;
-  withWriteLock(path, () => {
+  await withWriteLock(path, () => {
     const dir = pathId ? join(PATHS_DIR, pathId) : MEMORY_DIR;
     if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
     atomicWriteFileSync(path, sanitizeSecrets(content));
   });
 }
 
-export function appendToDurableMemory(section: string, entry: string, pathId?: string): void {
+export async function appendToDurableMemory(section: string, entry: string, pathId?: string): Promise<void> {
   const path = pathId ? join(PATHS_DIR, pathId, 'MEMORY.md') : DURABLE_PATH;
-  withWriteLock(path, () => {
+  await withWriteLock(path, () => {
     let content = existsSync(path) ? readFileSync(path, 'utf-8') : '';
     const cleanEntry = sanitizeSecrets(entry);
 
@@ -272,11 +283,11 @@ export function getDailyEntry(date?: string, pathId?: string): { exists: boolean
   return { exists: true, date: d, content: readFileSync(path, 'utf-8') };
 }
 
-export function appendToDaily(entry: string, project?: string, tags?: string[], pathId?: string): { date: string } {
+export async function appendToDaily(entry: string, project?: string, tags?: string[], pathId?: string): Promise<{ date: string }> {
   const d = new Date().toISOString().slice(0, 10);
   const path = dailyPath(d, pathId);
 
-  withWriteLock(path, () => {
+  await withWriteLock(path, () => {
     const dir = pathId ? join(PATHS_DIR, pathId, 'daily') : DAILY_DIR;
     if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
 
@@ -369,8 +380,8 @@ export function getPathMemory(pathId: string): { exists: boolean; content: strin
   return getDurableMemory(pathId);
 }
 
-export function writePathMemory(pathId: string, content: string): void {
-  writeDurableMemory(content, pathId);
+export async function writePathMemory(pathId: string, content: string): Promise<void> {
+  await writeDurableMemory(content, pathId);
 }
 
 // ── Promote ──
@@ -389,7 +400,7 @@ export interface PromoteRequest {
   consequences?: string;
 }
 
-export function promote(req: PromoteRequest): { success: boolean; detail: string } {
+export async function promote(req: PromoteRequest): Promise<{ success: boolean; detail: string }> {
   const ts = new Date().toISOString();
   const pathId = req.targetScope === 'global' ? undefined : req.targetScope;
 
@@ -410,9 +421,9 @@ export function promote(req: PromoteRequest): { success: boolean; detail: string
   entry += '\n\n<!-- ' + meta.join(' | ') + ' -->';
 
   if (req.section) {
-    appendToDurableMemory(req.section, entry, pathId);
+    await appendToDurableMemory(req.section, entry, pathId);
   } else {
-    appendToDurableMemory('Promoted', entry, pathId);
+    await appendToDurableMemory('Promoted', entry, pathId);
   }
 
   return { success: true, detail: `Promoted to ${pathId ? `paths/${pathId}` : 'global'} MEMORY.md` };
@@ -439,7 +450,7 @@ function saveFlushState(state: FlushState): void {
 
 const FLUSH_COOLDOWN_MS = 30_000; // 30s minimum between flushes per scope
 
-export function flush(content: string, scope: string, project?: string, tags?: string[]): { success: boolean; date?: string; reason?: string; cooldownRemaining?: number } {
+export async function flush(content: string, scope: string, project?: string, tags?: string[]): Promise<{ success: boolean; date?: string; reason?: string; cooldownRemaining?: number }> {
   const state = loadFlushState();
   const now = Date.now();
 
@@ -451,7 +462,7 @@ export function flush(content: string, scope: string, project?: string, tags?: s
 
   const pathId = scope !== 'global' ? scope : undefined;
   const allTags = tags ? [...tags, 'flush'] : ['flush'];
-  const result = appendToDaily(`[FLUSH] ${content}`, project, allTags, pathId);
+  const result = await appendToDaily(`[FLUSH] ${content}`, project, allTags, pathId);
 
   // Update flush state
   state[scope] = { lastFlushAt: now, lastFlushBytes: content.length };

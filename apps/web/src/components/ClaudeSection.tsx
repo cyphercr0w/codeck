@@ -140,11 +140,13 @@ export function ClaudeSection({ onNewSession, onNewShell }: ClaudeSectionProps) 
 
       createTerminal(s.id, el);
 
+      // Attach session synchronously BEFORE rAF to avoid race condition:
+      // WS output can arrive before rAF fires, causing data loss
       const sid = s.id;
+      markSessionAttaching(sid);
+      attachSession(sid);
       requestAnimationFrame(() => {
         fitTerminal(sid);
-        markSessionAttaching(sid);
-        attachSession(sid);
         attachSettleRepaint(sid);
       });
     }

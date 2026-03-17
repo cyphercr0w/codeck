@@ -430,11 +430,15 @@ export function App() {
     addSession({ id: tempId, cwd: dir, name: folderName, createdAt: Date.now(), loading: true });
     setActiveSessionId(tempId);
 
+    // Safety timeout: remove loading placeholder if API doesn't respond
+    const loadingTimeout = setTimeout(() => removeSession(tempId), 30_000);
+
     try {
       const res = await apiFetch('/api/console/create', {
         method: 'POST',
         body: JSON.stringify({ cwd: dir, resume: options.resume }),
       });
+      clearTimeout(loadingTimeout);
       const data = await res.json();
       if (data.error) {
         removeSession(tempId);
@@ -454,6 +458,7 @@ export function App() {
       setActiveSessionId(data.sessionId);
       mountTerminalForSession(data.sessionId, data.cwd || dir, data.name);
     } catch {
+      clearTimeout(loadingTimeout);
       removeSession(tempId);
     }
   }

@@ -1,12 +1,31 @@
 import { Command } from 'commander';
 import chalk from 'chalk';
-import { existsSync, readFileSync, writeFileSync, statSync } from 'node:fs';
-import { join } from 'node:path';
+import { existsSync, readFileSync, writeFileSync, statSync, realpathSync } from 'node:fs';
+import { join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import { spawn, execFileSync } from 'node:child_process';
 import { execa } from 'execa';
 import { getConfig, setConfig, deleteLanPid, isInitialized } from '../lib/config.js';
 import { detectOS } from '../lib/detect.js';
+
+/** Validate port is an integer in the valid range. Returns the validated port number or throws. */
+function validatePort(port: unknown): number {
+  const num = Number(port);
+  if (!Number.isInteger(num) || num < 1 || num > 65535) {
+    throw new Error(`Invalid port: ${String(port)}. Must be an integer between 1 and 65535.`);
+  }
+  return num;
+}
+
+/** Validate that a script path exists and is within the expected project directory. */
+function validateScriptPath(scriptPath: string, projectPath: string): string {
+  const resolvedScript = realpathSync(resolve(scriptPath));
+  const resolvedProject = realpathSync(resolve(projectPath));
+  if (!resolvedScript.startsWith(resolvedProject)) {
+    throw new Error(`Script path escapes project directory: ${scriptPath}`);
+  }
+  return resolvedScript;
+}
 
 const HEARTBEAT_PATH = join(tmpdir(), 'codeck-mdns.heartbeat');
 const HEARTBEAT_STALE_MS = 60_000; // consider heartbeat stale after 60s
@@ -37,9 +56,19 @@ async function cleanupHostsFile(): Promise<void> {
     ].join('\n'), 'utf-8');
 
     try {
+      // Use -File to invoke the script directly, avoiding string interpolation in -Command
+      const wrapperPath = join(tmpdir(), 'codeck-hosts-cleanup-wrapper.ps1');
+      writeFileSync(wrapperPath, [
+        `Start-Process powershell -ArgumentList @(`,
+        `  '-NoProfile'`,
+        `  '-ExecutionPolicy'`,
+        `  'Bypass'`,
+        `  '-File'`,
+        `  '${scriptPath.replace(/'/g, "''")}'`,
+        `) -Verb RunAs -WindowStyle Hidden -Wait`,
+      ].join('\n'), 'utf-8');
       await execa('powershell', [
-        '-NoProfile', '-Command',
-        `Start-Process powershell -ArgumentList '-NoProfile -ExecutionPolicy Bypass -File "${scriptPath}"' -Verb RunAs -WindowStyle Hidden -Wait`,
+        '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', wrapperPath,
       ]);
       console.log(chalk.dim('Cleaned up hosts file entries.'));
     } catch {
@@ -99,10 +128,18 @@ lanCommand
       return;
     }
 
-    const scriptPath = join(config.projectPath, 'scripts', 'mdns-advertiser.cjs');
-    if (!existsSync(scriptPath)) {
+    const rawScriptPath = join(config.projectPath, 'scripts', 'mdns-advertiser.cjs');
+    if (!existsSync(rawScriptPath)) {
       console.log(chalk.red('mDNS advertiser script not found.'));
-      console.log(chalk.dim(`Expected at: ${scriptPath}`));
+      console.log(chalk.dim(`Expected at: ${rawScriptPath}`));
+      return;
+    }
+
+    let scriptPath: string;
+    try {
+      scriptPath = validateScriptPath(rawScriptPath, config.projectPath);
+    } catch (err) {
+      console.log(chalk.red(`Invalid script path: ${(err as Error).message}`));
       return;
     }
 
@@ -131,18 +168,31 @@ lanCommand
 
     console.log(chalk.dim('Starting mDNS advertiser...'));
 
-    const portArg = String(config.port);
+    let validatedPort: number;
+    try {
+      validatedPort = validatePort(config.port);
+    } catch (err) {
+      console.log(chalk.red((err as Error).message));
+      return;
+    }
+    const portArg = String(validatedPort);
 
     if (process.platform === 'win32') {
-      // On Windows, elevate via UAC prompt so the advertiser can write the hosts file
+      // On Windows, elevate via UAC prompt so the advertiser can write the hosts file.
+      // Write a launcher script to avoid interpolating paths into a -Command string.
       try {
-        const { stdout } = await execa('powershell', [
-          '-NoProfile', '-Command',
-          // Start-Process -Verb RunAs triggers the UAC yes/no dialog
-          `$p = Start-Process -FilePath '${process.execPath}' ` +
-          `-ArgumentList '"${scriptPath}" ${portArg}' ` +
-          `-Verb RunAs -WindowStyle Hidden -PassThru; ` +
+        const launcherPath = join(tmpdir(), 'codeck-mdns-launcher.ps1');
+        const escapedExecPath = process.execPath.replace(/'/g, "''");
+        const escapedScriptPath = scriptPath.replace(/'/g, "''");
+        writeFileSync(launcherPath, [
+          `$p = Start-Process -FilePath '${escapedExecPath}' ` +
+            `-ArgumentList @('${escapedScriptPath}', '${portArg}') ` +
+            `-Verb RunAs -WindowStyle Hidden -PassThru`,
           `Write-Output $p.Id`,
+        ].join('\n'), 'utf-8');
+
+        const { stdout } = await execa('powershell', [
+          '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', launcherPath,
         ]);
         const pid = parseInt(stdout.trim(), 10);
         if (!isNaN(pid) && pid > 0) {
@@ -157,7 +207,7 @@ lanCommand
         console.log(chalk.dim('You can also run `codeck lan start` from an admin terminal.'));
       }
     } else {
-      // macOS/Linux: spawn detached, pass port as argv
+      // macOS/Linux: spawn detached, pass port as argv (array form — no shell interpolation)
       const child = spawn(process.execPath, [scriptPath, portArg], {
         cwd: scriptsDir,
         detached: true,
@@ -201,13 +251,19 @@ lanCommand
     try {
       if (process.platform === 'win32') {
         // Use /F (force) — elevated processes need it. Elevate if needed.
+        const pidStr = String(config.lanPid);
         try {
-          execFileSync('taskkill', ['/PID', String(config.lanPid), '/F', '/T'], { stdio: 'ignore' });
+          execFileSync('taskkill', ['/PID', pidStr, '/F', '/T'], { stdio: 'ignore' });
         } catch {
-          // Non-elevated terminal can't kill elevated process — try via PowerShell elevation
+          // Non-elevated terminal can't kill elevated process — elevate via script file
+          const killScriptPath = join(tmpdir(), 'codeck-taskkill.ps1');
+          writeFileSync(killScriptPath, [
+            `Start-Process -FilePath 'taskkill' ` +
+              `-ArgumentList @('/PID', '${pidStr}', '/F', '/T') ` +
+              `-Verb RunAs -WindowStyle Hidden -Wait`,
+          ].join('\n'), 'utf-8');
           await execa('powershell', [
-            '-NoProfile', '-Command',
-            `Start-Process -FilePath 'taskkill' -ArgumentList '/PID ${config.lanPid} /F /T' -Verb RunAs -WindowStyle Hidden -Wait`,
+            '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', killScriptPath,
           ]);
         }
       } else {

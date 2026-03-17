@@ -45,7 +45,7 @@ export function syncCredentialsAfterCLI(): void {
         const expiresAt: number = raw.claudeAiOauth.expiresAt ?? (Date.now() + 365 * 24 * 60 * 60 * 1000);
         const expiresIn = Math.max(0, Math.round((expiresAt - Date.now()) / 1000));
         const accountInfo = raw.accountInfo ?? getCachedAccountInfo() ?? undefined;
-        saveOAuthToken(token, refreshToken, accountInfo, expiresIn);
+        saveOAuthToken(token, refreshToken, accountInfo || undefined, expiresIn);
         console.log('[Claude] Migrated v2 encrypted credentials to plaintext after CLI execution');
       }
       return;
@@ -63,7 +63,7 @@ export function syncCredentialsAfterCLI(): void {
       const expiresAt: number = raw.claudeAiOauth?.expiresAt ?? 0;
       const expiresIn = expiresAt > 0 ? Math.max(0, Math.round((expiresAt - Date.now()) / 1000)) : undefined;
       const accountInfo = raw.accountInfo ?? getCachedAccountInfo() ?? undefined;
-      saveOAuthToken(token, refreshToken, accountInfo, expiresIn);
+      saveOAuthToken(token, refreshToken, accountInfo || undefined, expiresIn);
       console.log('[Claude] Synced updated credentials after CLI execution');
     }
   } catch (e) {
@@ -667,7 +667,7 @@ let authCache = { checked: false, authenticated: false, checkedAt: 0 };
 let tokenMarkedExpired = false;
 // Timestamp of the last successful token save — used to distinguish fresh logins from stale cache
 let lastTokenSaveAt = 0;
-const AUTH_CACHE_TTL = 3000;
+const AUTH_CACHE_TTL = 5000;
 
 // In-memory token — authoritative while server is running.
 // File deletions (Docker WSL2 sync) cannot break auth once a token is loaded.

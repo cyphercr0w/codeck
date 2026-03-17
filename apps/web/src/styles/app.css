@@ -922,6 +922,10 @@
   white-space: nowrap;
   font-family: inherit;
   position: relative;
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex-shrink: 0;
 }
 
 .terminal-tab:hover {
@@ -1016,10 +1020,6 @@
 @keyframes contextBannerFadeOut {
   from { opacity: 1; }
   to { opacity: 0; }
-}
-
-@keyframes spin {
-  to { transform: rotate(360deg); }
 }
 
 .terminal-tab-edit {

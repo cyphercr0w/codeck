@@ -202,9 +202,9 @@ export async function summarizeSession(sessionId: string, cwd: string): Promise<
   const tags = ['auto-summary'];
 
   // Write to both global and path-scoped daily
-  appendToDaily(summary, project, tags, undefined); // global
+  await appendToDaily(summary, project, tags, undefined); // global
   if (pathId) {
-    appendToDaily(summary, project, tags, pathId); // path-scoped
+    await appendToDaily(summary, project, tags, pathId); // path-scoped
   }
 
   console.log(`[SessionSummarizer] Summarized session ${safeId}: ${digest.durationMs / 1000}s, ${digest.userInputs.length} inputs, ${digest.filePaths.length} files`);

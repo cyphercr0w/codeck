@@ -50,6 +50,12 @@ services:
         max-file: "3"
         compress: "true"
     stop_grace_period: 30s
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:7777/api/status"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
     # read_only: true — disabled: Claude CLI auto-update requires writable /usr/local/
     tmpfs:
       - /tmp:size=512M,mode=1777

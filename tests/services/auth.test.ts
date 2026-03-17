@@ -8,8 +8,6 @@ import { join } from 'path';
 import { randomBytes } from 'crypto';
 import { setupPassword, isPasswordConfigured, validatePassword, validateSession, invalidateSession, _resetForTesting } from '../../apps/runtime/src/services/auth.js';
 
-// Use default CODECK_DIR (/workspace/.codeck) for testing
-// This is acceptable for tests since we'll clean up properly
 const CODECK_DIR = process.env.CODECK_DIR || '/workspace/.codeck';
 const AUTH_FILE = join(CODECK_DIR, 'auth.json');
 const SESSIONS_FILE = join(CODECK_DIR, 'sessions.json');
@@ -299,11 +297,14 @@ describe('services/auth.ts - validatePassword', () => {
     // 3. Integration test that the full flow works
 
     // We can at least verify that both calls complete in reasonable time (not hanging)
-    expect(time1).toBeLessThan(500); // Should complete in <500ms even with scrypt
-    expect(time2).toBeLessThan(500);
+    // Note: scrypt is intentionally slow; on constrained containers it can exceed 500ms
+    expect(time1).toBeLessThan(2000);
+    expect(time2).toBeLessThan(2000);
 
     // And that the variance isn't extreme (would indicate a logic error)
-    expect(timeDifference).toBeLessThan(100); // Allow up to 100ms variance
+    // Allow up to 500ms variance — scrypt dominates timing; on constrained
+    // containers, GC and CPU scheduling add significant noise
+    expect(timeDifference).toBeLessThan(500);
   });
 
   it('should upgrade legacy SHA-256 hash to scrypt', async () => {

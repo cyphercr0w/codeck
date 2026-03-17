@@ -49,11 +49,14 @@ export class RateLimiter {
 
 // ── Factory with env var defaults ──
 
-function envInt(name: string, fallback: number): number {
+function envInt(name: string, fallback: number, min?: number, max?: number): number {
   const val = process.env[name];
   if (!val) return fallback;
   const parsed = parseInt(val, 10);
-  return isNaN(parsed) ? fallback : parsed;
+  if (isNaN(parsed)) return fallback;
+  if (min !== undefined && parsed < min) return min;
+  if (max !== undefined && parsed > max) return max;
+  return parsed;
 }
 
 /**
@@ -62,8 +65,8 @@ function envInt(name: string, fallback: number): number {
  */
 export function createAuthLimiter(): RateLimiter {
   return new RateLimiter({
-    max: envInt('RATE_AUTH_MAX', 10),
-    windowMs: envInt('RATE_AUTH_WINDOW_MS', 60_000),
+    max: envInt('RATE_AUTH_MAX', 10, 1, 1000),
+    windowMs: envInt('RATE_AUTH_WINDOW_MS', 60_000, 1000, 3_600_000),
   });
 }
 
@@ -74,16 +77,17 @@ export function createAuthLimiter(): RateLimiter {
  */
 export function createWritesLimiter(): RateLimiter {
   return new RateLimiter({
-    max: envInt('RATE_WRITES_MAX', 60),
-    windowMs: envInt('RATE_WRITES_WINDOW_MS', 60_000),
+    max: envInt('RATE_WRITES_MAX', 60, 1, 10_000),
+    windowMs: envInt('RATE_WRITES_WINDOW_MS', 60_000, 1000, 3_600_000),
   });
 }
 
 // ── Brute-force lockout (separate mechanism) ──
 // Env: LOCKOUT_THRESHOLD (default 5), LOCKOUT_DURATION_MS (default 900000 = 15 min)
 
-const LOCKOUT_THRESHOLD = envInt('LOCKOUT_THRESHOLD', 5);
-const LOCKOUT_DURATION_MS = envInt('LOCKOUT_DURATION_MS', 15 * 60_000);
+const MAX_LOCKOUT_MS = 86_400_000; // 24 hours
+const LOCKOUT_THRESHOLD = envInt('LOCKOUT_THRESHOLD', 5, 1, 100);
+const LOCKOUT_DURATION_MS = envInt('LOCKOUT_DURATION_MS', 15 * 60_000, 1000, MAX_LOCKOUT_MS);
 
 interface LockoutEntry {
   count: number;

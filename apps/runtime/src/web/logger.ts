@@ -42,10 +42,16 @@ export function setWsClients(clients: WebSocket[]): void {
   wsClients = clients;
 }
 
+// Maximum buffered bytes before skipping a send — prevents slow clients
+// from causing backpressure that stalls the event loop.
+const MAX_WS_BUFFERED = 256 * 1024; // 256KB
+
 export function broadcast(data: unknown): void {
   const msg = JSON.stringify(data);
   wsClients.forEach(ws => {
-    if (ws.readyState === WebSocket.OPEN) ws.send(msg);
+    if (ws.readyState === WebSocket.OPEN && ws.bufferedAmount < MAX_WS_BUFFERED) {
+      ws.send(msg);
+    }
   });
 }
 

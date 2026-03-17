@@ -281,7 +281,6 @@ export function ClaudeSection({ onNewSession, onNewShell }: ClaudeSectionProps) 
                 {s.loading ? (
                   <span class="terminal-tab-loading">
                     <span class="spinner-sm" />
-                    {s.name}
                   </span>
                 ) : editingTabId === s.id ? (
                   <input

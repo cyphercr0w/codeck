@@ -76,17 +76,22 @@ export function isGhInstalled(): boolean {
  * getGitStatus() is called from broadcastStatus() every 15s via the auth
  * monitor. Only re-checked at startup and after explicit login/logout.
  */
-let ghAuthCache: { result: boolean; checked: boolean } = { result: false, checked: false };
+let ghAuthCache: { result: boolean; checked: boolean; checking: boolean } = { result: false, checked: false, checking: false };
 
 export function isGhAuthenticated(): boolean {
-  if (ghAuthCache.checked) return ghAuthCache.result;
-  const result = spawnSync('gh', ['auth', 'status'], { stdio: 'pipe', timeout: 10000 });
-  ghAuthCache = { result: result.status === 0, checked: true };
+  if (!ghAuthCache.checked && !ghAuthCache.checking) {
+    // Run async — don't block the event loop
+    ghAuthCache.checking = true;
+    const { execFile } = require('child_process');
+    execFile('gh', ['auth', 'status'], { timeout: 5000 }, (err: any) => {
+      ghAuthCache = { result: !err, checked: true, checking: false };
+    });
+  }
   return ghAuthCache.result;
 }
 
 export function invalidateGhAuthCache(): void {
-  ghAuthCache = { result: false, checked: false };
+  ghAuthCache = { result: false, checked: false, checking: false };
 }
 
 /**
@@ -117,7 +122,10 @@ function loadGitHubAccountInfo(): void {
  */
 export function initGitHub(): void {
   if (!isGhInstalled()) return;
-  if (isGhAuthenticated()) {
+  // At startup, do a synchronous check (acceptable — only runs once)
+  const startupResult = spawnSync('gh', ['auth', 'status'], { stdio: 'pipe', timeout: 5000 });
+  ghAuthCache = { result: startupResult.status === 0, checked: true, checking: false };
+  if (ghAuthCache.result) {
     gitHubConfig.authenticated = true;
     gitHubConfig.mode = 'full';
     loadGitHubAccountInfo();
@@ -671,21 +679,27 @@ export function getSSHPublicKey(): string | null {
 
 /**
  * Check if we can connect to GitHub via SSH.
- * Cached permanently — spawnSync blocks the event loop for up to 10s.
+ * Cached permanently — checked asynchronously to avoid blocking the event loop.
+ * getGitStatus() always returns the cached value (never blocks).
  * Only re-checked after explicit SSH key generation/deletion.
  */
-let sshTestCache: { result: boolean; checked: boolean } = { result: false, checked: false };
+let sshTestCache: { result: boolean; checked: boolean; checking: boolean } = { result: false, checked: false, checking: false };
 
 export function testSSHConnection(): boolean {
-  if (sshTestCache.checked) return sshTestCache.result;
-  const result = spawnSync('ssh', ['-T', 'git@github.com'], { stdio: 'pipe', timeout: 10000 });
-  const output = (result.stdout?.toString() || '') + (result.stderr?.toString() || '');
-  sshTestCache = { result: output.includes('successfully authenticated'), checked: true };
+  if (!sshTestCache.checked && !sshTestCache.checking) {
+    // Run async — don't block the event loop
+    sshTestCache.checking = true;
+    const { execFile } = require('child_process');
+    execFile('ssh', ['-T', '-o', 'ConnectTimeout=5', 'git@github.com'], { timeout: 6000 }, (err: any, stdout: string, stderr: string) => {
+      const output = (stdout || '') + (stderr || '');
+      sshTestCache = { result: output.includes('successfully authenticated'), checked: true, checking: false };
+    });
+  }
   return sshTestCache.result;
 }
 
 export function invalidateSSHCache(): void {
-  sshTestCache = { result: false, checked: false };
+  sshTestCache = { result: false, checked: false, checking: false };
 }
 
 /**

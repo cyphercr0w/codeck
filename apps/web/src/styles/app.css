@@ -872,14 +872,17 @@
 }
 
 .terminal-tab.loading {
-  opacity: 0.7;
+  opacity: 0.5;
   cursor: default;
+  pointer-events: none;
+  min-width: 56px;
+  justify-content: center;
 }
 
 .terminal-tab-loading {
   display: flex;
   align-items: center;
-  gap: 6px;
+  justify-content: center;
 }
 
 .spinner-sm {

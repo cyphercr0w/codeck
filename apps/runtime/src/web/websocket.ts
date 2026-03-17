@@ -35,9 +35,40 @@ const sessionMaxDimensions = new Map<string, { cols: number; rows: number }>();
 // Max input payload size per WS message (64KB per OWASP recommendation)
 const MAX_INPUT_SIZE = 65536;
 
-// Rate limiting removed — single-user terminal app where 300 msg/min was too low
-// for normal typing speed (60 WPM = 300 keystrokes/min). MaxPayload (64KB) is
-// sufficient protection against abuse.
+// Token bucket rate limiter for console:input messages.
+// Allows bursts (paste operations) while preventing sustained DoS.
+// Normal typing at 60 WPM is ~5 chars/sec, well under the 20/sec refill rate.
+// Non-input messages (resize, attach, focus) are never rate-limited.
+interface TokenBucket {
+  tokens: number;
+  lastRefill: number;
+}
+
+const BUCKET_SIZE = 100;       // max burst capacity
+const REFILL_RATE = 20;        // tokens per second (1200/min)
+
+const inputBuckets = new WeakMap<WebSocket, TokenBucket>();
+
+function consumeInputToken(ws: WebSocket): boolean {
+  let bucket = inputBuckets.get(ws);
+  if (!bucket) {
+    bucket = { tokens: BUCKET_SIZE, lastRefill: Date.now() };
+    inputBuckets.set(ws, bucket);
+  }
+
+  // Refill tokens based on elapsed time
+  const now = Date.now();
+  const elapsed = (now - bucket.lastRefill) / 1000;
+  bucket.tokens = Math.min(BUCKET_SIZE, bucket.tokens + elapsed * REFILL_RATE);
+  bucket.lastRefill = now;
+
+  if (bucket.tokens < 1) {
+    return false; // drop message silently
+  }
+
+  bucket.tokens -= 1;
+  return true;
+}
 
 let wss: WebSocketServer;
 
@@ -344,6 +375,9 @@ function handleConsoleMessage(ws: WebSocket, msg: { type: string; sessionId: str
   }
 
   if (msg.type === 'console:input') {
+    // Token bucket rate limit — drop excess input silently (don't disconnect)
+    if (!consumeInputToken(ws)) return;
+
     // Also track input as active — covers keyboard-only navigation
     const prevActive = sessionActiveClient.get(msg.sessionId);
     sessionActiveClient.set(msg.sessionId, ws);

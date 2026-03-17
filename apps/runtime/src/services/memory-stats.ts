@@ -19,9 +19,6 @@ export interface MemoryStats {
   decisionsCount: number;
   projectsTracked: number;
   lastActivityAt: number | null;
-  totalSessionBytes: number;
-  estimatedTokens: number;
-  estimatedCostUsd: number;
 }
 
 /** Count files in a directory matching an optional extension filter */
@@ -89,30 +86,6 @@ async function lastDailyActivity(): Promise<number | null> {
   }
 }
 
-/** Compute total size of session JSONL files in bytes */
-async function sessionBytesTotal(): Promise<number> {
-  if (!existsSync(SESSIONS_DIR)) return 0;
-  let total = 0;
-  try {
-    const entries = await readdir(SESSIONS_DIR);
-    for (const name of entries) {
-      if (!name.endsWith('.jsonl')) continue;
-      try {
-        const s = await stat(join(SESSIONS_DIR, name));
-        total += s.size;
-      } catch { /* skip */ }
-    }
-  } catch { /* dir unreadable */ }
-  return total;
-}
-
-// Sonnet 4.5 pricing per million tokens (USD)
-const SONNET_INPUT_PER_MTOK = 3;
-const SONNET_OUTPUT_PER_MTOK = 15;
-// Typical coding session is ~80% input (context), 20% output (responses)
-const BLENDED_PER_MTOK = SONNET_INPUT_PER_MTOK * 0.8 + SONNET_OUTPUT_PER_MTOK * 0.2; // $5.40
-// Claude tokenization: ~1 token per 3.5 characters (bytes ≈ chars for UTF-8 code/english)
-const BYTES_PER_TOKEN = 3.5;
 
 /** Count path memory directories (each represents a tracked project) */
 async function countProjects(): Promise<number> {
@@ -134,7 +107,6 @@ export async function getMemoryStats(): Promise<MemoryStats> {
     decisionsCount,
     projectsTracked,
     lastActivityAt,
-    totalSessionBytes,
   ] = await Promise.all([
     countFiles(SESSIONS_DIR, '.jsonl'),
     dirSizeBytes(MEMORY_DIR),
@@ -143,11 +115,7 @@ export async function getMemoryStats(): Promise<MemoryStats> {
     countFiles(DECISIONS_DIR, '.md'),
     countProjects(),
     lastDailyActivity(),
-    sessionBytesTotal(),
   ]);
-
-  const estimatedTokens = Math.ceil(totalSessionBytes / BYTES_PER_TOKEN);
-  const estimatedCostUsd = parseFloat(((estimatedTokens / 1_000_000) * BLENDED_PER_MTOK).toFixed(2));
 
   return {
     sessionsRemembered,
@@ -157,8 +125,5 @@ export async function getMemoryStats(): Promise<MemoryStats> {
     decisionsCount,
     projectsTracked,
     lastActivityAt,
-    totalSessionBytes,
-    estimatedTokens,
-    estimatedCostUsd,
   };
 }

@@ -28,9 +28,6 @@ interface MemoryStats {
   decisionsCount: number;
   projectsTracked: number;
   lastActivityAt: number | null;
-  totalSessionBytes: number;
-  estimatedTokens: number;
-  estimatedCostUsd: number;
 }
 
 interface HomeSectionProps {
@@ -86,17 +83,6 @@ function formatTimeAgo(timestamp: number | null): string {
   return `${days}d ago`;
 }
 
-function formatTokens(tokens: number): string {
-  if (tokens < 1_000) return `${tokens}`;
-  if (tokens < 1_000_000) return `${(tokens / 1_000).toFixed(1)}K`;
-  return `${(tokens / 1_000_000).toFixed(2)}M`;
-}
-
-function formatCost(usd: number): string {
-  if (usd < 0.01) return '<$0.01';
-  if (usd < 1) return `$${usd.toFixed(2)}`;
-  return `$${usd.toFixed(2)}`;
-}
 
 function barColor(percent: number): string {
   if (percent < 60) return 'var(--success)';
@@ -602,32 +588,6 @@ export function HomeSection({ onRelogin }: HomeSectionProps) {
                 </div>
               )}
 
-              {/* Estimated Usage */}
-              {memoryStats && memoryStats.totalSessionBytes > 0 && (
-                <div class="dash-card">
-                  <div class="dash-card-title">
-                    <IconActivity size={14} />
-                    <span>Estimated Usage</span>
-                  </div>
-                  <div class="dash-memory-stats">
-                    <div class="dash-memory-stat">
-                      <span class="dash-memory-stat-value">~{formatTokens(memoryStats.estimatedTokens)}</span>
-                      <span class="dash-memory-stat-label">tokens (estimated)</span>
-                    </div>
-                    <div class="dash-memory-stat">
-                      <span class="dash-memory-stat-value">~{formatCost(memoryStats.estimatedCostUsd)}</span>
-                      <span class="dash-memory-stat-label">cost (Sonnet pricing)</span>
-                    </div>
-                    <div class="dash-memory-stat">
-                      <span class="dash-memory-stat-value">{formatBytes(memoryStats.totalSessionBytes)}</span>
-                      <span class="dash-memory-stat-label">session transcripts</span>
-                    </div>
-                  </div>
-                  <div class="dash-meta">
-                    Based on session transcript sizes. Assumes Sonnet 4 pricing ($3/$15 per MTok, 50/50 in/out). Actual costs may vary.
-                  </div>
-                </div>
-              )}
             </div>
           )}
         </div>

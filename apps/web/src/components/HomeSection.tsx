@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'preact/hooks';
 import { accountEmail, accountOrg, claudeAuthenticated, sessions, agentName, activePorts, wsConnected, dockerExperimental } from '../state/store';
 import { apiFetch, getAuthToken } from '../api';
-import { IconUser, IconMonitor, IconActivity, IconShield, IconHardDrive, IconDownload, IconPlug, IconPlus, IconX } from './Icons';
+import { IconUser, IconMonitor, IconActivity, IconShield, IconHardDrive, IconDownload, IconPlug, IconPlus, IconX, IconBrain } from './Icons';
 import { ConfirmModal } from './ConfirmModal';
 
 interface DashboardData {
@@ -18,6 +18,16 @@ interface DashboardData {
     fiveHour: { percent: number; resetsAt: string | null } | null;
     sevenDay: { percent: number; resetsAt: string | null } | null;
   };
+}
+
+interface MemoryStats {
+  sessionsRemembered: number;
+  totalMemoryKB: number;
+  durableMemoryLines: number;
+  dailyLogCount: number;
+  decisionsCount: number;
+  projectsTracked: number;
+  lastActivityAt: number | null;
 }
 
 interface HomeSectionProps {
@@ -61,6 +71,18 @@ function formatTimeUntil(isoDate: string | null): string {
   return `${mins}m`;
 }
 
+function formatTimeAgo(timestamp: number | null): string {
+  if (!timestamp) return 'Never';
+  const diff = Date.now() - timestamp;
+  if (diff < 60_000) return 'Just now';
+  const mins = Math.floor(diff / 60_000);
+  if (mins < 60) return `${mins}m ago`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  return `${days}d ago`;
+}
+
 function barColor(percent: number): string {
   if (percent < 60) return 'var(--success)';
   if (percent < 80) return 'var(--warning)';
@@ -94,6 +116,7 @@ export function HomeSection({ onRelogin }: HomeSectionProps) {
   const [addingPort, setAddingPort] = useState(false);
   const [removingPort, setRemovingPort] = useState<number | null>(null);
   const [confirmAction, setConfirmAction] = useState<{ type: 'add' | 'remove'; port: number } | null>(null);
+  const [memoryStats, setMemoryStats] = useState<MemoryStats | null>(null);
 
   const connected = wsConnected.value;
 
@@ -101,7 +124,8 @@ export function HomeSection({ onRelogin }: HomeSectionProps) {
     loadDashboard();
     loadPermissions();
     loadNetworkInfo();
-    const interval = setInterval(loadDashboard, DASHBOARD_REFRESH_MS);
+    loadMemoryStats();
+    const interval = setInterval(() => { loadDashboard(); loadMemoryStats(); }, DASHBOARD_REFRESH_MS);
     return () => clearInterval(interval);
   }, []);
 
@@ -131,6 +155,13 @@ export function HomeSection({ onRelogin }: HomeSectionProps) {
     } finally {
       setDashLoading(false);
     }
+  }
+
+  async function loadMemoryStats() {
+    try {
+      const res = await apiFetch('/api/dashboard/memory-stats');
+      setMemoryStats(await res.json());
+    } catch { /* ignore — card just won't show */ }
   }
 
   async function loadPermissions() {
@@ -481,6 +512,41 @@ export function HomeSection({ onRelogin }: HomeSectionProps) {
                   )}
                   <div class="dash-meta">
                     Mapped ports are accessible at localhost:{'{port}'} from your browser. Adding a port restarts the container.
+                  </div>
+                </div>
+              )}
+
+              {/* Agent Memory */}
+              {memoryStats && (
+                <div class="dash-card">
+                  <div class="dash-card-title">
+                    <IconBrain size={14} />
+                    <span>Agent Memory</span>
+                  </div>
+                  <div class="dash-memory-stats">
+                    <div class="dash-memory-stat">
+                      <span class="dash-memory-stat-value">{memoryStats.sessionsRemembered}</span>
+                      <span class="dash-memory-stat-label">sessions remembered</span>
+                    </div>
+                    <div class="dash-memory-stat">
+                      <span class="dash-memory-stat-value">{memoryStats.projectsTracked}</span>
+                      <span class="dash-memory-stat-label">projects tracked</span>
+                    </div>
+                    <div class="dash-memory-stat">
+                      <span class="dash-memory-stat-value">{memoryStats.decisionsCount}</span>
+                      <span class="dash-memory-stat-label">decisions recorded</span>
+                    </div>
+                    <div class="dash-memory-stat">
+                      <span class="dash-memory-stat-value">{memoryStats.dailyLogCount}</span>
+                      <span class="dash-memory-stat-label">daily logs</span>
+                    </div>
+                  </div>
+                  <div class="dash-meta">
+                    Last active: {formatTimeAgo(memoryStats.lastActivityAt)} &nbsp;|&nbsp; {memoryStats.totalMemoryKB} KB total
+                  </div>
+                  <div class="dash-memory-status">
+                    <span class="dash-memory-dot" />
+                    <span>Memory active</span>
                   </div>
                 </div>
               )}

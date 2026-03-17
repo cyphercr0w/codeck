@@ -2379,6 +2379,56 @@
   background: var(--accent-subtle);
 }
 
+/* ── Agent Memory card ── */
+
+.dash-memory-stats {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-top: 8px;
+}
+
+.dash-memory-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.dash-memory-stat-value {
+  font-size: 20px;
+  font-weight: 600;
+  color: var(--text);
+  line-height: 1.2;
+}
+
+.dash-memory-stat-label {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.dash-memory-status {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 10px;
+  font-size: 12px;
+  color: var(--success);
+}
+
+.dash-memory-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--success);
+  display: inline-block;
+  animation: memory-pulse 2s ease-in-out infinite;
+}
+
+@keyframes memory-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
 /* ========== Mobile Terminal ========== */
 /* All styles scoped to .mobile-terminal class (set by JS, NOT media queries).
    A desktop user with a small browser does NOT get mobile features. */

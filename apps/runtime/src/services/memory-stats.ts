@@ -19,6 +19,9 @@ export interface MemoryStats {
   decisionsCount: number;
   projectsTracked: number;
   lastActivityAt: number | null;
+  totalSessionBytes: number;
+  estimatedTokens: number;
+  estimatedCostUsd: number;
 }
 
 /** Count files in a directory matching an optional extension filter */
@@ -86,6 +89,31 @@ async function lastDailyActivity(): Promise<number | null> {
   }
 }
 
+/** Compute total size of session JSONL files in bytes */
+async function sessionBytesTotal(): Promise<number> {
+  if (!existsSync(SESSIONS_DIR)) return 0;
+  let total = 0;
+  try {
+    const entries = await readdir(SESSIONS_DIR);
+    for (const name of entries) {
+      if (!name.endsWith('.jsonl')) continue;
+      try {
+        const s = await stat(join(SESSIONS_DIR, name));
+        total += s.size;
+      } catch { /* skip */ }
+    }
+  } catch { /* dir unreadable */ }
+  return total;
+}
+
+// Sonnet pricing per million tokens (USD)
+const SONNET_INPUT_PER_MTOK = 3;
+const SONNET_OUTPUT_PER_MTOK = 15;
+// Assume 50/50 input/output mix → blended rate
+const BLENDED_PER_MTOK = (SONNET_INPUT_PER_MTOK + SONNET_OUTPUT_PER_MTOK) / 2;
+// Rough conversion: 1 byte ≈ 0.25 tokens
+const BYTES_TO_TOKENS = 0.25;
+
 /** Count path memory directories (each represents a tracked project) */
 async function countProjects(): Promise<number> {
   if (!existsSync(PATHS_DIR)) return 0;
@@ -106,6 +134,7 @@ export async function getMemoryStats(): Promise<MemoryStats> {
     decisionsCount,
     projectsTracked,
     lastActivityAt,
+    totalSessionBytes,
   ] = await Promise.all([
     countFiles(SESSIONS_DIR, '.jsonl'),
     dirSizeBytes(MEMORY_DIR),
@@ -114,7 +143,11 @@ export async function getMemoryStats(): Promise<MemoryStats> {
     countFiles(DECISIONS_DIR, '.md'),
     countProjects(),
     lastDailyActivity(),
+    sessionBytesTotal(),
   ]);
+
+  const estimatedTokens = Math.round(totalSessionBytes * BYTES_TO_TOKENS);
+  const estimatedCostUsd = parseFloat(((estimatedTokens / 1_000_000) * BLENDED_PER_MTOK).toFixed(2));
 
   return {
     sessionsRemembered,
@@ -124,5 +157,8 @@ export async function getMemoryStats(): Promise<MemoryStats> {
     decisionsCount,
     projectsTracked,
     lastActivityAt,
+    totalSessionBytes,
+    estimatedTokens,
+    estimatedCostUsd,
   };
 }

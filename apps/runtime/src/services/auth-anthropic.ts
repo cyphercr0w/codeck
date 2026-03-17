@@ -684,6 +684,17 @@ const AUTH_CACHE_TTL = 5000;
 let inMemoryToken: string | null = null;
 let inMemoryTokenExpiresAt = 0; // ms since epoch; 0 = unknown (treated as valid)
 
+// Eagerly populate in-memory token from disk at startup so the first
+// WebSocket status broadcast reports authenticated=true immediately.
+try {
+  const _creds = readCredentials();
+  if (_creds?.claudeAiOauth?.accessToken && isRealToken(_creds.claudeAiOauth.accessToken)) {
+    inMemoryToken = _creds.claudeAiOauth.accessToken;
+    inMemoryTokenExpiresAt = _creds.claudeAiOauth.expiresAt || 0;
+    console.log('[Claude] Auth pre-loaded from credentials file at startup');
+  }
+} catch { /* non-fatal — first WS connect will do a lazy read */ }
+
 /** Get the in-memory token (authoritative, survives file deletions). Returns null if expired. */
 export function getInMemoryToken(): string | null {
   if (!inMemoryToken) return null;

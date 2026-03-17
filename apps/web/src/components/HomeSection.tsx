@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'preact/hooks';
-import { accountEmail, accountOrg, claudeAuthenticated, sessions, agentName, activePorts, wsConnected, dockerExperimental } from '../state/store';
+import { accountEmail, accountOrg, claudeAuthenticated, sessions, agentName, activePorts, wsConnected, dockerExperimental, setActiveSection } from '../state/store';
 import { apiFetch, getAuthToken } from '../api';
 import { IconUser, IconMonitor, IconActivity, IconShield, IconHardDrive, IconDownload, IconPlug, IconPlus, IconX, IconBrain } from './Icons';
 import { ConfirmModal } from './ConfirmModal';
@@ -117,8 +117,16 @@ export function HomeSection({ onRelogin }: HomeSectionProps) {
   const [removingPort, setRemovingPort] = useState<number | null>(null);
   const [confirmAction, setConfirmAction] = useState<{ type: 'add' | 'remove'; port: number } | null>(null);
   const [memoryStats, setMemoryStats] = useState<MemoryStats | null>(null);
+  const [welcomeDismissed, setWelcomeDismissed] = useState(() => localStorage.getItem('codeck-welcome-dismissed') === '1');
 
   const connected = wsConnected.value;
+
+  const showWelcome = !welcomeDismissed && sessionCount === 0 && memoryStats !== null && memoryStats.sessionsRemembered === 0;
+
+  function dismissWelcome() {
+    localStorage.setItem('codeck-welcome-dismissed', '1');
+    setWelcomeDismissed(true);
+  }
 
   useEffect(() => {
     loadDashboard();
@@ -311,6 +319,34 @@ export function HomeSection({ onRelogin }: HomeSectionProps) {
             </div>
           </div>
         )}
+
+        {showWelcome && (
+          <div class="welcome-card">
+            <button class="welcome-dismiss" onClick={dismissWelcome} title="Dismiss">
+              <IconX size={14} />
+            </button>
+            <h2 class="welcome-title">Welcome to Codeck</h2>
+            <p class="welcome-subtitle">Your AI coding agent with persistent memory</p>
+            <ul class="welcome-features">
+              <li>
+                <span class="welcome-feature-icon" aria-hidden="true">&#129504;</span>
+                <span><strong>Agent Memory</strong> — Claude remembers your projects, preferences, and decisions across sessions</span>
+              </li>
+              <li>
+                <span class="welcome-feature-icon" aria-hidden="true">&#128421;&#65039;</span>
+                <span><strong>Always On</strong> — Your machine runs 24/7, accessible from any device</span>
+              </li>
+              <li>
+                <span class="welcome-feature-icon" aria-hidden="true">&#9889;</span>
+                <span><strong>Skills &amp; Agents</strong> — Pre-loaded knowledge packs and sub-agents that make Claude smarter</span>
+              </li>
+            </ul>
+            <button class="btn btn-primary welcome-cta" onClick={() => { setActiveSection('claude'); history.pushState(null, '', '/claude'); }}>
+              Start your first session →
+            </button>
+          </div>
+        )}
+
         <div class="home-header">
           <div class="home-title">
             <IconUser size={20} />

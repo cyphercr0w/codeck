@@ -160,7 +160,7 @@ export function App() {
 
     function needsAttention(): boolean {
       const statuses = sessionStatus.value;
-      return Object.values(statuses).some(s => s === 'waiting' || s === 'idle');
+      return Object.values(statuses).some(s => s === 'waiting');
     }
 
     // React to session status changes: start flash if tab is hidden + needs attention

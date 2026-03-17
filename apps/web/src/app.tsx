@@ -327,11 +327,13 @@ export function App() {
     try {
       await apiFetch('/api/claude/logout', { method: 'POST' });
     } catch { /* ignore */ }
-    // Reset client-side auth state and show login view
+    // Reset client-side auth state and show Claude login (setup) view
     claudeAuthenticated.value = false;
     accountEmail.value = null;
     accountOrg.value = null;
-    setView('auth');
+    // Go to 'setup' view which shows the Claude Connect button,
+    // NOT 'auth' which is the password setup/login screen
+    setView('setup');
   }
 
   async function handleLoginSuccess() {

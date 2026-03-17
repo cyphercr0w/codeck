@@ -467,6 +467,11 @@ function saveOAuthToken(token: string, refreshToken = '', accountInfo?: AccountI
   lastTokenSaveAt = Date.now();
   invalidateAuthCache();
 
+  // Restart token refresh monitor if it was stopped (e.g., after logout)
+  if (!refreshMonitorInterval) {
+    startTokenRefreshMonitor(refreshMonitorBroadcast ?? undefined);
+  }
+
   const expiresInHours = Math.round(ttlMs / 3600000);
   console.log(`[Claude] ✓ Token saved (plaintext + encrypted backup, expires in ${expiresInHours}h, refresh_token: ${refreshToken ? 'yes' : 'no'})`);
   return true;

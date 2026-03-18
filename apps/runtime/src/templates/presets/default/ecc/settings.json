@@ -33,6 +33,37 @@
         ]
       }
     ],
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node /workspace/.codeck/scripts/post-edit-verify.mjs"
+          }
+        ]
+      },
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node /workspace/.codeck/scripts/learning-observer.mjs"
+          }
+        ]
+      }
+    ],
+    "PreCompact": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node /workspace/.codeck/scripts/pre-compact-hook.mjs"
+          }
+        ]
+      }
+    ],
     "PostCompact": [
       {
         "matcher": "",

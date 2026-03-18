@@ -46,7 +46,15 @@ export function ReconnectOverlay() {
         {showRetry && (
           <button
             class="reconnect-retry-btn"
-            onClick={() => location.reload()}
+            onClick={() => {
+              // Force hard reload bypassing cache — fixes stale SW/cache issues
+              if ('serviceWorker' in navigator) {
+                navigator.serviceWorker.getRegistrations().then(regs => {
+                  for (const reg of regs) reg.unregister();
+                });
+              }
+              window.location.href = window.location.href;
+            }}
           >
             Reload page
           </button>

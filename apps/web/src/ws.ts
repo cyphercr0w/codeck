@@ -294,7 +294,7 @@ export async function connectWebSocket(): Promise<void> {
 
   // Pre-flight: check if runtime is ready before attempting WS upgrade
   try {
-    const healthRes = await fetch('/api/runtime/health');
+    const healthRes = await fetch('/api/runtime/health', { cache: 'no-store' });
     const health = await healthRes.json();
     if (!health.ready) {
       // Schedule retry without attempting noisy WS upgrade
@@ -335,4 +335,9 @@ export function disconnectWebSocket(): void {
   if (staleCheckTimer) { clearInterval(staleCheckTimer); staleCheckTimer = null; }
   ws?.close();
   ws = null;
+}
+
+// Clean up timers before page unload to prevent ghost reconnection loops
+if (typeof window !== 'undefined') {
+  window.addEventListener('beforeunload', () => disconnectWebSocket());
 }

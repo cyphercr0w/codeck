@@ -29,6 +29,14 @@ Every code change follows this cycle. No exceptions.
 
 **Never skip step 3.** A 30-second review catches bugs that take hours to debug. If you commit without reviewing, you are shipping untested work.
 
+## Debugging Retry Budget
+
+- Cap debugging attempts at **3 tries** per approach. If the same fix strategy fails 3 times, STOP.
+- After 3 fails: step back, re-read the error, re-read the code, and try a fundamentally different approach.
+- **Sentinel check**: if you have made 5+ tool calls without meaningful file changes (no Edit, no Write that changed content), pause and re-evaluate. You may be spinning.
+- When stuck: write what you know to the daily log, then try a fresh angle or ask the user for guidance.
+- **Better context beats more retries.** Invest in understanding the problem rather than hammering the same approach.
+
 ## During work
 - Work in small, verifiable increments. Test after each change.
 - If a task is complex, break it into subtasks and execute sequentially.

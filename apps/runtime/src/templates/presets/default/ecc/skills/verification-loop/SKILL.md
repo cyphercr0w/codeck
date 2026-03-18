@@ -7,6 +7,8 @@
 ---
 name: verification-loop
 description: "A comprehensive verification system for Claude Code sessions."
+context: fork
+allowed-tools: Read, Grep, Glob, Bash
 ---
 
 # Verification Loop Skill

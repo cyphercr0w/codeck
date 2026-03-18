@@ -75,6 +75,17 @@
         ]
       }
     ],
+    "UserPromptSubmit": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node /workspace/.codeck/scripts/memory-nudge-hook.mjs"
+          }
+        ]
+      }
+    ],
     "Stop": [
       {
         "matcher": "",

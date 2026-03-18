@@ -2,7 +2,7 @@
   "id": "default",
   "name": "Default (Recommended)",
   "description": "Persistent memory system, rules, sandbox skills, plus 13 sub-agents, 31+ slash commands, universal knowledge packs and dev hooks from everything-claude-code.",
-  "version": "6.1.0",
+  "version": "6.2.0",
   "author": "codeck",
   "icon": "⚡",
   "tags": ["general", "recommended"],
@@ -28,7 +28,8 @@
     { "src": "scripts/memory-stop-hook.mjs",       "dest": "/workspace/.codeck/scripts/memory-stop-hook.mjs" },
     { "src": "scripts/post-edit-verify.mjs",     "dest": "/workspace/.codeck/scripts/post-edit-verify.mjs" },
     { "src": "scripts/pre-compact-hook.mjs",     "dest": "/workspace/.codeck/scripts/pre-compact-hook.mjs" },
-    { "src": "scripts/learning-observer.mjs",    "dest": "/workspace/.codeck/scripts/learning-observer.mjs" }
+    { "src": "scripts/learning-observer.mjs",    "dest": "/workspace/.codeck/scripts/learning-observer.mjs" },
+    { "src": "scripts/memory-nudge-hook.mjs",   "dest": "/workspace/.codeck/scripts/memory-nudge-hook.mjs" }
   ],
   "directories": [
     "/workspace/.codeck/memory/daily",

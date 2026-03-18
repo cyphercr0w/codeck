@@ -265,6 +265,103 @@ function migrateRulesLayout(codeckDir: string): void {
   }
 }
 
+// Prefix that identifies preset-managed hooks (vs user-added hooks)
+// Use rewritePath to handle non-Docker deployments where WORKSPACE differs
+const PRESET_HOOK_PREFIX = rewritePath('/workspace/.codeck/scripts/');
+
+/**
+ * Extract all command strings from a hooks entry array.
+ * Each entry has { matcher, hooks: [{ type, command }] }.
+ */
+function extractCommands(entries: unknown[]): Set<string> {
+  const cmds = new Set<string>();
+  for (const entry of entries) {
+    if (!entry || typeof entry !== 'object') continue;
+    const hooks = (entry as Record<string, unknown>).hooks;
+    if (!Array.isArray(hooks)) continue;
+    for (const h of hooks) {
+      if (h && typeof h === 'object' && typeof (h as Record<string, unknown>).command === 'string') {
+        cmds.add((h as Record<string, unknown>).command as string);
+      }
+    }
+  }
+  return cmds;
+}
+
+/**
+ * Merge preset hooks into an existing settings.json (additive-only).
+ * Only adds hooks whose command points to PRESET_HOOK_PREFIX.
+ * Never removes hooks, never touches permissions or other fields.
+ */
+function mergePresetHooks(presetDir: string): void {
+  const templatePath = join(presetDir, 'ecc', 'settings.json');
+  const settingsDest = rewritePath('/root/.claude/settings.json');
+
+  if (!existsSync(templatePath) || !existsSync(settingsDest)) return;
+
+  try {
+    const template = JSON.parse(readFileSync(templatePath, 'utf-8'));
+    const current = JSON.parse(readFileSync(settingsDest, 'utf-8'));
+
+    const templateHooks = template.hooks;
+    if (!templateHooks || typeof templateHooks !== 'object') return;
+
+    if (!current.hooks || typeof current.hooks !== 'object') {
+      current.hooks = {};
+    }
+
+    let added = 0;
+    for (const [event, templateEntries] of Object.entries(templateHooks)) {
+      if (!Array.isArray(templateEntries)) continue;
+
+      // Get existing commands for this event
+      const currentEntries: unknown[] = Array.isArray(current.hooks[event]) ? current.hooks[event] : [];
+      const existingCmds = extractCommands(currentEntries);
+
+      // Add missing preset entries
+      for (const entry of templateEntries) {
+        if (!entry || typeof entry !== 'object') continue;
+        const hooks = (entry as Record<string, unknown>).hooks;
+        if (!Array.isArray(hooks)) continue;
+
+        // Rewrite command paths for non-Docker deployments
+        const rewrittenEntry = JSON.parse(JSON.stringify(entry));
+        const rewrittenHooks = (rewrittenEntry as Record<string, unknown>).hooks as Array<Record<string, unknown>>;
+        for (const h of rewrittenHooks) {
+          if (typeof h.command === 'string') {
+            h.command = rewritePath(h.command);
+          }
+        }
+
+        // Check if ALL commands in this entry are preset-managed
+        const cmds = rewrittenHooks
+          .filter(h => typeof h.command === 'string')
+          .map(h => h.command as string);
+
+        const allPresetManaged = cmds.every(c => c.includes(PRESET_HOOK_PREFIX));
+        if (!allPresetManaged) continue; // skip non-preset hooks
+
+        const allExist = cmds.every(c => existingCmds.has(c));
+        if (allExist) continue; // already installed
+
+        if (!Array.isArray(current.hooks[event])) {
+          current.hooks[event] = [];
+        }
+        current.hooks[event].push(rewrittenEntry);
+        added++;
+        console.log(`[Preset]   MERGE hook: ${event} ← ${cmds.join(', ')}`);
+      }
+    }
+
+    if (added > 0) {
+      writeFileSync(settingsDest, JSON.stringify(current, null, 2));
+      console.log(`[Preset]   Merged ${added} new hook(s) into settings.json`);
+    }
+  } catch (e) {
+    console.warn(`[Preset]   Failed to merge hooks:`, (e as Error).message);
+  }
+}
+
 async function applyPresetRecursive(presetId: string, visited: Set<string>, depth: number, force: boolean): Promise<void> {
   if (depth > 5) {
     throw new Error(`Preset extends chain too deep (>5). Possible circular reference.`);
@@ -364,6 +461,13 @@ async function applyPresetRecursive(presetId: string, visited: Set<string>, dept
       console.log(`[Preset]   WRITE ${dest}`);
     }
   }
+
+  // Merge preset hooks into existing settings.json (additive-only).
+  // settings.json uses skipIfExists to protect user permissions, but that means
+  // new hooks added in preset updates never reach existing users. This merge
+  // adds missing preset-managed hooks (identified by /workspace/.codeck/scripts/ path)
+  // without touching user permissions, model settings, or custom hooks.
+  mergePresetHooks(presetDir);
 
   // Copy recursive directories declared in the manifest
   if (manifest.recursive_dirs && manifest.recursive_dirs.length > 0) {

@@ -83,8 +83,23 @@ export async function startWebServer(): Promise<void> {
   // Security headers FIRST — must apply to ALL responses (static + dynamic)
   app.use(helmet({
     // CSP in report-only mode: logs violations to browser console without blocking.
-    // This lets us identify issues without breaking the page.
-    contentSecurityPolicy: false,
+    // This lets us identify issues before switching to enforcing mode.
+    contentSecurityPolicy: {
+      useDefaults: true,
+      directives: {
+        defaultSrc: ["'self'"],
+        scriptSrc: ["'self'"],
+        styleSrc: ["'self'", "'unsafe-inline'"],  // Preact inline styles
+        imgSrc: ["'self'", "data:", "https:"],
+        fontSrc: ["'self'", "https://fonts.gstatic.com", "data:"],  // xterm.js fonts
+        connectSrc: ["'self'", "ws:", "wss:"],  // WebSocket connections
+        workerSrc: ["'self'", "blob:"],  // xterm.js web workers
+        // canvas rendering used by xterm.js — no special directive needed (canvas is default allowed)
+      },
+      reportOnly: true,  // Log violations to browser console, don't block
+    },
+    // X-Content-Type-Options: nosniff — enabled by helmet defaults
+    // X-Frame-Options: DENY — enabled by helmet defaults (frameguard)
     // Disable HSTS — Codeck runs over plain HTTP in a local/LAN environment
     strictTransportSecurity: false,
     // Disable cross-origin isolation headers — they block CDN resources (Google Fonts)
@@ -249,10 +264,16 @@ export async function startWebServer(): Promise<void> {
     // Trusted proxy bypass — daemon has already authenticated the user
     if (INTERNAL_SECRET && req.headers['x-codeck-internal'] === INTERNAL_SECRET) return next();
 
-    // Localhost bypass for memory API — agent inside container has full access
+    // Localhost bypass for memory API — agent CLI inside container has full access.
+    // Safety: reject if X-Forwarded-For is set, which means the request came through
+    // a reverse proxy (e.g. nginx) and is NOT truly local. With trust proxy enabled,
+    // req.ip already reflects the real client IP, but X-Forwarded-For presence is an
+    // additional signal that the request was proxied from outside.
     if (req.path.startsWith('/memory')) {
       const ip = req.ip || '';
-      if (ip === '127.0.0.1' || ip === '::1' || ip === '::ffff:127.0.0.1') return next();
+      const isLocalIp = ip === '127.0.0.1' || ip === '::1' || ip === '::ffff:127.0.0.1';
+      const isProxied = !!req.headers['x-forwarded-for'];
+      if (isLocalIp && !isProxied) return next();
     }
 
     // Support token via Bearer header or ?token= query param (for download links)

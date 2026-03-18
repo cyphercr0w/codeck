@@ -1,7 +1,7 @@
 {
   "id": "empty",
   "name": "Empty",
-  "description": "Clean slate. No rules, no memory, no skills. You configure everything yourself.",
+  "description": "Minimal setup — only a basic CLAUDE.md. Does not install rules, memory, or skills. Does not remove existing files.",
   "version": "1.0.0",
   "author": "codeck",
   "icon": "\ud83d\udce6",

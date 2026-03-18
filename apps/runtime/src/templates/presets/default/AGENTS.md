@@ -29,7 +29,9 @@ Your memory lives in `/workspace/.codeck/memory/`. This is persistent, file-base
   state/                    # paths.json, flush_state.json
   AGENTS.md                 # THIS FILE
   preferences.md            # User preferences
-  rules/                    # Coding, communication, workflow rules
+  rules/
+    base/                   # Preset-managed rules (overwritten on preset update)
+    user/                   # Your rules (never touched by preset updates)
   skills/                   # Reusable workflow templates
 ```
 
@@ -99,7 +101,7 @@ Every session, in this order:
 
 1. Read THIS file (`/workspace/.codeck/AGENTS.md`)
 2. Read preferences (`/workspace/.codeck/preferences.md`)
-3. Read rules (`/workspace/.codeck/rules/`)
+3. Read rules (`/workspace/.codeck/rules/base/` and `/workspace/.codeck/rules/user/`)
 4. Read global memory (`/workspace/.codeck/memory/MEMORY.md`)
 5. If working on a project: resolve path, read path memory
 6. If no path memory exists: explore the codebase, create path memory before doing work

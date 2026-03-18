@@ -4,6 +4,11 @@
   Author: Affaan Mustafa — integrated into Codeck with modifications.
 -->
 
+---
+description: Review code changes for quality, security, and best practices
+allowed-tools: Read, Grep, Glob, Bash
+---
+
 # Code Review
 
 Comprehensive security and quality review of uncommitted changes:

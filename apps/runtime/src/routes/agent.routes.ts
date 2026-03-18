@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { getClaudeStatus, startClaudeLogin, getLoginState, invalidateAuthCache, cancelLogin, sendLoginCode } from '../services/auth-anthropic.js';
+import { getClaudeStatus, startClaudeLogin, getLoginState, invalidateAuthCache, cancelLogin, sendLoginCode, logoutClaude } from '../services/auth-anthropic.js';
 import { broadcastStatus } from '../web/websocket.js';
 
 const router = Router();
@@ -70,6 +70,13 @@ router.post('/login-code', async (req, res) => {
 // Cancel Claude login
 router.post('/login-cancel', (_req, res) => {
   cancelLogin();
+  broadcastStatus();
+  res.json({ success: true });
+});
+
+// Disconnect Claude account — clears all OAuth state, keeps workspace data
+router.post('/logout', (_req, res) => {
+  logoutClaude();
   broadcastStatus();
   res.json({ success: true });
 });

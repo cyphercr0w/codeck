@@ -152,7 +152,13 @@ export function LoginModal({ visible, onClose, onSuccess }: LoginModalProps) {
           addLocalLog('error', 'Login ended without URL');
           onClose();
         }
-      } catch { /* ignore */ }
+      } catch (err) {
+        pollCount++; // Count errors toward timeout
+        if (pollCount % 3 === 0) {
+          setStatus('Connection issue — retrying...');
+          setIsError(true);
+        }
+      }
     }, 1500);
   }
 

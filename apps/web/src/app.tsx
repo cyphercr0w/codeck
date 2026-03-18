@@ -2,10 +2,12 @@ import { Component } from 'preact';
 import { useEffect, useState, useRef } from 'preact/hooks';
 import {
   view, activeSection, claudeAuthenticated, presetConfigured, isMobile, mobileKeyboardOpen,
+  accountEmail, accountOrg, wsConnected,
   updateStateFromServer, setView, setActiveSection, setAuthMode, setActiveSessionId,
   setPresetConfigured, setAccountInfo,
   sessions, activeSessionId, addSession, removeSession, replaceSession,
   addLocalLog,
+  sessionStatus,
   type View, type Section,
 } from './state/store';
 import { apiFetch, getAuthToken, clearAuthToken } from './api';
@@ -60,7 +62,7 @@ class ErrorBoundary extends Component<{ children: any }, { hasError: boolean }> 
   }
 }
 
-const MAX_INIT_RETRIES = 5;
+const MAX_INIT_RETRIES = 15;
 const SESSION_LIMIT = 5;
 
 export function App() {
@@ -128,6 +130,66 @@ export function App() {
     return unsub;
   }, [loginModalOpen]);
 
+  // ========== Tab title flash when agent needs attention ==========
+  // When any session is 'waiting' or 'idle' and the user has switched tabs,
+  // flash the browser tab title to attract attention. Zero-config: works for
+  // all users with no permissions or setup required.
+  useEffect(() => {
+    const ORIGINAL_TITLE = 'Codeck';
+    const FLASH_TITLES = ['\u26A1 Codeck', '\uD83D\uDCAC Input needed'];
+    const FLASH_INTERVAL_MS = 1000;
+
+    let flashTimer: ReturnType<typeof setInterval> | null = null;
+    let flashIndex = 0;
+
+    function startFlash() {
+      if (flashTimer) return; // already flashing
+      flashIndex = 0;
+      flashTimer = setInterval(() => {
+        document.title = FLASH_TITLES[flashIndex % FLASH_TITLES.length];
+        flashIndex++;
+      }, FLASH_INTERVAL_MS);
+    }
+
+    function stopFlash() {
+      if (flashTimer) {
+        clearInterval(flashTimer);
+        flashTimer = null;
+      }
+      document.title = ORIGINAL_TITLE;
+    }
+
+    function needsAttention(): boolean {
+      const statuses = sessionStatus.value;
+      return Object.values(statuses).some(s => s === 'waiting');
+    }
+
+    // React to session status changes: start flash if tab is hidden + needs attention
+    const unsubStatus = sessionStatus.subscribe(() => {
+      if (document.hidden && needsAttention()) {
+        startFlash();
+      } else if (!needsAttention()) {
+        stopFlash();
+      }
+    });
+
+    // React to visibility changes: stop flash when user returns
+    function onVisibilityChange() {
+      if (!document.hidden) {
+        stopFlash();
+      } else if (needsAttention()) {
+        startFlash();
+      }
+    }
+    document.addEventListener('visibilitychange', onVisibilityChange);
+
+    return () => {
+      unsubStatus();
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+      stopFlash();
+    };
+  }, []);
+
   // ========== Initialization ==========
   const initRetryCount = useRef(0);
 
@@ -135,6 +197,25 @@ export function App() {
     const controller = new AbortController();
     initializeApp(controller.signal);
     return () => controller.abort();
+  }, []);
+
+  // ========== Auto-recover on WS reconnect ==========
+  // If the view is stuck on 'setup' or 'loading' when WS reconnects with
+  // claudeAuthenticated=true, re-run initialization to transition to 'main'.
+  const initInProgress = useRef(false);
+  useEffect(() => {
+    let skipInitial = true; // Ignore the immediate subscribe callback
+    const unsub = wsConnected.subscribe(connected => {
+      if (skipInitial) { skipInitial = false; return; }
+      if (connected && claudeAuthenticated.value &&
+          (view.value === 'setup' || view.value === 'loading') &&
+          !initInProgress.current) {
+        initRetryCount.current = 0;
+        initInProgress.current = true;
+        initializeApp().finally(() => { initInProgress.current = false; });
+      }
+    });
+    return unsub;
   }, []);
 
   async function initializeApp(signal?: AbortSignal) {
@@ -153,19 +234,19 @@ export function App() {
           setAuthMode('login');
           return;
         }
-        try {
-          const testRes = await apiFetch('/api/status', { signal });
-          if (testRes.status === 401) {
-            setView('auth');
-            setAuthMode('login');
-            return;
-          }
-          const data = await testRes.json();
-          updateStateFromServer(data);
-        } catch (e: any) {
-          if (e?.name === 'AbortError') return;
-          return; // apiFetch handles 401 redirect
+        const testRes = await apiFetch('/api/status', { signal });
+        if (testRes.status === 401) {
+          setView('auth');
+          setAuthMode('login');
+          return;
         }
+        // Treat gateway errors as "runtime not ready" — propagate to outer
+        // catch which handles exponential backoff retries
+        if (testRes.status >= 500) {
+          throw new Error(`Server returned ${testRes.status} — runtime not ready`);
+        }
+        const data = await testRes.json();
+        updateStateFromServer(data);
       } else {
         // Server says password not configured. If we have a stale token, clear it
         // so we don't confuse the user — they need to set up the password again.
@@ -200,16 +281,20 @@ export function App() {
       }
     } catch (e: any) {
       if (e?.name === 'AbortError') return;
-      setView('setup');
+      // 401 from apiFetch already set the auth view — don't retry
+      if (e?.message === 'Unauthorized') return;
 
-      // Exponential backoff with max retries
+      // Exponential backoff with max retries — stay on loading view while retrying
+      // so the user doesn't see a flash of "Connect Claude Code" during startup
       if (initRetryCount.current < MAX_INIT_RETRIES) {
         const delay = Math.min(1000 * Math.pow(2, initRetryCount.current), 30000);
         initRetryCount.current++;
-        addLocalLog('warn', `Initialization failed, retrying in ${Math.round(delay / 1000)}s (attempt ${initRetryCount.current}/${MAX_INIT_RETRIES})`);
+        addLocalLog('warn', `Server not ready, retrying in ${Math.round(delay / 1000)}s (attempt ${initRetryCount.current}/${MAX_INIT_RETRIES})`);
         setTimeout(() => initializeApp(signal), delay);
       } else {
-        addLocalLog('error', 'Initialization failed after maximum retries. Please reload the page.');
+        // Only show setup view after all retries exhausted
+        setView('setup');
+        addLocalLog('error', 'Could not connect to server. Please reload the page.');
       }
     }
   }
@@ -259,6 +344,19 @@ export function App() {
   // ========== Login flow ==========
   function startLogin() {
     setLoginModalOpen(true);
+  }
+
+  async function handleLogout() {
+    try {
+      await apiFetch('/api/claude/logout', { method: 'POST' });
+    } catch { /* ignore */ }
+    // Reset client-side auth state and show Claude login (setup) view
+    claudeAuthenticated.value = false;
+    accountEmail.value = null;
+    accountOrg.value = null;
+    // Go to 'setup' view which shows the Claude Connect button,
+    // NOT 'auth' which is the password setup/login screen
+    setView('setup');
   }
 
   async function handleLoginSuccess() {
@@ -369,11 +467,15 @@ export function App() {
     addSession({ id: tempId, cwd: dir, name: folderName, createdAt: Date.now(), loading: true });
     setActiveSessionId(tempId);
 
+    // Safety timeout: remove loading placeholder if API doesn't respond
+    const loadingTimeout = setTimeout(() => removeSession(tempId), 30_000);
+
     try {
       const res = await apiFetch('/api/console/create', {
         method: 'POST',
         body: JSON.stringify({ cwd: dir, resume: options.resume }),
       });
+      clearTimeout(loadingTimeout);
       const data = await res.json();
       if (data.error) {
         removeSession(tempId);
@@ -393,6 +495,7 @@ export function App() {
       setActiveSessionId(data.sessionId);
       mountTerminalForSession(data.sessionId, data.cwd || dir, data.name);
     } catch {
+      clearTimeout(loadingTimeout);
       removeSession(tempId);
     }
   }
@@ -435,7 +538,7 @@ export function App() {
         </header>
         <main id="main-content">
           <ErrorBoundary>
-            {section === 'home' && <HomeSection onRelogin={startLogin} />}
+            {section === 'home' && <HomeSection onRelogin={startLogin} onLogout={handleLogout} />}
             {section === 'filesystem' && <FilesSection />}
             {/* ClaudeSection is always mounted — never unmount it.
                 Unmounting destroys xterm instances (expensive WebGL teardown + init on remount,

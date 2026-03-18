@@ -10,6 +10,7 @@ interface TerminalInstance {
   resizeObserver: ResizeObserver | null;
   container: HTMLElement;
   textarea: HTMLTextAreaElement | null;
+  blurHandler: (() => void) | null;
 }
 
 const terminals = new Map<string, TerminalInstance>();
@@ -92,6 +93,7 @@ export function createTerminal(sessionId: string, container: HTMLElement): Termi
 
   // Configure xterm textarea for keyboard handling
   const textarea = container.querySelector('textarea.xterm-helper-textarea') as HTMLTextAreaElement | null;
+  let blurHandlerRef: (() => void) | null = null;
   if (textarea) {
     textarea.setAttribute('autocomplete', 'off');
     textarea.setAttribute('autocorrect', 'off');
@@ -124,11 +126,13 @@ export function createTerminal(sessionId: string, container: HTMLElement): Termi
 
     // Log blur events to DevTools — useful for diagnosing input freezes locally
     // without any network overhead (no WS message sent).
-    textarea.addEventListener('blur', () => {
+    const blurHandler = () => {
       const active = document.activeElement;
       const activeInfo = `${active?.tagName}#${(active as HTMLElement)?.id || ''}.${(active as HTMLElement)?.className?.toString().split(' ').slice(0,2).join('.')}`;
       console.warn(`[xterm] ${sessionId.slice(0,6)} textarea BLUR — input will freeze until re-focused. activeElement=${activeInfo}`);
-    });
+    };
+    textarea.addEventListener('blur', blurHandler);
+    blurHandlerRef = blurHandler;
   }
 
   // On mobile, disable xterm's textarea so our hidden input takes over.
@@ -228,7 +232,7 @@ export function createTerminal(sessionId: string, container: HTMLElement): Termi
   });
   resizeObserver.observe(container);
 
-  const instance: TerminalInstance = { term, fitAddon, resizeObserver, container, textarea };
+  const instance: TerminalInstance = { term, fitAddon, resizeObserver, container, textarea, blurHandler: blurHandlerRef };
   terminals.set(sessionId, instance);
   return instance;
 }
@@ -246,6 +250,10 @@ export function destroyTerminal(sessionId: string): void {
   const instance = terminals.get(sessionId);
   if (instance) {
     instance.resizeObserver?.disconnect();
+    // Remove blur listener to prevent leak
+    if (instance.textarea && instance.blurHandler) {
+      instance.textarea.removeEventListener('blur', instance.blurHandler);
+    }
     instance.term.dispose();
     terminals.delete(sessionId);
     scrollLocked.delete(sessionId);

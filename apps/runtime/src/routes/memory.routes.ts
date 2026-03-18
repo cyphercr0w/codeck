@@ -17,6 +17,15 @@ import { indexAll, getIndexStats, isIndexerAvailable, isVecAvailable } from '../
 
 const router = Router();
 
+// Express 4 doesn't catch rejected promises from async handlers.
+// Wrap to ensure unhandled errors return 500 instead of crashing.
+type AsyncHandler = (req: import('express').Request, res: import('express').Response) => Promise<void>;
+const asyncHandler = (fn: AsyncHandler): AsyncHandler => (req, res) =>
+  fn(req, res).catch(err => {
+    console.error('[Memory API] Unhandled error:', err);
+    if (!res.headersSent) res.status(500).json({ error: 'Internal server error' });
+  });
+
 const MAX_CONTENT_LENGTH = 51200; // 50KB for content/entry fields
 const MAX_SHORT_LENGTH = 200;     // short fields: title, section, project, etc.
 
@@ -124,25 +133,25 @@ router.get('/durable', (req, res) => {
   res.json(getDurableMemory(pathId));
 });
 
-router.put('/durable', (req, res) => {
+router.put('/durable', asyncHandler(async (req, res) => {
   const pathId = validPathId(req.body.pathId, res);
   if (pathId === null) return;
   const content = requireString(req.body.content, 'content', res, MAX_CONTENT_LENGTH);
   if (content === null) return;
-  writeDurableMemory(content, pathId);
+  await writeDurableMemory(content, pathId);
   res.json({ success: true });
-});
+}));
 
-router.post('/durable/append', (req, res) => {
+router.post('/durable/append', asyncHandler(async (req, res) => {
   const pathId = validPathId(req.body.pathId, res);
   if (pathId === null) return;
   const section = requireString(req.body.section, 'section', res, MAX_SHORT_LENGTH);
   if (section === null) return;
   const entry = requireString(req.body.entry, 'entry', res);
   if (entry === null) return;
-  appendToDurableMemory(section, entry, pathId);
+  await appendToDurableMemory(section, entry, pathId);
   res.json({ success: true });
-});
+}));
 
 // ── Daily ──
 
@@ -160,7 +169,7 @@ router.get('/daily/list', (req, res) => {
   res.json({ entries: listDailyEntries(pathId) });
 });
 
-router.post('/daily', (req, res) => {
+router.post('/daily', asyncHandler(async (req, res) => {
   const pathId = validPathId(req.body.pathId, res);
   if (pathId === null) return;
   const entry = requireString(req.body.entry, 'entry', res);
@@ -169,9 +178,9 @@ router.post('/daily', (req, res) => {
   if (project === null) return;
   const tags = optionalStringArray(req.body.tags, 'tags', res);
   if (tags === null) return;
-  const result = appendToDaily(entry, project, tags, pathId);
+  const result = await appendToDaily(entry, project, tags, pathId);
   res.json({ success: true, ...result });
-});
+}));
 
 // Backward-compat: /journal → /daily
 router.get('/journal', (req, res) => {
@@ -184,16 +193,16 @@ router.get('/journal/list', (_req, res) => {
   res.json({ journals: listDailyEntries() });
 });
 
-router.post('/journal', (req, res) => {
+router.post('/journal', asyncHandler(async (req, res) => {
   const entry = requireString(req.body.entry, 'entry', res);
   if (entry === null) return;
   const project = optionalString(req.body.project, 'project', res);
   if (project === null) return;
   const tags = optionalStringArray(req.body.tags, 'tags', res);
   if (tags === null) return;
-  const result = appendToDaily(entry, project, tags);
+  const result = await appendToDaily(entry, project, tags);
   res.json({ success: true, ...result });
-});
+}));
 
 // ── Decisions (ADR) ──
 
@@ -248,14 +257,14 @@ router.get('/paths/:pathId', (req, res) => {
   res.json({ ...mapping, ...memory });
 });
 
-router.put('/paths/:pathId', (req, res) => {
+router.put('/paths/:pathId', asyncHandler(async (req, res) => {
   const pathId = validPathId(req.params.pathId, res);
   if (!pathId) return;
   const content = requireString(req.body.content, 'content', res, MAX_CONTENT_LENGTH);
   if (content === null) return;
-  writePathMemory(pathId, content);
+  await writePathMemory(pathId, content);
   res.json({ success: true });
-});
+}));
 
 router.post('/paths/resolve', (req, res) => {
   const canonicalPath = requireString(req.body.canonicalPath, 'canonicalPath', res, 1024);
@@ -267,7 +276,7 @@ router.post('/paths/resolve', (req, res) => {
 
 // ── Promote ──
 
-router.post('/promote', (req, res) => {
+router.post('/promote', asyncHandler(async (req, res) => {
   const { target } = req.body;
 
   // Validate content (required unless target is 'adr')
@@ -315,13 +324,13 @@ router.post('/promote', (req, res) => {
     decision,
     consequences,
   };
-  const result = promote(promoteReq);
+  const result = await promote(promoteReq);
   res.json(result);
-});
+}));
 
 // ── Flush ──
 
-router.post('/flush', (req, res) => {
+router.post('/flush', asyncHandler(async (req, res) => {
   const rawScope = req.body.scope as string | undefined;
   // scope must be 'global' or a valid 12-char hex pathId
   let scope = 'global';
@@ -339,13 +348,13 @@ router.post('/flush', (req, res) => {
   if (project === null) return;
   const tags = optionalStringArray(req.body.tags, 'tags', res);
   if (tags === null) return;
-  const result = flush(content, scope, project, tags);
+  const result = await flush(content, scope, project, tags);
   if (!result.success) {
     res.status(429).json(result);
     return;
   }
   res.json(result);
-});
+}));
 
 router.get('/flush/state', (_req, res) => {
   res.json(getFlushState());

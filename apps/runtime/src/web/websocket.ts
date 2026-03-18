@@ -35,9 +35,40 @@ const sessionMaxDimensions = new Map<string, { cols: number; rows: number }>();
 // Max input payload size per WS message (64KB per OWASP recommendation)
 const MAX_INPUT_SIZE = 65536;
 
-// Rate limiting removed — single-user terminal app where 300 msg/min was too low
-// for normal typing speed (60 WPM = 300 keystrokes/min). MaxPayload (64KB) is
-// sufficient protection against abuse.
+// Token bucket rate limiter for console:input messages.
+// Allows bursts (paste operations) while preventing sustained DoS.
+// Normal typing at 60 WPM is ~5 chars/sec, well under the 20/sec refill rate.
+// Non-input messages (resize, attach, focus) are never rate-limited.
+interface TokenBucket {
+  tokens: number;
+  lastRefill: number;
+}
+
+const BUCKET_SIZE = 100;       // max burst capacity
+const REFILL_RATE = 20;        // tokens per second (1200/min)
+
+const inputBuckets = new Map<WebSocket, TokenBucket>();
+
+function consumeInputToken(ws: WebSocket): boolean {
+  let bucket = inputBuckets.get(ws);
+  if (!bucket) {
+    bucket = { tokens: BUCKET_SIZE, lastRefill: Date.now() };
+    inputBuckets.set(ws, bucket);
+  }
+
+  // Refill tokens based on elapsed time
+  const now = Date.now();
+  const elapsed = (now - bucket.lastRefill) / 1000;
+  bucket.tokens = Math.min(BUCKET_SIZE, bucket.tokens + elapsed * REFILL_RATE);
+  bucket.lastRefill = now;
+
+  if (bucket.tokens < 1) {
+    return false; // drop message silently
+  }
+
+  bucket.tokens -= 1;
+  return true;
+}
 
 let wss: WebSocketServer;
 
@@ -176,6 +207,7 @@ export function setupWebSocket(): void {
         }
       }
       clientDimensions.delete(ws);
+      inputBuckets.delete(ws);
       // Clear active client tracking for this ws
       for (const [sid, activeWs] of sessionActiveClient) {
         if (activeWs === ws) sessionActiveClient.delete(sid);
@@ -245,8 +277,11 @@ function handleConsoleMessage(ws: WebSocket, msg: { type: string; sessionId: str
 
   // Validate resize bounds
   if (msg.type === 'console:resize') {
-    const c = Number(msg.cols), r = Number(msg.rows);
-    if (!Number.isInteger(c) || !Number.isInteger(r) || c < 1 || c > 500 || r < 1 || r > 200) return;
+    const rawC = Number(msg.cols), rawR = Number(msg.rows);
+    if (!Number.isInteger(rawC) || !Number.isInteger(rawR) || rawC < 1 || rawC > 9999 || rawR < 1 || rawR > 9999) return;
+    // Clamp to safe bounds instead of dropping — prevents stale PTY dimensions
+    const c = Math.max(10, Math.min(500, rawC));
+    const r = Math.max(3, Math.min(200, rawR));
     msg.cols = c;
     msg.rows = r;
   }
@@ -312,8 +347,10 @@ function handleConsoleMessage(ws: WebSocket, msg: { type: string; sessionId: str
         const currentClients = sessionClients.get(sid);
         if (!currentClients) return;
 
+        // Snapshot client set to avoid race with close handler modifying it during iteration
+        const clientSnapshot = [...currentClients];
         const payload = JSON.stringify({ type: 'console:output', sessionId: sid, data });
-        for (const client of currentClients) {
+        for (const client of clientSnapshot) {
           if (client.readyState === WebSocket.OPEN) {
             client.send(payload, (err) => {
               if (err) console.warn('[WS] Send error for session', sid, err.message);
@@ -344,6 +381,9 @@ function handleConsoleMessage(ws: WebSocket, msg: { type: string; sessionId: str
   }
 
   if (msg.type === 'console:input') {
+    // Token bucket rate limit — drop excess input silently (don't disconnect)
+    if (!consumeInputToken(ws)) return;
+
     // Also track input as active — covers keyboard-only navigation
     const prevActive = sessionActiveClient.get(msg.sessionId);
     sessionActiveClient.set(msg.sessionId, ws);

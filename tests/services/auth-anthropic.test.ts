@@ -505,24 +505,17 @@ describe('auth-anthropic.ts - OAuth Flow', () => {
         const mode = stat.mode & 0o777;
         expect(mode).toBe(0o600);
 
-        // Verify credentials were saved with encryption
+        // Verify credentials were saved in plaintext CLI-compatible format
         const credentialsRaw = readFileSync(CREDENTIALS_PATH, 'utf-8');
         const credentials = JSON.parse(credentialsRaw);
 
-        // Verify v2 encrypted format
-        expect(credentials.version).toBe(2);
+        // Verify plaintext format (CLI-compatible, no encryption wrapper)
         expect(credentials.claudeAiOauth).toBeDefined();
-        expect(credentials.claudeAiOauth.accessToken).toBeDefined();
-        expect(credentials.claudeAiOauth.accessToken.encrypted).toBeDefined();
-        expect(credentials.claudeAiOauth.accessToken.iv).toBeDefined();
-        expect(credentials.claudeAiOauth.accessToken.tag).toBeDefined();
-        expect(credentials.claudeAiOauth.refreshToken).toBeDefined();
-        expect(credentials.claudeAiOauth.refreshToken.encrypted).toBeDefined();
+        expect(typeof credentials.claudeAiOauth.accessToken).toBe('string');
+        expect(credentials.claudeAiOauth.accessToken).toContain('sk-ant-oat01');
+        expect(typeof credentials.claudeAiOauth.refreshToken).toBe('string');
         expect(credentials.claudeAiOauth.expiresAt).toBeDefined();
         expect(credentials.claudeAiOauth.expiresAt).toBeGreaterThan(Date.now());
-
-        // Verify tokens are encrypted (not plaintext)
-        expect(credentials.claudeAiOauth.accessToken.encrypted).not.toContain('sk-ant-oat01');
 
         // Verify PKCE state was cleaned up after successful exchange
         expect(existsSync(PKCE_STATE_PATH)).toBe(false);
@@ -559,23 +552,10 @@ describe('auth-anthropic.ts - OAuth Flow', () => {
       const credentialsRaw = readFileSync(CREDENTIALS_PATH, 'utf-8');
       const credentials = JSON.parse(credentialsRaw);
 
-      // Verify v2 encrypted format
-      expect(credentials.version).toBe(2);
+      // Verify plaintext CLI-compatible format
       expect(credentials.claudeAiOauth).toBeDefined();
-      expect(credentials.claudeAiOauth.accessToken).toBeDefined();
-
-      // Verify access token is encrypted (not plaintext)
-      expect(credentials.claudeAiOauth.accessToken.encrypted).toBeDefined();
-      expect(credentials.claudeAiOauth.accessToken.iv).toBeDefined();
-      expect(credentials.claudeAiOauth.accessToken.tag).toBeDefined();
-      expect(credentials.claudeAiOauth.accessToken.encrypted).not.toContain('sk-ant-oat01');
-
-      // Verify no refresh token for direct token (only OAuth flow provides refresh tokens)
-      // Direct tokens don't have refresh tokens, so the refreshToken field should be absent or null
-      if (credentials.claudeAiOauth.refreshToken) {
-        // If present, should be encrypted format but can be empty encrypted value
-        expect(credentials.claudeAiOauth.refreshToken.encrypted).toBeDefined();
-      }
+      expect(typeof credentials.claudeAiOauth.accessToken).toBe('string');
+      expect(credentials.claudeAiOauth.accessToken).toContain('sk-ant-oat01');
 
       // Verify expiresAt is set (1 year from now for direct tokens)
       expect(credentials.claudeAiOauth.expiresAt).toBeDefined();
@@ -662,17 +642,13 @@ describe('auth-anthropic.ts - OAuth Flow', () => {
         const mode = stat.mode & 0o777;
         expect(mode).toBe(0o600);
 
-        // Verify credentials were saved with encryption
+        // Verify credentials saved in plaintext CLI-compatible format
         const credentialsRaw = readFileSync(CREDENTIALS_PATH, 'utf-8');
         const credentials = JSON.parse(credentialsRaw);
 
-        // Verify v2 encrypted format
-        expect(credentials.version).toBe(2);
         expect(credentials.claudeAiOauth).toBeDefined();
-        expect(credentials.claudeAiOauth.accessToken).toBeDefined();
-        expect(credentials.claudeAiOauth.accessToken.encrypted).toBeDefined();
-        expect(credentials.claudeAiOauth.accessToken.iv).toBeDefined();
-        expect(credentials.claudeAiOauth.accessToken.tag).toBeDefined();
+        expect(typeof credentials.claudeAiOauth.accessToken).toBe('string');
+        expect(credentials.claudeAiOauth.expiresAt).toBeGreaterThan(Date.now());
 
         // Verify PKCE state was cleaned up after successful exchange
         expect(existsSync(PKCE_STATE_PATH)).toBe(false);
@@ -747,17 +723,13 @@ describe('auth-anthropic.ts - OAuth Flow', () => {
         const mode = stat.mode & 0o777;
         expect(mode).toBe(0o600);
 
-        // Verify credentials were saved with encryption
+        // Verify credentials saved in plaintext CLI-compatible format
         const credentialsRaw = readFileSync(CREDENTIALS_PATH, 'utf-8');
         const credentials = JSON.parse(credentialsRaw);
 
-        // Verify v2 encrypted format
-        expect(credentials.version).toBe(2);
         expect(credentials.claudeAiOauth).toBeDefined();
-        expect(credentials.claudeAiOauth.accessToken).toBeDefined();
-        expect(credentials.claudeAiOauth.accessToken.encrypted).toBeDefined();
-        expect(credentials.claudeAiOauth.accessToken.iv).toBeDefined();
-        expect(credentials.claudeAiOauth.accessToken.tag).toBeDefined();
+        expect(typeof credentials.claudeAiOauth.accessToken).toBe('string');
+        expect(credentials.claudeAiOauth.expiresAt).toBeGreaterThan(Date.now());
 
         // Verify PKCE state was cleaned up after successful exchange
         expect(existsSync(PKCE_STATE_PATH)).toBe(false);
@@ -1198,7 +1170,7 @@ describe('auth-anthropic.ts - OAuth Flow', () => {
       }
     });
 
-    it('should cache authentication status for 3 seconds (AUTH_CACHE_TTL)', async () => {
+    it('should cache authentication status for 5 seconds (AUTH_CACHE_TTL)', async () => {
       // Import services and vitest fake timers
       const { sendLoginCode, isClaudeAuthenticated, invalidateAuthCache, _resetInMemoryTokenForTesting } = await import('../../apps/runtime/src/services/auth-anthropic.js');
 
@@ -1237,26 +1209,26 @@ describe('auth-anthropic.ts - OAuth Flow', () => {
         const secondCheck = isClaudeAuthenticated();
         expect(secondCheck).toBe(true);
 
-        // Act 3 - Advance time by 2.9 seconds (just under 3s TTL)
-        vi.advanceTimersByTime(2900);
+        // Act 3 - Advance time by 4.9 seconds (just under 5s TTL)
+        vi.advanceTimersByTime(4900);
 
-        // Cache should still be valid (< 3000ms)
+        // Cache should still be valid (< 5000ms)
         const thirdCheck = isClaudeAuthenticated();
         expect(thirdCheck).toBe(true);
 
-        // Act 4 - Advance time by 0.1 seconds more (total 3s, cache expired)
+        // Act 4 - Advance time by 0.1 seconds more (total 5s, cache expired)
         vi.advanceTimersByTime(100);
 
         // Cache TTL expired, should re-check credentials file (which doesn't exist now)
         const fourthCheck = isClaudeAuthenticated();
         expect(fourthCheck).toBe(false); // Credentials file was deleted, cache expired
 
-        // This test verifies the 3-second cache TTL mechanism:
+        // This test verifies the 5-second cache TTL mechanism:
         // - Prevents excessive file system reads (performance optimization)
-        // - Cache duration: 3000ms (AUTH_CACHE_TTL constant)
+        // - Cache duration: 5000ms (AUTH_CACHE_TTL constant)
         // - Cache is invalidated after TTL expires
-        // - isClaudeAuthenticated() returns cached value if called within 3s
-        // - After 3s, re-checks credentials file
+        // - isClaudeAuthenticated() returns cached value if called within 5s
+        // - After 5s, re-checks credentials file
         // Critical for:
         // - Performance: Reduces I/O operations when frequently checking auth status
         // - WebSocket status broadcasts: Called on every status message

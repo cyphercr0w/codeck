@@ -1,18 +1,31 @@
-import { existsSync, readFileSync, writeFileSync, mkdirSync, readdirSync, copyFileSync, realpathSync, statSync } from 'fs';
+import { existsSync, readFileSync, writeFileSync, mkdirSync, readdirSync, copyFileSync, realpathSync, statSync, renameSync } from 'fs';
 import { join, dirname, resolve } from 'path';
 import { fileURLToPath } from 'url';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const CODECK_DIR = process.env.CODECK_DIR || '/workspace/.codeck';
-const CONFIG_FILE = join(CODECK_DIR, 'config.json');
+const WORKSPACE = process.env.WORKSPACE || '/workspace';
+const WORKSPACE_CODECK = join(WORKSPACE, '.codeck');
+const CONFIG_FILE = join(WORKSPACE_CODECK, 'config.json');
 const TEMPLATES_DIR = resolve(join(__dirname, '../templates/presets'));
-const BACKUPS_DIR = join(CODECK_DIR, 'backups');
+const BACKUPS_DIR = join(WORKSPACE_CODECK, 'backups');
+
+// Migrate config.json from old CODECK_DIR location to WORKSPACE/.codeck/
+// Prevents existing users from seeing the preset selector again after the path change.
+const LEGACY_CONFIG = join(process.env.CODECK_DIR || '/data/.codeck', 'config.json');
+if (!existsSync(CONFIG_FILE) && existsSync(LEGACY_CONFIG)) {
+  try {
+    if (!existsSync(WORKSPACE_CODECK)) mkdirSync(WORKSPACE_CODECK, { recursive: true });
+    writeFileSync(CONFIG_FILE, readFileSync(LEGACY_CONFIG, 'utf-8'), { mode: 0o600 });
+    console.log(`[Preset] Migrated config.json from ${LEGACY_CONFIG} → ${CONFIG_FILE}`);
+  } catch (e) {
+    console.warn(`[Preset] Failed to migrate config.json:`, (e as Error).message);
+  }
+}
 
 // Strict allowlist for preset IDs: alphanumeric, hyphens, underscores only
 const VALID_PRESET_ID = /^[a-zA-Z0-9_-]+$/;
 
 const home = process.env.HOME || '/root';
-const WORKSPACE = process.env.WORKSPACE || '/workspace';
 
 // Allowed destination path prefixes for manifest files
 const ALLOWED_DEST_PREFIXES = [
@@ -75,6 +88,8 @@ export interface PresetStatus {
   presetName: string | null;
   configuredAt: string | null;
   version: string | null;
+  availableVersion: string | null;
+  updateAvailable: boolean;
 }
 
 // ── Validation ──────────────────────────────────────────────────────
@@ -134,6 +149,16 @@ function validateManifest(data: unknown): PresetManifest | null {
   return data as PresetManifest;
 }
 
+/** Compare semver strings: returns true if available is strictly newer than installed. */
+function isNewerVersion(installed: string, available: string): boolean {
+  const parse = (v: string) => v.split('.').map(n => parseInt(n, 10) || 0);
+  const [iMaj, iMin, iPat] = parse(installed);
+  const [aMaj, aMin, aPat] = parse(available);
+  if (aMaj !== iMaj) return aMaj > iMaj;
+  if (aMin !== iMin) return aMin > iMin;
+  return aPat > iPat;
+}
+
 // ── Public API ───────────────────────────────────────────────────────
 
 /**
@@ -176,21 +201,26 @@ export function listPresets(): PresetManifest[] {
  * Read /workspace/.codeck/config.json to check if a preset has been applied.
  */
 export function getPresetStatus(): PresetStatus {
-  if (!existsSync(CONFIG_FILE)) {
-    return { configured: false, presetId: null, presetName: null, configuredAt: null, version: null };
-  }
+  const empty: PresetStatus = { configured: false, presetId: null, presetName: null, configuredAt: null, version: null, availableVersion: null, updateAvailable: false };
+  if (!existsSync(CONFIG_FILE)) return empty;
   try {
     const config: PresetConfig = JSON.parse(readFileSync(CONFIG_FILE, 'utf-8'));
+    // Check if the template has a newer version than what's installed
+    const manifest = config.presetId ? loadManifest(config.presetId) : null;
+    const availableVersion = manifest?.version ?? null;
+    const updateAvailable = !!(availableVersion && config.version && isNewerVersion(config.version, availableVersion));
     return {
       configured: true,
       presetId: config.presetId,
       presetName: config.presetName,
       configuredAt: config.configuredAt,
       version: config.version,
+      availableVersion,
+      updateAvailable,
     };
   } catch (e) {
     console.warn('[Preset] Failed to read config:', (e as Error).message);
-    return { configured: false, presetId: null, presetName: null, configuredAt: null, version: null };
+    return empty;
   }
 }
 
@@ -204,6 +234,134 @@ export async function applyPreset(presetId: string, force = false): Promise<void
 
 // ── Internal ─────────────────────────────────────────────────────────
 
+/**
+ * Migrate old flat rules/ layout to rules/base/ + rules/user/ structure.
+ * Only runs once (when old-style loose files exist). Idempotent.
+ */
+function migrateRulesLayout(codeckDir: string): void {
+  const rulesDir = join(codeckDir, 'rules');
+  if (!existsSync(rulesDir)) return;
+
+  // Move ALL loose .md files in rules/ to rules/user/.
+  // base/ files are preset-managed (overwritten on update), so user customizations
+  // must go to user/ where they're protected from overwrites.
+  const userDir = join(rulesDir, 'user');
+  try {
+    for (const entry of readdirSync(rulesDir)) {
+      const entryPath = join(rulesDir, entry);
+      if (!statSync(entryPath).isFile()) continue;
+      if (!entry.endsWith('.md')) continue;
+      const userDest = join(userDir, entry);
+      if (existsSync(userDest)) {
+        console.log(`[Preset]   SKIP migration ${entryPath} (${userDest} already exists)`);
+        continue;
+      }
+      if (!existsSync(userDir)) mkdirSync(userDir, { recursive: true });
+      renameSync(entryPath, userDest);
+      console.log(`[Preset]   MIGRATE ${entryPath} → ${userDest}`);
+    }
+  } catch (e) {
+    console.warn(`[Preset]   Failed to migrate rules:`, (e as Error).message);
+  }
+}
+
+// Prefix that identifies preset-managed hooks (vs user-added hooks)
+// Use rewritePath to handle non-Docker deployments where WORKSPACE differs
+const PRESET_HOOK_PREFIX = rewritePath('/workspace/.codeck/scripts/');
+
+/**
+ * Extract all command strings from a hooks entry array.
+ * Each entry has { matcher, hooks: [{ type, command }] }.
+ */
+function extractCommands(entries: unknown[]): Set<string> {
+  const cmds = new Set<string>();
+  for (const entry of entries) {
+    if (!entry || typeof entry !== 'object') continue;
+    const hooks = (entry as Record<string, unknown>).hooks;
+    if (!Array.isArray(hooks)) continue;
+    for (const h of hooks) {
+      if (h && typeof h === 'object' && typeof (h as Record<string, unknown>).command === 'string') {
+        cmds.add((h as Record<string, unknown>).command as string);
+      }
+    }
+  }
+  return cmds;
+}
+
+/**
+ * Merge preset hooks into an existing settings.json (additive-only).
+ * Only adds hooks whose command points to PRESET_HOOK_PREFIX.
+ * Never removes hooks, never touches permissions or other fields.
+ */
+function mergePresetHooks(presetDir: string): void {
+  const templatePath = join(presetDir, 'ecc', 'settings.json');
+  const settingsDest = rewritePath('/root/.claude/settings.json');
+
+  if (!existsSync(templatePath) || !existsSync(settingsDest)) return;
+
+  try {
+    const template = JSON.parse(readFileSync(templatePath, 'utf-8'));
+    const current = JSON.parse(readFileSync(settingsDest, 'utf-8'));
+
+    const templateHooks = template.hooks;
+    if (!templateHooks || typeof templateHooks !== 'object') return;
+
+    if (!current.hooks || typeof current.hooks !== 'object') {
+      current.hooks = {};
+    }
+
+    let added = 0;
+    for (const [event, templateEntries] of Object.entries(templateHooks)) {
+      if (!Array.isArray(templateEntries)) continue;
+
+      // Get existing commands for this event
+      const currentEntries: unknown[] = Array.isArray(current.hooks[event]) ? current.hooks[event] : [];
+      const existingCmds = extractCommands(currentEntries);
+
+      // Add missing preset entries
+      for (const entry of templateEntries) {
+        if (!entry || typeof entry !== 'object') continue;
+        const hooks = (entry as Record<string, unknown>).hooks;
+        if (!Array.isArray(hooks)) continue;
+
+        // Rewrite command paths for non-Docker deployments
+        const rewrittenEntry = JSON.parse(JSON.stringify(entry));
+        const rewrittenHooks = (rewrittenEntry as Record<string, unknown>).hooks as Array<Record<string, unknown>>;
+        for (const h of rewrittenHooks) {
+          if (typeof h.command === 'string') {
+            h.command = rewritePath(h.command);
+          }
+        }
+
+        // Check if ALL commands in this entry are preset-managed
+        const cmds = rewrittenHooks
+          .filter(h => typeof h.command === 'string')
+          .map(h => h.command as string);
+
+        const allPresetManaged = cmds.every(c => c.includes(PRESET_HOOK_PREFIX));
+        if (!allPresetManaged) continue; // skip non-preset hooks
+
+        const allExist = cmds.every(c => existingCmds.has(c));
+        if (allExist) continue; // already installed
+
+        if (!Array.isArray(current.hooks[event])) {
+          current.hooks[event] = [];
+        }
+        current.hooks[event].push(rewrittenEntry);
+        added++;
+        console.log(`[Preset]   MERGE hook: ${event} ← ${cmds.join(', ')}`);
+      }
+    }
+
+    if (added > 0) {
+      writeFileSync(settingsDest, JSON.stringify(current, null, 2));
+      console.log(`[Preset]   Merged ${added} new hook(s) into settings.json`);
+    }
+  } catch (e) {
+    console.warn(`[Preset]   Failed to merge hooks:`, (e as Error).message);
+  }
+}
+
 async function applyPresetRecursive(presetId: string, visited: Set<string>, depth: number, force: boolean): Promise<void> {
   if (depth > 5) {
     throw new Error(`Preset extends chain too deep (>5). Possible circular reference.`);
@@ -212,6 +370,11 @@ async function applyPresetRecursive(presetId: string, visited: Set<string>, dept
     throw new Error(`Circular preset extends detected: "${presetId}" already applied in this chain.`);
   }
   visited.add(presetId);
+
+  // Run rules layout migration at the top-level call only
+  if (depth === 0) {
+    migrateRulesLayout(WORKSPACE_CODECK);
+  }
 
   const manifest = loadManifest(presetId);
   if (!manifest) {
@@ -274,7 +437,7 @@ async function applyPresetRecursive(presetId: string, visited: Set<string>, dept
     }
 
     // Write file (don't overwrite user edits for data files, unless force)
-    const isDataFile = dest.includes('/memory/') || dest.endsWith('preferences.md') || dest.includes('/rules/');
+    const isDataFile = dest.includes('/memory/') || dest.endsWith('preferences.md') || dest.includes('/rules/user/');
     if (!force && file.skipIfExists && existsSync(dest)) {
       console.log(`[Preset]   KEEP ${dest} (skipIfExists)`);
     } else if (!force && isDataFile && existsSync(dest)) {
@@ -298,6 +461,13 @@ async function applyPresetRecursive(presetId: string, visited: Set<string>, dept
       console.log(`[Preset]   WRITE ${dest}`);
     }
   }
+
+  // Merge preset hooks into existing settings.json (additive-only).
+  // settings.json uses skipIfExists to protect user permissions, but that means
+  // new hooks added in preset updates never reach existing users. This merge
+  // adds missing preset-managed hooks (identified by /workspace/.codeck/scripts/ path)
+  // without touching user permissions, model settings, or custom hooks.
+  mergePresetHooks(presetDir);
 
   // Copy recursive directories declared in the manifest
   if (manifest.recursive_dirs && manifest.recursive_dirs.length > 0) {
@@ -324,19 +494,24 @@ async function applyPresetRecursive(presetId: string, visited: Set<string>, dept
   }
 
   // Write config.json (only for the top-level preset, not parents)
-  // We write it after every apply since the last one in the chain is the "active" preset
-  const config: PresetConfig = {
-    presetId: manifest.id,
-    presetName: manifest.name,
-    configuredAt: new Date().toISOString(),
-    version: manifest.version,
-  };
-
-  // Ensure /workspace/.codeck/ exists for config.json
-  if (!existsSync(CODECK_DIR)) {
-    mkdirSync(CODECK_DIR, { recursive: true, mode: 0o700 });
+  // Read-merge-write to preserve other keys (e.g. permissions)
+  if (!existsSync(WORKSPACE_CODECK)) {
+    mkdirSync(WORKSPACE_CODECK, { recursive: true, mode: 0o700 });
   }
-  writeFileSync(CONFIG_FILE, JSON.stringify(config, null, 2), { mode: 0o600 });
+  let existing: Record<string, unknown> = {};
+  try {
+    if (existsSync(CONFIG_FILE)) {
+      const parsed = JSON.parse(readFileSync(CONFIG_FILE, 'utf-8'));
+      if (typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)) {
+        existing = parsed;
+      }
+    }
+  } catch { /* start fresh */ }
+  existing.presetId = manifest.id;
+  existing.presetName = manifest.name;
+  existing.configuredAt = new Date().toISOString();
+  existing.version = manifest.version;
+  writeFileSync(CONFIG_FILE, JSON.stringify(existing, null, 2), { mode: 0o600 });
   console.log(`[Preset] ✓ "${manifest.id}" applied. Config written to ${CONFIG_FILE}`);
 }
 

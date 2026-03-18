@@ -15,6 +15,15 @@ rmSync(TEST_ROOT, { recursive: true, force: true });
 mkdirSync(TEST_CODECK_DIR, { recursive: true, mode: 0o700 });
 mkdirSync(TEST_CLAUDE_DIR, { recursive: true, mode: 0o700 });
 
+const TEST_WORKSPACE = `${TEST_ROOT}/workspace`;
+
 // Set env vars BEFORE any module imports read them
 process.env.CODECK_DIR = TEST_CODECK_DIR;
 process.env.CLAUDE_CONFIG_DIR = TEST_CLAUDE_DIR;
+process.env.WORKSPACE = TEST_WORKSPACE;
+
+// Disable daemon delegation so system routes run in isolated mode
+delete process.env.CODECK_DAEMON_URL;
+
+// Create test workspace directory
+mkdirSync(TEST_WORKSPACE, { recursive: true });

@@ -3,6 +3,7 @@ import chalk from 'chalk';
 import * as p from '@clack/prompts';
 import { existsSync, mkdirSync, unlinkSync } from 'node:fs';
 import { resolve, join, basename } from 'node:path';
+import { createHash } from 'node:crypto';
 import { execSync } from 'node:child_process';
 import { getConfig, setConfig, isInitialized, clearWorkspacePath, type CodeckMode } from '../lib/config.js';
 import { detectOS, isDockerInstalled, isDockerRunning, isPortAvailable, isBaseImageBuilt } from '../lib/detect.js';
@@ -15,10 +16,13 @@ import { buildBaseImage } from '../lib/docker.js';
  * replaced with hyphens, leading/trailing hyphens stripped.
  */
 function composeProjectName(projectPath: string): string {
-  return basename(resolve(projectPath))
+  const fullPath = resolve(projectPath);
+  const hash = createHash('md5').update(fullPath).digest('hex').slice(0, 8);
+  const base = basename(fullPath)
     .toLowerCase()
     .replace(/[^a-z0-9-]/g, '-')
     .replace(/^-+|-+$/g, '') || 'codeck';
+  return `${base}-${hash}`;
 }
 
 /**

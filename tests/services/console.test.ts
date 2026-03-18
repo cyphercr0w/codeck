@@ -199,9 +199,9 @@ describe('services/console.ts - Session Management', () => {
         expect.any(Array),
         expect.objectContaining({
           env: expect.objectContaining({
+            CLAUDE_CODE_OAUTH_TOKEN: 'mock-token-12345',  // OAuth token
             PATH: '/usr/bin',  // Clean env preserved
             HOME: '/root',     // Clean env preserved
-            CLAUDE_CODE_OAUTH_TOKEN: 'mock-token-12345',  // OAuth token added
             TERM: 'xterm-256color',  // TERM added
           }),
         })

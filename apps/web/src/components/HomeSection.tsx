@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'preact/hooks';
-import { accountEmail, accountOrg, claudeAuthenticated, sessions, agentName, activePorts, wsConnected, dockerExperimental } from '../state/store';
+import { accountEmail, accountOrg, claudeAuthenticated, sessions, agentName, activePorts, wsConnected, dockerExperimental, setActiveSection } from '../state/store';
 import { apiFetch, getAuthToken } from '../api';
-import { IconUser, IconMonitor, IconActivity, IconShield, IconHardDrive, IconDownload, IconPlug, IconPlus, IconX } from './Icons';
+import { IconUser, IconMonitor, IconActivity, IconShield, IconHardDrive, IconDownload, IconPlug, IconPlus, IconX, IconBrain } from './Icons';
 import { ConfirmModal } from './ConfirmModal';
 
 interface DashboardData {
@@ -20,8 +20,19 @@ interface DashboardData {
   };
 }
 
+interface MemoryStats {
+  sessionsRemembered: number;
+  totalMemoryKB: number;
+  durableMemoryLines: number;
+  dailyLogCount: number;
+  decisionsCount: number;
+  projectsTracked: number;
+  lastActivityAt: number | null;
+}
+
 interface HomeSectionProps {
   onRelogin: () => void;
+  onLogout: () => void;
 }
 
 const PERMISSION_LABELS: Record<string, string> = {
@@ -61,6 +72,19 @@ function formatTimeUntil(isoDate: string | null): string {
   return `${mins}m`;
 }
 
+function formatTimeAgo(timestamp: number | null): string {
+  if (!timestamp) return 'Never';
+  const diff = Date.now() - timestamp;
+  if (diff < 60_000) return 'Just now';
+  const mins = Math.floor(diff / 60_000);
+  if (mins < 60) return `${mins}m ago`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  return `${days}d ago`;
+}
+
+
 function barColor(percent: number): string {
   if (percent < 60) return 'var(--success)';
   if (percent < 80) return 'var(--warning)';
@@ -77,7 +101,7 @@ function buildPortUrl(port: number): string | null {
   }
 }
 
-export function HomeSection({ onRelogin }: HomeSectionProps) {
+export function HomeSection({ onRelogin, onLogout }: HomeSectionProps) {
   const email = accountEmail.value;
   const org = accountOrg.value;
   const sessionCount = sessions.value.length;
@@ -94,14 +118,25 @@ export function HomeSection({ onRelogin }: HomeSectionProps) {
   const [addingPort, setAddingPort] = useState(false);
   const [removingPort, setRemovingPort] = useState<number | null>(null);
   const [confirmAction, setConfirmAction] = useState<{ type: 'add' | 'remove'; port: number } | null>(null);
+  const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
+  const [memoryStats, setMemoryStats] = useState<MemoryStats | null>(null);
+  const [welcomeDismissed, setWelcomeDismissed] = useState(() => localStorage.getItem('codeck-welcome-dismissed') === '1');
 
   const connected = wsConnected.value;
+
+  const showWelcome = !welcomeDismissed && sessionCount === 0 && memoryStats !== null && memoryStats.sessionsRemembered === 0;
+
+  function dismissWelcome() {
+    localStorage.setItem('codeck-welcome-dismissed', '1');
+    setWelcomeDismissed(true);
+  }
 
   useEffect(() => {
     loadDashboard();
     loadPermissions();
     loadNetworkInfo();
-    const interval = setInterval(loadDashboard, DASHBOARD_REFRESH_MS);
+    loadMemoryStats();
+    const interval = setInterval(() => { loadDashboard(); loadMemoryStats(); }, DASHBOARD_REFRESH_MS);
     return () => clearInterval(interval);
   }, []);
 
@@ -131,6 +166,13 @@ export function HomeSection({ onRelogin }: HomeSectionProps) {
     } finally {
       setDashLoading(false);
     }
+  }
+
+  async function loadMemoryStats() {
+    try {
+      const res = await apiFetch('/api/dashboard/memory-stats');
+      setMemoryStats(await res.json());
+    } catch { /* ignore — card just won't show */ }
   }
 
   async function loadPermissions() {
@@ -280,6 +322,34 @@ export function HomeSection({ onRelogin }: HomeSectionProps) {
             </div>
           </div>
         )}
+
+        {showWelcome && (
+          <div class="welcome-card">
+            <button class="welcome-dismiss" onClick={dismissWelcome} title="Dismiss">
+              <IconX size={14} />
+            </button>
+            <h2 class="welcome-title">Welcome to Codeck</h2>
+            <p class="welcome-subtitle">Your AI coding agent with persistent memory</p>
+            <ul class="welcome-features">
+              <li>
+                <span class="welcome-feature-icon" aria-hidden="true">&#129504;</span>
+                <span><strong>Agent Memory</strong> — Claude remembers your projects, preferences, and decisions across sessions</span>
+              </li>
+              <li>
+                <span class="welcome-feature-icon" aria-hidden="true">&#128421;&#65039;</span>
+                <span><strong>Always On</strong> — Your machine runs 24/7, accessible from any device</span>
+              </li>
+              <li>
+                <span class="welcome-feature-icon" aria-hidden="true">&#9889;</span>
+                <span><strong>Skills &amp; Agents</strong> — Pre-loaded knowledge packs and sub-agents that make Claude smarter</span>
+              </li>
+            </ul>
+            <button class="btn btn-primary welcome-cta" onClick={() => { setActiveSection('claude'); history.pushState(null, '', '/claude'); }}>
+              Start your first session →
+            </button>
+          </div>
+        )}
+
         <div class="home-header">
           <div class="home-title">
             <IconUser size={20} />
@@ -320,6 +390,15 @@ export function HomeSection({ onRelogin }: HomeSectionProps) {
             </button>
           </div>
         )}
+
+        <div style={{ marginTop: '12px' }}>
+          <button class="btn btn-sm btn-danger" onClick={() => setShowLogoutConfirm(true)}>
+            Disconnect Account
+          </button>
+          <span class="dash-meta" style={{ marginLeft: '8px' }}>
+            Clears auth tokens. Workspace data is kept.
+          </span>
+        </div>
 
         {/* Dashboard */}
         <div class="dash-section">
@@ -484,6 +563,42 @@ export function HomeSection({ onRelogin }: HomeSectionProps) {
                   </div>
                 </div>
               )}
+
+              {/* Agent Memory */}
+              {memoryStats && (
+                <div class="dash-card">
+                  <div class="dash-card-title">
+                    <IconBrain size={14} />
+                    <span>Agent Memory</span>
+                  </div>
+                  <div class="dash-memory-stats">
+                    <div class="dash-memory-stat">
+                      <span class="dash-memory-stat-value">{memoryStats.sessionsRemembered}</span>
+                      <span class="dash-memory-stat-label">sessions remembered</span>
+                    </div>
+                    <div class="dash-memory-stat">
+                      <span class="dash-memory-stat-value">{memoryStats.projectsTracked}</span>
+                      <span class="dash-memory-stat-label">projects tracked</span>
+                    </div>
+                    <div class="dash-memory-stat">
+                      <span class="dash-memory-stat-value">{memoryStats.decisionsCount}</span>
+                      <span class="dash-memory-stat-label">decisions recorded</span>
+                    </div>
+                    <div class="dash-memory-stat">
+                      <span class="dash-memory-stat-value">{memoryStats.dailyLogCount}</span>
+                      <span class="dash-memory-stat-label">daily logs</span>
+                    </div>
+                  </div>
+                  <div class="dash-meta">
+                    Last active: {formatTimeAgo(memoryStats.lastActivityAt)} &nbsp;|&nbsp; {memoryStats.totalMemoryKB} KB total
+                  </div>
+                  <div class="dash-memory-status">
+                    <span class="dash-memory-dot" />
+                    <span>Memory active</span>
+                  </div>
+                </div>
+              )}
+
             </div>
           )}
         </div>
@@ -513,6 +628,16 @@ export function HomeSection({ onRelogin }: HomeSectionProps) {
         confirmLabel={confirmAction?.type === 'add' ? 'Map Port & Restart' : 'Remove & Restart'}
         onConfirm={handleConfirmAction}
         onCancel={() => setConfirmAction(null)}
+      />
+
+      {/* Confirm modal for account disconnect */}
+      <ConfirmModal
+        visible={showLogoutConfirm}
+        title="Disconnect Claude Account"
+        message={`This will clear all OAuth tokens and sign you out of Claude.${sessionCount > 0 ? ` ${sessionCount} active session(s) will lose authentication.` : ''} Your workspace files, memory, and settings are kept.`}
+        confirmLabel="Disconnect"
+        onConfirm={() => { setShowLogoutConfirm(false); onLogout(); }}
+        onCancel={() => setShowLogoutConfirm(false)}
       />
     </div>
   );

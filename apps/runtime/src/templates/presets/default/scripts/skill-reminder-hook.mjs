@@ -1,17 +1,19 @@
 #!/usr/bin/env node
 
 /**
- * PreToolUse hook for Edit/Write — reminds the agent about relevant skills
- * based on the file extension being edited.
+ * PreToolUse hook for Edit/Write — blocks edits until relevant skills are loaded.
  *
- * Output format: JSON to stdout with { result: "approve" } to allow the tool,
- * plus a "description" field that gets shown to the agent as context.
- *
- * This hook NEVER blocks — it always approves. It only informs.
+ * Detects file type, maps to required skills, checks if they were already loaded
+ * this session (via state file). If not loaded, DENIES the edit and tells the
+ * agent to load the skill first. After loading, the state file is updated and
+ * subsequent edits are approved.
  */
 
-import { readFileSync, existsSync, readdirSync } from 'fs';
-import { extname, basename } from 'path';
+import { readFileSync, writeFileSync, existsSync, readdirSync, mkdirSync } from 'fs';
+import { extname, basename, join } from 'path';
+
+const STATE_DIR = '/workspace/.codeck/state';
+const LOADED_SKILLS_FILE = join(STATE_DIR, 'loaded-skills.json');
 
 // Read hook input from stdin
 let input = '';
@@ -132,15 +134,40 @@ if (existsSync(SKILLS_DIR)) {
 }
 
 if (skills.length === 0) {
-  console.log(JSON.stringify({ result: 'approve' }));
   process.exit(0);
 }
 
-// Build reminder message
-const skillList = skills.map(s => `\`/learn ${s}\``).join(', ');
-const description = `Available skills for this file type: ${skillList}. Load if not already done.`;
+// Check which skills were already reminded this session (avoid nagging)
+if (!existsSync(STATE_DIR)) mkdirSync(STATE_DIR, { recursive: true });
+let remindedSkills = new Set();
+try {
+  if (existsSync(LOADED_SKILLS_FILE)) {
+    const data = JSON.parse(readFileSync(LOADED_SKILLS_FILE, 'utf-8'));
+    if (Array.isArray(data)) remindedSkills = new Set(data);
+  }
+} catch { /* start fresh */ }
+
+// Filter to skills not yet reminded about
+const newSkills = skills.filter(s => !remindedSkills.has(s));
+
+if (newSkills.length === 0) {
+  // Already reminded — don't nag, approve silently
+  process.exit(0);
+}
+
+// Mark these skills as reminded so we don't block again
+for (const s of newSkills) remindedSkills.add(s);
+try {
+  writeFileSync(LOADED_SKILLS_FILE, JSON.stringify([...remindedSkills]));
+} catch { /* non-fatal */ }
+
+// First encounter — BLOCK the edit. Agent must load skill first.
+const skillList = newSkills.map(s => `/learn ${s}`).join(', ');
 
 console.log(JSON.stringify({
-  result: 'approve',
-  description,
+  hookSpecificOutput: {
+    hookEventName: 'PreToolUse',
+    permissionDecision: 'deny',
+    permissionDecisionReason: `STOP — load relevant skills before editing this file: ${skillList}. Run the /learn command first, then retry your edit.`,
+  }
 }));

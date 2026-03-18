@@ -1,4 +1,4 @@
-import { spawn, spawnSync } from 'child_process';
+import { spawn, spawnSync, execFile } from 'child_process';
 import { existsSync, readdirSync, writeFileSync, readFileSync, mkdirSync, unlinkSync, chmodSync, statfsSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join, resolve } from 'path';
@@ -82,7 +82,6 @@ export function isGhAuthenticated(): boolean {
   if (!ghAuthCache.checked && !ghAuthCache.checking) {
     // Run async — don't block the event loop
     ghAuthCache.checking = true;
-    const { execFile } = require('child_process');
     execFile('gh', ['auth', 'status'], { timeout: 5000 }, (err: any) => {
       ghAuthCache = { result: !err, checked: true, checking: false };
     });
@@ -689,7 +688,6 @@ export function testSSHConnection(): boolean {
   if (!sshTestCache.checked && !sshTestCache.checking) {
     // Run async — don't block the event loop
     sshTestCache.checking = true;
-    const { execFile } = require('child_process');
     execFile('ssh', ['-T', '-o', 'ConnectTimeout=5', 'git@github.com'], { timeout: 6000 }, (err: any, stdout: string, stderr: string) => {
       const output = (stdout || '') + (stderr || '');
       sshTestCache = { result: output.includes('successfully authenticated'), checked: true, checking: false };

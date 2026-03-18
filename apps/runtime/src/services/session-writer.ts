@@ -94,8 +94,11 @@ export function startSessionCapture(id: string, cwd: string): void {
   const stream = createWriteStream(filepath, { flags: 'a' });
 
   stream.on('error', (err) => {
-    console.error(`[SessionWriter] Write error for ${id}: ${err.message}`);
+    console.error(`[SessionWriter] Write error for ${id}: ${err.message} — stopping capture`);
     captures.delete(id);
+    if (!stream.destroyed) {
+      try { stream.close(); } catch { /* already closing */ }
+    }
   });
 
   const capture: ActiveCapture = {

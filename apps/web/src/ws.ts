@@ -5,6 +5,7 @@ import { getAuthToken } from './api';
 const KNOWN_MSG_TYPES = new Set([
   'heartbeat', 'status', 'log', 'logs', 'ports', 'sessions:restored',
   'console:error', 'console:output', 'console:exit', 'console:freeze',
+  'console:context_loaded',
   'agent:update', 'agent:output', 'agent:execution:start', 'agent:execution:complete',
   'auth:expiring', 'auth:expired',
 ]);
@@ -62,6 +63,17 @@ export function setOnSessionReattached(handler: (sessionId: string) => void): vo
 let onBeforeSessionsRestored: (() => void) | null = null;
 export function setOnBeforeSessionsRestored(handler: () => void): void {
   onBeforeSessionsRestored = handler;
+}
+
+// Called when the server broadcasts context injection stats for a session
+export interface ContextLoadedData {
+  charsInjected: number;
+  projectName: string;
+  sources: string[];
+}
+let onContextLoaded: ((sessionId: string, data: ContextLoadedData) => void) | null = null;
+export function setOnContextLoaded(handler: (sessionId: string, data: ContextLoadedData) => void): void {
+  onContextLoaded = handler;
 }
 
 type OutputHandler = (sessionId: string, data: string) => void;
@@ -218,6 +230,10 @@ function openWs(wsUrl: string): void {
         if (typeof msg.sessionId === 'string' && typeof msg.data === 'string') {
           onOutput?.(msg.sessionId, msg.data);
         }
+      } else if (msg.type === 'console:context_loaded') {
+        if (typeof msg.sessionId === 'string' && typeof msg.data === 'object' && msg.data !== null) {
+          onContextLoaded?.(msg.sessionId, msg.data as ContextLoadedData);
+        }
       } else if (msg.type === 'console:freeze') {
         // Server detected PTY freeze — log diagnostic info
         if (typeof msg.sessionId === 'string') {
@@ -271,8 +287,28 @@ function openWs(wsUrl: string): void {
   ws.onerror = () => ws?.close();
 }
 
-export function connectWebSocket(): void {
+export async function connectWebSocket(): Promise<void> {
+  // Clear any pending reconnect timer to prevent overlapping attempts
+  if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
   if (ws && ws.readyState !== WebSocket.CLOSED) return;
+
+  // Pre-flight: check if runtime is ready before attempting WS upgrade
+  try {
+    const healthRes = await fetch('/api/runtime/health', { cache: 'no-store' });
+    const health = await healthRes.json();
+    if (!health.ready) {
+      // Schedule retry without attempting noisy WS upgrade
+      const delay = reconnectBackoff * (0.5 + Math.random() * 0.5);
+      reconnectTimer = setTimeout(connectWebSocket, delay);
+      reconnectBackoff = Math.min(reconnectBackoff * 2, 15000);
+      return;
+    }
+  } catch {
+    const delay = reconnectBackoff * (0.5 + Math.random() * 0.5);
+    reconnectTimer = setTimeout(connectWebSocket, delay);
+    reconnectBackoff = Math.min(reconnectBackoff * 2, 15000);
+    return;
+  }
 
   const token = getAuthToken();
   const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -299,4 +335,9 @@ export function disconnectWebSocket(): void {
   if (staleCheckTimer) { clearInterval(staleCheckTimer); staleCheckTimer = null; }
   ws?.close();
   ws = null;
+}
+
+// Clean up timers before page unload to prevent ghost reconnection loops
+if (typeof window !== 'undefined') {
+  window.addEventListener('beforeunload', () => disconnectWebSocket());
 }

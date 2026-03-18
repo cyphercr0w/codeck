@@ -56,8 +56,9 @@ export default defineConfig({
     // Reporters
     reporters: ['verbose'],
 
-    // Disable threads for easier debugging
-    threads: false,
+    // Run test files sequentially — auth tests share module-level state
+    // that leaks between files when running in parallel
+    fileParallelism: false,
 
     // Mock reset behavior
     clearMocks: true,

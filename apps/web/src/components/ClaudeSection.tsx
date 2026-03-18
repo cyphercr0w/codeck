@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
-import { sessions, activeSessionId, setActiveSessionId, addLocalLog, addSession, removeSession, renameSession, agentName, isMobile, restoringPending, wsConnected } from '../state/store';
+import { sessions, activeSessionId, setActiveSessionId, addLocalLog, addSession, removeSession, renameSession, agentName, isMobile, restoringPending, wsConnected, sessionStatus, setSessionStatus, clearSessionStatus } from '../state/store';
 import { apiFetch } from '../api';
-import { createTerminal, destroyTerminal, fitTerminal, repaintTerminal, focusTerminal, writeToTerminal, scrollToBottom, getTerminal, markSessionAttaching, clearSessionAttaching, onTerminalWrite, ensureTerminalVisible, setOnImagePaste } from '../terminal';
-import { wsSend, setTerminalHandlers, attachSession, setOnSessionReattached, setOnBeforeSessionsRestored } from '../ws';
+import { createTerminal, destroyTerminal, fitTerminal, repaintTerminal, focusTerminal, writeToTerminal, scrollToBottom, getTerminal, markSessionAttaching, clearSessionAttaching, onTerminalWrite, ensureTerminalVisible, setOnImagePaste, getTerminalBuffer } from '../terminal';
+import { wsSend, setTerminalHandlers, attachSession, setOnSessionReattached, setOnBeforeSessionsRestored, setOnContextLoaded, type ContextLoadedData } from '../ws';
 import { IconPlus, IconX, IconShell, IconTerminal } from './Icons';
 import { MobileTerminalToolbar } from './MobileTerminalToolbar';
 import { ImageUploadOverlay } from './ImageUploadOverlay';
@@ -67,6 +67,8 @@ export function ClaudeSection({ onNewSession, onNewShell }: ClaudeSectionProps) 
   const editInputRef = useRef<HTMLInputElement>(null);
   const [pendingImage, setPendingImage] = useState<File | null>(null);
   const [dragOver, setDragOver] = useState(false);
+  const [contextBanner, setContextBanner] = useState<{ sessionId: string; projectName: string; kb: string } | null>(null);
+  const [bannerFading, setBannerFading] = useState(false);
   const sessionList = sessions.value;
   const activeId = activeSessionId.value;
 
@@ -107,11 +109,13 @@ export function ClaudeSection({ onNewSession, onNewShell }: ClaudeSectionProps) 
           new Notification('Codeck', { body: `Terminal "${cwdShort}" finished` });
         }
 
+        setSessionStatus(sessionId, 'exited');
         addLocalLog('info', 'Session exited: ' + sessionId);
         destroyTerminal(sessionId);
         const el = document.getElementById('term-' + sessionId);
         if (el) el.remove();
         removeSession(sessionId);
+        clearSessionStatus(sessionId);
       },
     );
   }, []);
@@ -136,11 +140,13 @@ export function ClaudeSection({ onNewSession, onNewShell }: ClaudeSectionProps) 
 
       createTerminal(s.id, el);
 
+      // Attach session synchronously BEFORE rAF to avoid race condition:
+      // WS output can arrive before rAF fires, causing data loss
       const sid = s.id;
+      markSessionAttaching(sid);
+      attachSession(sid);
       requestAnimationFrame(() => {
         fitTerminal(sid);
-        markSessionAttaching(sid);
-        attachSession(sid);
         attachSettleRepaint(sid);
       });
     }
@@ -181,6 +187,80 @@ export function ClaudeSection({ onNewSession, onNewShell }: ClaudeSectionProps) 
       }
     });
     return () => setOnImagePaste(null);
+  }, []);
+
+  // ── Session status tracking ──
+  // Listen for terminal writes to detect active/idle/waiting states.
+  // Each write sets status to 'active'; after 5s of silence, transitions to 'idle'.
+  // If terminal buffer contains a y/n prompt pattern, status becomes 'waiting'.
+  useEffect(() => {
+    const YN_PATTERN = /\(y\/n\)|\[y\/n\]|\[Y\/n\]|\[y\/N\]|\? $/i;
+    const IDLE_TIMEOUT = 5000;
+    const idleTimers = new Map<string, ReturnType<typeof setTimeout>>();
+
+    const unsub = onTerminalWrite((sid, data) => {
+      // Clear previous idle timer for this session
+      const prev = idleTimers.get(sid);
+      if (prev) clearTimeout(prev);
+
+      // Fast path: check incoming chunk for y/n pattern
+      if (YN_PATTERN.test(data)) {
+        setSessionStatus(sid, 'waiting');
+      } else {
+        // Check buffer for prompt patterns (handles multi-chunk prompts)
+        const lines = getTerminalBuffer(sid, 3);
+        const tail = lines.join('\n');
+        setSessionStatus(sid, YN_PATTERN.test(tail) ? 'waiting' : 'active');
+      }
+
+      // Schedule idle transition
+      idleTimers.set(sid, setTimeout(() => {
+        idleTimers.delete(sid);
+        // Only transition to idle if still active/waiting (not exited)
+        const current = sessionStatus.value[sid];
+        if (current === 'active' || current === 'waiting') {
+          // Re-check buffer — prompt may still be visible
+          const lines = getTerminalBuffer(sid, 3);
+          const tail = lines.join('\n');
+          setSessionStatus(sid, YN_PATTERN.test(tail) ? 'waiting' : 'idle');
+        }
+      }, IDLE_TIMEOUT));
+    });
+
+    return () => {
+      unsub();
+      for (const timer of idleTimers.values()) clearTimeout(timer);
+      idleTimers.clear();
+    };
+  }, []);
+
+  // Context Loaded banner — shows briefly when memory is injected into a new session
+  useEffect(() => {
+    let fadeTimer: ReturnType<typeof setTimeout> | null = null;
+    let removeTimer: ReturnType<typeof setTimeout> | null = null;
+
+    setOnContextLoaded((sessionId: string, data: ContextLoadedData) => {
+      // Clear any existing timers from a previous banner
+      if (fadeTimer) clearTimeout(fadeTimer);
+      if (removeTimer) clearTimeout(removeTimer);
+
+      const kb = (data.charsInjected / 1024).toFixed(1);
+      setContextBanner({ sessionId, projectName: data.projectName, kb });
+      setBannerFading(false);
+
+      // Start fade-out after 3s, then remove after animation completes (1s)
+      fadeTimer = setTimeout(() => setBannerFading(true), 3000);
+      removeTimer = setTimeout(() => {
+        setContextBanner(null);
+        setBannerFading(false);
+      }, 4000);
+    });
+
+    return () => {
+      if (fadeTimer) clearTimeout(fadeTimer);
+      if (removeTimer) clearTimeout(removeTimer);
+      setOnContextLoaded(() => {});
+    };
   }, []);
 
   // Drag & drop image detection
@@ -247,6 +327,7 @@ export function ClaudeSection({ onNewSession, onNewShell }: ClaudeSectionProps) 
     const el = document.getElementById('term-' + id);
     if (el) el.remove();
     removeSession(id);
+    clearSessionStatus(id);
   }
 
   function handleTerminalTap(e: MouseEvent) {
@@ -297,6 +378,7 @@ export function ClaudeSection({ onNewSession, onNewShell }: ClaudeSectionProps) 
                   />
                 ) : (
                   <span onDblClick={(e) => { e.stopPropagation(); startEditingTab(s.id, s.name); }}>
+                    <span class={`tab-status-dot ${sessionStatus.value[s.id] || 'idle'}`} />
                     {s.type === 'shell' && <span class="tab-shell-badge"><IconShell size={12} /></span>}
                     {s.name}
                   </span>
@@ -337,11 +419,29 @@ export function ClaudeSection({ onNewSession, onNewShell }: ClaudeSectionProps) 
           onDragLeave={handleDragLeave}
           onDrop={handleDrop}
         >
+          {contextBanner && (
+            <div class={`context-loaded-banner${bannerFading ? ' fade-out' : ''}`}>
+              Context loaded: {contextBanner.projectName} &middot; {contextBanner.kb} KB of memory injected
+            </div>
+          )}
           {sessionList.length === 0 && !restoringPending.value && (
             <div class="claude-empty">
               <div class="claude-empty-icon"><IconTerminal size={48} /></div>
-              <div class="claude-empty-title">{agentName.value} CLI Console</div>
-              <div class="claude-empty-desc">{mobile ? 'Tap + to start a session' : 'Click + to start a new session'}</div>
+              <div class="claude-empty-title">Ready when you are</div>
+              {mobile ? (
+                <div class="claude-empty-desc">Tap + to start</div>
+              ) : (
+                <>
+                  <div class="claude-empty-desc">
+                    Start a new session to begin coding with Claude.<br />
+                    Your agent has persistent memory — it remembers your projects and preferences.
+                  </div>
+                  <div class="claude-empty-actions">
+                    <button class="claude-empty-btn primary" onClick={onNewSession}>New Agent Session</button>
+                    <button class="claude-empty-btn secondary" onClick={onNewShell}>New Shell</button>
+                  </div>
+                </>
+              )}
             </div>
           )}
           {activeId && sessionList.find(s => s.id === activeId)?.loading && (

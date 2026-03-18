@@ -10,6 +10,54 @@ const WORKSPACE = resolve(process.env.WORKSPACE || '/workspace');
 // Image uploads directory
 const UPLOADS_DIR = join(WORKSPACE, '.codeck', 'uploads');
 
+// Upload rate limiting: per-IP, sliding window
+const UPLOAD_WINDOW_MS = 60_000; // 1 minute
+const UPLOAD_MAX_PER_WINDOW = 10;
+const UPLOAD_MAX_BYTES_PER_HOUR = 100 * 1024 * 1024; // 100 MB
+const uploadTracker = new Map<string, { timestamps: number[]; bytesThisHour: number; hourStart: number }>();
+
+// Periodic cleanup: remove stale entries every 10 minutes
+setInterval(() => {
+  const now = Date.now();
+  for (const [ip, tracker] of uploadTracker) {
+    if (now - tracker.hourStart > 3_600_000) uploadTracker.delete(ip);
+  }
+}, 600_000).unref();
+
+function checkUploadRateLimit(ip: string, incomingBytes: number): string | null {
+  const now = Date.now();
+  let tracker = uploadTracker.get(ip);
+  if (!tracker) {
+    tracker = { timestamps: [], bytesThisHour: 0, hourStart: now };
+    uploadTracker.set(ip, tracker);
+  }
+
+  // Reset hourly byte counter
+  if (now - tracker.hourStart > 3_600_000) {
+    tracker = { timestamps: [], bytesThisHour: 0, hourStart: now };
+    uploadTracker.set(ip, tracker);
+  }
+
+  // Remove timestamps outside window
+  const recentTimestamps = tracker.timestamps.filter(t => now - t < UPLOAD_WINDOW_MS);
+
+  if (recentTimestamps.length >= UPLOAD_MAX_PER_WINDOW) {
+    return `Rate limit exceeded: max ${UPLOAD_MAX_PER_WINDOW} uploads per minute`;
+  }
+
+  if (tracker.bytesThisHour + incomingBytes > UPLOAD_MAX_BYTES_PER_HOUR) {
+    return 'Rate limit exceeded: max 100 MB uploads per hour';
+  }
+
+  // Record this upload
+  uploadTracker.set(ip, {
+    timestamps: [...recentTimestamps, now],
+    bytesThisHour: tracker.bytesThisHour + incomingBytes,
+    hourStart: tracker.hourStart,
+  });
+  return null;
+}
+
 // Allowed image MIME types → file extension mapping
 const IMAGE_TYPES: Record<string, string> = {
   'image/png': '.png',
@@ -285,6 +333,14 @@ router.post('/upload-image', async (req, res) => {
   const buffer = Buffer.from(data, 'base64');
   if (buffer.length > MAX_IMAGE_SIZE) {
     res.status(400).json({ error: `Image too large (${(buffer.length / 1024 / 1024).toFixed(1)} MB). Max: 10 MB` });
+    return;
+  }
+
+  // Rate limit check
+  const clientIp = req.ip || req.socket.remoteAddress || 'unknown';
+  const rateLimitError = checkUploadRateLimit(clientIp, buffer.length);
+  if (rateLimitError) {
+    res.status(429).json({ error: rateLimitError });
     return;
   }
 

@@ -6,6 +6,7 @@ import type { Request, Response } from 'express';
 const RUNTIME_URL = process.env.CODECK_RUNTIME_URL || 'http://codeck-runtime:7777';
 const PROXY_TIMEOUT = parseInt(process.env.PROXY_TIMEOUT_MS || '30000', 10);
 const INTERNAL_SECRET = process.env.CODECK_INTERNAL_SECRET || '';
+const MAX_BODY_SIZE = 15 * 1024 * 1024; // 15 MB
 
 // Headers that should NOT be forwarded to the runtime
 const HOP_BY_HOP = new Set([
@@ -97,8 +98,16 @@ export function proxyToRuntime(req: Request, res: Response): void {
   // waiting for bytes that never arrive → "request aborted" → 504.
   if (req.body !== undefined && req.body !== null && typeof req.body === 'object') {
     const bodyStr = JSON.stringify(req.body);
+    const bodySize = Buffer.byteLength(bodyStr);
+    if (bodySize > MAX_BODY_SIZE) {
+      proxyReq.destroy();
+      if (!res.headersSent) {
+        res.status(413).json({ error: `Request body too large (${bodySize} bytes, max ${MAX_BODY_SIZE})` });
+      }
+      return;
+    }
     proxyReq.setHeader('content-type', 'application/json');
-    proxyReq.setHeader('content-length', Buffer.byteLength(bodyStr));
+    proxyReq.setHeader('content-length', bodySize);
     proxyReq.end(bodyStr);
   } else {
     // No body — strip content headers to avoid confusing the runtime

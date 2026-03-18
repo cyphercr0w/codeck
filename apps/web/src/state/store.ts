@@ -77,6 +77,23 @@ export const accountUuid = signal<string | null>(null);
 export const sessions = signal<TerminalSession[]>([]);
 export const activeSessionId = signal<string | null>(null);
 
+// Session status indicators: tracks whether each session is actively producing
+// output, idle, waiting for user input, or has exited.
+export type SessionStatus = 'active' | 'idle' | 'waiting' | 'exited';
+export const sessionStatus = signal<Record<string, SessionStatus>>({});
+
+export function setSessionStatus(sessionId: string, status: SessionStatus): void {
+  const current = sessionStatus.value[sessionId];
+  if (current === status) return;
+  sessionStatus.value = { ...sessionStatus.value, [sessionId]: status };
+}
+
+export function clearSessionStatus(sessionId: string): void {
+  const copy = { ...sessionStatus.value };
+  delete copy[sessionId];
+  sessionStatus.value = copy;
+}
+
 // Derived session state
 export const activeSession = computed(() =>
   sessions.value.find(s => s.id === activeSessionId.value) ?? null
@@ -189,6 +206,10 @@ export function addSession(s: TerminalSession): void {
   // Deduplicate: skip if session with same ID already exists
   if (sessions.value.some(existing => existing.id === s.id)) return;
   sessions.value = [...sessions.value, s];
+  // Initialize session status so tab indicators work from the start
+  if (!sessionStatus.value[s.id]) {
+    setSessionStatus(s.id, 'idle');
+  }
 }
 
 export function setSessions(list: TerminalSession[]): void {
@@ -200,6 +221,16 @@ export function setSessions(list: TerminalSession[]): void {
   if (same) return;
 
   sessions.value = list;
+  // Initialize status for any new sessions
+  const statusUpdates: Record<string, SessionStatus> = { ...sessionStatus.value };
+  let statusChanged = false;
+  for (const s of list) {
+    if (!statusUpdates[s.id]) {
+      statusUpdates[s.id] = 'idle';
+      statusChanged = true;
+    }
+  }
+  if (statusChanged) sessionStatus.value = statusUpdates;
   // If active session is gone, switch to first available
   if (activeSessionId.value && !list.find(s => s.id === activeSessionId.value)) {
     activeSessionId.value = list.length > 0 ? list[0].id : null;

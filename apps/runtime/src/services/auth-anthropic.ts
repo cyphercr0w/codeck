@@ -45,7 +45,7 @@ export function syncCredentialsAfterCLI(): void {
         const expiresAt: number = raw.claudeAiOauth.expiresAt ?? (Date.now() + 365 * 24 * 60 * 60 * 1000);
         const expiresIn = Math.max(0, Math.round((expiresAt - Date.now()) / 1000));
         const accountInfo = raw.accountInfo ?? getCachedAccountInfo() ?? undefined;
-        saveOAuthToken(token, refreshToken, accountInfo, expiresIn);
+        saveOAuthToken(token, refreshToken, accountInfo || undefined, expiresIn);
         console.log('[Claude] Migrated v2 encrypted credentials to plaintext after CLI execution');
       }
       return;
@@ -63,7 +63,7 @@ export function syncCredentialsAfterCLI(): void {
       const expiresAt: number = raw.claudeAiOauth?.expiresAt ?? 0;
       const expiresIn = expiresAt > 0 ? Math.max(0, Math.round((expiresAt - Date.now()) / 1000)) : undefined;
       const accountInfo = raw.accountInfo ?? getCachedAccountInfo() ?? undefined;
-      saveOAuthToken(token, refreshToken, accountInfo, expiresIn);
+      saveOAuthToken(token, refreshToken, accountInfo || undefined, expiresIn);
       console.log('[Claude] Synced updated credentials after CLI execution');
     }
   } catch (e) {
@@ -176,6 +176,8 @@ try {
             }
           }, 500);
         } else if (eventType === 'change' || eventType === 'rename') {
+          // Skip if user explicitly logged out — don't re-sync deleted credentials
+          if (loggedOut) return;
           // File was rewritten — sync to in-memory state if it contains a valid token.
           // This handles the case where the Claude CLI refreshes its own token and writes
           // back a new plaintext .credentials.json.
@@ -461,8 +463,14 @@ function saveOAuthToken(token: string, refreshToken = '', accountInfo?: AccountI
   inMemoryTokenExpiresAt = expiresAt;
 
   tokenMarkedExpired = false;
+  loggedOut = false; // Clear logout flag — user has re-authenticated
   lastTokenSaveAt = Date.now();
   invalidateAuthCache();
+
+  // Restart token refresh monitor if it was stopped (e.g., after logout)
+  if (!refreshMonitorInterval) {
+    startTokenRefreshMonitor(refreshMonitorBroadcast ?? undefined);
+  }
 
   const expiresInHours = Math.round(ttlMs / 3600000);
   console.log(`[Claude] ✓ Token saved (plaintext + encrypted backup, expires in ${expiresInHours}h, refresh_token: ${refreshToken ? 'yes' : 'no'})`);
@@ -665,14 +673,27 @@ export function isClaudeInstalled(): boolean {
 
 let authCache = { checked: false, authenticated: false, checkedAt: 0 };
 let tokenMarkedExpired = false;
+// Set by logoutClaude() to prevent file watcher from re-syncing deleted credentials
+let loggedOut = false;
 // Timestamp of the last successful token save — used to distinguish fresh logins from stale cache
 let lastTokenSaveAt = 0;
-const AUTH_CACHE_TTL = 3000;
+const AUTH_CACHE_TTL = 5000;
 
 // In-memory token — authoritative while server is running.
 // File deletions (Docker WSL2 sync) cannot break auth once a token is loaded.
 let inMemoryToken: string | null = null;
 let inMemoryTokenExpiresAt = 0; // ms since epoch; 0 = unknown (treated as valid)
+
+// Eagerly populate in-memory token from disk at startup so the first
+// WebSocket status broadcast reports authenticated=true immediately.
+try {
+  const _creds = readCredentials();
+  if (_creds?.claudeAiOauth?.accessToken && isRealToken(_creds.claudeAiOauth.accessToken)) {
+    inMemoryToken = _creds.claudeAiOauth.accessToken;
+    inMemoryTokenExpiresAt = _creds.claudeAiOauth.expiresAt || 0;
+    console.log('[Claude] Auth pre-loaded from credentials file at startup');
+  }
+} catch { /* non-fatal — first WS connect will do a lazy read */ }
 
 /** Get the in-memory token (authoritative, survives file deletions). Returns null if expired. */
 export function getInMemoryToken(): string | null {
@@ -798,7 +819,34 @@ function clearAllCredentialFiles(): void {
   try { if (existsSync(TOKEN_CACHE_PATH)) unlinkSync(TOKEN_CACHE_PATH); } catch { /* ignore */ }
   try { if (existsSync(CREDENTIALS_BACKUP)) unlinkSync(CREDENTIALS_BACKUP); } catch { /* ignore */ }
   try { if (existsSync(CLAUDE_CREDENTIALS_PATH)) unlinkSync(CLAUDE_CREDENTIALS_PATH); } catch { /* ignore */ }
+  try { if (existsSync(ACCOUNT_INFO_CACHE_PATH)) unlinkSync(ACCOUNT_INFO_CACHE_PATH); } catch { /* ignore */ }
   console.log('[Claude] Cleared all cached credentials');
+}
+
+/** Full Claude logout: clear all auth state (tokens, caches, monitors) but keep workspace data. */
+export function logoutClaude(): void {
+  console.log('[Claude] Logging out — clearing all OAuth state');
+
+  // Prevent file watcher from re-syncing deleted credentials
+  loggedOut = true;
+
+  // Clear in-memory state
+  inMemoryToken = null;
+  inMemoryTokenExpiresAt = 0;
+  tokenMarkedExpired = false;
+  lastTokenSaveAt = 0;
+  invalidateAuthCache();
+
+  // Stop background monitors
+  stopTokenRefreshMonitor();
+
+  // Clear all credential files on disk
+  clearAllCredentialFiles();
+
+  // Clear PKCE login state if active
+  cleanupLogin();
+
+  console.log('[Claude] ✓ Logged out — ready for new login');
 }
 
 // ============ Login Flow (direct OAuth PKCE) ============

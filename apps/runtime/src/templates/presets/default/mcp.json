@@ -1,9 +1,21 @@
 {
   "mcpServers": {
-    "filesystem": {
+    "context7": {
       "command": "npx",
-      "args": ["-y", "@anthropic-ai/mcp-filesystem@>=2025.7.1", "/workspace"],
-      "description": "Read and write files in the workspace"
+      "args": ["-y", "@upstash/context7-mcp"],
+      "description": "Look up current library documentation and code examples"
+    },
+    "sequential-thinking": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-sequential-thinking"]
+    },
+    "duckduckgo": {
+      "command": "npx",
+      "args": ["-y", "@nicholasblaskey/duckduckgo-mcp-server"]
+    },
+    "eslint": {
+      "command": "npx",
+      "args": ["-y", "@eslint/mcp"]
     }
   }
 }

@@ -146,35 +146,50 @@ export const startCommand = new Command('start')
         });
 
         // On SIGINT/SIGTERM, stop daemon + mDNS + container
+        const CLEANUP_TIMEOUT_MS = 10_000;
+
         const cleanup = async (signal: string) => {
           console.log(chalk.dim(`\nReceived ${signal}, stopping...`));
-          daemonProcess.kill(signal === 'SIGTERM' ? 'SIGTERM' : 'SIGINT');
-          try {
-            await daemonProcess;
-          } catch { /* process exited */ }
 
-          // Stop mDNS advertiser if we started it
-          if (lanStarted) {
-            const lanPid = getConfig().lanPid;
-            if (lanPid) {
-              try {
-                if (process.platform === 'win32') {
-                  execFileSync('taskkill', ['/PID', String(lanPid), '/F', '/T'], { stdio: 'ignore' });
-                } else {
-                  process.kill(lanPid, 'SIGTERM');
-                }
-              } catch { /* best effort */ }
-              setConfig({ lanPid: undefined });
+          const graceful = async () => {
+            daemonProcess.kill(signal === 'SIGTERM' ? 'SIGTERM' : 'SIGINT');
+            try {
+              await daemonProcess;
+            } catch { /* process exited */ }
+
+            // Stop mDNS advertiser if we started it
+            if (lanStarted) {
+              const lanPid = getConfig().lanPid;
+              if (lanPid) {
+                try {
+                  if (process.platform === 'win32') {
+                    execFileSync('taskkill', ['/PID', String(lanPid), '/F', '/T'], { stdio: 'ignore' });
+                  } else {
+                    process.kill(lanPid, 'SIGTERM');
+                  }
+                } catch { /* best effort */ }
+                setConfig({ lanPid: undefined });
+              }
             }
-          }
 
-          console.log(chalk.dim('Stopping runtime container...'));
-          const { composeDown } = await import('../lib/docker.js');
+            console.log(chalk.dim('Stopping runtime container...'));
+            const { composeDown } = await import('../lib/docker.js');
+            try {
+              await composeDown({ projectPath: config.projectPath, mode });
+            } catch { /* best effort */ }
+            console.log(chalk.green('Codeck stopped.'));
+          };
+
+          const timeout = new Promise<never>((_, reject) =>
+            setTimeout(() => reject(new Error('Cleanup timed out')), CLEANUP_TIMEOUT_MS),
+          );
+
           try {
-            await composeDown({ projectPath: config.projectPath, mode });
-          } catch { /* best effort */ }
-          console.log(chalk.green('Codeck stopped.'));
-          process.exit(0);
+            await Promise.race([graceful(), timeout]);
+          } catch {
+            console.log(chalk.yellow('Cleanup timed out after 10s, forcing exit.'));
+          }
+          process.exit(signal === 'SIGTERM' ? 0 : 1);
         };
 
         process.on('SIGINT', () => cleanup('SIGINT'));

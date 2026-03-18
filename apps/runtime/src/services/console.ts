@@ -10,7 +10,8 @@ import { syncToClaudeSettings } from './permissions.js';
 import { startSessionCapture, captureInput, captureOutput, endSessionCapture } from './session-writer.js';
 import { atomicWriteFileSync } from './memory.js';
 import { summarizeSession } from './session-summarizer.js';
-import { injectContextIntoCLAUDEMd } from './memory-context.js';
+import { broadcast } from '../web/logger.js';
+import { injectContextIntoCLAUDEMd, type ContextInjectionStats } from './memory-context.js';
 import {
   getValidAgentBinary, resolveAgentBinary, getOAuthEnv, ensureOnboardingComplete,
   buildCleanEnv, getAgentBinaryPath, setAgentBinaryPath,
@@ -65,7 +66,15 @@ interface CreateSessionOptions {
  */
 function detectConversationId(session: ConsoleSession, watchExisting = false): void {
   const encoded = encodeProjectPath(session.cwd);
-  const projectDir = `${ACTIVE_AGENT.projectsDir}/${encoded}`;
+  const projectDir = resolve(`${ACTIVE_AGENT.projectsDir}/${encoded}`);
+
+  // Validate the resolved path stays within projectsDir to prevent path injection
+  if (!ACTIVE_AGENT.projectsDir) return;
+  const resolvedBase = resolve(ACTIVE_AGENT.projectsDir);
+  if (!projectDir.startsWith(resolvedBase + '/') && projectDir !== resolvedBase) {
+    console.warn(`[Console] Path injection blocked: ${projectDir} is outside ${resolvedBase}`);
+    return;
+  }
 
   (async () => {
     // Snapshot existing .jsonl files (and their mtimes for resume detection)
@@ -91,6 +100,11 @@ function detectConversationId(session: ConsoleSession, watchExisting = false): v
     let polling = false;
     const interval = setInterval(async () => {
       if (polling) return; // Skip if previous async iteration still running
+      // Stop polling if session was destroyed
+      if (!sessions.has(session.id)) {
+        clearInterval(interval);
+        return;
+      }
       polling = true;
       attempts++;
       try {
@@ -174,8 +188,9 @@ export function createConsoleSession(options?: string | CreateSessionOptions): C
   }
 
   // Inject memory context into workspace CLAUDE.md before spawning
+  let contextStats: ContextInjectionStats | null = null;
   try {
-    injectContextIntoCLAUDEMd(workDir);
+    contextStats = injectContextIntoCLAUDEMd(workDir);
   } catch (e) {
     console.warn(`[Console] Memory context injection failed: ${(e as Error).message}`);
   }
@@ -231,13 +246,29 @@ export function createConsoleSession(options?: string | CreateSessionOptions): C
 
   sessions.set(id, session);
   saveSessionState('session_created');
+
+  // Broadcast context injection stats so the frontend can show a "Context Loaded" banner
+  if (contextStats) {
+    broadcast({
+      type: 'console:context_loaded',
+      sessionId: id,
+      data: contextStats,
+    });
+  }
+
   return session;
 }
 
 export function createShellSession(cwd?: string): ConsoleSession {
   const t0 = Date.now();
   const id = randomUUID();
-  const workDir = resolve(cwd || process.env.WORKSPACE || '/workspace');
+  const workspace = resolve(process.env.WORKSPACE || '/workspace');
+  const workDir = resolve(cwd || workspace);
+
+  // Validate cwd stays within workspace to prevent path traversal
+  if (!workDir.startsWith(workspace + '/') && workDir !== workspace) {
+    throw new Error(`Working directory must be within workspace: ${workDir}`);
+  }
 
   if (!existsSync(workDir)) {
     throw new Error(`Working directory does not exist: ${workDir}`);
@@ -325,12 +356,8 @@ export function destroySession(id: string): void {
   const sessionCwd = session.cwd;
   sessions.delete(id);
 
-  // Auto-summarize session transcript in background
-  setImmediate(() => {
-    summarizeSession(id, sessionCwd).catch(err =>
-      console.warn(`[SessionSummarizer] Failed for ${id}: ${err.message}`)
-    );
-  });
+  // Session summarization is handled by the memory-stop-hook.mjs (Haiku LLM).
+  // The old template-based auto-summary was too noisy and generic — disabled.
 
   // Send SIGTERM first to allow graceful shutdown (flush buffers, close files)
   try {
@@ -595,7 +622,8 @@ export function restoreSavedSessions(): Array<{ id: string; type: string; cwd: s
         restored.push({ id: session.id, type: session.type, cwd: session.cwd, name: session.name });
       }
     } catch (e) {
-      console.log(`[Console] Failed to restore session ${saved.id.slice(0, 8)}:`, (e as Error).message);
+      const errMsg = (e as Error).message;
+      console.warn(`[Console] Failed to restore session ${saved.id.slice(0, 8)}: ${errMsg}`);
     }
   }
 

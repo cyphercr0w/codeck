@@ -17,6 +17,18 @@ Before starting ANY significant implementation, check `/root/.claude/skills/` fo
 
 **If you catch yourself writing code in one of these areas without having loaded the skill first, STOP. Load it. Then continue.**
 
+## Implement → Review → Iterate (mandatory)
+
+Every code change follows this cycle. No exceptions.
+
+1. **Implement** the change
+2. **Build/test** — verify it compiles and tests pass
+3. **Review** — spawn a code-reviewer sub-agent with the changed files
+4. **Fix** — address CRITICAL and HIGH issues from the review
+5. **Commit** — only after review passes
+
+**Never skip step 3.** A 30-second review catches bugs that take hours to debug. If you commit without reviewing, you are shipping untested work.
+
 ## During work
 - Work in small, verifiable increments. Test after each change.
 - If a task is complex, break it into subtasks and execute sequentially.

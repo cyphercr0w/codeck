@@ -377,19 +377,24 @@ async function applyPresetRecursive(presetId: string, visited: Set<string>, dept
   }
 
   // Write config.json (only for the top-level preset, not parents)
-  // We write it after every apply since the last one in the chain is the "active" preset
-  const config: PresetConfig = {
-    presetId: manifest.id,
-    presetName: manifest.name,
-    configuredAt: new Date().toISOString(),
-    version: manifest.version,
-  };
-
-  // Ensure workspace .codeck dir exists for config.json
+  // Read-merge-write to preserve other keys (e.g. permissions)
   if (!existsSync(WORKSPACE_CODECK)) {
     mkdirSync(WORKSPACE_CODECK, { recursive: true, mode: 0o700 });
   }
-  writeFileSync(CONFIG_FILE, JSON.stringify(config, null, 2), { mode: 0o600 });
+  let existing: Record<string, unknown> = {};
+  try {
+    if (existsSync(CONFIG_FILE)) {
+      const parsed = JSON.parse(readFileSync(CONFIG_FILE, 'utf-8'));
+      if (typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)) {
+        existing = parsed;
+      }
+    }
+  } catch { /* start fresh */ }
+  existing.presetId = manifest.id;
+  existing.presetName = manifest.name;
+  existing.configuredAt = new Date().toISOString();
+  existing.version = manifest.version;
+  writeFileSync(CONFIG_FILE, JSON.stringify(existing, null, 2), { mode: 0o600 });
   console.log(`[Preset] ✓ "${manifest.id}" applied. Config written to ${CONFIG_FILE}`);
 }
 

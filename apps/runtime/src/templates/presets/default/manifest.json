@@ -2,7 +2,7 @@
   "id": "default",
   "name": "Default (Recommended)",
   "description": "Persistent memory system, rules, sandbox skills, plus 13 sub-agents, 31+ slash commands, universal knowledge packs and dev hooks from everything-claude-code.",
-  "version": "5.0.0",
+  "version": "5.1.0",
   "author": "codeck",
   "icon": "⚡",
   "tags": ["general", "recommended"],

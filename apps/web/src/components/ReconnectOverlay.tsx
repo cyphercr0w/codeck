@@ -46,14 +46,13 @@ export function ReconnectOverlay() {
         {showRetry && (
           <button
             class="reconnect-retry-btn"
-            onClick={() => {
-              // Force hard reload bypassing cache — fixes stale SW/cache issues
+            onClick={async () => {
+              // Unregister SW and force fresh reload
               if ('serviceWorker' in navigator) {
-                navigator.serviceWorker.getRegistrations().then(regs => {
-                  for (const reg of regs) reg.unregister();
-                });
+                const regs = await navigator.serviceWorker.getRegistrations();
+                await Promise.all(regs.map(r => r.unregister()));
               }
-              window.location.href = window.location.href;
+              window.location.href = window.location.pathname + '?_=' + Date.now();
             }}
           >
             Reload page

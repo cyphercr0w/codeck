@@ -74,7 +74,7 @@ const reminder = [
   ...sections,
   '',
   'REMINDER: You are inside Codeck, a cloud sandbox with persistent memory.',
-  'Memory: /workspace/.codeck/memory/ | Rules: /workspace/.codeck/rules/',
+  'Memory: /workspace/.codeck/memory/ | Rules: /workspace/.codeck/rules/base/ + /workspace/.codeck/rules/user/',
   'Skills: /root/.claude/skills/ (load with /learn <name>)',
   'Write to daily log periodically. Search memory before saying "I don\'t know".',
 ].join('\n');

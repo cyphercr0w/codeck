@@ -23,7 +23,9 @@ You have persistent memory that survives between sessions. **You MUST use it.** 
           YYYY-MM-DD.md     # Path-scoped daily logs
   AGENTS.md                 # Full reference for memory APIs and advanced operations
   preferences.md            # User preferences (non-negotiable)
-  rules/                    # Coding, communication, workflow rules
+  rules/
+    base/                   # Preset-managed rules (overwritten on preset update)
+    user/                   # Your rules (never touched by preset updates)
   skills/                   # Reusable workflow templates
 ```
 
@@ -63,7 +65,7 @@ Every session, do this BEFORE responding to the user:
 1. Read the `## Recent Memory` section at the bottom of this file (if present)
 2. Read `/workspace/.codeck/memory/MEMORY.md`
 3. Read `/workspace/.codeck/preferences.md`
-4. Read rules: `/workspace/.codeck/rules/` and `/root/.claude/rules/` (if present)
+4. Read rules: `/workspace/.codeck/rules/base/`, `/workspace/.codeck/rules/user/`, and `/root/.claude/rules/` (if present)
 5. If working on a project: resolve path, read path memory
 6. If no path memory exists: explore codebase, create it before working
 7. Check skills: `/workspace/.codeck/skills/` and `/root/.claude/skills/` (knowledge packs — load on demand with `/learn <skill>`)
@@ -111,7 +113,7 @@ Read `/workspace/.codeck/preferences.md` at session start. Actively detect prefe
 
 ## Rules
 
-Follow all files in `/workspace/.codeck/rules/` and `/root/.claude/rules/` at all times.
+Follow all files in `/workspace/.codeck/rules/base/`, `/workspace/.codeck/rules/user/`, and `/root/.claude/rules/` at all times.
 
 ## Skills — USE PROACTIVELY
 

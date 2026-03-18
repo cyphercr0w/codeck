@@ -1287,15 +1287,15 @@ src/templates/
 ├── CLAUDE.md                  # → /workspace/CLAUDE.md (Layer 2: workspace rules, ports, project list)
 └── presets/
     ├── default/
-    │   ├── manifest.json          # Preset metadata + file mappings (v3.0.0)
+    │   ├── manifest.json          # Preset metadata + file mappings (v4.2.0)
     │   ├── CLAUDE.md              # → /root/.claude/CLAUDE.md (Layer 1: memory rules inline, environment, preferences)
     │   ├── AGENTS.md              # → /workspace/.codeck/AGENTS.md (detailed reference for advanced memory ops)
     │   ├── mcp.json               # → /root/.claude/mcp.json
     │   ├── preferences.md         # → /workspace/.codeck/preferences.md (defaults + user-defined)
-    │   ├── rules/                 # → /workspace/.codeck/rules/
-    │   │   ├── coding.md          # Coding standards and practices
-    │   │   ├── communication.md   # How to communicate with the user
-    │   │   └── workflow.md        # Session startup/during/shutdown sequences
+    │   ├── rules/                 # → /workspace/.codeck/rules/base/ and rules/user/
+    │   │   ├── coding.md          # → rules/base/ (preset-managed, overwritten on update)
+    │   │   ├── workflow.md        # → rules/base/ (preset-managed, overwritten on update)
+    │   │   └── communication.md   # → rules/user/ (user-managed, never overwritten)
     │   ├── memory/                # → /workspace/.codeck/memory/
     │   │   └── MEMORY.md          # Initial durable memory
     │   └── skills/
@@ -1313,7 +1313,7 @@ src/templates/
   "id": "default",
   "name": "Default (Recommended)",
   "description": "Persistent memory system, rules, and sandbox skills. Makes Claude productive immediately.",
-  "version": "3.0.0",
+  "version": "4.2.0",
   "extends": null,
   "files": [
     { "src": "CLAUDE.md", "dest": "/root/.claude/CLAUDE.md" },
@@ -1321,16 +1321,16 @@ src/templates/
     { "src": "mcp.json", "dest": "/root/.claude/mcp.json" },
     { "src": "AGENTS.md", "dest": "/workspace/.codeck/AGENTS.md" },
     { "src": "preferences.md", "dest": "/workspace/.codeck/preferences.md" },
-    { "src": "rules/coding.md", "dest": "/workspace/.codeck/rules/coding.md" },
-    { "src": "rules/communication.md", "dest": "/workspace/.codeck/rules/communication.md" },
-    { "src": "rules/workflow.md", "dest": "/workspace/.codeck/rules/workflow.md" },
+    { "src": "rules/coding.md", "dest": "/workspace/.codeck/rules/base/coding.md" },
+    { "src": "rules/workflow.md", "dest": "/workspace/.codeck/rules/base/workflow.md" },
+    { "src": "rules/communication.md", "dest": "/workspace/.codeck/rules/user/communication.md", "skipIfExists": true },
     { "src": "skills/sandbox.md", "dest": "/workspace/.codeck/skills/sandbox.md" },
     { "src": "skills/docker.md", "dest": "/workspace/.codeck/skills/docker.md" },
     { "src": "memory/summary.md", "dest": "/workspace/.codeck/memory/summary.md" },
     { "src": "memory/decisions.md", "dest": "/workspace/.codeck/memory/decisions.md" },
     { "src": "memory/MEMORY.md", "dest": "/workspace/.codeck/memory/MEMORY.md" }
   ],
-  "directories": ["/workspace/.codeck/memory/daily", "/workspace/.codeck/memory/decisions", "/workspace/.codeck/memory/paths", "/workspace/.codeck/sessions", "/workspace/.codeck/index", "/workspace/.codeck/state", "/workspace/.codeck/rules", "/workspace/.codeck/skills", "/workspace/.codeck/agents"]
+  "directories": ["...", "/workspace/.codeck/rules/base", "/workspace/.codeck/rules/user", "..."]
 }
 ```
 

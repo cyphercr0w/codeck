@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, writeFileSync, mkdirSync, readdirSync, copyFileSync, realpathSync, statSync } from 'fs';
+import { existsSync, readFileSync, writeFileSync, mkdirSync, readdirSync, copyFileSync, realpathSync, statSync, renameSync } from 'fs';
 import { join, dirname, resolve } from 'path';
 import { fileURLToPath } from 'url';
 
@@ -211,6 +211,56 @@ export async function applyPreset(presetId: string, force = false): Promise<void
 
 // ── Internal ─────────────────────────────────────────────────────────
 
+/**
+ * Migrate old flat rules/ layout to rules/base/ + rules/user/ structure.
+ * Only runs once (when old-style loose files exist). Idempotent.
+ */
+function migrateRulesLayout(codeckDir: string): void {
+  const rulesDir = join(codeckDir, 'rules');
+  if (!existsSync(rulesDir)) return;
+
+  const migrations: Array<{ old: string; newPath: string }> = [
+    { old: join(rulesDir, 'coding.md'), newPath: join(rulesDir, 'base', 'coding.md') },
+    { old: join(rulesDir, 'workflow.md'), newPath: join(rulesDir, 'base', 'workflow.md') },
+    { old: join(rulesDir, 'communication.md'), newPath: join(rulesDir, 'user', 'communication.md') },
+  ];
+
+  const knownFiles = new Set(['coding.md', 'workflow.md', 'communication.md']);
+
+  for (const { old, newPath } of migrations) {
+    if (!existsSync(old)) continue;
+    // Don't overwrite if destination already exists
+    if (existsSync(newPath)) {
+      console.log(`[Preset]   SKIP migration ${old} → ${newPath} (destination exists)`);
+      continue;
+    }
+    const destDir = dirname(newPath);
+    if (!existsSync(destDir)) {
+      mkdirSync(destDir, { recursive: true });
+    }
+    renameSync(old, newPath);
+    console.log(`[Preset]   MIGRATE ${old} → ${newPath}`);
+  }
+
+  // Move any remaining loose .md files in rules/ to rules/user/ (catch-all for custom rules)
+  try {
+    for (const entry of readdirSync(rulesDir)) {
+      const entryPath = join(rulesDir, entry);
+      if (!statSync(entryPath).isFile()) continue;
+      if (!entry.endsWith('.md')) continue;
+      if (knownFiles.has(entry)) continue; // already handled above
+      const userDest = join(rulesDir, 'user', entry);
+      if (existsSync(userDest)) continue;
+      const userDir = join(rulesDir, 'user');
+      if (!existsSync(userDir)) mkdirSync(userDir, { recursive: true });
+      renameSync(entryPath, userDest);
+      console.log(`[Preset]   MIGRATE ${entryPath} → ${userDest} (custom rule → user/)`);
+    }
+  } catch (e) {
+    console.warn(`[Preset]   Failed to migrate custom rules:`, (e as Error).message);
+  }
+}
+
 async function applyPresetRecursive(presetId: string, visited: Set<string>, depth: number, force: boolean): Promise<void> {
   if (depth > 5) {
     throw new Error(`Preset extends chain too deep (>5). Possible circular reference.`);
@@ -219,6 +269,11 @@ async function applyPresetRecursive(presetId: string, visited: Set<string>, dept
     throw new Error(`Circular preset extends detected: "${presetId}" already applied in this chain.`);
   }
   visited.add(presetId);
+
+  // Run rules layout migration at the top-level call only
+  if (depth === 0) {
+    migrateRulesLayout(CODECK_DIR);
+  }
 
   const manifest = loadManifest(presetId);
   if (!manifest) {
@@ -281,7 +336,7 @@ async function applyPresetRecursive(presetId: string, visited: Set<string>, dept
     }
 
     // Write file (don't overwrite user edits for data files, unless force)
-    const isDataFile = dest.includes('/memory/') || dest.endsWith('preferences.md') || dest.includes('/rules/');
+    const isDataFile = dest.includes('/memory/') || dest.endsWith('preferences.md') || dest.includes('/rules/user/');
     if (!force && file.skipIfExists && existsSync(dest)) {
       console.log(`[Preset]   KEEP ${dest} (skipIfExists)`);
     } else if (!force && isDataFile && existsSync(dest)) {

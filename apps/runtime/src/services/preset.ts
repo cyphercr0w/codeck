@@ -219,45 +219,26 @@ function migrateRulesLayout(codeckDir: string): void {
   const rulesDir = join(codeckDir, 'rules');
   if (!existsSync(rulesDir)) return;
 
-  const migrations: Array<{ old: string; newPath: string }> = [
-    { old: join(rulesDir, 'coding.md'), newPath: join(rulesDir, 'base', 'coding.md') },
-    { old: join(rulesDir, 'workflow.md'), newPath: join(rulesDir, 'base', 'workflow.md') },
-    { old: join(rulesDir, 'communication.md'), newPath: join(rulesDir, 'user', 'communication.md') },
-  ];
-
-  const knownFiles = new Set(['coding.md', 'workflow.md', 'communication.md']);
-
-  for (const { old, newPath } of migrations) {
-    if (!existsSync(old)) continue;
-    // Don't overwrite if destination already exists
-    if (existsSync(newPath)) {
-      console.log(`[Preset]   SKIP migration ${old} → ${newPath} (destination exists)`);
-      continue;
-    }
-    const destDir = dirname(newPath);
-    if (!existsSync(destDir)) {
-      mkdirSync(destDir, { recursive: true });
-    }
-    renameSync(old, newPath);
-    console.log(`[Preset]   MIGRATE ${old} → ${newPath}`);
-  }
-
-  // Move any remaining loose .md files in rules/ to rules/user/ (catch-all for custom rules)
+  // Move ALL loose .md files in rules/ to rules/user/.
+  // base/ files are preset-managed (overwritten on update), so user customizations
+  // must go to user/ where they're protected from overwrites.
+  const userDir = join(rulesDir, 'user');
   try {
     for (const entry of readdirSync(rulesDir)) {
       const entryPath = join(rulesDir, entry);
       if (!statSync(entryPath).isFile()) continue;
       if (!entry.endsWith('.md')) continue;
-      if (knownFiles.has(entry)) continue; // already handled above
-      const userDest = join(rulesDir, 'user', entry);
-      if (existsSync(userDest)) continue;
-      const userDir = join(rulesDir, 'user');
+      const userDest = join(userDir, entry);
+      if (existsSync(userDest)) {
+        console.log(`[Preset]   SKIP migration ${entryPath} (${userDest} already exists)`);
+        continue;
+      }
       if (!existsSync(userDir)) mkdirSync(userDir, { recursive: true });
       renameSync(entryPath, userDest);
-      console.log(`[Preset]   MIGRATE ${entryPath} → ${userDest} (custom rule → user/)`);
+      console.log(`[Preset]   MIGRATE ${entryPath} → ${userDest}`);
     }
   } catch (e) {
-    console.warn(`[Preset]   Failed to migrate custom rules:`, (e as Error).message);
+    console.warn(`[Preset]   Failed to migrate rules:`, (e as Error).message);
   }
 }
 

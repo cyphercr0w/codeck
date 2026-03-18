@@ -16,7 +16,6 @@
 <p align="center">
   <a href="#quick-start">Quick Start</a> &middot;
   <a href="#features">Features</a> &middot;
-  <a href="#codeck-vs-alternatives">Compare</a> &middot;
   <a href="docs/README.md">Docs</a>
 </p>
 
@@ -26,7 +25,7 @@
 <!-- Show: open browser -> Claude Code terminal -> memory recall -> multi-terminal -->
 <!-- Host via GitHub CDN (drag into issue, copy URL) — do NOT commit large GIFs to repo -->
 
-Codeck gives Claude Code its own always-on machine in the cloud. Persistent workspace, memory that survives across sessions, full terminal access — accessible from any browser on any device. You bring your Anthropic account. We handle the infra.
+Codeck gives Claude Code its own always-on machine. Persistent workspace, memory that survives across sessions, full terminal access — accessible from any browser on any device. Self-hosted. You bring your own Anthropic account.
 
 ## Why Codeck
 
@@ -135,21 +134,6 @@ journalctl -u codeck -f
 ```
 
 </details>
-
-## Codeck vs Alternatives
-
-| | **Codeck** | **CC on Web** | **Cursor** | **Replit** | **DIY VPS** |
-|---|:---:|:---:|:---:|:---:|:---:|
-| Full Claude Code CLI | Yes | Yes | No | No | Yes |
-| Persistent memory | Yes | No | No | No | Manual |
-| Always-on machine | Yes | No | N/A | Yes | Yes |
-| Access from any device | Yes | Yes | No | Yes | Manual |
-| Real PTY terminals | Yes | Yes | No | No | Yes |
-| Self-hostable | Yes | No | No | No | Yes |
-| BYOK (your API key) | Yes | Yes | No | No | Yes |
-| Scheduled agents | Yes | No | No | No | Manual |
-| Setup time | **Minutes** | **None** | **Minutes** | **None** | **Hours** |
-| Price | **$9.99/mo** | **$20/mo** | **$20/mo** | **$20/mo** | **~$5-20/mo** |
 
 ## How It Works
 

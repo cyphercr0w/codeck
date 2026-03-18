@@ -2370,6 +2370,30 @@
   opacity: 0.85;
 }
 
+/* ========== Pull to Refresh ========== */
+.pull-to-refresh {
+  position: fixed;
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 9999;
+  pointer-events: none;
+  transition: opacity 0.15s;
+}
+
+.pull-to-refresh-icon {
+  width: 36px;
+  height: 36px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-secondary);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+
 /* ========== Image Upload Overlay ========== */
 .image-upload-overlay {
   position: fixed;

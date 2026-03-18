@@ -31,6 +31,7 @@ import { AgentsSection } from './components/AgentsSection';
 import { SettingsSection } from './components/SettingsSection';
 import { MobileMenu } from './components/MobileMenu';
 import { IconBridge } from './components/Icons';
+import { PullToRefresh } from './components/PullToRefresh';
 import { ReconnectOverlay } from './components/ReconnectOverlay';
 import { initRouter, sectionFromUrl, pushSection } from './router';
 
@@ -81,32 +82,8 @@ export function App() {
     return () => { unsubView(); unsubSection(); };
   }, []);
 
-  // iOS Safari: prevent pull-to-refresh and scroll chaining.
-  // overscroll-behavior: none is not supported in Safari, so we use a
-  // touchmove handler as a cross-browser fallback.
-  useEffect(() => {
-    if (!isMobile.value) return;
-    const preventPullToRefresh = (e: TouchEvent) => {
-      // Only prevent when at top of page (pull-to-refresh trigger zone)
-      if (window.scrollY === 0 && e.touches[0]?.clientY > 0) {
-        // Walk up the DOM from the touch target to see if any ancestor is a
-        // scrollable container (overflow-y: auto or scroll). If so, this is a
-        // legitimate in-app scroll — allow it. Only prevent the browser's own
-        // pull-to-refresh gesture (touches that start outside any scrollable area).
-        // Using the DOM walk instead of a class whitelist avoids maintaining a list
-        // of every scrollable section class in the app.
-        let el = e.target as HTMLElement | null;
-        while (el && el !== document.body) {
-          const oy = getComputedStyle(el).overflowY;
-          if (oy === 'auto' || oy === 'scroll') return;
-          el = el.parentElement as HTMLElement | null;
-        }
-        e.preventDefault();
-      }
-    };
-    document.body.addEventListener('touchmove', preventPullToRefresh, { passive: false });
-    return () => document.body.removeEventListener('touchmove', preventPullToRefresh);
-  }, []);
+  // Pull-to-refresh is handled by the PullToRefresh component.
+  // It replaces the old preventPullToRefresh handler that blocked all pull gestures.
 
   // Router: init popstate listener
   useEffect(() => {
@@ -559,6 +536,7 @@ export function App() {
       <LoginModal visible={loginModalOpen} onClose={handleLoginClose} onSuccess={handleLoginSuccess} />
       <NewProjectModal visible={newProjectOpen} onCancel={() => setNewProjectOpen(false)} onConfirm={handleProjectConfirm} />
       <ReconnectOverlay />
+      <PullToRefresh />
     </div>
   );
 }

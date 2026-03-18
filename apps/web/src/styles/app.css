@@ -2354,6 +2354,22 @@
   font-size: 14px;
 }
 
+.reconnect-retry-btn {
+  margin-top: 8px;
+  padding: 8px 20px;
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  font-size: 13px;
+  cursor: pointer;
+  transition: opacity 0.15s;
+}
+
+.reconnect-retry-btn:hover {
+  opacity: 0.85;
+}
+
 /* ========== Image Upload Overlay ========== */
 .image-upload-overlay {
   position: fixed;

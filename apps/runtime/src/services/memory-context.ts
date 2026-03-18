@@ -33,21 +33,30 @@ export function buildSessionContext(cwd: string): { context: string; stats: Cont
   const sources: string[] = [];
   let totalLen = 0;
 
+  // Map labels to XML tag names for better compaction survival (92% vs 71% markdown)
+  const tagMap: Record<string, string> = {
+    'Project Memory': 'project-memory',
+    'Project Today': 'project-today',
+    'Durable Memory': 'durable-memory',
+    'Related Memory': 'related-memory',
+  };
+
   const addPart = (label: string, content: string, source?: string): boolean => {
     const trimmed = content.trim();
     if (!trimmed) return true;
-    if (totalLen + trimmed.length + label.length + 10 > MAX_CONTEXT_CHARS) {
-      // Truncate to fit
-      const remaining = MAX_CONTEXT_CHARS - totalLen - label.length - 20;
+    const tag = tagMap[label] || label.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
+    const overhead = tag.length * 2 + 10; // <tag>...</tag> + newlines
+    if (totalLen + trimmed.length + overhead > MAX_CONTEXT_CHARS) {
+      const remaining = MAX_CONTEXT_CHARS - totalLen - overhead - 10;
       if (remaining > 100) {
-        parts.push(`**${label}:**\n${trimmed.slice(0, remaining)}...`);
+        parts.push(`<${tag}>\n${trimmed.slice(0, remaining)}...\n</${tag}>`);
         totalLen = MAX_CONTEXT_CHARS;
         if (source && !sources.includes(source)) sources.push(source);
       }
       return false;
     }
-    parts.push(`**${label}:**\n${trimmed}`);
-    totalLen += trimmed.length + label.length + 10;
+    parts.push(`<${tag}>\n${trimmed}\n</${tag}>`);
+    totalLen += trimmed.length + overhead;
     if (source && !sources.includes(source)) sources.push(source);
     return true;
   };
@@ -91,12 +100,14 @@ export function buildSessionContext(cwd: string): { context: string; stats: Cont
   // 3. Global daily — recent portion only (auto-summaries can be verbose/noisy)
   const todayEntry = getDailyEntry(today);
   if (todayEntry.content) {
+    tagMap[`Today (${today})`] = 'today-activity';
     addPart(`Today (${today})`, trimDaily(todayEntry.content), 'daily');
   } else {
     // Fallback: yesterday when today is empty
     const yesterday = new Date(Date.now() - 86_400_000).toISOString().slice(0, 10);
     const yesterdayEntry = getDailyEntry(yesterday);
     if (yesterdayEntry.content) {
+      tagMap[`Yesterday (${yesterday})`] = 'yesterday-activity';
       addPart(`Yesterday (${yesterday})`, trimDaily(yesterdayEntry.content), 'daily');
     }
   }
@@ -144,7 +155,7 @@ export function injectContextIntoCLAUDEMd(cwd: string): ContextInjectionStats | 
     return null;
   }
 
-  const contextBlock = `\n## Recent Memory\n${MARKER_START}\n${context}\n${MARKER_END}\n`;
+  const contextBlock = `\n${MARKER_START}\n<recent-memory>\n${context}\n</recent-memory>\n${MARKER_END}\n`;
 
   let content = readFileSync(WORKSPACE_CLAUDE_MD, 'utf-8');
 
@@ -153,10 +164,9 @@ export function injectContextIntoCLAUDEMd(cwd: string): ContextInjectionStats | 
   const endIdx = content.indexOf(MARKER_END);
 
   if (startIdx !== -1 && endIdx !== -1) {
-    // Find the ## Recent Memory header before the marker
-    const headerPattern = /\n## Recent Memory\n/;
-    const headerMatch = content.slice(0, startIdx).match(headerPattern);
-    const replaceStart = headerMatch ? content.lastIndexOf('\n## Recent Memory\n', startIdx) : startIdx;
+    // Clean up legacy ## Recent Memory header if present before the marker
+    const headerIdx = content.lastIndexOf('\n## Recent Memory\n', startIdx);
+    const replaceStart = headerIdx !== -1 ? headerIdx : startIdx;
     content = content.slice(0, replaceStart) + contextBlock + content.slice(endIdx + MARKER_END.length);
   } else {
     // Append at the end
@@ -179,7 +189,7 @@ function removeContextSection(): void {
   const endIdx = content.indexOf(MARKER_END);
 
   if (startIdx !== -1 && endIdx !== -1) {
-    // Also remove ## Recent Memory header
+    // Also remove legacy ## Recent Memory header if present
     const headerIdx = content.lastIndexOf('\n## Recent Memory\n', startIdx);
     const removeFrom = headerIdx !== -1 ? headerIdx : startIdx;
     content = content.slice(0, removeFrom) + content.slice(endIdx + MARKER_END.length);

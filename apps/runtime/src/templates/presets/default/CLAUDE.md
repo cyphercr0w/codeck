@@ -56,13 +56,13 @@ You have persistent memory that survives between sessions. **You MUST use it.** 
 ### Auto-generated context
 
 - **Session summaries**: When a session ends, a summary is automatically saved to the daily log. You do NOT need to duplicate this — but DO write meaningful daily entries about decisions and findings (auto-summaries only capture surface-level activity).
-- **Recent Memory section**: The `## Recent Memory` section at the bottom of this file (if present) is auto-injected at session start with relevant context from recent daily entries and project memory. Read it — it's your recent history.
+- **Recent Memory**: The `<recent-memory>` XML block at the bottom of this file (if present) is auto-injected at session start with relevant context from recent daily entries and project memory. Read it — it's your recent history.
 
 ### Session startup — BLOCKING
 
 Every session, do this BEFORE responding to the user:
 
-1. Read the `## Recent Memory` section at the bottom of this file (if present)
+1. Read the `<recent-memory>` section at the bottom of this file (if present)
 2. Read `/workspace/.codeck/memory/MEMORY.md`
 3. Read `/workspace/.codeck/preferences.md`
 4. Read rules: `/workspace/.codeck/rules/base/`, `/workspace/.codeck/rules/user/`, and `/root/.claude/rules/` (if present)

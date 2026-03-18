@@ -29,7 +29,7 @@ const sections = [];
 const memoryPath = '/workspace/.codeck/memory/MEMORY.md';
 if (existsSync(memoryPath)) {
   const memory = readFileSync(memoryPath, 'utf-8').slice(0, 3000);
-  sections.push('## Durable Memory\n' + memory);
+  sections.push(`<durable-memory>\n${memory}\n</durable-memory>`);
 }
 
 // 2. Today's daily log (recent entries)
@@ -37,14 +37,14 @@ const today = new Date().toISOString().slice(0, 10);
 const dailyPath = join('/workspace/.codeck/memory/daily', `${today}.md`);
 if (existsSync(dailyPath)) {
   const daily = readFileSync(dailyPath, 'utf-8').slice(-2000);
-  sections.push("## Today's Activity (recent)\n" + daily);
+  sections.push(`<today-activity date="${today}">\n${daily}\n</today-activity>`);
 }
 
 // 3. User preferences
 const prefsPath = '/workspace/.codeck/preferences.md';
 if (existsSync(prefsPath)) {
   const prefs = readFileSync(prefsPath, 'utf-8').slice(0, 1500);
-  sections.push('## User Preferences\n' + prefs);
+  sections.push(`<user-preferences>\n${prefs}\n</user-preferences>`);
 }
 
 // 4. Path-scoped memory for cwd (computed via SHA256 pathId)
@@ -55,23 +55,35 @@ if (cwd && cwd !== '/workspace') {
   const pathMemory = join('/workspace/.codeck/memory/paths', pathId, 'MEMORY.md');
   if (existsSync(pathMemory)) {
     const content = readFileSync(pathMemory, 'utf-8');
-    sections.push(`## Project Memory (${projectName})\n` + content.slice(0, 2000));
+    sections.push(`<project-memory project="${projectName}">\n${content.slice(0, 2000)}\n</project-memory>`);
   }
 
   // Also inject path-scoped daily log
   const pathDailyPath = join('/workspace/.codeck/memory/paths', pathId, 'daily', `${today}.md`);
   if (existsSync(pathDailyPath)) {
     const pathDaily = readFileSync(pathDailyPath, 'utf-8').slice(-1500);
-    sections.push(`## Project Today (${projectName})\n` + pathDaily);
+    sections.push(`<project-today project="${projectName}">\n${pathDaily}\n</project-today>`);
   }
+}
+
+// 5. PreCompact state (modified files, active agents)
+const preCompactPath = '/workspace/.codeck/state/pre-compact-state.json';
+if (existsSync(preCompactPath)) {
+  try {
+    const state = JSON.parse(readFileSync(preCompactPath, 'utf-8'));
+    const parts = [];
+    if (state.modifiedFiles?.length) parts.push(`Modified files: ${state.modifiedFiles.join(', ')}`);
+    if (state.activeAgents?.length) parts.push(`Active agents: ${state.activeAgents.map(a => a.name).join(', ')}`);
+    if (parts.length) sections.push(`<pre-compact-state>\n${parts.join('\n')}\n</pre-compact-state>`);
+  } catch { /* non-fatal */ }
 }
 
 if (sections.length === 0) process.exit(0);
 
 const reminder = [
-  '--- CONTEXT RESTORED AFTER COMPACTION ---',
-  '',
+  '<context-restored>',
   ...sections,
+  '</context-restored>',
   '',
   'REMINDER: You are inside Codeck, a cloud sandbox with persistent memory.',
   'Memory: /workspace/.codeck/memory/ | Rules: /workspace/.codeck/rules/base/ + /workspace/.codeck/rules/user/',

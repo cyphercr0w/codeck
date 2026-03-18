@@ -261,9 +261,10 @@ async function applyPresetRecursive(presetId: string, visited: Set<string>, dept
   }
   visited.add(presetId);
 
-  // Run rules layout migration at the top-level call only
+  // Run rules layout migration at the top-level call only.
+  // Rules live under WORKSPACE/.codeck/ (agent data), not CODECK_DIR (system data).
   if (depth === 0) {
-    migrateRulesLayout(CODECK_DIR);
+    migrateRulesLayout(join(WORKSPACE, '.codeck'));
   }
 
   const manifest = loadManifest(presetId);

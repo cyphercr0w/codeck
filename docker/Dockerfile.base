@@ -56,6 +56,9 @@ RUN install -m 0755 -d /etc/apt/keyrings \
 # Server can auto-update at runtime via POST /api/system/update-agent.
 RUN npm install -g pnpm @anthropic-ai/claude-code@2.1.39
 
+# ─── Playwright + Chromium (for MCP browser automation) ───
+RUN npx playwright install chromium --with-deps && rm -rf /tmp/*
+
 # ─── Prebuilt native modules ───
 RUN mkdir -p /prebuilt && cd /prebuilt && npm init -y && npm install node-pty better-sqlite3
 

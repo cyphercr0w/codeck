@@ -6,8 +6,8 @@ const ALL_PERMISSIONS = ['Read', 'Edit', 'Write', 'Bash', 'WebFetch', 'WebSearch
 type PermissionName = (typeof ALL_PERMISSIONS)[number];
 type PermissionsMap = Record<PermissionName, boolean>;
 
-const CODECK_DIR = process.env.CODECK_DIR || '/workspace/.codeck';
-const CONFIG_PATH = `${CODECK_DIR}/config.json`;
+const WORKSPACE = process.env.WORKSPACE || '/workspace';
+const CONFIG_PATH = `${WORKSPACE}/.codeck/config.json`;
 
 function readConfig(): Record<string, unknown> {
   try {

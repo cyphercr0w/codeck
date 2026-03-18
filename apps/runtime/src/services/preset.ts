@@ -3,16 +3,16 @@ import { join, dirname, resolve } from 'path';
 import { fileURLToPath } from 'url';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const CODECK_DIR = process.env.CODECK_DIR || '/workspace/.codeck';
-const CONFIG_FILE = join(CODECK_DIR, 'config.json');
+const WORKSPACE = process.env.WORKSPACE || '/workspace';
+const WORKSPACE_CODECK = join(WORKSPACE, '.codeck');
+const CONFIG_FILE = join(WORKSPACE_CODECK, 'config.json');
 const TEMPLATES_DIR = resolve(join(__dirname, '../templates/presets'));
-const BACKUPS_DIR = join(CODECK_DIR, 'backups');
+const BACKUPS_DIR = join(WORKSPACE_CODECK, 'backups');
 
 // Strict allowlist for preset IDs: alphanumeric, hyphens, underscores only
 const VALID_PRESET_ID = /^[a-zA-Z0-9_-]+$/;
 
 const home = process.env.HOME || '/root';
-const WORKSPACE = process.env.WORKSPACE || '/workspace';
 
 // Allowed destination path prefixes for manifest files
 const ALLOWED_DEST_PREFIXES = [
@@ -261,10 +261,9 @@ async function applyPresetRecursive(presetId: string, visited: Set<string>, dept
   }
   visited.add(presetId);
 
-  // Run rules layout migration at the top-level call only.
-  // Rules live under WORKSPACE/.codeck/ (agent data), not CODECK_DIR (system data).
+  // Run rules layout migration at the top-level call only
   if (depth === 0) {
-    migrateRulesLayout(join(WORKSPACE, '.codeck'));
+    migrateRulesLayout(WORKSPACE_CODECK);
   }
 
   const manifest = loadManifest(presetId);
@@ -386,9 +385,9 @@ async function applyPresetRecursive(presetId: string, visited: Set<string>, dept
     version: manifest.version,
   };
 
-  // Ensure /workspace/.codeck/ exists for config.json
-  if (!existsSync(CODECK_DIR)) {
-    mkdirSync(CODECK_DIR, { recursive: true, mode: 0o700 });
+  // Ensure workspace .codeck dir exists for config.json
+  if (!existsSync(WORKSPACE_CODECK)) {
+    mkdirSync(WORKSPACE_CODECK, { recursive: true, mode: 0o700 });
   }
   writeFileSync(CONFIG_FILE, JSON.stringify(config, null, 2), { mode: 0o600 });
   console.log(`[Preset] ✓ "${manifest.id}" applied. Config written to ${CONFIG_FILE}`);

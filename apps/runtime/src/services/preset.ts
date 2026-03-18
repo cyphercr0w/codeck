@@ -136,6 +136,16 @@ function validateManifest(data: unknown): PresetManifest | null {
   return data as PresetManifest;
 }
 
+/** Compare semver strings: returns true if available is strictly newer than installed. */
+function isNewerVersion(installed: string, available: string): boolean {
+  const parse = (v: string) => v.split('.').map(n => parseInt(n, 10) || 0);
+  const [iMaj, iMin, iPat] = parse(installed);
+  const [aMaj, aMin, aPat] = parse(available);
+  if (aMaj !== iMaj) return aMaj > iMaj;
+  if (aMin !== iMin) return aMin > iMin;
+  return aPat > iPat;
+}
+
 // ── Public API ───────────────────────────────────────────────────────
 
 /**
@@ -185,7 +195,7 @@ export function getPresetStatus(): PresetStatus {
     // Check if the template has a newer version than what's installed
     const manifest = config.presetId ? loadManifest(config.presetId) : null;
     const availableVersion = manifest?.version ?? null;
-    const updateAvailable = !!(availableVersion && config.version && availableVersion !== config.version);
+    const updateAvailable = !!(availableVersion && config.version && isNewerVersion(config.version, availableVersion));
     return {
       configured: true,
       presetId: config.presetId,

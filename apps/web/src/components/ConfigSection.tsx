@@ -42,8 +42,10 @@ export function ConfigSection() {
   const [presetStatus, setPresetStatus] = useState<PresetStatus | null>(null);
   const [showUpdateModal, setShowUpdateModal] = useState(false);
   const [showResetModal, setShowResetModal] = useState(false);
+  const [showSwitchModal, setShowSwitchModal] = useState(false);
   const [updating, setUpdating] = useState(false);
   const [resetting, setResetting] = useState(false);
+  const [switching, setSwitching] = useState(false);
   const [actionMsg, setActionMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   async function loadFiles(path: string) {
@@ -155,6 +157,30 @@ export function ConfigSection() {
     setTimeout(() => setActionMsg(null), 4000);
   }
 
+  async function handleSwitchToDefault() {
+    setSwitching(true);
+    setShowSwitchModal(false);
+    setActionMsg(null);
+    try {
+      const res = await apiFetch('/api/presets/apply', {
+        method: 'POST',
+        body: JSON.stringify({ presetId: 'default' }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setActionMsg({ type: 'success', text: 'Switched to Default preset' });
+        loadFiles(dirPath);
+        loadPresetStatus();
+      } else {
+        setActionMsg({ type: 'error', text: data.error || 'Switch failed' });
+      }
+    } catch {
+      setActionMsg({ type: 'error', text: 'Switch failed' });
+    }
+    setSwitching(false);
+    setTimeout(() => setActionMsg(null), 4000);
+  }
+
   useEffect(() => {
     loadFiles('');
     loadPresetStatus();
@@ -215,6 +241,16 @@ export function ConfigSection() {
                 {resetting ? <span class="loading" /> : null}
                 Factory Reset
               </button>
+              {presetStatus.presetId !== 'default' && (
+                <button
+                  class="btn btn-sm btn-primary"
+                  onClick={() => setShowSwitchModal(true)}
+                  disabled={switching}
+                >
+                  {switching ? <span class="loading" /> : null}
+                  Switch to Default
+                </button>
+              )}
             </div>
           </div>
         )}
@@ -335,6 +371,16 @@ export function ConfigSection() {
         confirmLabel="Reset Everything"
         onConfirm={handleReset}
         onCancel={() => setShowResetModal(false)}
+      />
+
+      {/* Switch to Default Modal */}
+      <ConfirmModal
+        visible={showSwitchModal}
+        title="Switch to Default Preset"
+        message="This will install the Default preset with memory system, rules, skills, hooks, and MCP servers. Your existing files will NOT be deleted — only new files will be added."
+        confirmLabel="Switch"
+        onConfirm={handleSwitchToDefault}
+        onCancel={() => setShowSwitchModal(false)}
       />
     </div>
   );

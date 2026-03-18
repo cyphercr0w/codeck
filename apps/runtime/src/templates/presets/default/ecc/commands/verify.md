@@ -4,6 +4,10 @@
   Author: Affaan Mustafa — integrated into Codeck with modifications.
 -->
 
+---
+description: "Run full verification suite: build, lint, typecheck, tests, security scan."
+---
+
 # Verification Command
 
 Run comprehensive verification on current codebase state.

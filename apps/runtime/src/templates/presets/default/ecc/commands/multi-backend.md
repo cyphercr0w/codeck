@@ -4,6 +4,10 @@
   Author: Affaan Mustafa — integrated into Codeck with modifications.
 -->
 
+---
+description: "Plan and implement backend changes across multiple services in parallel."
+---
+
 # Backend - Backend-Focused Development
 
 Backend-focused workflow (Research → Ideation → Plan → Execute → Optimize → Review), Codex-led.

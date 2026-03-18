@@ -4,6 +4,10 @@
   Author: Affaan Mustafa — integrated into Codeck with modifications.
 -->
 
+---
+description: "Coordinate multiple subagents on a complex task with dependency tracking."
+---
+
 # Orchestrate Command
 
 Sequential agent workflow for complex tasks.

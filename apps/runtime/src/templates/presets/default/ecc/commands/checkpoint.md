@@ -4,6 +4,10 @@
   Author: Affaan Mustafa — integrated into Codeck with modifications.
 -->
 
+---
+description: "Create a named checkpoint of the current codebase state for rollback."
+---
+
 # Checkpoint Command
 
 Create or verify a checkpoint in your workflow.

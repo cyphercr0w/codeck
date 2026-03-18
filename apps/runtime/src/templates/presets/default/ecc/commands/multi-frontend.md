@@ -4,6 +4,10 @@
   Author: Affaan Mustafa — integrated into Codeck with modifications.
 -->
 
+---
+description: "Plan and implement frontend changes across multiple components in parallel."
+---
+
 # Frontend - Frontend-Focused Development
 
 Frontend-focused workflow (Research → Ideation → Plan → Execute → Optimize → Review), Gemini-led.

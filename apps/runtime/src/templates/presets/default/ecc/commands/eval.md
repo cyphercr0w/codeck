@@ -4,6 +4,10 @@
   Author: Affaan Mustafa — integrated into Codeck with modifications.
 -->
 
+---
+description: "Run evaluations against defined criteria to measure code quality."
+---
+
 # Eval Command
 
 Manage eval-driven development workflow.

@@ -6,7 +6,7 @@
 
 ---
 name: e2e-testing
-description: Playwright E2E testing patterns, Page Object Model, configuration, CI/CD integration, artifact management, and flaky test strategies.
+description: "Playwright E2E testing patterns and CI integration. Load when writing end-to-end tests."
 ---
 
 # E2E Testing Patterns

@@ -6,7 +6,7 @@
 
 ---
 name: verification-loop
-description: "A comprehensive verification system for Claude Code sessions."
+description: "Build, typecheck, lint, test, and security checks. Load before PRs or after completing features."
 context: fork
 allowed-tools: Read, Grep, Glob, Bash
 ---

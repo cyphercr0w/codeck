@@ -1,48 +1,29 @@
-# Workflow Rules
+# Workflow
 
-## Skills — LOAD BEFORE WORKING (mandatory)
+## Skill Loading
 
-Before starting ANY significant implementation, check `/root/.claude/skills/` for a matching skill and load it with `/learn <name>`. This is NOT optional. If you skip this step, you are working without context that exists and was put there for a reason.
+Before editing code in a specialized area, load the matching skill. The skill-reminder hook will block your first edit if you haven't.
 
-| About to do... | Load first |
-|----------------|-----------|
-| Frontend/UI code | `/learn frontend-design` and/or `/learn frontend-patterns` |
-| API design or backend | `/learn api-design` and/or `/learn backend-patterns` |
-| Tests | `/learn tdd-workflow` |
-| Security-sensitive code | `/learn security-review` |
-| Database changes | `/learn database-migrations` |
-| Docker/deploy work | `/learn docker-patterns` |
-| Code review | `/learn coding-standards` |
-| Refactoring | `/learn verification-loop` |
+| Area | Skill |
+|------|-------|
+| Frontend/UI | `frontend-design`, `frontend-patterns` |
+| API/backend | `api-design`, `backend-patterns` |
+| Tests | `tdd-workflow` |
+| Security | `security-review` |
+| Database | `database-migrations` |
+| Docker/deploy | `docker-patterns` |
+| Refactoring | `verification-loop` |
 
-**If you catch yourself writing code in one of these areas without having loaded the skill first, STOP. Load it. Then continue.**
+## Sub-Agent Delegation
 
-## Implement → Review → Iterate (mandatory)
+Don't do everything yourself. Delegate:
+- **Complex task** → `planner` agent first
+- **After code changes** → `code-reviewer` agent (mandatory)
+- **Research/exploration** → `Explore` agent (keeps your context clean)
+- **Architecture decision** → `architect` agent
 
-Every code change follows this cycle. No exceptions.
+## Work Style
 
-1. **Implement** the change
-2. **Build/test** — verify it compiles and tests pass
-3. **Review** — spawn a code-reviewer sub-agent with the changed files
-4. **Fix** — address CRITICAL and HIGH issues from the review
-5. **Commit** — only after review passes
-
-**Never skip step 3.** A 30-second review catches bugs that take hours to debug. If you commit without reviewing, you are shipping untested work.
-
-## Debugging Retry Budget
-
-- Cap debugging attempts at **3 tries** per approach. If the same fix strategy fails 3 times, STOP.
-- After 3 fails: step back, re-read the error, re-read the code, and try a fundamentally different approach.
-- **Sentinel check**: if you have made 5+ tool calls without meaningful file changes (no Edit, no Write that changed content), pause and re-evaluate. You may be spinning.
-- When stuck: write what you know to the daily log, then try a fresh angle or ask the user for guidance.
-- **Better context beats more retries.** Invest in understanding the problem rather than hammering the same approach.
-
-## During work
-- Work in small, verifiable increments. Test after each change.
-- If a task is complex, break it into subtasks and execute sequentially.
-- If the user expresses a preference, save it to preferences.md immediately.
-- When you start ANY server: check port exposure via `/api/ports` first. Only show `http://localhost:{port}` if the port is exposed. NEVER show `172.x.x.x` addresses.
-- Don't modify files outside /workspace unless explicitly asked.
-
-## Why memory matters
-These memory files are shared across sessions and across agents. If you skip updates, the next session starts blind. Your documentation is someone else's head start.
+- Small, verifiable increments. Build/test after each change.
+- Complex task → break into subtasks, execute sequentially.
+- Detect user preferences → save to `preferences.md` silently.

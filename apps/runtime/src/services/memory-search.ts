@@ -132,14 +132,38 @@ export function search(options: SearchOptions): SearchResult[] {
       snippet: string;
     }>;
 
-    return rows.map(row => ({
-      content: row.content,
-      filePath: row.filePath,
-      fileType: row.fileType,
-      metadata: safeJsonParse(row.metadata),
-      rank: row.rank,
-      snippet: row.snippet,
-    }));
+    // Apply Ebbinghaus-inspired time decay to search results.
+    // Decisions/durable memories are exempt (importance=1.0).
+    // Daily logs decay with ~14-day half-life.
+    // Formula: decayedRank = bm25Rank * decayFactor
+    //   decayFactor = e^(-lambda * daysOld)
+    //   lambda = 0.16 * (1 - importance * 0.8)
+    const now = Date.now();
+    const results = rows.map(row => {
+      const meta = safeJsonParse(row.metadata);
+      const dateStr = (meta.date as string) || '';
+      const daysOld = dateStr
+        ? Math.max(0, (now - new Date(dateStr).getTime()) / 86_400_000)
+        : 0; // no date = no decay
+
+      // Importance based on file type: durable/decision exempt, daily decays
+      const importance = (row.fileType === 'durable' || row.fileType === 'decision') ? 1.0 : 0.3;
+      const lambda = 0.16 * (1 - importance * 0.8);
+      const decayFactor = Math.exp(-lambda * daysOld);
+
+      return {
+        content: row.content,
+        filePath: row.filePath,
+        fileType: row.fileType,
+        metadata: meta,
+        rank: row.rank * decayFactor, // lower rank = better in BM25 (negative values)
+        snippet: row.snippet,
+      };
+    });
+
+    // Re-sort by decayed rank (BM25 ranks are negative; more negative = better match)
+    results.sort((a, b) => a.rank - b.rank);
+    return results;
   } catch (e) {
     console.log('[Search] Query error:', (e as Error).message);
     return [];

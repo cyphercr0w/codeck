@@ -1162,6 +1162,13 @@
   color: var(--text-secondary);
 }
 
+.claude-empty.overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 10;
+  background: var(--bg-primary);
+}
+
 .claude-empty-icon {
   color: var(--text-muted);
   opacity: 0.4;

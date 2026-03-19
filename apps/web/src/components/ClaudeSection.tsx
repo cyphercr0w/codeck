@@ -69,6 +69,7 @@ export function ClaudeSection({ onNewSession, onNewShell }: ClaudeSectionProps) 
   const [dragOver, setDragOver] = useState(false);
   const [contextBanner, setContextBanner] = useState<{ sessionId: string; projectName: string; kb: string } | null>(null);
   const [bannerFading, setBannerFading] = useState(false);
+  const [showNewSessionMenu, setShowNewSessionMenu] = useState(false);
   const sessionList = sessions.value;
   const activeId = activeSessionId.value;
 
@@ -334,6 +335,7 @@ export function ClaudeSection({ onNewSession, onNewShell }: ClaudeSectionProps) 
   }
 
   function switchToSession(id: string) {
+    setShowNewSessionMenu(false);
     setActiveSessionId(id);
     requestAnimationFrame(() => {
       fitTerminal(id);
@@ -419,19 +421,11 @@ export function ClaudeSection({ onNewSession, onNewShell }: ClaudeSectionProps) 
             ))}
           <button
             class="terminal-tab-new"
-            aria-label="New Agent Session"
+            aria-label="New Session"
             disabled={sessionList.length >= 5}
-            onClick={onNewSession}
+            onClick={() => setShowNewSessionMenu(prev => !prev)}
           >
             <IconPlus size={14} />
-          </button>
-          <button
-            class="terminal-tab-new shell"
-            aria-label="New Shell"
-            disabled={sessionList.length >= 5}
-            onClick={onNewShell}
-          >
-            <IconShell size={14} />
           </button>
         </div>
         <div
@@ -447,24 +441,27 @@ export function ClaudeSection({ onNewSession, onNewShell }: ClaudeSectionProps) 
               Context loaded: {contextBanner.projectName} &middot; {contextBanner.kb} KB of memory injected
             </div>
           )}
-          {sessionList.length === 0 && !restoringPending.value && (
-            <div class="claude-empty">
+          {(sessionList.length === 0 || showNewSessionMenu) && !restoringPending.value && (
+            <div
+              class={`claude-empty${showNewSessionMenu && sessionList.length > 0 ? ' overlay' : ''}`}
+              onClick={(e) => {
+                // Click outside buttons dismisses the menu (only when overlay)
+                if (showNewSessionMenu && e.target === e.currentTarget) {
+                  setShowNewSessionMenu(false);
+                }
+              }}
+            >
               <div class="claude-empty-icon"><IconTerminal size={48} /></div>
-              <div class="claude-empty-title">Ready when you are</div>
-              {mobile ? (
-                <div class="claude-empty-desc">Tap + to start</div>
-              ) : (
-                <>
-                  <div class="claude-empty-desc">
-                    Start a new session to begin coding with Claude.<br />
-                    Your agent has persistent memory — it remembers your projects and preferences.
-                  </div>
-                  <div class="claude-empty-actions">
-                    <button class="claude-empty-btn primary" onClick={onNewSession}>New Agent Session</button>
-                    <button class="claude-empty-btn secondary" onClick={onNewShell}>New Shell</button>
-                  </div>
-                </>
-              )}
+              <div class="claude-empty-title">{sessionList.length === 0 ? 'Ready when you are' : 'New session'}</div>
+              <div class="claude-empty-desc">
+                {sessionList.length === 0
+                  ? 'Start a new session to begin coding with Claude.'
+                  : 'Choose session type:'}
+              </div>
+              <div class="claude-empty-actions">
+                <button class="claude-empty-btn primary" onClick={() => { setShowNewSessionMenu(false); onNewSession(); }}>New Agent</button>
+                <button class="claude-empty-btn secondary" onClick={() => { setShowNewSessionMenu(false); onNewShell(); }}>New Shell</button>
+              </div>
             </div>
           )}
           {activeId && sessionList.find(s => s.id === activeId)?.loading && (

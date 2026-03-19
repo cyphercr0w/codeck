@@ -142,8 +142,9 @@ export function ClaudeSection({ onNewSession, onNewShell }: ClaudeSectionProps) 
       container.appendChild(el);
 
       createTerminal(s.id, el);
-      // Clear new-tab loading state when real terminal mounts
+      // Clear new-tab states when real terminal mounts
       if (newTabLoading) setNewTabLoading(false);
+      if (showNewSessionMenu) setShowNewSessionMenu(false);
 
       // Attach session synchronously BEFORE rAF to avoid race condition:
       // WS output can arrive before rAF fires, causing data loss
@@ -518,14 +519,8 @@ export function ClaudeSection({ onNewSession, onNewShell }: ClaudeSectionProps) 
                       : 'Choose session type:'}
                   </div>
                   <div class="claude-empty-actions">
-                    <button class="claude-empty-btn primary" onClick={() => {
-                      setShowNewSessionMenu(false);
-                      onNewSession();
-                    }}>New Agent</button>
-                    <button class="claude-empty-btn secondary" onClick={() => {
-                      setShowNewSessionMenu(false);
-                      onNewShell();
-                    }}>New Shell</button>
+                    <button class="claude-empty-btn primary" onClick={() => onNewSession()}>New Agent</button>
+                    <button class="claude-empty-btn secondary" onClick={() => onNewShell()}>New Shell</button>
                   </div>
                 </>
               )}

@@ -178,6 +178,29 @@ export function ClaudeSection({ onNewSession, onNewShell }: ClaudeSectionProps) 
     return cancel;
   }, [activeId]);
 
+  // Fit + repaint active terminal when app returns from background (mobile PWA)
+  // or when the tab regains focus. Without this, the terminal shows stale content
+  // until the user taps the screen.
+  useEffect(() => {
+    const onVisible = () => {
+      if (document.hidden) return;
+      const id = activeSessionId.value;
+      if (!id || !getTerminal(id)) return;
+      // Small delay to let the browser finish layout after resume
+      setTimeout(() => {
+        fitTerminal(id);
+        repaintTerminal(id);
+        scrollToBottom(id);
+      }, 100);
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    window.addEventListener('focus', onVisible);
+    return () => {
+      document.removeEventListener('visibilitychange', onVisible);
+      window.removeEventListener('focus', onVisible);
+    };
+  }, []);
+
   // Register image paste handler — terminal.ts intercepts Ctrl+V on xterm's
   // textarea, checks the clipboard for images, and calls this callback.
   useEffect(() => {

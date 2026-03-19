@@ -359,7 +359,7 @@ export function ClaudeSection({ onNewSession, onNewShell }: ClaudeSectionProps) 
       });
       const data = await res.json();
       if (data.sessionId) {
-        addSession({ id: data.sessionId, type: 'agent', cwd: data.cwd, name: data.name || cwd.split('/').pop() || 'session', createdAt: Date.now() });
+        addSession({ id: data.sessionId, type: 'agent', cwd: data.cwd, name: data.name || cwd.split('/').pop() || 'session', createdAt: Date.now(), conversationId: convId });
         setActiveSessionId(data.sessionId);
       }
     } catch { /* non-fatal */ }
@@ -524,26 +524,35 @@ export function ClaudeSection({ onNewSession, onNewShell }: ClaudeSectionProps) 
                   </div>
                 </>
               )}
-              {(() => {
-                // Filter out conversations that already have an open terminal
-                const openCwds = new Set(sessionList.map(s => s.cwd));
-                const available = recentConvos.filter(c => !openCwds.has(c.cwd));
-                return available.length > 0 && !newTabLoading ? (
-                  <div class="claude-recent-convos">
-                    <div class="claude-recent-title">Recent conversations</div>
-                    {available.map(c => (
+              {recentConvos.length > 0 && !newTabLoading && (
+                <div class="claude-recent-convos">
+                  <div class="claude-recent-title">Recent conversations</div>
+                  {recentConvos.map(c => {
+                    // Check if this conversation is already open by matching conversationId
+                    const openSession = sessionList.find(s => s.conversationId === c.id);
+                    return (
                       <button
                         key={c.id}
-                        class="claude-recent-item"
-                        onClick={() => resumeConversation(c.id, c.cwd)}
+                        class={`claude-recent-item${openSession ? ' open' : ''}`}
+                        onClick={() => {
+                          if (openSession) {
+                            // Switch to the existing tab
+                            switchToSession(openSession.id);
+                          } else {
+                            resumeConversation(c.id, c.cwd);
+                          }
+                        }}
                       >
                         <span class="claude-recent-text">{c.title}</span>
-                        <span class="claude-recent-meta">{c.cwd.split('/').pop()}</span>
+                        <span class="claude-recent-meta">
+                          {openSession && <span class="claude-recent-open-badge">OPEN</span>}
+                          {c.cwd.split('/').pop()}
+                        </span>
                       </button>
-                    ))}
-                  </div>
-                ) : null;
-              })()}
+                    );
+                  })}
+                </div>
+              )}
             </div>
           )}
           {activeId && sessionList.find(s => s.id === activeId)?.loading && (

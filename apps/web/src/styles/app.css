@@ -1217,6 +1217,23 @@
   font-size: 11px;
   color: var(--text-muted);
   flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.claude-recent-open-badge {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  color: var(--accent);
+  background: rgba(99, 102, 241, 0.12);
+  padding: 1px 5px;
+  border-radius: 3px;
+}
+
+.claude-recent-item.open {
+  border-color: var(--accent);
 }
 
 .claude-empty-icon {

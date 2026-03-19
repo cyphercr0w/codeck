@@ -413,8 +413,8 @@ export function renameSession(id: string, name: string): boolean {
   return true;
 }
 
-export function listSessions(): Array<{ id: string; type: string; cwd: string; name: string; createdAt: number }> {
-  return Array.from(sessions.values()).map(s => ({ id: s.id, type: s.type, cwd: s.cwd, name: s.name, createdAt: s.createdAt }));
+export function listSessions(): Array<{ id: string; type: string; cwd: string; name: string; createdAt: number; conversationId?: string }> {
+  return Array.from(sessions.values()).map(s => ({ id: s.id, type: s.type, cwd: s.cwd, name: s.name, createdAt: s.createdAt, conversationId: s.conversationId }));
 }
 
 /**

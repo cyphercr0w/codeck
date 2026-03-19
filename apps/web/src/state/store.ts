@@ -58,6 +58,7 @@ export interface TerminalSession {
   name: string;
   createdAt: number;
   loading?: boolean;
+  conversationId?: string;
 }
 
 // View state

@@ -4,18 +4,13 @@
  * PostToolUse Hook — Deterministic auto-formatting after code edits.
  *
  * Runs the appropriate formatter based on file extension after Edit/Write.
- * This is 100% reliable (vs CLAUDE.md style rules at ~70% compliance).
+ * Uses execFileSync (no shell) to avoid injection via filePath.
  *
- * Formatters (by speed):
- *   Biome   — TS/JS/JSX/TSX/JSON/CSS (10-25x faster than Prettier)
- *   Ruff    — Python (30x faster than Black)
- *   gofmt   — Go (built-in)
- *   rustfmt — Rust (built-in)
- *
+ * Formatters: Biome (TS/JS/CSS/JSON), Ruff (Python), gofmt (Go), rustfmt (Rust).
  * Runs async to avoid blocking the agent. Silent on missing formatters.
  */
 
-import { execSync } from 'child_process';
+import { execFileSync } from 'child_process';
 import { extname } from 'path';
 
 let input = '';
@@ -32,29 +27,24 @@ if (!filePath) process.exit(0);
 
 const ext = extname(filePath).toLowerCase();
 
+// [binary, ...args] — filePath appended as last arg. No shell involved.
 const formatters = {
-  // Biome for JS/TS ecosystem
-  '.ts':   'npx @biomejs/biome format --write',
-  '.tsx':  'npx @biomejs/biome format --write',
-  '.js':   'npx @biomejs/biome format --write',
-  '.jsx':  'npx @biomejs/biome format --write',
-  '.json': 'npx @biomejs/biome format --write',
-  '.css':  'npx @biomejs/biome format --write',
-  // Ruff for Python
-  '.py':   'ruff format',
-  // Go
-  '.go':   'gofmt -w',
-  // Rust
-  '.rs':   'rustfmt',
+  '.ts':   ['biome', 'format', '--write'],
+  '.tsx':  ['biome', 'format', '--write'],
+  '.js':   ['biome', 'format', '--write'],
+  '.jsx':  ['biome', 'format', '--write'],
+  '.json': ['biome', 'format', '--write'],
+  '.css':  ['biome', 'format', '--write'],
+  '.py':   ['ruff', 'format'],
+  '.go':   ['gofmt', '-w'],
+  '.rs':   ['rustfmt'],
 };
 
-const cmd = formatters[ext];
-if (!cmd) process.exit(0);
+const args = formatters[ext];
+if (!args) process.exit(0);
 
 try {
-  execSync(`${cmd} "${filePath}" 2>/dev/null`, { timeout: 5000 });
+  execFileSync(args[0], [...args.slice(1), filePath], { timeout: 5000, stdio: 'ignore' });
 } catch {
   // Formatter not installed or failed — silent, never block
 }
-
-process.exit(0);

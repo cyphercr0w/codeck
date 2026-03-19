@@ -1,162 +1,171 @@
 {
-  "_attribution": "Source: affaan-m/everything-claude-code (MIT License) + Codeck hooks. Integrated into Codeck preset.",
-  "permissions": {
-    "allow": [
-      "Read", "Edit", "Write", "Bash", "WebFetch", "WebSearch", "Glob", "Grep",
-      "Edit(/root/.claude/**)", "Write(/root/.claude/**)", "Read(/root/.claude/**)",
-      "mcp__playwright__browser_navigate",
-      "mcp__playwright__browser_snapshot",
-      "mcp__playwright__browser_click",
-      "mcp__playwright__browser_type",
-      "mcp__playwright__browser_fill_form",
-      "mcp__playwright__browser_select_option",
-      "mcp__playwright__browser_hover",
-      "mcp__playwright__browser_drag",
-      "mcp__playwright__browser_press_key",
-      "mcp__playwright__browser_evaluate",
-      "mcp__playwright__browser_run_code",
-      "mcp__playwright__browser_navigate_back",
-      "mcp__playwright__browser_take_screenshot",
-      "mcp__playwright__browser_wait_for",
-      "mcp__playwright__browser_file_upload",
-      "mcp__playwright__browser_handle_dialog",
-      "mcp__playwright__browser_tabs",
-      "mcp__playwright__browser_close",
-      "mcp__playwright__browser_install",
-      "mcp__playwright__browser_resize",
-      "mcp__playwright__browser_console_messages",
-      "mcp__playwright__browser_network_requests",
-      "mcp__context7__resolve-library-id",
-      "mcp__context7__query-docs",
-      "mcp__sequential-thinking__sequentialthinking",
-      "mcp__eslint__lint-files"
-    ],
-    "deny": [
-      "Read(.env*)",
-      "Read(**/credentials*)",
-      "Read(**/.ssh/*)",
-      "Read(**/secrets/**)"
-    ]
-  },
-  "includeGitInstructions": false,
-  "enableAllProjectMcpServers": true,
-  "effortLevel": "high",
-  "attribution": { "commit": "", "pr": "" },
-  "hooks": {
-    "PreToolUse": [
-      {
-        "matcher": "Edit|Write",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node /workspace/.codeck/scripts/skill-reminder-hook.mjs"
-          }
-        ]
-      },
-      {
-        "matcher": "Bash",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node /workspace/.codeck/scripts/dangerous-cmd-guard.mjs"
-          }
-        ]
-      }
-    ],
-    "PostToolUse": [
-      {
-        "matcher": "Edit|Write",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node /workspace/.codeck/scripts/post-edit-verify.mjs"
-          },
-          {
-            "type": "command",
-            "command": "node /workspace/.codeck/scripts/auto-format-hook.mjs",
-            "async": true
-          }
-        ]
-      },
-      {
-        "matcher": "",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node /workspace/.codeck/scripts/learning-observer.mjs"
-          }
-        ]
-      },
-      {
-        "matcher": "",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node /workspace/.codeck/scripts/tool-result-compressor.mjs"
-          }
-        ]
-      }
-    ],
-    "PreCompact": [
-      {
-        "matcher": "",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node /workspace/.codeck/scripts/pre-compact-hook.mjs"
-          }
-        ]
-      }
-    ],
-    "PostCompact": [
-      {
-        "matcher": "",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node /workspace/.codeck/scripts/post-compact-hook.mjs"
-          }
-        ]
-      }
-    ],
-    "UserPromptSubmit": [
-      {
-        "matcher": "",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node /workspace/.codeck/scripts/memory-nudge-hook.mjs"
-          }
-        ]
-      }
-    ],
-    "Stop": [
-      {
-        "matcher": "",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node /workspace/.codeck/scripts/memory-stop-hook.mjs"
-          },
-          {
-            "type": "prompt",
-            "prompt": "Review the work done in this session. Check: 1) Did the agent stay within the scope of what was asked? 2) Were there unauthorized refactors or changes beyond the request? 3) Are all changes justified by the original task? If everything is within scope, respond 'approve'. If scope was exceeded, respond 'block' and explain what went beyond the request.",
-            "model": "claude-haiku-4-5"
-          }
-        ]
-      }
-    ],
-    "SessionEnd": [
-      {
-        "matcher": "",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node /workspace/.codeck/scripts/memory-consolidation.mjs",
-            "async": true
-          }
-        ]
-      }
-    ]
-  }
+	"_attribution": "Source: affaan-m/everything-claude-code (MIT License) + Codeck hooks. Integrated into Codeck preset.",
+	"permissions": {
+		"allow": [
+			"Read",
+			"Edit",
+			"Write",
+			"Bash",
+			"WebFetch",
+			"WebSearch",
+			"Glob",
+			"Grep",
+			"Edit(/root/.claude/**)",
+			"Write(/root/.claude/**)",
+			"Read(/root/.claude/**)",
+			"mcp__playwright__browser_navigate",
+			"mcp__playwright__browser_snapshot",
+			"mcp__playwright__browser_click",
+			"mcp__playwright__browser_type",
+			"mcp__playwright__browser_fill_form",
+			"mcp__playwright__browser_select_option",
+			"mcp__playwright__browser_hover",
+			"mcp__playwright__browser_drag",
+			"mcp__playwright__browser_press_key",
+			"mcp__playwright__browser_evaluate",
+			"mcp__playwright__browser_run_code",
+			"mcp__playwright__browser_navigate_back",
+			"mcp__playwright__browser_take_screenshot",
+			"mcp__playwright__browser_wait_for",
+			"mcp__playwright__browser_file_upload",
+			"mcp__playwright__browser_handle_dialog",
+			"mcp__playwright__browser_tabs",
+			"mcp__playwright__browser_close",
+			"mcp__playwright__browser_install",
+			"mcp__playwright__browser_resize",
+			"mcp__playwright__browser_console_messages",
+			"mcp__playwright__browser_network_requests",
+			"mcp__context7__resolve-library-id",
+			"mcp__context7__query-docs",
+			"mcp__sequential-thinking__sequentialthinking",
+			"mcp__eslint__lint-files"
+		],
+		"deny": [
+			"Read(.env*)",
+			"Read(**/credentials*)",
+			"Read(**/.ssh/*)",
+			"Read(**/secrets/**)"
+		]
+	},
+	"includeGitInstructions": false,
+	"enableAllProjectMcpServers": true,
+	"effortLevel": "high",
+	"attribution": { "commit": "", "pr": "" },
+	"hooks": {
+		"PreToolUse": [
+			{
+				"matcher": "Edit|Write",
+				"hooks": [
+					{
+						"type": "command",
+						"command": "node /workspace/.codeck/scripts/skill-reminder-hook.mjs"
+					}
+				]
+			},
+			{
+				"matcher": "Bash",
+				"hooks": [
+					{
+						"type": "command",
+						"command": "node /workspace/.codeck/scripts/dangerous-cmd-guard.mjs"
+					}
+				]
+			}
+		],
+		"PostToolUse": [
+			{
+				"matcher": "Edit|Write",
+				"hooks": [
+					{
+						"type": "command",
+						"command": "node /workspace/.codeck/scripts/post-edit-verify.mjs"
+					},
+					{
+						"type": "command",
+						"command": "node /workspace/.codeck/scripts/auto-format-hook.mjs",
+						"async": true
+					}
+				]
+			},
+			{
+				"matcher": "",
+				"hooks": [
+					{
+						"type": "command",
+						"command": "node /workspace/.codeck/scripts/learning-observer.mjs"
+					}
+				]
+			},
+			{
+				"matcher": "Read|Grep|Glob|Bash|WebFetch|WebSearch",
+				"hooks": [
+					{
+						"type": "command",
+						"command": "node /workspace/.codeck/scripts/tool-result-compressor.mjs"
+					}
+				]
+			}
+		],
+		"PreCompact": [
+			{
+				"matcher": "",
+				"hooks": [
+					{
+						"type": "command",
+						"command": "node /workspace/.codeck/scripts/pre-compact-hook.mjs"
+					}
+				]
+			}
+		],
+		"PostCompact": [
+			{
+				"matcher": "",
+				"hooks": [
+					{
+						"type": "command",
+						"command": "node /workspace/.codeck/scripts/post-compact-hook.mjs"
+					}
+				]
+			}
+		],
+		"UserPromptSubmit": [
+			{
+				"matcher": "",
+				"hooks": [
+					{
+						"type": "command",
+						"command": "node /workspace/.codeck/scripts/memory-nudge-hook.mjs"
+					}
+				]
+			}
+		],
+		"Stop": [
+			{
+				"matcher": "",
+				"hooks": [
+					{
+						"type": "command",
+						"command": "node /workspace/.codeck/scripts/memory-stop-hook.mjs"
+					},
+					{
+						"type": "prompt",
+						"prompt": "Review the work done in this session. Check: 1) Did the agent stay within the scope of what was asked? 2) Were there unauthorized refactors or changes beyond the request? 3) Are all changes justified by the original task? If everything is within scope, respond 'approve'. If scope was exceeded, respond 'block' and explain what went beyond the request.",
+						"model": "claude-haiku-4-5"
+					}
+				]
+			}
+		],
+		"SessionEnd": [
+			{
+				"matcher": "",
+				"hooks": [
+					{
+						"type": "command",
+						"command": "node /workspace/.codeck/scripts/memory-consolidation.mjs",
+						"async": true
+					}
+				]
+			}
+		]
+	}
 }

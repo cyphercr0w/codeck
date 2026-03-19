@@ -4,6 +4,10 @@
   Author: Affaan Mustafa — integrated into Codeck with modifications.
 -->
 
+---
+description: "Find and remove dead code, unused imports, and redundant abstractions."
+---
+
 # Refactor Clean
 
 Safely identify and remove dead code with test verification at every step.

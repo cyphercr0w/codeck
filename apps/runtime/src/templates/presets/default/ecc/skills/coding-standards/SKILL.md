@@ -6,7 +6,7 @@
 
 ---
 name: coding-standards
-description: Universal coding standards, best practices, and patterns for TypeScript, JavaScript, React, and Node.js development.
+description: "TypeScript/React/Node.js code quality standards. Load when reviewing or starting new modules."
 context: fork
 allowed-tools: Read, Grep, Glob
 ---

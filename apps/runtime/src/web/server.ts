@@ -3,7 +3,7 @@ import helmet from 'helmet';
 import { createServer } from 'http';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
-import { readFileSync } from 'fs';
+import { readFileSync, existsSync, writeFileSync } from 'fs';
 import v8 from 'v8';
 import { installLogInterceptor, getLogBuffer, broadcast } from './logger.js';
 import { setupWebSocket, handleWsUpgrade } from './websocket.js';
@@ -45,6 +45,63 @@ const PORT = parseInt(process.env.CODECK_PORT || '80', 10);
 const WS_PORT = parseInt(process.env.CODECK_WS_PORT || '0', 10) || 0;
 // Resolve path to apps/web/dist from apps/runtime/dist/web/
 const WEB_DIST = join(__dirname, '../../../web/dist');
+
+/**
+ * Ensure MCP servers from the preset mcp.json are registered in Claude Code's .claude.json.
+ * Runs at startup (not during preset apply) to avoid timing issues with Claude Code
+ * creating .claude.json after the preset writes it.
+ */
+function ensureMcpServers(): void {
+  const home = process.env.HOME || '/root';
+  // mcp.json is copied by preset to /root/.claude/mcp.json
+  const mcpJsonPath = join(home, '.claude', 'mcp.json');
+  if (!existsSync(mcpJsonPath)) {
+    // Fallback: try the preset template directly
+    const templatePath = join(__dirname, '../templates/presets/default/mcp.json');
+    if (!existsSync(templatePath)) return;
+    try {
+      const template = JSON.parse(readFileSync(templatePath, 'utf-8'));
+      writeMcpServers(template.mcpServers || {});
+    } catch { /* non-fatal */ }
+    return;
+  }
+  try {
+    const mcp = JSON.parse(readFileSync(mcpJsonPath, 'utf-8'));
+    writeMcpServers(mcp.mcpServers || {});
+  } catch { /* non-fatal */ }
+}
+
+function writeMcpServers(servers: Record<string, unknown>): void {
+  if (!servers || Object.keys(servers).length === 0) return;
+
+  const claudeJsonPath = join(process.env.HOME || '/root', '.claude.json');
+  let claudeJson: Record<string, unknown> = {};
+  try {
+    if (existsSync(claudeJsonPath)) {
+      const parsed = JSON.parse(readFileSync(claudeJsonPath, 'utf-8'));
+      if (typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)) {
+        claudeJson = parsed;
+      }
+    }
+  } catch { /* start fresh */ }
+
+  if (!claudeJson.mcpServers || typeof claudeJson.mcpServers !== 'object') {
+    claudeJson.mcpServers = {};
+  }
+  const existing = claudeJson.mcpServers as Record<string, unknown>;
+
+  let added = 0;
+  for (const [name, config] of Object.entries(servers)) {
+    if (existing[name]) continue;
+    existing[name] = config;
+    added++;
+  }
+
+  if (added > 0) {
+    writeFileSync(claudeJsonPath, JSON.stringify(claudeJson, null, 2));
+    console.log(`[Startup] Registered ${added} MCP server(s) in .claude.json`);
+  }
+}
 
 function logMemoryConfig(): void {
   const heapStats = v8.getHeapStatistics();
@@ -116,6 +173,12 @@ export async function startWebServer(): Promise<void> {
   // Registered before auth middleware; not exposed via /api prefix
   app.get('/internal/status', (_req, res) => {
     res.json({ status: 'ok', uptime: process.uptime() });
+  });
+
+  // Health endpoint for frontend WS pre-flight (works in both isolated and managed mode)
+  app.get('/api/runtime/health', (_req, res) => {
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
+    res.json({ ready: true });
   });
 
   // Managed mode: redirect direct browser access to the daemon port.
@@ -260,6 +323,9 @@ export async function startWebServer(): Promise<void> {
 
   app.use('/api', (req, res, next) => {
     if (!isPasswordConfigured()) return next();
+
+    // Health endpoint is public — needed for WS pre-flight in isolated mode
+    if (req.path === '/runtime/health') return next();
 
     // Trusted proxy bypass — daemon has already authenticated the user
     if (INTERNAL_SECRET && req.headers['x-codeck-internal'] === INTERNAL_SECRET) return next();
@@ -437,6 +503,7 @@ export async function startWebServer(): Promise<void> {
     initGitHub();
     updateClaudeMd();
     ensureDirectories();
+    ensureMcpServers();
 
     // Auto-update agent CLI in background (non-blocking)
     setTimeout(() => {

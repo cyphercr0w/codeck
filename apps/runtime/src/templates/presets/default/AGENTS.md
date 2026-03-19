@@ -1,121 +1,79 @@
-# AGENTS.md — Codeck Agent Instructions
+# Codeck Memory API Reference
 
-**This file is the single source of truth for agent behavior in this workspace.**
-Read this file FIRST at the start of every session, before reading any other file.
+This file contains the detailed API for the memory system. Read it when you need specific endpoints or formats. The core rules are in `CLAUDE.md` — this is the reference manual.
 
----
-
-## Memory System
-
-Your memory lives in `/workspace/.codeck/memory/`. This is persistent, file-based, and survives between sessions.
-
-### Layout
+## Memory Layout
 
 ```
 /workspace/.codeck/
   memory/
-    MEMORY.md              # Global durable memory (curated, long-term)
-    daily/
-      YYYY-MM-DD.md        # Daily append-only logs
-    decisions/
-      ADR-YYYYMMDD-slug.md # Architecture Decision Records
-    paths/
-      <pathId>/
-        MEMORY.md           # Path-scoped durable memory
-        daily/
-          YYYY-MM-DD.md     # Path-scoped daily logs
-  sessions/                 # PTY session transcripts (JSONL, auto-captured)
-  index/                    # SQLite FTS5 index (auto-maintained, ephemeral)
-  state/                    # paths.json, flush_state.json
-  AGENTS.md                 # THIS FILE
-  preferences.md            # User preferences
-  rules/
-    base/                   # Preset-managed rules (overwritten on preset update)
-    user/                   # Your rules (never touched by preset updates)
-  skills/                   # Reusable workflow templates
+    MEMORY.md              # Durable memory (curated, long-term)
+    daily/YYYY-MM-DD.md    # Daily append-only logs
+    decisions/ADR-*.md     # Architecture Decision Records
+    paths/<pathId>/
+      MEMORY.md            # Per-project memory
+      daily/YYYY-MM-DD.md  # Per-project daily logs
+  preferences.md           # User preferences
+  rules/base/              # Preset-managed rules
+  rules/user/              # User rules (never overwritten)
+  state/                   # Hook state files
 ```
 
-### Memory rules — MANDATORY
-
-1. **Search before asking.** Before asking the user a question that may have been answered before, search memory: `GET /api/memory/search?q=<topic>`. If you find relevant context, use it. Do not waste the user's time re-asking.
-
-2. **Write daily entries.** During work, periodically write progress to today's daily entry:
-   - Use `POST /api/memory/daily` with `{ entry, project, tags }`
-   - Format: concise, scannable, with file paths and function names
-   - Write every ~15 messages in long conversations
-   - ALWAYS write before ending a session or switching tasks
-
-3. **Use durable memory.** Read `/workspace/.codeck/memory/MEMORY.md` at session start. This contains curated, important information that survived triage. Trust it.
-
-4. **Path-scoped memory.** When working on a specific project (path), use path-scoped memory:
-   - Resolve the path: `POST /api/memory/paths/resolve` with `{ canonicalPath }`
-   - Read path memory: `GET /api/memory/paths/<pathId>`
-   - The path's MEMORY.md has architecture, patterns, current state, decisions
-
-5. **Never auto-promote.** Promotion from daily to durable memory is explicit, human-initiated. You do NOT promote content automatically. You may suggest promotion to the user.
-
-6. **Record decisions.** When you make a significant architectural or technical decision, create an ADR:
-   - `POST /api/memory/decisions/create` with `{ title, context, decision, consequences }`
-   - Naming: `ADR-YYYYMMDD-slug.md`
-
-7. **Never write secrets.** Do not log API keys, tokens, passwords, or credentials to any memory file. If you encounter a secret in output, omit it.
+## API Endpoints
 
 ### Search
-
-The memory system has full-text search powered by SQLite FTS5 (BM25 ranking):
-
 ```
 GET /api/memory/search?q=<query>&scope=durable,daily,decision,path,session&limit=20
 ```
 
-- Scopes: `durable`, `daily`, `decision`, `path`, `path-daily`, `session`
-- Results include highlighted snippets
-- Search is available only in the Docker container (not local dev)
-
-### Flush
-
-When context is getting long and you risk losing information:
-
+### Daily Log
 ```
-POST /api/memory/flush
-{ "content": "summary of current state...", "scope": "global", "tags": ["context-save"] }
+POST /api/memory/daily
+{ "entry": "...", "project": "name", "tags": ["tag"] }
+```
+Or write directly to `/workspace/.codeck/memory/daily/YYYY-MM-DD.md`.
+
+### Path Memory
+```
+POST /api/memory/paths/resolve
+{ "canonicalPath": "/workspace/project" }
+
+GET /api/memory/paths/<pathId>
 ```
 
-Rate-limited to once per 30 seconds per scope.
+### Decisions (ADR)
+```
+POST /api/memory/decisions/create
+{ "title": "...", "context": "...", "decision": "...", "consequences": "..." }
+```
 
-### Context recovery
-
-After compaction or at session start:
-
+### Context Recovery (after compaction)
 ```
 GET /api/memory/context?pathId=<pathId>
 ```
 
-Returns concatenated: global MEMORY.md + today's daily + path memory + path daily.
+### Emergency Flush
+```
+POST /api/memory/flush
+{ "content": "summary...", "scope": "global", "tags": ["context-save"] }
+```
 
----
+## Path Memory Guide
 
-## Startup sequence
+Path memory is per-project knowledge that makes you smarter in that project. It should contain:
 
-Every session, in this order:
+- **What this project is** (stack, purpose, key paths)
+- **Patterns that work** (what approaches succeeded)
+- **Patterns that fail** (what to avoid, common errors)
+- **User preferences for this project** (conventions, workflow)
+- **Current state** (what's in progress, what's blocked)
 
-1. Read THIS file (`/workspace/.codeck/AGENTS.md`)
-2. Read preferences (`/workspace/.codeck/preferences.md`)
-3. Read rules (`/workspace/.codeck/rules/base/` and `/workspace/.codeck/rules/user/`)
-4. Read global memory (`/workspace/.codeck/memory/MEMORY.md`)
-5. If working on a project: resolve path, read path memory
-6. If no path memory exists: explore the codebase, create path memory before doing work
-7. Check skills (`/workspace/.codeck/skills/`) for reusable workflows
+When path memory is empty for a project, ask the user about their stack and preferences. Create the path memory from their answers + your exploration of the codebase. This is how you get smarter over time.
 
----
+## Memory Rules
 
-## Session end sequence
-
-Before ending ANY session:
-
-1. Write final daily entry with: what was done, current state, next steps
-2. Update path-scoped MEMORY.md with current state and decisions
-3. If architectural decisions were made: create ADR(s)
-4. If user preferences were discovered: update preferences.md
-
-These steps are **mandatory**. Not optional. Not "if significant". EVERY session.
+1. **Search before asking** — don't re-ask what you already know.
+2. **Write when significant** — decisions, patterns, bugs found, not every trivial action.
+3. **Never auto-promote** — daily → durable promotion is human-initiated. Suggest, don't do.
+4. **Never write secrets** — no keys, tokens, passwords in any memory file.
+5. **Path memory is intelligence, not facts** — "TypeScript project" is a fact. "Always use early returns in this codebase because the user corrected me twice" is intelligence.

@@ -4,6 +4,10 @@
   Author: Affaan Mustafa — integrated into Codeck with modifications.
 -->
 
+---
+description: "Manage Node.js processes with PM2: start, stop, restart, logs."
+---
+
 # PM2 Init
 
 Auto-analyze project and generate PM2 service commands.

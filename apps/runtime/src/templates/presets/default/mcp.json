@@ -16,6 +16,10 @@
     "eslint": {
       "command": "npx",
       "args": ["-y", "@eslint/mcp"]
+    },
+    "playwright": {
+      "command": "npx",
+      "args": ["-y", "@playwright/mcp@latest", "--headless", "--no-sandbox"]
     }
   }
 }

@@ -6,7 +6,7 @@
 
 ---
 name: deployment-patterns
-description: Deployment workflows, CI/CD pipeline patterns, Docker containerization, health checks, rollback strategies, and production readiness checklists for web applications.
+description: "CI/CD, Docker, health checks, rollbacks. Load when setting up deployment pipelines."
 ---
 
 # Deployment Patterns

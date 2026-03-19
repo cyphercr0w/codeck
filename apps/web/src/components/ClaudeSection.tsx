@@ -70,6 +70,7 @@ export function ClaudeSection({ onNewSession, onNewShell }: ClaudeSectionProps) 
   const [contextBanner, setContextBanner] = useState<{ sessionId: string; projectName: string; kb: string } | null>(null);
   const [bannerFading, setBannerFading] = useState(false);
   const [showNewSessionMenu, setShowNewSessionMenu] = useState(false);
+  const [newTabLoading, setNewTabLoading] = useState(false);
   const [recentConvos, setRecentConvos] = useState<Array<{ id: string; title: string; cwd: string; mtime: number }>>([]);
   const sessionList = sessions.value;
   const activeId = activeSessionId.value;
@@ -141,6 +142,8 @@ export function ClaudeSection({ onNewSession, onNewShell }: ClaudeSectionProps) 
       container.appendChild(el);
 
       createTerminal(s.id, el);
+      // Clear new-tab loading state when real terminal mounts
+      if (newTabLoading) setNewTabLoading(false);
 
       // Attach session synchronously BEFORE rAF to avoid race condition:
       // WS output can arrive before rAF fires, causing data loss
@@ -346,7 +349,8 @@ export function ClaudeSection({ onNewSession, onNewShell }: ClaudeSectionProps) 
   }
 
   async function resumeConversation(convId: string, cwd: string) {
-    setShowNewSessionMenu(false);
+    if (newTabLoading) return; // prevent double-click
+    setNewTabLoading(true);
     try {
       const res = await apiFetch('/api/console/resume', {
         method: 'POST',
@@ -358,6 +362,8 @@ export function ClaudeSection({ onNewSession, onNewShell }: ClaudeSectionProps) 
         setActiveSessionId(data.sessionId);
       }
     } catch { /* non-fatal */ }
+    setNewTabLoading(false);
+    setShowNewSessionMenu(false);
   }
 
   function switchToSession(id: string) {
@@ -445,29 +451,34 @@ export function ClaudeSection({ onNewSession, onNewShell }: ClaudeSectionProps) 
                 )}
               </button>
             ))}
-          {showNewSessionMenu && (
+          {(showNewSessionMenu || newTabLoading) && (
             <button
-              class="terminal-tab active"
-              onClick={() => setShowNewSessionMenu(false)}
+              class={`terminal-tab active${newTabLoading ? ' loading' : ''}`}
+              onClick={() => { if (!newTabLoading) { setShowNewSessionMenu(false); } }}
             >
-              <span>New Tab</span>
-              <button
-                class="terminal-tab-close"
-                aria-label="Cancel new session"
-                onClick={(e) => { e.stopPropagation(); setShowNewSessionMenu(false); }}
-              >
-                <IconX size={12} />
-              </button>
+              {newTabLoading && <span class="loading" style={{ width: '12px', height: '12px' }} />}
+              <span>{newTabLoading ? 'Loading...' : 'New Tab'}</span>
+              {!newTabLoading && (
+                <button
+                  class="terminal-tab-close"
+                  aria-label="Cancel new session"
+                  onClick={(e) => { e.stopPropagation(); setShowNewSessionMenu(false); }}
+                >
+                  <IconX size={12} />
+                </button>
+              )}
             </button>
           )}
-          <button
-            class="terminal-tab-new"
-            aria-label="New Session"
-            disabled={sessionList.length >= 5}
-            onClick={() => setShowNewSessionMenu(prev => !prev)}
-          >
-            <IconPlus size={14} />
-          </button>
+          {!showNewSessionMenu && !newTabLoading && (
+            <button
+              class="terminal-tab-new"
+              aria-label="New Session"
+              disabled={sessionList.length >= 5}
+              onClick={() => setShowNewSessionMenu(true)}
+            >
+              <IconPlus size={14} />
+            </button>
+          )}
         </div>
         <div
           class={`terminal-instances${dragOver ? ' drag-over' : ''}`}
@@ -492,32 +503,55 @@ export function ClaudeSection({ onNewSession, onNewShell }: ClaudeSectionProps) 
                 }
               }}
             >
-              <div class="claude-empty-icon"><IconTerminal size={48} /></div>
-              <div class="claude-empty-title">{sessionList.length === 0 ? 'Ready when you are' : 'New session'}</div>
-              <div class="claude-empty-desc">
-                {sessionList.length === 0
-                  ? 'Start a new session to begin coding with Claude.'
-                  : 'Choose session type:'}
-              </div>
-              <div class="claude-empty-actions">
-                <button class="claude-empty-btn primary" onClick={() => { setShowNewSessionMenu(false); onNewSession(); }}>New Agent</button>
-                <button class="claude-empty-btn secondary" onClick={() => { setShowNewSessionMenu(false); onNewShell(); }}>New Shell</button>
-              </div>
-              {recentConvos.length > 0 && (
-                <div class="claude-recent-convos">
-                  <div class="claude-recent-title">Recent conversations</div>
-                  {recentConvos.map(c => (
-                    <button
-                      key={c.id}
-                      class="claude-recent-item"
-                      onClick={() => resumeConversation(c.id, c.cwd)}
-                    >
-                      <span class="claude-recent-text">{c.title}</span>
-                      <span class="claude-recent-meta">{c.cwd.split('/').pop()}</span>
-                    </button>
-                  ))}
-                </div>
+              {newTabLoading ? (
+                <>
+                  <div class="loading" />
+                  <div class="claude-empty-title">Loading session...</div>
+                </>
+              ) : (
+                <>
+                  <div class="claude-empty-icon"><IconTerminal size={48} /></div>
+                  <div class="claude-empty-title">{sessionList.length === 0 ? 'Ready when you are' : 'New session'}</div>
+                  <div class="claude-empty-desc">
+                    {sessionList.length === 0
+                      ? 'Start a new session to begin coding with Claude.'
+                      : 'Choose session type:'}
+                  </div>
+                  <div class="claude-empty-actions">
+                    <button class="claude-empty-btn primary" onClick={() => {
+                      setNewTabLoading(true);
+                      onNewSession();
+                      // Safety: clear loading after 10s if session never mounts
+                      setTimeout(() => setNewTabLoading(false), 10000);
+                    }}>New Agent</button>
+                    <button class="claude-empty-btn secondary" onClick={() => {
+                      setNewTabLoading(true);
+                      onNewShell();
+                      setTimeout(() => setNewTabLoading(false), 10000);
+                    }}>New Shell</button>
+                  </div>
+                </>
               )}
+              {(() => {
+                // Filter out conversations that already have an open terminal
+                const openCwds = new Set(sessionList.map(s => s.cwd));
+                const available = recentConvos.filter(c => !openCwds.has(c.cwd));
+                return available.length > 0 && !newTabLoading ? (
+                  <div class="claude-recent-convos">
+                    <div class="claude-recent-title">Recent conversations</div>
+                    {available.map(c => (
+                      <button
+                        key={c.id}
+                        class="claude-recent-item"
+                        onClick={() => resumeConversation(c.id, c.cwd)}
+                      >
+                        <span class="claude-recent-text">{c.title}</span>
+                        <span class="claude-recent-meta">{c.cwd.split('/').pop()}</span>
+                      </button>
+                    ))}
+                  </div>
+                ) : null;
+              })()}
             </div>
           )}
           {activeId && sessionList.find(s => s.id === activeId)?.loading && (

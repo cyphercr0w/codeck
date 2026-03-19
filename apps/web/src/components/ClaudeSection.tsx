@@ -519,15 +519,12 @@ export function ClaudeSection({ onNewSession, onNewShell }: ClaudeSectionProps) 
                   </div>
                   <div class="claude-empty-actions">
                     <button class="claude-empty-btn primary" onClick={() => {
-                      setNewTabLoading(true);
+                      setShowNewSessionMenu(false);
                       onNewSession();
-                      // Safety: clear loading after 10s if session never mounts
-                      setTimeout(() => setNewTabLoading(false), 10000);
                     }}>New Agent</button>
                     <button class="claude-empty-btn secondary" onClick={() => {
-                      setNewTabLoading(true);
+                      setShowNewSessionMenu(false);
                       onNewShell();
-                      setTimeout(() => setNewTabLoading(false), 10000);
                     }}>New Shell</button>
                   </div>
                 </>

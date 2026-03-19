@@ -1,25 +1,21 @@
 {
-  "mcpServers": {
-    "context7": {
-      "command": "npx",
-      "args": ["-y", "@upstash/context7-mcp"],
-      "description": "Look up current library documentation and code examples"
-    },
-    "sequential-thinking": {
-      "command": "npx",
-      "args": ["-y", "@modelcontextprotocol/server-sequential-thinking"]
-    },
-    "duckduckgo": {
-      "command": "npx",
-      "args": ["-y", "@nicholasblaskey/duckduckgo-mcp-server"]
-    },
-    "eslint": {
-      "command": "npx",
-      "args": ["-y", "@eslint/mcp"]
-    },
-    "playwright": {
-      "command": "npx",
-      "args": ["-y", "@playwright/mcp@latest", "--headless", "--no-sandbox"]
-    }
-  }
+	"mcpServers": {
+		"context7": {
+			"command": "npx",
+			"args": ["-y", "@upstash/context7-mcp"],
+			"description": "Look up current library documentation and code examples"
+		},
+		"sequential-thinking": {
+			"command": "npx",
+			"args": ["-y", "@modelcontextprotocol/server-sequential-thinking"]
+		},
+		"eslint": {
+			"command": "npx",
+			"args": ["-y", "@eslint/mcp"]
+		},
+		"playwright": {
+			"command": "npx",
+			"args": ["-y", "@playwright/mcp@latest", "--headless", "--no-sandbox"]
+		}
+	}
 }

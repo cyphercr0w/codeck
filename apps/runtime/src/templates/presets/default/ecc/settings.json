@@ -38,6 +38,10 @@
       "Read(**/secrets/**)"
     ]
   },
+  "includeGitInstructions": false,
+  "enableAllProjectMcpServers": true,
+  "effortLevel": "high",
+  "attribution": { "commit": "", "pr": "" },
   "hooks": {
     "PreToolUse": [
       {

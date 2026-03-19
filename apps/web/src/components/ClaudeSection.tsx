@@ -454,11 +454,17 @@ export function ClaudeSection({ onNewSession, onNewShell }: ClaudeSectionProps) 
             ))}
           {(showNewSessionMenu || newTabLoading) && (
             <button
-              class={`terminal-tab active${newTabLoading ? ' loading' : ''}`}
+              class="terminal-tab active"
               onClick={() => { if (!newTabLoading) { setShowNewSessionMenu(false); } }}
             >
-              {newTabLoading && <span class="loading" style={{ width: '12px', height: '12px' }} />}
-              <span>{newTabLoading ? 'Loading...' : 'New Tab'}</span>
+              {newTabLoading ? (
+                <>
+                  <span class="loading" style={{ width: '10px', height: '10px', flexShrink: 0 }} />
+                  <span>Loading</span>
+                </>
+              ) : (
+                <span>New Tab</span>
+              )}
               {!newTabLoading && (
                 <button
                   class="terminal-tab-close"

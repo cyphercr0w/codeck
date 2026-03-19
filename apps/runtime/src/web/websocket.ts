@@ -21,6 +21,8 @@ const sessionClients = new Map<string, Set<WebSocket>>();
 // sessionId → data disposable (ONE onData handler per session, broadcasts to all clients).
 // Disposed when all WS clients disconnect; recreated on next console:attach.
 const sessionHandlers = new Map<string, { dispose: () => void }>();
+// Track PTY pause state per session for flow control (accessible from close handler)
+const sessionPtyPaused = new Map<string, boolean>();
 
 // sessionId → exit disposable (ONE onExit handler per session).
 // Kept alive even when no WS clients are connected so PTY death is always detected.
@@ -202,8 +204,20 @@ export function setupWebSocket(): void {
           resetSessionAttachment(sessionId);
           sessionClients.delete(sessionId);
           sessionMaxDimensions.delete(sessionId);
+          sessionPtyPaused.delete(sessionId);
         } else {
           recalcMaxDimensions(sessionId);
+          // Resume PTY if the disconnected client was the congested one
+          if (sessionPtyPaused.get(sessionId)) {
+            const allOk = [...clientSet].every(
+              c => c.readyState !== WebSocket.OPEN || c.bufferedAmount < 16 * 1024
+            );
+            if (allOk) {
+              sessionPtyPaused.set(sessionId, false);
+              const session = getSession(sessionId);
+              if (session) session.pty.resume();
+            }
+          }
         }
       }
       clientDimensions.delete(ws);
@@ -330,6 +344,13 @@ function handleConsoleMessage(ws: WebSocket, msg: { type: string; sessionId: str
 
     // Data handler: created when the first client attaches
     if (!sessionHandlers.has(sid)) {
+      // Watermark-based PTY flow control.
+      // Pause PTY when WS buffer exceeds HIGH_WATER, resume when it drops below LOW_WATER.
+      // Prevents memory exhaustion and input freeze on fast PTY output.
+      const HIGH_WATER = 64 * 1024; // 64KB
+      const LOW_WATER = 16 * 1024;  // 16KB
+      sessionPtyPaused.set(sid, false);
+
       const dataDisposable = session.pty.onData((data: string) => {
         // Detect OAuth token revocation errors in real-time
         if (data.includes('OAuth token revoked') || data.includes('Please run /login')) {
@@ -347,13 +368,34 @@ function handleConsoleMessage(ws: WebSocket, msg: { type: string; sessionId: str
         const currentClients = sessionClients.get(sid);
         if (!currentClients) return;
 
-        // Snapshot client set to avoid race with close handler modifying it during iteration
         const clientSnapshot = [...currentClients];
         const payload = JSON.stringify({ type: 'console:output', sessionId: sid, data });
+
+        // Check backpressure: pause PTY if ANY client buffer exceeds high water
+        if (!sessionPtyPaused.get(sid)) {
+          for (const client of clientSnapshot) {
+            if (client.readyState === WebSocket.OPEN && client.bufferedAmount > HIGH_WATER) {
+              sessionPtyPaused.set(sid, true);
+              session.pty.pause();
+              break;
+            }
+          }
+        }
+
         for (const client of clientSnapshot) {
           if (client.readyState === WebSocket.OPEN) {
             client.send(payload, (err) => {
               if (err) console.warn('[WS] Send error for session', sid, err.message);
+              // Resume only when ALL clients are below low water mark
+              if (sessionPtyPaused.get(sid)) {
+                const allDrained = clientSnapshot.every(
+                  c => c.readyState !== WebSocket.OPEN || c.bufferedAmount < LOW_WATER
+                );
+                if (allDrained) {
+                  sessionPtyPaused.set(sid, false);
+                  session.pty.resume();
+                }
+              }
             });
           }
         }

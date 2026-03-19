@@ -102,6 +102,10 @@
 		{
 			"src": "scripts/review-marker-hook.mjs",
 			"dest": "/workspace/.codeck/scripts/review-marker-hook.mjs"
+		},
+		{
+			"src": "scripts/statusline.sh",
+			"dest": "/workspace/.codeck/scripts/statusline.sh"
 		}
 	],
 	"directories": [

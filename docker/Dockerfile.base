@@ -56,8 +56,11 @@ RUN install -m 0755 -d /etc/apt/keyrings \
 # Server can auto-update at runtime via POST /api/system/update-agent.
 RUN npm install -g pnpm @anthropic-ai/claude-code@2.1.39
 
-# ─── Code formatters (for auto-format hook) ───
-RUN npm install -g @biomejs/biome && pip3 install --break-system-packages ruff
+# ─── Code formatters + LSP servers (for hooks and code intelligence) ───
+# Biome: 10-25x faster than Prettier for TS/JS formatting
+# Ruff: 30x faster than Black for Python formatting
+# typescript-language-server: Claude Code auto-detects installed LSP (900x nav speedup)
+RUN npm install -g @biomejs/biome typescript typescript-language-server && pip3 install --break-system-packages ruff
 
 # ─── Playwright + Chrome (for MCP browser automation) ───
 # The Playwright MCP server uses 'chrome' by default, not 'chromium'.

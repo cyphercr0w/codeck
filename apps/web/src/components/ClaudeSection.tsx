@@ -406,7 +406,7 @@ export function ClaudeSection({ onNewSession, onNewShell }: ClaudeSectionProps) 
           {sessionList.map(s => (
               <button
                 key={s.id}
-                class={`terminal-tab${s.id === activeId ? ' active' : ''}${s.loading ? ' loading' : ''}${s.type === 'shell' ? ' shell' : ''}`}
+                class={`terminal-tab${s.id === activeId && !showNewSessionMenu ? ' active' : ''}${s.loading ? ' loading' : ''}${s.type === 'shell' ? ' shell' : ''}`}
                 onClick={() => !s.loading && switchToSession(s.id)}
                 title={s.cwd}
               >
@@ -445,6 +445,21 @@ export function ClaudeSection({ onNewSession, onNewShell }: ClaudeSectionProps) 
                 )}
               </button>
             ))}
+          {showNewSessionMenu && (
+            <button
+              class="terminal-tab active"
+              onClick={() => setShowNewSessionMenu(false)}
+            >
+              <span>New Tab</span>
+              <button
+                class="terminal-tab-close"
+                aria-label="Cancel new session"
+                onClick={(e) => { e.stopPropagation(); setShowNewSessionMenu(false); }}
+              >
+                <IconX size={12} />
+              </button>
+            </button>
+          )}
           <button
             class="terminal-tab-new"
             aria-label="New Session"

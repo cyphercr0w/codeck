@@ -318,15 +318,26 @@ export async function connectWebSocket(): Promise<void> {
     return;
   }
 
-  fetch('/api/auth/ws-ticket', { method: 'POST', headers: { Authorization: `Bearer ${token}` } })
-    .then(r => r.ok ? r.json() : null)
+  // Ticket request with 2s timeout — if slow, fall back to token-in-URL
+  const ticketCtrl = new AbortController();
+  const ticketTimeout = setTimeout(() => ticketCtrl.abort(), 2000);
+
+  fetch('/api/auth/ws-ticket', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}` },
+    signal: ticketCtrl.signal,
+  })
+    .then(r => { clearTimeout(ticketTimeout); return r.ok ? r.json() : null; })
     .then(data => {
       const wsUrl = data?.ticket
         ? `${protocol}//${location.host}?ticket=${encodeURIComponent(data.ticket)}`
         : `${protocol}//${location.host}?token=${encodeURIComponent(token)}`;
       openWs(wsUrl);
     })
-    .catch(() => openWs(`${protocol}//${location.host}?token=${encodeURIComponent(token)}`));
+    .catch(() => {
+      clearTimeout(ticketTimeout);
+      openWs(`${protocol}//${location.host}?token=${encodeURIComponent(token)}`);
+    });
 }
 
 export function disconnectWebSocket(): void {

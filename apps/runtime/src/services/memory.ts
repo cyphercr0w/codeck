@@ -283,6 +283,32 @@ export function getDailyEntry(date?: string, pathId?: string): { exists: boolean
   return { exists: true, date: d, content: readFileSync(path, 'utf-8') };
 }
 
+/**
+ * Extract keywords (4+ chars) from text for Jaccard similarity comparison.
+ * Simple, fast, no embeddings needed.
+ */
+function extractKeywords(text: string): Set<string> {
+  return new Set(
+    text.toLowerCase()
+      .replace(/[^a-z0-9\s]/g, ' ')
+      .split(/\s+/)
+      .filter(w => w.length >= 4)
+  );
+}
+
+/**
+ * Jaccard similarity between two keyword sets (0.0 - 1.0).
+ */
+function jaccardSimilarity(a: Set<string>, b: Set<string>): number {
+  if (a.size === 0 || b.size === 0) return 0;
+  let intersection = 0;
+  for (const word of a) {
+    if (b.has(word)) intersection++;
+  }
+  const union = a.size + b.size - intersection;
+  return union === 0 ? 0 : intersection / union;
+}
+
 export async function appendToDaily(entry: string, project?: string, tags?: string[], pathId?: string): Promise<{ date: string }> {
   const d = new Date().toISOString().slice(0, 10);
   const path = dailyPath(d, pathId);
@@ -291,11 +317,39 @@ export async function appendToDaily(entry: string, project?: string, tags?: stri
     const dir = pathId ? join(PATHS_DIR, pathId, 'daily') : DAILY_DIR;
     if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
 
+    const sanitized = sanitizeSecrets(entry).trim();
+
+    // ── Semantic deduplication ──
+    // Check last 10 entries for keyword overlap before writing.
+    // >85% overlap = SKIP (duplicate), 50-85% = MERGE, <50% = WRITE.
+    if (existsSync(path)) {
+      const existing = readFileSync(path, 'utf-8');
+      const entries = existing.split(/\n### /).slice(-10); // last 10 entries
+      const newKeywords = extractKeywords(sanitized);
+
+      if (newKeywords.size > 0) {
+        let maxSimilarity = 0;
+        for (const e of entries) {
+          const sim = jaccardSimilarity(newKeywords, extractKeywords(e));
+          if (sim > maxSimilarity) maxSimilarity = sim;
+        }
+
+        if (maxSimilarity > 0.85) {
+          console.log(`[Memory] SKIP daily entry (${(maxSimilarity * 100).toFixed(0)}% overlap with existing)`);
+          return; // Don't write duplicate
+        }
+        // 50-85%: write anyway but log. Full MERGE would require LLM call.
+        if (maxSimilarity > 0.5) {
+          console.log(`[Memory] Writing daily entry with ${(maxSimilarity * 100).toFixed(0)}% overlap (consider consolidation)`);
+        }
+      }
+    }
+
     const timestamp = new Date().toISOString().slice(11, 19);
     let line = `### ${timestamp}`;
     if (project) line += ` [${project}]`;
     if (tags && tags.length > 0) line += ` ${tags.map(t => `#${t}`).join(' ')}`;
-    line += '\n\n' + sanitizeSecrets(entry).trim() + '\n';
+    line += '\n\n' + sanitized + '\n';
 
     if (existsSync(path)) {
       const existing = readFileSync(path, 'utf-8');

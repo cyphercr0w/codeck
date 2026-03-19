@@ -30,7 +30,8 @@
     { "src": "scripts/pre-compact-hook.mjs",     "dest": "/workspace/.codeck/scripts/pre-compact-hook.mjs" },
     { "src": "scripts/learning-observer.mjs",    "dest": "/workspace/.codeck/scripts/learning-observer.mjs" },
     { "src": "scripts/memory-nudge-hook.mjs",   "dest": "/workspace/.codeck/scripts/memory-nudge-hook.mjs" },
-    { "src": "scripts/memory-consolidation.mjs", "dest": "/workspace/.codeck/scripts/memory-consolidation.mjs" }
+    { "src": "scripts/memory-consolidation.mjs", "dest": "/workspace/.codeck/scripts/memory-consolidation.mjs" },
+    { "src": "scripts/tool-result-compressor.mjs", "dest": "/workspace/.codeck/scripts/tool-result-compressor.mjs" }
   ],
   "directories": [
     "/workspace/.codeck/memory/daily",

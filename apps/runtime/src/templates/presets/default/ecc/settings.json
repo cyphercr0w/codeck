@@ -81,6 +81,15 @@
             "command": "node /workspace/.codeck/scripts/learning-observer.mjs"
           }
         ]
+      },
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node /workspace/.codeck/scripts/tool-result-compressor.mjs"
+          }
+        ]
       }
     ],
     "PreCompact": [

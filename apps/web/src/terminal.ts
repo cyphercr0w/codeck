@@ -91,6 +91,23 @@ export function createTerminal(sessionId: string, container: HTMLElement): Termi
     return true; // let xterm handle all other keys
   });
 
+  // Right-click: copy selection (like native terminal / PowerShell behavior).
+  // If text is selected, copy it and clear selection. If nothing is selected,
+  // paste from clipboard. Prevents the browser context menu in both cases.
+  container.addEventListener('contextmenu', (e) => {
+    e.preventDefault();
+    const selection = term.getSelection();
+    if (selection) {
+      navigator.clipboard.writeText(selection).catch(() => {});
+      term.clearSelection();
+    } else {
+      // No selection → paste (like PowerShell right-click behavior)
+      navigator.clipboard.readText()
+        .then(text => { if (text) term.paste(text); })
+        .catch(() => {}); // clipboard permission denied — silent
+    }
+  });
+
   // Configure xterm textarea for keyboard handling
   const textarea = container.querySelector('textarea.xterm-helper-textarea') as HTMLTextAreaElement | null;
   let blurHandlerRef: (() => void) | null = null;

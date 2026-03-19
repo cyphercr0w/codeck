@@ -118,6 +118,12 @@ export async function startWebServer(): Promise<void> {
     res.json({ status: 'ok', uptime: process.uptime() });
   });
 
+  // Health endpoint for frontend WS pre-flight (works in both isolated and managed mode)
+  app.get('/api/runtime/health', (_req, res) => {
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
+    res.json({ ready: true });
+  });
+
   // Managed mode: redirect direct browser access to the daemon port.
   // The daemon proxy always sets X-Codeck-Internal, so its absence means direct access.
   const DAEMON_PORT = process.env.CODECK_DAEMON_PORT;

@@ -126,6 +126,18 @@
           }
         ]
       }
+    ],
+    "SessionEnd": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node /workspace/.codeck/scripts/memory-consolidation.mjs",
+            "async": true
+          }
+        ]
+      }
     ]
   }
 }

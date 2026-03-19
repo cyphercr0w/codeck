@@ -362,6 +362,52 @@ function mergePresetHooks(presetDir: string): void {
   }
 }
 
+/**
+ * Register preset MCP servers in Claude Code's .claude.json (user scope).
+ * Claude Code reads MCP servers from .claude.json, NOT from mcp.json.
+ * This writes to the global mcpServers key so servers are available in all projects.
+ */
+function registerMcpServers(presetDir: string): void {
+  const mcpTemplatePath = join(presetDir, 'mcp.json');
+  const claudeJsonPath = join(home, '.claude.json');
+
+  if (!existsSync(mcpTemplatePath)) return;
+
+  try {
+    const template = JSON.parse(readFileSync(mcpTemplatePath, 'utf-8'));
+    const servers = template.mcpServers;
+    if (!servers || typeof servers !== 'object') return;
+
+    let claudeJson: Record<string, unknown> = {};
+    if (existsSync(claudeJsonPath)) {
+      const parsed = JSON.parse(readFileSync(claudeJsonPath, 'utf-8'));
+      if (typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)) {
+        claudeJson = parsed;
+      }
+    }
+
+    if (!claudeJson.mcpServers || typeof claudeJson.mcpServers !== 'object') {
+      claudeJson.mcpServers = {};
+    }
+    const existing = claudeJson.mcpServers as Record<string, unknown>;
+
+    let added = 0;
+    for (const [name, config] of Object.entries(servers)) {
+      if (existing[name]) continue; // don't overwrite user-configured servers
+      existing[name] = config;
+      added++;
+      console.log(`[Preset]   REGISTER MCP server: ${name}`);
+    }
+
+    if (added > 0) {
+      writeFileSync(claudeJsonPath, JSON.stringify(claudeJson, null, 2));
+      console.log(`[Preset]   Registered ${added} MCP server(s) in .claude.json (user scope)`);
+    }
+  } catch (e) {
+    console.warn(`[Preset]   Failed to register MCP servers:`, (e as Error).message);
+  }
+}
+
 async function applyPresetRecursive(presetId: string, visited: Set<string>, depth: number, force: boolean): Promise<void> {
   if (depth > 5) {
     throw new Error(`Preset extends chain too deep (>5). Possible circular reference.`);
@@ -468,6 +514,10 @@ async function applyPresetRecursive(presetId: string, visited: Set<string>, dept
   // adds missing preset-managed hooks (identified by /workspace/.codeck/scripts/ path)
   // without touching user permissions, model settings, or custom hooks.
   mergePresetHooks(presetDir);
+
+  // Register MCP servers in Claude Code's .claude.json (user scope).
+  // mcp.json alone is not read by Claude Code — servers must be in .claude.json.
+  registerMcpServers(presetDir);
 
   // Copy recursive directories declared in the manifest
   if (manifest.recursive_dirs && manifest.recursive_dirs.length > 0) {

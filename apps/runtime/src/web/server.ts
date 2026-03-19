@@ -267,6 +267,9 @@ export async function startWebServer(): Promise<void> {
   app.use('/api', (req, res, next) => {
     if (!isPasswordConfigured()) return next();
 
+    // Health endpoint is public — needed for WS pre-flight in isolated mode
+    if (req.path === '/runtime/health') return next();
+
     // Trusted proxy bypass — daemon has already authenticated the user
     if (INTERNAL_SECRET && req.headers['x-codeck-internal'] === INTERNAL_SECRET) return next();
 

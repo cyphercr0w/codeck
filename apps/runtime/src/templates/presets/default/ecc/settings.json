@@ -68,10 +68,6 @@
 					{
 						"type": "command",
 						"command": "node /workspace/.codeck/scripts/dangerous-cmd-guard.mjs"
-					},
-					{
-						"type": "command",
-						"command": "node /workspace/.codeck/scripts/review-gate-hook.mjs"
 					}
 				]
 			}
@@ -155,17 +151,6 @@
 						"type": "prompt",
 						"prompt": "Review the session. Check ALL of these: 1) SCOPE: Did the agent stay within what was asked? Any unauthorized refactors or changes beyond the request? 2) REVIEW: If code was written or modified, was a code-reviewer sub-agent spawned to review it? If code changes exist but no review was done, respond 'block' with 'Code changes were not reviewed. Run code-reviewer before finishing.' 3) QUALITY: Were build/tests verified after changes? If all checks pass, respond 'approve'. Otherwise respond 'block' with the specific issue.",
 						"model": "claude-haiku-4-5"
-					}
-				]
-			}
-		],
-		"SubagentStop": [
-			{
-				"matcher": "",
-				"hooks": [
-					{
-						"type": "command",
-						"command": "node /workspace/.codeck/scripts/review-marker-hook.mjs"
 					}
 				]
 			}

@@ -77,3 +77,15 @@ When path memory is empty for a project, ask the user about their stack and pref
 3. **Never auto-promote** — daily → durable promotion is human-initiated. Suggest, don't do.
 4. **Never write secrets** — no keys, tokens, passwords in any memory file.
 5. **Path memory is intelligence, not facts** — "TypeScript project" is a fact. "Always use early returns in this codebase because the user corrected me twice" is intelligence.
+
+## Model Routing
+
+Sub-agents use different models based on task type to optimize cost without sacrificing quality:
+
+| Model | Agents | Rationale |
+|-------|--------|-----------|
+| Opus | planner, architect | Deep reasoning, architecture, planning |
+| Sonnet | code-reviewer, security-reviewer, tdd-guide, build resolvers | Coding tasks, review, execution |
+| Haiku | doc-updater, hooks (consolidation, scope judge) | Lightweight tasks, memory maintenance |
+
+The main agent (user's session) always uses Opus for maximum quality.

@@ -29,6 +29,7 @@ let staleCheckTimer: ReturnType<typeof setInterval> | null = null;
 let lastMessageAt = 0;
 let reconnectBackoff = 500; // Exponential backoff: 0.5s → 1s → 2s → ... → 15s cap
 let reconnectAttempts = 0;
+let isFirstConnection = true; // Skip health check on first attempt (page just loaded)
 
 // True only on the first status message after a WS reconnect.
 // Prevents onSessionReattached from firing on every status broadcast
@@ -292,23 +293,26 @@ export async function connectWebSocket(): Promise<void> {
   if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
   if (ws && ws.readyState !== WebSocket.CLOSED) return;
 
-  // Pre-flight: check if runtime is ready before attempting WS upgrade
-  try {
-    const healthRes = await fetch('/api/runtime/health', { cache: 'no-store' });
-    const health = await healthRes.json();
-    if (!health.ready) {
-      // Schedule retry without attempting noisy WS upgrade
+  // Pre-flight: check if runtime is ready before attempting WS upgrade.
+  // Skip on first connection (page just loaded — server is obviously up).
+  if (!isFirstConnection) {
+    try {
+      const healthRes = await fetch('/api/runtime/health', { cache: 'no-store' });
+      const health = await healthRes.json();
+      if (!health.ready) {
+        const delay = reconnectBackoff * (0.5 + Math.random() * 0.5);
+        reconnectTimer = setTimeout(connectWebSocket, delay);
+        reconnectBackoff = Math.min(reconnectBackoff * 2, 15000);
+        return;
+      }
+    } catch {
       const delay = reconnectBackoff * (0.5 + Math.random() * 0.5);
       reconnectTimer = setTimeout(connectWebSocket, delay);
       reconnectBackoff = Math.min(reconnectBackoff * 2, 15000);
       return;
     }
-  } catch {
-    const delay = reconnectBackoff * (0.5 + Math.random() * 0.5);
-    reconnectTimer = setTimeout(connectWebSocket, delay);
-    reconnectBackoff = Math.min(reconnectBackoff * 2, 15000);
-    return;
   }
+  isFirstConnection = false;
 
   const token = getAuthToken();
   const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';

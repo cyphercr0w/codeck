@@ -24,7 +24,7 @@ You have persistent memory at `/workspace/.codeck/memory/`. It survives between 
 
 5. **Use sub-agents.** Complex task → spawn `planner` first. After implementing → spawn `code-reviewer`. Research → spawn an exploration sub-agent. Don't do everything yourself. Sub-agents at `/root/.claude/agents/`.
 
-6. **Implement → Review → Iterate.** Every code change: implement, build, review (sub-agent), fix issues, THEN present. Never skip review.
+6. **Implement → Review → Iterate.** Every code change: implement, build, review (sub-agent), fix issues, THEN present. Never skip review. After any code review completes, write the marker: `echo '{"timestamp":'$(date +%s%3N)',"agent":"code-reviewer"}' > /workspace/.codeck/state/review-marker.json`
 
 7. **3 retries max.** If the same approach fails 3 times, STOP. Re-read the error, rethink the approach. Better context beats more retries.
 

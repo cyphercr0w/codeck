@@ -1169,6 +1169,56 @@
   background: var(--bg-primary);
 }
 
+.claude-recent-convos {
+  margin-top: 16px;
+  width: 100%;
+  max-width: 400px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.claude-recent-title {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+  padding: 0 8px 4px;
+}
+
+.claude-recent-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 12px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.1s;
+  text-align: left;
+  font-size: 13px;
+  color: var(--text-primary);
+}
+
+.claude-recent-item:hover {
+  background: var(--bg-tertiary);
+}
+
+.claude-recent-text {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.claude-recent-meta {
+  font-size: 11px;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
 .claude-empty-icon {
   color: var(--text-muted);
   opacity: 0.4;

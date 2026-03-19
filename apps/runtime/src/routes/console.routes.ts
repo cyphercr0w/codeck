@@ -1,4 +1,6 @@
 import { Router } from 'express';
+import { existsSync, readdirSync, statSync, readFileSync } from 'fs';
+import { join, basename } from 'path';
 import { isClaudeAuthenticated } from '../services/auth-anthropic.js';
 import {
   createConsoleSession,
@@ -91,6 +93,99 @@ router.get('/has-conversations', async (req, res) => {
     return;
   }
   res.json({ hasConversations: await hasResumableConversations(cwd) });
+});
+
+// List recent conversations across all projects (for resume UI)
+router.get('/recent-conversations', (_req, res) => {
+  try {
+    const home = process.env.HOME || '/root';
+    const projectsDir = `${home}/.claude/projects`;
+    if (!existsSync(projectsDir)) { res.json({ conversations: [] }); return; }
+
+    const convos: Array<{ id: string; title: string; cwd: string; mtime: number }> = [];
+
+    for (const projectDir of readdirSync(projectsDir)) {
+      const fullDir = join(projectsDir, projectDir);
+      if (!statSync(fullDir).isDirectory()) continue;
+
+      for (const file of readdirSync(fullDir)) {
+        if (!file.endsWith('.jsonl')) continue;
+        const convId = basename(file, '.jsonl');
+        const filePath = join(fullDir, file);
+        const mtime = statSync(filePath).mtimeMs;
+
+        let title = '';
+        let cwd = '';
+        try {
+          const content = readFileSync(filePath, 'utf-8');
+          for (const line of content.split('\n').slice(0, 30)) {
+            if (!line.trim()) continue;
+            const d = JSON.parse(line);
+            if (d.type === 'user' && !title) {
+              cwd = d.cwd || '';
+              const msg = d.message;
+              if (msg && typeof msg === 'object') {
+                const c = msg.content;
+                if (Array.isArray(c)) {
+                  for (const block of c) {
+                    if (block?.type === 'text' && block.text) {
+                      title = block.text.replace(/<[^>]*>/g, '').trim().slice(0, 80);
+                      break;
+                    }
+                  }
+                } else if (typeof c === 'string') {
+                  title = c.replace(/<[^>]*>/g, '').trim().slice(0, 80);
+                }
+              }
+              if (title) break;
+            }
+          }
+        } catch { /* non-fatal */ }
+
+        if (title && cwd) {
+          convos.push({ id: convId, title, cwd, mtime });
+        }
+      }
+    }
+
+    convos.sort((a, b) => b.mtime - a.mtime);
+    res.json({ conversations: convos.slice(0, 5) });
+  } catch (e) {
+    console.warn('[Console] Failed to list recent conversations:', (e as Error).message);
+    res.json({ conversations: [] });
+  }
+});
+
+// Resume a specific conversation by ID
+router.post('/resume', (req, res) => {
+  if (!isClaudeAuthenticated()) {
+    res.status(400).json({ error: 'Claude is not authenticated' });
+    return;
+  }
+  if (getSessionCount() >= MAX_SESSIONS) {
+    res.status(400).json({ error: `Maximum ${MAX_SESSIONS} simultaneous sessions` });
+    return;
+  }
+
+  const { conversationId, cwd } = req.body || {};
+  if (!conversationId || typeof conversationId !== 'string') {
+    res.status(400).json({ error: 'conversationId required' });
+    return;
+  }
+  // Validate UUID format to prevent CLI flag injection
+  const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  if (!UUID_RE.test(conversationId)) {
+    res.status(400).json({ error: 'Invalid conversationId format' });
+    return;
+  }
+
+  try {
+    const session = createConsoleSession({ cwd: cwd || undefined, resume: true, conversationId });
+    broadcastStatus();
+    res.json({ sessionId: session.id, cwd: session.cwd, name: session.name });
+  } catch (e) {
+    res.status(400).json({ error: 'Failed to resume conversation' });
+  }
 });
 
 // Rename console session

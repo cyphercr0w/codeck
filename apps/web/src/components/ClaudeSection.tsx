@@ -70,6 +70,7 @@ export function ClaudeSection({ onNewSession, onNewShell }: ClaudeSectionProps) 
   const [contextBanner, setContextBanner] = useState<{ sessionId: string; projectName: string; kb: string } | null>(null);
   const [bannerFading, setBannerFading] = useState(false);
   const [showNewSessionMenu, setShowNewSessionMenu] = useState(false);
+  const [recentConvos, setRecentConvos] = useState<Array<{ id: string; title: string; cwd: string; mtime: number }>>([]);
   const sessionList = sessions.value;
   const activeId = activeSessionId.value;
 
@@ -201,6 +202,16 @@ export function ClaudeSection({ onNewSession, onNewShell }: ClaudeSectionProps) 
       window.removeEventListener('focus', onVisible);
     };
   }, []);
+
+  // Fetch recent conversations when empty state or menu is shown
+  useEffect(() => {
+    if (sessionList.length === 0 || showNewSessionMenu) {
+      apiFetch('/api/console/recent-conversations')
+        .then(r => r.json())
+        .then(data => { if (data.conversations) setRecentConvos(data.conversations); })
+        .catch(() => {});
+    }
+  }, [sessionList.length, showNewSessionMenu]);
 
   // Register image paste handler — terminal.ts intercepts Ctrl+V on xterm's
   // textarea, checks the clipboard for images, and calls this callback.
@@ -334,6 +345,21 @@ export function ClaudeSection({ onNewSession, onNewShell }: ClaudeSectionProps) 
     setEditingTabId(null);
   }
 
+  async function resumeConversation(convId: string, cwd: string) {
+    setShowNewSessionMenu(false);
+    try {
+      const res = await apiFetch('/api/console/resume', {
+        method: 'POST',
+        body: JSON.stringify({ conversationId: convId, cwd }),
+      });
+      const data = await res.json();
+      if (data.sessionId) {
+        addSession({ id: data.sessionId, type: 'agent', cwd: data.cwd, name: data.name || cwd.split('/').pop() || 'session', createdAt: Date.now() });
+        setActiveSessionId(data.sessionId);
+      }
+    } catch { /* non-fatal */ }
+  }
+
   function switchToSession(id: string) {
     setShowNewSessionMenu(false);
     setActiveSessionId(id);
@@ -462,6 +488,21 @@ export function ClaudeSection({ onNewSession, onNewShell }: ClaudeSectionProps) 
                 <button class="claude-empty-btn primary" onClick={() => { setShowNewSessionMenu(false); onNewSession(); }}>New Agent</button>
                 <button class="claude-empty-btn secondary" onClick={() => { setShowNewSessionMenu(false); onNewShell(); }}>New Shell</button>
               </div>
+              {recentConvos.length > 0 && (
+                <div class="claude-recent-convos">
+                  <div class="claude-recent-title">Recent conversations</div>
+                  {recentConvos.map(c => (
+                    <button
+                      key={c.id}
+                      class="claude-recent-item"
+                      onClick={() => resumeConversation(c.id, c.cwd)}
+                    >
+                      <span class="claude-recent-text">{c.title}</span>
+                      <span class="claude-recent-meta">{c.cwd.split('/').pop()}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
           )}
           {activeId && sessionList.find(s => s.id === activeId)?.loading && (

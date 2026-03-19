@@ -1,7 +1,16 @@
 {
   "_attribution": "Source: affaan-m/everything-claude-code (MIT License) + Codeck hooks. Integrated into Codeck preset.",
   "permissions": {
-    "defaultMode": "bypassPermissions"
+    "allow": [
+      "Read", "Edit", "Write", "Bash",
+      "WebFetch", "WebSearch", "Glob", "Grep"
+    ],
+    "deny": [
+      "Read(.env*)",
+      "Read(**/credentials*)",
+      "Read(**/.ssh/*)",
+      "Read(**/secrets/**)"
+    ]
   },
   "hooks": {
     "PreToolUse": [

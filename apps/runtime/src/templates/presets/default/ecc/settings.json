@@ -70,6 +70,11 @@
           {
             "type": "command",
             "command": "node /workspace/.codeck/scripts/post-edit-verify.mjs"
+          },
+          {
+            "type": "command",
+            "command": "node /workspace/.codeck/scripts/auto-format-hook.mjs",
+            "async": true
           }
         ]
       },

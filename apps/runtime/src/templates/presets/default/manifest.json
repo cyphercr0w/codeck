@@ -1,58 +1,158 @@
 {
-  "id": "default",
-  "name": "Default (Recommended)",
-  "description": "Persistent memory system, rules, sandbox skills, plus 13 sub-agents, 31+ slash commands, universal knowledge packs and dev hooks from everything-claude-code.",
-  "version": "7.0.0",
-  "author": "codeck",
-  "icon": "⚡",
-  "tags": ["general", "recommended"],
-  "extends": null,
-  "files": [
-    { "src": "CLAUDE.md",                "dest": "/root/.claude/CLAUDE.md" },
-    { "src": "../../CLAUDE.md",          "dest": "/workspace/CLAUDE.md" },
-    { "src": "mcp.json",                 "dest": "/root/.claude/mcp.json" },
-    { "src": "AGENTS.md",               "dest": "/workspace/.codeck/AGENTS.md" },
-    { "src": "preferences.md",           "dest": "/workspace/.codeck/preferences.md" },
-    { "src": "rules/coding.md",          "dest": "/workspace/.codeck/rules/base/coding.md" },
-    { "src": "rules/workflow.md",        "dest": "/workspace/.codeck/rules/base/workflow.md" },
-    { "src": "rules/communication.md",   "dest": "/workspace/.codeck/rules/user/communication.md", "skipIfExists": true },
-    { "src": "skills/sandbox.md",        "dest": "/workspace/.codeck/skills/sandbox.md" },
-    { "src": "skills/docker.md",         "dest": "/workspace/.codeck/skills/docker.md" },
-    { "src": "memory/summary.md",        "dest": "/workspace/.codeck/memory/summary.md" },
-    { "src": "memory/decisions.md",      "dest": "/workspace/.codeck/memory/decisions.md" },
-    { "src": "memory/MEMORY.md",         "dest": "/workspace/.codeck/memory/MEMORY.md" },
-    { "src": "ecc/settings.json",        "dest": "/root/.claude/settings.json", "skipIfExists": true },
-    { "src": "scripts/skill-reminder-hook.mjs",    "dest": "/workspace/.codeck/scripts/skill-reminder-hook.mjs" },
-    { "src": "scripts/post-compact-hook.mjs",      "dest": "/workspace/.codeck/scripts/post-compact-hook.mjs" },
-    { "src": "scripts/dangerous-cmd-guard.mjs",    "dest": "/workspace/.codeck/scripts/dangerous-cmd-guard.mjs" },
-    { "src": "scripts/memory-stop-hook.mjs",       "dest": "/workspace/.codeck/scripts/memory-stop-hook.mjs" },
-    { "src": "scripts/post-edit-verify.mjs",     "dest": "/workspace/.codeck/scripts/post-edit-verify.mjs" },
-    { "src": "scripts/pre-compact-hook.mjs",     "dest": "/workspace/.codeck/scripts/pre-compact-hook.mjs" },
-    { "src": "scripts/learning-observer.mjs",    "dest": "/workspace/.codeck/scripts/learning-observer.mjs" },
-    { "src": "scripts/memory-nudge-hook.mjs",   "dest": "/workspace/.codeck/scripts/memory-nudge-hook.mjs" },
-    { "src": "scripts/memory-consolidation.mjs", "dest": "/workspace/.codeck/scripts/memory-consolidation.mjs" },
-    { "src": "scripts/tool-result-compressor.mjs", "dest": "/workspace/.codeck/scripts/tool-result-compressor.mjs" },
-    { "src": "scripts/auto-format-hook.mjs",      "dest": "/workspace/.codeck/scripts/auto-format-hook.mjs" }
-  ],
-  "directories": [
-    "/workspace/.codeck/memory/daily",
-    "/workspace/.codeck/memory/decisions",
-    "/workspace/.codeck/memory/paths",
-    "/workspace/.codeck/sessions",
-    "/workspace/.codeck/index",
-    "/workspace/.codeck/state",
-    "/workspace/.codeck/rules/base",
-    "/workspace/.codeck/rules/user",
-    "/workspace/.codeck/skills",
-    "/workspace/.codeck/scripts",
-    "/workspace/.codeck/agents"
-  ],
-  "recursive_dirs": [
-    { "src": "ecc/agents",   "dest": "/root/.claude/agents",       "recursive": true, "skipIfExists": true },
-    { "src": "ecc/commands", "dest": "/root/.claude/commands",      "recursive": true, "skipIfExists": true },
-    { "src": "ecc/skills",   "dest": "/root/.claude/skills",        "recursive": true, "skipIfExists": true },
-    { "src": "ecc/rules",    "dest": "/root/.claude/rules",         "recursive": true, "skipIfExists": true },
-    { "src": "ecc/hooks",    "dest": "/root/.claude/ecc/hooks",     "recursive": true, "skipIfExists": false },
-    { "src": "ecc/lib",      "dest": "/root/.claude/ecc/lib",       "recursive": true, "skipIfExists": false }
-  ]
+	"id": "default",
+	"name": "Default (Recommended)",
+	"description": "Persistent memory system, rules, sandbox skills, plus 13 sub-agents, 31+ slash commands, universal knowledge packs and dev hooks from everything-claude-code.",
+	"version": "7.0.0",
+	"author": "codeck",
+	"icon": "⚡",
+	"tags": ["general", "recommended"],
+	"extends": null,
+	"files": [
+		{ "src": "CLAUDE.md", "dest": "/root/.claude/CLAUDE.md" },
+		{ "src": "../../CLAUDE.md", "dest": "/workspace/CLAUDE.md" },
+		{ "src": "mcp.json", "dest": "/root/.claude/mcp.json" },
+		{ "src": "AGENTS.md", "dest": "/workspace/.codeck/AGENTS.md" },
+		{ "src": "preferences.md", "dest": "/workspace/.codeck/preferences.md" },
+		{
+			"src": "rules/coding.md",
+			"dest": "/workspace/.codeck/rules/base/coding.md"
+		},
+		{
+			"src": "rules/workflow.md",
+			"dest": "/workspace/.codeck/rules/base/workflow.md"
+		},
+		{
+			"src": "rules/communication.md",
+			"dest": "/workspace/.codeck/rules/user/communication.md",
+			"skipIfExists": true
+		},
+		{
+			"src": "skills/sandbox.md",
+			"dest": "/workspace/.codeck/skills/sandbox.md"
+		},
+		{
+			"src": "skills/docker.md",
+			"dest": "/workspace/.codeck/skills/docker.md"
+		},
+		{
+			"src": "memory/summary.md",
+			"dest": "/workspace/.codeck/memory/summary.md"
+		},
+		{
+			"src": "memory/decisions.md",
+			"dest": "/workspace/.codeck/memory/decisions.md"
+		},
+		{
+			"src": "memory/MEMORY.md",
+			"dest": "/workspace/.codeck/memory/MEMORY.md"
+		},
+		{
+			"src": "ecc/settings.json",
+			"dest": "/root/.claude/settings.json",
+			"skipIfExists": true
+		},
+		{
+			"src": "scripts/skill-reminder-hook.mjs",
+			"dest": "/workspace/.codeck/scripts/skill-reminder-hook.mjs"
+		},
+		{
+			"src": "scripts/post-compact-hook.mjs",
+			"dest": "/workspace/.codeck/scripts/post-compact-hook.mjs"
+		},
+		{
+			"src": "scripts/dangerous-cmd-guard.mjs",
+			"dest": "/workspace/.codeck/scripts/dangerous-cmd-guard.mjs"
+		},
+		{
+			"src": "scripts/memory-stop-hook.mjs",
+			"dest": "/workspace/.codeck/scripts/memory-stop-hook.mjs"
+		},
+		{
+			"src": "scripts/post-edit-verify.mjs",
+			"dest": "/workspace/.codeck/scripts/post-edit-verify.mjs"
+		},
+		{
+			"src": "scripts/pre-compact-hook.mjs",
+			"dest": "/workspace/.codeck/scripts/pre-compact-hook.mjs"
+		},
+		{
+			"src": "scripts/learning-observer.mjs",
+			"dest": "/workspace/.codeck/scripts/learning-observer.mjs"
+		},
+		{
+			"src": "scripts/memory-nudge-hook.mjs",
+			"dest": "/workspace/.codeck/scripts/memory-nudge-hook.mjs"
+		},
+		{
+			"src": "scripts/memory-consolidation.mjs",
+			"dest": "/workspace/.codeck/scripts/memory-consolidation.mjs"
+		},
+		{
+			"src": "scripts/tool-result-compressor.mjs",
+			"dest": "/workspace/.codeck/scripts/tool-result-compressor.mjs"
+		},
+		{
+			"src": "scripts/auto-format-hook.mjs",
+			"dest": "/workspace/.codeck/scripts/auto-format-hook.mjs"
+		},
+		{
+			"src": "scripts/review-gate-hook.mjs",
+			"dest": "/workspace/.codeck/scripts/review-gate-hook.mjs"
+		},
+		{
+			"src": "scripts/review-marker-hook.mjs",
+			"dest": "/workspace/.codeck/scripts/review-marker-hook.mjs"
+		}
+	],
+	"directories": [
+		"/workspace/.codeck/memory/daily",
+		"/workspace/.codeck/memory/decisions",
+		"/workspace/.codeck/memory/paths",
+		"/workspace/.codeck/sessions",
+		"/workspace/.codeck/index",
+		"/workspace/.codeck/state",
+		"/workspace/.codeck/rules/base",
+		"/workspace/.codeck/rules/user",
+		"/workspace/.codeck/skills",
+		"/workspace/.codeck/scripts",
+		"/workspace/.codeck/agents"
+	],
+	"recursive_dirs": [
+		{
+			"src": "ecc/agents",
+			"dest": "/root/.claude/agents",
+			"recursive": true,
+			"skipIfExists": true
+		},
+		{
+			"src": "ecc/commands",
+			"dest": "/root/.claude/commands",
+			"recursive": true,
+			"skipIfExists": true
+		},
+		{
+			"src": "ecc/skills",
+			"dest": "/root/.claude/skills",
+			"recursive": true,
+			"skipIfExists": true
+		},
+		{
+			"src": "ecc/rules",
+			"dest": "/root/.claude/rules",
+			"recursive": true,
+			"skipIfExists": true
+		},
+		{
+			"src": "ecc/hooks",
+			"dest": "/root/.claude/ecc/hooks",
+			"recursive": true,
+			"skipIfExists": false
+		},
+		{
+			"src": "ecc/lib",
+			"dest": "/root/.claude/ecc/lib",
+			"recursive": true,
+			"skipIfExists": false
+		}
+	]
 }

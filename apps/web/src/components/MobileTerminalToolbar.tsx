@@ -79,7 +79,7 @@ export function MobileTerminalToolbar() {
   const hiddenInputRef = useRef<HTMLInputElement>(null);
   const feedbackTimer = useRef<ReturnType<typeof setTimeout>>();
 
-  const sessionId = activeSessionId.value;
+  const sessionId = activeSessionId.value ?? undefined;
 
   // --- Sentinel management ---
 
@@ -128,6 +128,11 @@ export function MobileTerminalToolbar() {
     }
   }, [send, resetInput]);
 
+  // Debounce guard: some mobile keyboards fire multiple input events for a
+  // single keystroke when switching to numbers/symbols layout. Track last
+  // sent text + timestamp to suppress duplicates within 50ms.
+  const lastSent = useRef<{ text: string; time: number }>({ text: '', time: 0 });
+
   const handleInput = useCallback((e: Event) => {
     const target = e.target as HTMLInputElement;
     const inputEvent = e as InputEvent;
@@ -139,7 +144,16 @@ export function MobileTerminalToolbar() {
     // Extract only new text (after sentinel)
     const raw = target.value;
     const text = raw.startsWith(SENTINEL) ? raw.slice(SENTINEL.length) : raw;
-    if (text) send(text);
+    if (text) {
+      const now = Date.now();
+      // Suppress duplicate if same text within 50ms (keyboard double-fire)
+      if (text === lastSent.current.text && now - lastSent.current.time < 50) {
+        resetInput();
+        return;
+      }
+      lastSent.current = { text, time: now };
+      send(text);
+    }
     resetInput();
   }, [send, resetInput]);
 

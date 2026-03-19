@@ -3,6 +3,7 @@
   "permissions": {
     "allow": [
       "Read", "Edit", "Write", "Bash", "WebFetch", "WebSearch", "Glob", "Grep",
+      "Edit(/root/.claude/**)", "Write(/root/.claude/**)", "Read(/root/.claude/**)",
       "mcp__playwright__browser_navigate",
       "mcp__playwright__browser_snapshot",
       "mcp__playwright__browser_click",

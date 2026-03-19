@@ -132,6 +132,11 @@
           {
             "type": "command",
             "command": "node /workspace/.codeck/scripts/memory-stop-hook.mjs"
+          },
+          {
+            "type": "prompt",
+            "prompt": "Review the work done in this session. Check: 1) Did the agent stay within the scope of what was asked? 2) Were there unauthorized refactors or changes beyond the request? 3) Are all changes justified by the original task? If everything is within scope, respond 'approve'. If scope was exceeded, respond 'block' and explain what went beyond the request.",
+            "model": "claude-haiku-4-5"
           }
         ]
       }

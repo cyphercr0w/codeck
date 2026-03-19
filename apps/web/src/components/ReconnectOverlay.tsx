@@ -14,6 +14,8 @@ export function ReconnectOverlay() {
   useEffect(() => {
     let timer: ReturnType<typeof setTimeout> | null = null;
     let retryTimer: ReturnType<typeof setTimeout> | null = null;
+    let hasConnectedOnce = false;
+
     const unsub = wsConnected.subscribe(connected => {
       // Always clear previous timers on any state change
       if (timer) clearTimeout(timer);
@@ -21,16 +23,17 @@ export function ReconnectOverlay() {
       timer = null;
       retryTimer = null;
 
-      if (!connected) {
-        // Reset retry button — starts fresh countdown each disconnect
+      if (connected) {
+        hasConnectedOnce = true;
+        setVisible(false);
+        setShowRetry(false);
+      } else if (hasConnectedOnce) {
+        // Only show overlay after a REAL disconnect (not the initial load)
         setShowRetry(false);
         timer = setTimeout(() => {
           setVisible(true);
           retryTimer = setTimeout(() => setShowRetry(true), RETRY_DELAY_MS);
         }, DELAY_MS);
-      } else {
-        setVisible(false);
-        setShowRetry(false);
       }
     });
     return () => {

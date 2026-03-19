@@ -15,16 +15,20 @@ export function ReconnectOverlay() {
     let timer: ReturnType<typeof setTimeout> | null = null;
     let retryTimer: ReturnType<typeof setTimeout> | null = null;
     const unsub = wsConnected.subscribe(connected => {
+      // Always clear previous timers on any state change
+      if (timer) clearTimeout(timer);
+      if (retryTimer) clearTimeout(retryTimer);
+      timer = null;
+      retryTimer = null;
+
       if (!connected) {
+        // Reset retry button — starts fresh countdown each disconnect
+        setShowRetry(false);
         timer = setTimeout(() => {
           setVisible(true);
           retryTimer = setTimeout(() => setShowRetry(true), RETRY_DELAY_MS);
         }, DELAY_MS);
       } else {
-        if (timer) clearTimeout(timer);
-        if (retryTimer) clearTimeout(retryTimer);
-        timer = null;
-        retryTimer = null;
         setVisible(false);
         setShowRetry(false);
       }

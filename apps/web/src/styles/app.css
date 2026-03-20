@@ -511,18 +511,27 @@
 .experimental-warning-text strong { display: block; margin-bottom: 4px; font-size: 15px; }
 .experimental-warning-text p { margin: 0; font-size: 13px; opacity: 0.9; color: var(--fg-secondary, #999); }
 
-.home-header { margin-bottom: 24px; }
+.home-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 24px;
+}
+.home-subtitle {
+  color: var(--text-muted);
+  font-size: 13px;
+  margin: 2px 0 0;
+}
 .home-title {
-  font-size: 16px;
-  font-weight: 600;
-  margin-bottom: 2px;
+  font-size: 18px;
+  font-weight: 700;
+  margin-bottom: 0;
   display: flex;
   align-items: center;
   gap: 8px;
   letter-spacing: -0.01em;
 }
-.home-subtitle { color: var(--text-muted); font-size: 12px; }
-
 /* Welcome Card */
 .welcome-card {
   position: relative;

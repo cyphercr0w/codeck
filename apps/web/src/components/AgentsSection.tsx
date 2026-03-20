@@ -831,9 +831,12 @@ export function AgentsSection() {
     <div class="content-section">
       <div class="home-content">
         <div class="home-header">
-          <div class="home-title">
-            <IconBot size={20} />
-            <span>Automated Agents</span>
+          <div>
+            <div class="home-title">
+              <IconBot size={20} />
+              <span>Automated Agents</span>
+            </div>
+            <p class="home-subtitle">Create agents that run on a schedule — monitoring, testing, maintenance, and more</p>
           </div>
           <button class="btn btn-sm btn-primary" onClick={() => setCreateOpen(true)}>
             <IconPlus size={14} /> New Agent

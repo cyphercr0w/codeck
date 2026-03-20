@@ -2494,54 +2494,123 @@
 }
 .config-save-msg.success { color: var(--success); }
 .config-save-msg.error { color: var(--error); }
-/* Preset management card */
-.preset-card {
+/* ── Memory Stats ── */
+.mem-stats {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  padding: 14px 16px;
-  margin-bottom: 8px;
-  background: var(--bg-secondary);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-}
-.preset-card-header {
-  display: flex;
-  align-items: center;
+  flex-wrap: wrap;
   gap: 12px;
-  flex: 1;
-  min-width: 0;
+  margin-bottom: 8px;
 }
-.preset-card-info {
+.mem-stat {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  align-items: center;
+  min-width: 60px;
 }
-.preset-card-name {
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--text-primary);
+.mem-stat-value {
+  font-size: 16px;
+  font-weight: 700;
+  font-family: var(--font-mono);
 }
-.preset-card-version {
-  font-size: 12px;
+.mem-stat-label {
+  font-size: 10px;
   color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+
+/* ── Memory Preset Info ── */
+.mem-preset-info {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+.mem-preset-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 13px;
+}
+.mem-preset-label {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+.mem-preset-actions {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+/* ── Quick Input ── */
+.mem-quick {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  margin-bottom: 0;
+}
+.mem-quick-tabs {
+  display: flex;
+  background: var(--bg-secondary);
+  border-bottom: 1px solid var(--border);
+}
+.mem-quick-tab {
+  flex: 1;
+  padding: 8px 12px;
+  background: none;
+  border: none;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: all 0.15s;
+  font-family: inherit;
+  border-bottom: 2px solid transparent;
+}
+.mem-quick-tab:hover { color: var(--text-primary); }
+.mem-quick-tab.active {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+}
+.mem-quick-body { padding: 10px 12px; }
+.mem-quick-input {
+  width: 100%;
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 8px 10px;
+  font-size: 12px;
+  font-family: var(--font-mono);
+  color: var(--text-primary);
+  resize: vertical;
+  min-height: 40px;
+  outline: none;
+}
+.mem-quick-input:focus { border-color: var(--accent); }
+.mem-quick-footer {
   display: flex;
   align-items: center;
   gap: 8px;
+  margin-top: 8px;
+  justify-content: flex-end;
 }
-.preset-update-badge {
+.mem-quick-hint {
+  font-size: 10px;
+  color: var(--text-muted);
+}
+.mem-quick-msg {
   font-size: 11px;
-  font-weight: 600;
-  color: var(--accent);
-  background: color-mix(in srgb, var(--accent) 12%, transparent);
-  padding: 1px 8px;
-  border-radius: 10px;
+  font-weight: 500;
 }
-.preset-card-actions {
-  display: flex;
-  gap: 8px;
-  flex-shrink: 0;
+.mem-quick-msg-success { color: var(--success); }
+.mem-quick-msg-error { color: var(--error); }
+
+/* ── Memory separator ── */
+.mem-separator {
+  height: 1px;
+  background: var(--border);
+  margin: 16px 0;
 }
 .btn-danger {
   background: var(--error);

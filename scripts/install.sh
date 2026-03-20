@@ -4,7 +4,7 @@ set -euo pipefail
 # Codeck Installation Script — Hosted Mode
 #
 # Deploys Codeck as: daemon (host, systemd) + runtime (Docker container).
-# The daemon serves the web UI on port 80 and proxies to the runtime container.
+# The daemon serves the web UI on port 8080 and proxies to the runtime container.
 #
 # Usage:
 #   curl -fsSL https://raw.githubusercontent.com/cyphercr0w/codeck/main/scripts/install.sh | sudo bash
@@ -102,7 +102,7 @@ echo -e "${YELLOW}┌───────────────────�
 echo -e "${YELLOW}│                  ⚠  SECURITY WARNING                    │${NC}"
 echo -e "${YELLOW}├──────────────────────────────────────────────────────────┤${NC}"
 echo -e "${YELLOW}│  This installs Codeck in hosted mode:                    │${NC}"
-echo -e "${YELLOW}│    • Daemon runs on the host (serves web UI on port 80)  │${NC}"
+echo -e "${YELLOW}│    • Daemon runs on the host (serves web UI on port 808080)  │${NC}"
 echo -e "${YELLOW}│    • Runtime runs in a Docker container (sandboxed)      │${NC}"
 echo -e "${YELLOW}│                                                           │${NC}"
 echo -e "${YELLOW}│  The agent (Claude Code) runs inside the container with  │${NC}"
@@ -323,7 +323,7 @@ WorkingDirectory=/opt/codeck
 
 Environment="PATH=/usr/local/bin:/usr/bin:/bin"
 Environment="NODE_ENV=production"
-Environment="CODECK_DAEMON_PORT=80"
+Environment="CODECK_DAEMON_PORT=8080"
 Environment="CODECK_RUNTIME_URL=http://127.0.0.1:7777"
 Environment="CODECK_RUNTIME_WS_URL=http://127.0.0.1:7778"
 Environment="CODECK_DIR=/opt/codeck/.codeck-data"
@@ -365,13 +365,13 @@ fi
 step "Firewall"
 
 if command -v ufw &>/dev/null; then
-  ufw allow 80/tcp >/dev/null 2>&1 && log "UFW: port 80 allowed" || true
+  ufw allow 8080/tcp >/dev/null 2>&1 && log "UFW: port 8080 allowed" || true
 elif command -v firewall-cmd &>/dev/null; then
-  firewall-cmd --permanent --add-port=80/tcp >/dev/null 2>&1
+  firewall-cmd --permanent --add-port=8080/tcp >/dev/null 2>&1
   firewall-cmd --reload >/dev/null 2>&1
-  log "firewalld: port 80 allowed"
+  log "firewalld: port 8080 allowed"
 else
-  log "No firewall detected — port 80 should be open"
+  log "No firewall detected — port 8080 should be open"
 fi
 
 # ─── Done ────────────────────────────────────────────────────────────
@@ -386,7 +386,7 @@ echo ""
 echo -e "  Open: ${CYAN}http://${PUBLIC_IP}${NC}"
 echo ""
 echo "  Architecture:"
-echo "    Daemon (host)    → :80 (web UI + proxy)"
+echo "    Daemon (host)    → :8080 (web UI + proxy)"
 echo "    Runtime (Docker) → :7777/:7778 (localhost only)"
 echo ""
 echo "  Commands:"

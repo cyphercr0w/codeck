@@ -110,6 +110,10 @@
 		{
 			"src": "scripts/repo-map-generator.mjs",
 			"dest": "/workspace/.codeck/scripts/repo-map-generator.mjs"
+		},
+		{
+			"src": "scripts/decision-guidance.mjs",
+			"dest": "/workspace/.codeck/scripts/decision-guidance.mjs"
 		}
 	],
 	"directories": [

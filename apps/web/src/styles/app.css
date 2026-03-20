@@ -2520,14 +2520,16 @@
 .mem-stats {
   display: flex;
   flex-wrap: wrap;
-  gap: 12px;
+  justify-content: space-between;
+  gap: 8px 0;
   margin-bottom: 8px;
 }
 .mem-stat {
   display: flex;
   flex-direction: column;
   align-items: center;
-  min-width: 60px;
+  flex: 1;
+  min-width: 0;
 }
 .mem-stat-value {
   font-size: 16px;

@@ -35,6 +35,7 @@ import codeckRoutes from '../routes/codeck.routes.js';
 import permissionsRoutes from '../routes/permissions.routes.js';
 import systemRoutes from '../routes/system.routes.js';
 import proactiveAgentsRoutes from '../routes/agents.routes.js';
+import skillsRoutes from '../routes/skills.routes.js';
 import { initProactiveAgents, shutdownProactiveAgents } from '../services/proactive-agents.js';
 import { initializeEmbeddings, shutdownEmbeddings } from '../services/embeddings.js';
 import { cleanupOldSessions } from '../services/session-summarizer.js';
@@ -412,6 +413,7 @@ export async function startWebServer(): Promise<void> {
   app.use('/api/permissions', permissionsRoutes);
   app.use('/api/system', systemRoutes);
   app.use('/api/agents', proactiveAgentsRoutes);
+  app.use('/api/skills', skillsRoutes);
 
   // Account endpoint
   app.get('/api/account', (_req, res) => {

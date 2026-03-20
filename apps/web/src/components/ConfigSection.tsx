@@ -46,11 +46,112 @@ function formatTimeAgo(ts: number | null): string {
   return `${Math.floor(hours / 24)}d ago`;
 }
 
-// ── Quick Input (rules/preferences) ──
+// ── Types ──
+
+interface SkillEntry {
+  source: string;
+  skillId: string;
+  name: string;
+  installs: number;
+}
+
+// ── Skill Marketplace ──
+
+function SkillMarketplace({ onInstalled }: { onInstalled: () => void }) {
+  const [query, setQuery] = useState('');
+  const [results, setResults] = useState<SkillEntry[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [installing, setInstalling] = useState<string | null>(null);
+  const [msg, setMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Load top skills on mount
+  useEffect(() => { searchSkills(''); }, []);
+
+  function searchSkills(q: string) {
+    setLoading(true);
+    apiFetch(`/api/skills/catalog?q=${encodeURIComponent(q)}`)
+      .then(r => r.json())
+      .then(data => setResults(data.skills || []))
+      .catch(() => setResults([]))
+      .finally(() => setLoading(false));
+  }
+
+  function handleInput(q: string) {
+    setQuery(q);
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => searchSkills(q), 300);
+  }
+
+  async function handleInstall(skill: SkillEntry) {
+    setInstalling(skill.skillId);
+    setMsg(null);
+    try {
+      const res = await apiFetch('/api/skills/install', {
+        method: 'POST',
+        body: JSON.stringify({ source: skill.source, skillId: skill.skillId }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setMsg({ type: 'success', text: `Installed ${skill.name}` });
+        onInstalled();
+      } else {
+        setMsg({ type: 'error', text: data.error || 'Installation failed' });
+      }
+    } catch {
+      setMsg({ type: 'error', text: 'Connection error' });
+    }
+    setInstalling(null);
+    setTimeout(() => setMsg(null), 4000);
+  }
+
+  function formatInstalls(n: number): string {
+    if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+    if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
+    return String(n);
+  }
+
+  return (
+    <div class="skill-market">
+      <input
+        class="skill-search"
+        placeholder="Search 600+ skills from skills.sh..."
+        value={query}
+        onInput={e => handleInput((e.target as HTMLInputElement).value)}
+      />
+      {msg && <div class={`fb-toast fb-toast-${msg.type}`}>{msg.text}</div>}
+      <div class="skill-list">
+        {loading && results.length === 0 && (
+          <div class="fb-empty"><span class="spinner-sm" /> Loading skills...</div>
+        )}
+        {!loading && results.length === 0 && query && (
+          <div class="fb-empty">No skills found for "{query}"</div>
+        )}
+        {results.map(skill => (
+          <div key={`${skill.source}/${skill.skillId}`} class="skill-item">
+            <div class="skill-item-info">
+              <span class="skill-item-name">{skill.name}</span>
+              <span class="skill-item-source">{skill.source}</span>
+            </div>
+            <span class="skill-item-installs">{formatInstalls(skill.installs)}</span>
+            <button
+              class="btn btn-xs btn-primary"
+              onClick={() => handleInstall(skill)}
+              disabled={installing !== null}
+            >
+              {installing === skill.skillId ? <span class="spinner-sm" /> : 'Install'}
+            </button>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ── Quick Input (rules/preferences/skills) ──
 
 function QuickInput({ onSaved }: { onSaved: () => void }) {
   const [type, setType] = useState<'preference' | 'rule' | 'skill'>('preference');
-  const [skillName, setSkillName] = useState('');
   const [text, setText] = useState('');
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
@@ -64,7 +165,6 @@ function QuickInput({ onSaved }: { onSaved: () => void }) {
 
     try {
       if (type === 'preference') {
-        // Append to preferences.md
         const readRes = await apiFetch('/api/codeck/files/read?path=preferences.md');
         const readData = await readRes.json();
         const current = readData.success ? readData.content : '';
@@ -81,8 +181,7 @@ function QuickInput({ onSaved }: { onSaved: () => void }) {
         } else {
           setMsg({ type: 'error', text: writeData.error || 'Failed' });
         }
-      } else if (type === 'rule') {
-        // Create a new rule file in rules/user/
+      } else {
         const filename = trimmed.slice(0, 40).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') + '.md';
         const content = `# ${trimmed.split('\n')[0]}\n\n${trimmed}\n`;
         const writeRes = await apiFetch('/api/codeck/files/write', {
@@ -93,25 +192,6 @@ function QuickInput({ onSaved }: { onSaved: () => void }) {
         if (writeData.success) {
           setMsg({ type: 'success', text: `Rule saved as ${filename}` });
           setText('');
-          onSaved();
-        } else {
-          setMsg({ type: 'error', text: writeData.error || 'Failed' });
-        }
-      } else {
-        // Create a skill file in skills/
-        const name = skillName.trim() || trimmed.slice(0, 30).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
-        const filename = name.endsWith('.md') ? name : name + '.md';
-        const title = skillName.trim() || trimmed.split('\n')[0];
-        const content = `# ${title}\n\n${trimmed}\n`;
-        const writeRes = await apiFetch('/api/codeck/files/write', {
-          method: 'PUT',
-          body: JSON.stringify({ path: `skills/${filename}`, content }),
-        });
-        const writeData = await writeRes.json();
-        if (writeData.success) {
-          setMsg({ type: 'success', text: `Skill saved as ${filename}` });
-          setText('');
-          setSkillName('');
           onSaved();
         } else {
           setMsg({ type: 'error', text: writeData.error || 'Failed' });
@@ -134,41 +214,36 @@ function QuickInput({ onSaved }: { onSaved: () => void }) {
           Rule
         </button>
         <button class={`mem-quick-tab${type === 'skill' ? ' active' : ''}`} onClick={() => setType('skill')}>
-          Skill
+          Skills
         </button>
       </div>
       <div class="mem-quick-body">
-        {type === 'skill' && (
-          <input
-            class="fb-inline-input"
-            style="margin-bottom: 8px"
-            placeholder="Skill name (e.g. docker-patterns)"
-            value={skillName}
-            onInput={e => setSkillName((e.target as HTMLInputElement).value)}
-          />
+        {type === 'skill' ? (
+          <SkillMarketplace onInstalled={onSaved} />
+        ) : (
+          <>
+            <textarea
+              ref={inputRef}
+              class="mem-quick-input"
+              placeholder={type === 'preference'
+                ? 'e.g. Always use TypeScript strict mode...'
+                : 'e.g. Never commit directly to main without tests...'
+              }
+              value={text}
+              onInput={e => setText((e.target as HTMLTextAreaElement).value)}
+              onKeyDown={e => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) handleSave(); }}
+              rows={2}
+            />
+            <div class="mem-quick-footer">
+              {msg && <span class={`mem-quick-msg mem-quick-msg-${msg.type}`}>{msg.text}</span>}
+              <span class="mem-quick-hint">Ctrl+Enter to save</span>
+              <button class="btn btn-xs btn-primary" onClick={handleSave} disabled={saving || !text.trim()}>
+                {saving ? <span class="spinner-sm" /> : <IconPlus size={11} />}
+                Save
+              </button>
+            </div>
+          </>
         )}
-        <textarea
-          ref={inputRef}
-          class="mem-quick-input"
-          placeholder={type === 'preference'
-            ? 'e.g. Always use TypeScript strict mode...'
-            : type === 'rule'
-            ? 'e.g. Never commit directly to main without tests...'
-            : 'Skill content — knowledge, patterns, or instructions the agent should follow...'
-          }
-          value={text}
-          onInput={e => setText((e.target as HTMLTextAreaElement).value)}
-          onKeyDown={e => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) handleSave(); }}
-          rows={2}
-        />
-        <div class="mem-quick-footer">
-          {msg && <span class={`mem-quick-msg mem-quick-msg-${msg.type}`}>{msg.text}</span>}
-          <span class="mem-quick-hint">Ctrl+Enter to save</span>
-          <button class="btn btn-xs btn-primary" onClick={handleSave} disabled={saving || !text.trim()}>
-            {saving ? <span class="spinner-sm" /> : <IconPlus size={11} />}
-            Save
-          </button>
-        </div>
       </div>
     </div>
   );

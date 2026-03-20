@@ -10,6 +10,7 @@ import {
   IconRefresh, IconX, IconEdit, IconFolder, IconFolderOpen,
   IconPlay, IconPause, IconTrash,
 } from './Icons';
+import { ConfirmModal } from './ConfirmModal';
 
 // ── Schedule presets ──
 
@@ -260,55 +261,58 @@ function AgentCard({ agent, onSelect, onAction, onEdit }: {
   onAction: (action: string) => void;
   onEdit: () => void;
 }) {
-  const [confirming, setConfirming] = useState(false);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
   useNow();
 
   return (
-    <div class="dash-card agent-card" onClick={onSelect}>
-      <div class="agent-card-header">
-        <div class="agent-card-title">{agent.name}</div>
-        <StatusBadge status={agent.status} running={agent.running} />
-      </div>
-      <div class="agent-card-objective">{agent.objective}</div>
-      <div class="dash-meta" style="border-top: none; margin-top: 0; padding-top: 0">
-        <span>{cronToHuman(agent.schedule)}</span>
-        {agent.model && (
-          <> &middot; <span class="badge badge-muted">{MODEL_OPTIONS.find(m => m.value === agent.model)?.label || agent.model}</span></>
-        )}
-        <> &middot; Last: {formatRelativeTime(agent.lastExecutionAt)}</>
-        {agent.nextRunAt && agent.status === 'active' && (
-          <> &middot; Next: {formatNextRun(agent.nextRunAt)}</>
-        )}
-        <> &middot; Runs: {agent.totalExecutions}</>
-      </div>
-      <div class="agent-card-actions" onClick={e => e.stopPropagation()}>
-        {agent.status === 'active' ? (
-          <button class="btn btn-xs btn-secondary" onClick={() => onAction('pause')}>
-            <IconPause size={11} /> Pause
+    <>
+      <div class="dash-card agent-card" onClick={onSelect}>
+        <div class="agent-card-header">
+          <div class="agent-card-title">{agent.name}</div>
+          <StatusBadge status={agent.status} running={agent.running} />
+        </div>
+        <div class="agent-card-objective">{agent.objective}</div>
+        <div class="dash-meta" style="border-top: none; margin-top: 0; padding-top: 0">
+          <span>{cronToHuman(agent.schedule)}</span>
+          {agent.model && (
+            <> &middot; <span class="badge badge-muted">{MODEL_OPTIONS.find(m => m.value === agent.model)?.label || agent.model}</span></>
+          )}
+          <> &middot; Last: {formatRelativeTime(agent.lastExecutionAt)}</>
+          {agent.nextRunAt && agent.status === 'active' && (
+            <> &middot; Next: {formatNextRun(agent.nextRunAt)}</>
+          )}
+          <> &middot; Runs: {agent.totalExecutions}</>
+        </div>
+        <div class="agent-card-actions" onClick={e => e.stopPropagation()}>
+          {agent.status === 'active' ? (
+            <button class="btn btn-xs btn-secondary" onClick={() => onAction('pause')}>
+              <IconPause size={11} /> Pause
+            </button>
+          ) : (
+            <button class="btn btn-xs btn-primary" onClick={() => onAction('resume')}>
+              <IconPlay size={11} /> Resume
+            </button>
+          )}
+          <button class="btn btn-xs btn-secondary" onClick={() => onAction('execute')} disabled={agent.running || agent.status !== 'active'}>
+            <IconPlay size={11} /> Run Now
           </button>
-        ) : (
-          <button class="btn btn-xs btn-primary" onClick={() => onAction('resume')}>
-            <IconPlay size={11} /> Resume
+          <button class="btn btn-xs btn-secondary" onClick={onEdit}>
+            <IconEdit size={11} /> Edit
           </button>
-        )}
-        <button class="btn btn-xs btn-secondary" onClick={() => onAction('execute')} disabled={agent.running || agent.status !== 'active'}>
-          <IconPlay size={11} /> Run Now
-        </button>
-        <button class="btn btn-xs btn-secondary" onClick={onEdit}>
-          <IconEdit size={11} /> Edit
-        </button>
-        {confirming ? (
-          <>
-            <button class="btn btn-xs btn-ghost danger" onClick={() => { onAction('delete'); setConfirming(false); }}>Confirm</button>
-            <button class="btn btn-xs btn-ghost" onClick={() => setConfirming(false)}>Cancel</button>
-          </>
-        ) : (
-          <button class="btn btn-xs btn-ghost danger" onClick={() => setConfirming(true)}>
+          <button class="btn btn-xs btn-ghost danger" onClick={() => setShowDeleteModal(true)}>
             <IconTrash size={11} /> Delete
           </button>
-        )}
+        </div>
       </div>
-    </div>
+      <ConfirmModal
+        visible={showDeleteModal}
+        title={`Delete "${agent.name}"`}
+        message="This will permanently delete this agent and all its execution history. This action cannot be undone."
+        confirmLabel="Delete Agent"
+        onConfirm={() => { setShowDeleteModal(false); onAction('delete'); }}
+        onCancel={() => setShowDeleteModal(false)}
+      />
+    </>
   );
 }
 

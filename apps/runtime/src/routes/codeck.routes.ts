@@ -162,13 +162,17 @@ router.get('/export', async (_req, res) => {
     // Use spawn for proper streaming (execFile buffers stdout which breaks pipes)
     const tar = spawn('tar', [
       'czf', '-',
-      '--exclude=./uploads',
+      '--exclude=./sessions',
       '--exclude=./sessions.json',
-      '--exclude=./daemon-sessions.json',
-      '--exclude=./.codeck-oauth-token',
+      '--exclude=./index',
+      '--exclude=./uploads',
       '--exclude=./auth.json',
       '--exclude=./config.json',
-      '--exclude=./index',
+      '--exclude=./daemon-sessions.json',
+      '--exclude=./.codeck-oauth-token',
+      '--exclude=./backups',
+      '--exclude=./agents/*/executions',
+      '--exclude=./.import-tmp-*',
       '-C', AGENT_DATA_DIR,
       '.',
     ], { stdio: ['ignore', 'pipe', 'pipe'] });

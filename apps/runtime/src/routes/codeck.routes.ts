@@ -225,7 +225,7 @@ router.post('/import', async (req, res) => {
     const tmpFile = join(tmpDir, 'import.tar.gz');
     await writeFile(tmpFile, buffer);
 
-    await execFileAsync('tar', ['xzf', tmpFile, '-C', tmpDir], { timeout: 30_000 });
+    await execFileAsync('tar', ['xzf', tmpFile, '-C', tmpDir, '--no-same-owner', '--no-same-permissions'], { timeout: 30_000 });
 
     // Remove the temp tar file
     await rm(tmpFile);

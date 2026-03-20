@@ -876,9 +876,12 @@
 .fb-row-btn:hover { background: var(--bg-hover); color: var(--text-primary); }
 .fb-row-btn-danger:hover { background: var(--error-subtle); color: var(--error); }
 
-/* Viewer */
+/* Viewer — contained within the same space as the file list */
 .fb-viewer {
   border-top: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  max-height: 400px;
 }
 
 .fb-viewer-header {
@@ -911,8 +914,8 @@
 
 .fb-editor {
   width: 100%;
-  min-height: 300px;
-  max-height: 500px;
+  min-height: 150px;
+  flex: 1;
   padding: 12px;
   font-family: var(--font-mono);
   font-size: 12px;
@@ -932,7 +935,7 @@
   color: var(--text-secondary);
   white-space: pre-wrap;
   word-break: break-word;
-  max-height: 500px;
+  flex: 1;
   overflow-y: auto;
   margin: 0;
 }

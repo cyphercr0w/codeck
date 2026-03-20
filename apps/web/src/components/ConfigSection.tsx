@@ -49,7 +49,8 @@ function formatTimeAgo(ts: number | null): string {
 // ── Quick Input (rules/preferences) ──
 
 function QuickInput({ onSaved }: { onSaved: () => void }) {
-  const [type, setType] = useState<'preference' | 'rule'>('preference');
+  const [type, setType] = useState<'preference' | 'rule' | 'skill'>('preference');
+  const [skillName, setSkillName] = useState('');
   const [text, setText] = useState('');
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
@@ -80,7 +81,7 @@ function QuickInput({ onSaved }: { onSaved: () => void }) {
         } else {
           setMsg({ type: 'error', text: writeData.error || 'Failed' });
         }
-      } else {
+      } else if (type === 'rule') {
         // Create a new rule file in rules/user/
         const filename = trimmed.slice(0, 40).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') + '.md';
         const content = `# ${trimmed.split('\n')[0]}\n\n${trimmed}\n`;
@@ -92,6 +93,25 @@ function QuickInput({ onSaved }: { onSaved: () => void }) {
         if (writeData.success) {
           setMsg({ type: 'success', text: `Rule saved as ${filename}` });
           setText('');
+          onSaved();
+        } else {
+          setMsg({ type: 'error', text: writeData.error || 'Failed' });
+        }
+      } else {
+        // Create a skill file in skills/
+        const name = skillName.trim() || trimmed.slice(0, 30).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+        const filename = name.endsWith('.md') ? name : name + '.md';
+        const title = skillName.trim() || trimmed.split('\n')[0];
+        const content = `# ${title}\n\n${trimmed}\n`;
+        const writeRes = await apiFetch('/api/codeck/files/write', {
+          method: 'PUT',
+          body: JSON.stringify({ path: `skills/${filename}`, content }),
+        });
+        const writeData = await writeRes.json();
+        if (writeData.success) {
+          setMsg({ type: 'success', text: `Skill saved as ${filename}` });
+          setText('');
+          setSkillName('');
           onSaved();
         } else {
           setMsg({ type: 'error', text: writeData.error || 'Failed' });
@@ -108,19 +128,33 @@ function QuickInput({ onSaved }: { onSaved: () => void }) {
     <div class="mem-quick">
       <div class="mem-quick-tabs">
         <button class={`mem-quick-tab${type === 'preference' ? ' active' : ''}`} onClick={() => setType('preference')}>
-          Add Preference
+          Preference
         </button>
         <button class={`mem-quick-tab${type === 'rule' ? ' active' : ''}`} onClick={() => setType('rule')}>
-          Add Rule
+          Rule
+        </button>
+        <button class={`mem-quick-tab${type === 'skill' ? ' active' : ''}`} onClick={() => setType('skill')}>
+          Skill
         </button>
       </div>
       <div class="mem-quick-body">
+        {type === 'skill' && (
+          <input
+            class="fb-inline-input"
+            style="margin-bottom: 8px"
+            placeholder="Skill name (e.g. docker-patterns)"
+            value={skillName}
+            onInput={e => setSkillName((e.target as HTMLInputElement).value)}
+          />
+        )}
         <textarea
           ref={inputRef}
           class="mem-quick-input"
           placeholder={type === 'preference'
             ? 'e.g. Always use TypeScript strict mode...'
-            : 'e.g. Never commit directly to main without tests...'
+            : type === 'rule'
+            ? 'e.g. Never commit directly to main without tests...'
+            : 'Skill content — knowledge, patterns, or instructions the agent should follow...'
           }
           value={text}
           onInput={e => setText((e.target as HTMLTextAreaElement).value)}

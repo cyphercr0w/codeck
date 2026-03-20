@@ -81,7 +81,7 @@ export function HomeSection({ onRelogin, onLogout }: HomeSectionProps) {
   const [welcomeDismissed, setWelcomeDismissed] = useState(() => localStorage.getItem('codeck-welcome-dismissed') === '1');
 
   const connected = wsConnected.value;
-  const showWelcome = !welcomeDismissed && sessionCount === 0;
+  const showWelcome = false; // Disabled — was flashing on load and not useful after first visit
 
   function dismissWelcome() {
     localStorage.setItem('codeck-welcome-dismissed', '1');

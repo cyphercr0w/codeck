@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'preact/hooks';
-import { accountEmail, accountOrg, claudeAuthenticated, sessions, agentName, activePorts, wsConnected, dockerExperimental, setActiveSection } from '../state/store';
-import { apiFetch, getAuthToken } from '../api';
-import { IconUser, IconMonitor, IconActivity, IconHardDrive, IconDownload, IconPlus, IconX, IconBrain } from './Icons';
+import { accountEmail, claudeAuthenticated, claudeUsage, sessions, agentName, activePorts, wsConnected, dockerExperimental, setActiveSection } from '../state/store';
+import { apiFetch } from '../api';
+import { IconUser, IconMonitor, IconX } from './Icons';
 import { ConfirmModal } from './ConfirmModal';
+import { FilesBrowser } from './FilesSection';
 
 interface DashboardData {
   resources: {
@@ -20,21 +21,10 @@ interface DashboardData {
   };
 }
 
-interface MemoryStats {
-  sessionsRemembered: number;
-  totalMemoryKB: number;
-  durableMemoryLines: number;
-  dailyLogCount: number;
-  decisionsCount: number;
-  projectsTracked: number;
-  lastActivityAt: number | null;
-}
-
 interface HomeSectionProps {
   onRelogin: () => void;
   onLogout: () => void;
 }
-
 
 const DASHBOARD_REFRESH_MS = 30_000;
 
@@ -64,19 +54,6 @@ function formatTimeUntil(isoDate: string | null): string {
   return `${mins}m`;
 }
 
-function formatTimeAgo(timestamp: number | null): string {
-  if (!timestamp) return 'Never';
-  const diff = Date.now() - timestamp;
-  if (diff < 60_000) return 'Just now';
-  const mins = Math.floor(diff / 60_000);
-  if (mins < 60) return `${mins}m ago`;
-  const hours = Math.floor(mins / 60);
-  if (hours < 24) return `${hours}h ago`;
-  const days = Math.floor(hours / 24);
-  return `${days}d ago`;
-}
-
-
 function barColor(percent: number): string {
   if (percent < 60) return 'var(--success)';
   if (percent < 80) return 'var(--warning)';
@@ -85,31 +62,25 @@ function barColor(percent: number): string {
 
 function buildPortUrl(port: number): string | null {
   try {
-    const url = new URL(`${location.protocol}//${location.hostname}:${port}`);
-    return url.href;
+    return new URL(`${location.protocol}//${location.hostname}:${port}`).href;
   } catch {
-    console.error(`[HomeSection] Invalid URL for port ${port}`);
     return null;
   }
 }
 
 export function HomeSection({ onRelogin, onLogout }: HomeSectionProps) {
   const email = accountEmail.value;
-  const org = accountOrg.value;
   const sessionCount = sessions.value.length;
   const ports = activePorts.value;
   const showRelogin = claudeAuthenticated.value && !email;
-  const [exporting, setExporting] = useState(false);
+  const usage = claudeUsage.value;
   const [dashboard, setDashboard] = useState<DashboardData | null>(null);
   const [dashLoading, setDashLoading] = useState(true);
-  const [dashError, setDashError] = useState(false);
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
-  const [memoryStats, setMemoryStats] = useState<MemoryStats | null>(null);
   const [welcomeDismissed, setWelcomeDismissed] = useState(() => localStorage.getItem('codeck-welcome-dismissed') === '1');
 
   const connected = wsConnected.value;
-
-  const showWelcome = !welcomeDismissed && sessionCount === 0 && memoryStats !== null && memoryStats.sessionsRemembered === 0;
+  const showWelcome = !welcomeDismissed && sessionCount === 0;
 
   function dismissWelcome() {
     localStorage.setItem('codeck-welcome-dismissed', '1');
@@ -118,50 +89,20 @@ export function HomeSection({ onRelogin, onLogout }: HomeSectionProps) {
 
   useEffect(() => {
     loadDashboard();
-    loadMemoryStats();
-    const interval = setInterval(() => { loadDashboard(); loadMemoryStats(); }, DASHBOARD_REFRESH_MS);
+    const interval = setInterval(loadDashboard, DASHBOARD_REFRESH_MS);
     return () => clearInterval(interval);
   }, []);
 
-  // When WS reconnects after a restart, reload dashboard
   useEffect(() => {
-    if (connected) {
-      loadDashboard();
-    }
+    if (connected) loadDashboard();
   }, [connected]);
 
   async function loadDashboard() {
     try {
       const res = await apiFetch('/api/dashboard');
-      const data = await res.json();
-      setDashboard(data);
-      setDashError(false);
-    } catch (e) {
-      console.error('[Dashboard] Failed to load:', (e as Error).message);
-      setDashError(true);
-    } finally {
-      setDashLoading(false);
-    }
-  }
-
-  async function loadMemoryStats() {
-    try {
-      const res = await apiFetch('/api/dashboard/memory-stats');
-      setMemoryStats(await res.json());
-    } catch { /* ignore — card just won't show */ }
-  }
-
-  function handleExport() {
-    setExporting(true);
-    const token = getAuthToken();
-    const url = `/api/workspace/export${token ? '?token=' + encodeURIComponent(token) : ''}`;
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = '';
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    setTimeout(() => setExporting(false), 3000);
+      setDashboard(await res.json());
+    } catch { /* ignore */ }
+    finally { setDashLoading(false); }
   }
 
   return (
@@ -172,7 +113,7 @@ export function HomeSection({ onRelogin, onLogout }: HomeSectionProps) {
             <div class="experimental-warning-icon">&#9888;&#65039;</div>
             <div class="experimental-warning-text">
               <strong>Experimental Mode Active</strong>
-              <p>Docker socket is mounted. The container has full access to the host Docker daemon. This removes container isolation. Only use on trusted systems.</p>
+              <p>Docker socket is mounted. The container has full access to the host Docker daemon.</p>
             </div>
           </div>
         )}
@@ -204,80 +145,66 @@ export function HomeSection({ onRelogin, onLogout }: HomeSectionProps) {
           </div>
         )}
 
-        <div class="home-header">
-          <div class="home-title">
-            <IconUser size={20} />
-            <span>Account</span>
-          </div>
-          <div class="home-subtitle">Your Claude account information</div>
-        </div>
-        <div class="info-cards">
-          <div class="info-card">
-            <div class="info-card-label">Email</div>
-            <div class={`info-card-value${!email ? ' muted' : ''}`}>
-              {email || '\u2014'}
+        {/* Two cards: Account Info | VPS Info */}
+        <div class="dash-grid">
+          {/* Account Info */}
+          <div class="dash-card">
+            <div class="dash-card-title">
+              <IconUser size={14} />
+              <span>Account</span>
+            </div>
+            <div class="home-account-rows">
+              <div class="home-account-row">
+                <span class="home-account-label">Email</span>
+                <span class={email ? '' : 'text-muted'}>{email || '\u2014'}</span>
+              </div>
+              <div class="home-account-row">
+                <span class="home-account-label">Status</span>
+                <span class="badge badge-success">Authenticated</span>
+              </div>
+              <div class="home-account-row">
+                <span class="home-account-label">Sessions</span>
+                <span>{sessionCount} active</span>
+              </div>
+            </div>
+
+            {/* Usage limits inline */}
+            {usage?.available && (
+              <div class="home-account-limits">
+                <div class="home-account-limits-title">Usage limits</div>
+                {usage.fiveHour && (
+                  <DashBar label="5h" percent={usage.fiveHour.percent} detail={usage.fiveHour.resetsAt ? `resets ${formatTimeUntil(usage.fiveHour.resetsAt)}` : ''} />
+                )}
+                {usage.sevenDay && (
+                  <DashBar label="7d" percent={usage.sevenDay.percent} detail={usage.sevenDay.resetsAt ? `resets ${formatTimeUntil(usage.sevenDay.resetsAt)}` : ''} />
+                )}
+              </div>
+            )}
+
+            {showRelogin && (
+              <div class="home-account-relogin">
+                <p>Account info not available.</p>
+                <button class="btn btn-xs btn-secondary" onClick={onRelogin}>Re-login</button>
+              </div>
+            )}
+
+            <div class="home-account-disconnect">
+              <button class="btn btn-xs btn-danger" onClick={() => setShowLogoutConfirm(true)}>
+                Disconnect Account
+              </button>
             </div>
           </div>
-          <div class="info-card">
-            <div class="info-card-label">Organization</div>
-            <div class={`info-card-value${!org ? ' muted' : ''}`}>
-              {org || '\u2014'}
+
+          {/* VPS Info */}
+          <div class="dash-card">
+            <div class="dash-card-title">
+              <IconMonitor size={14} />
+              <span>Server</span>
             </div>
-          </div>
-          <div class="info-card">
-            <div class="info-card-label">Status</div>
-            <div class="info-card-value">
-              <span class="badge badge-success">Authenticated</span>
-            </div>
-          </div>
-          <div class="info-card">
-            <div class="info-card-label">Sessions</div>
-            <div class="info-card-value">{sessionCount} active</div>
-          </div>
-        </div>
-
-        {showRelogin && (
-          <div class="relogin-hint">
-            <p>Account info not available. Re-login to retrieve your profile.</p>
-            <button class="btn btn-sm btn-secondary" onClick={onRelogin}>
-              Re-login for Account Info
-            </button>
-          </div>
-        )}
-
-        <div style={{ marginTop: '12px' }}>
-          <button class="btn btn-sm btn-danger" onClick={() => setShowLogoutConfirm(true)}>
-            Disconnect Account
-          </button>
-          <span class="dash-meta" style={{ marginLeft: '8px' }}>
-            Clears auth tokens. Workspace data is kept.
-          </span>
-        </div>
-
-        {/* Dashboard */}
-        <div class="dash-section">
-          <h3 class="dash-title">Dashboard</h3>
-
-          {dashLoading && !dashboard && (
-            <div class="dash-loading">
-              <span class="loading" /> Loading dashboard...
-            </div>
-          )}
-
-          {dashError && !dashboard && (
-            <div class="dash-error">
-              Failed to load dashboard data. <button class="btn btn-sm btn-secondary" onClick={loadDashboard}>Retry</button>
-            </div>
-          )}
-
-          {dashboard && (
-            <div class="dash-grid">
-              {/* Container Resources */}
-              <div class="dash-card">
-                <div class="dash-card-title">
-                  <IconMonitor size={14} />
-                  <span>Container</span>
-                </div>
+            {dashLoading && !dashboard ? (
+              <div class="dash-loading"><span class="spinner-sm" /> Loading...</div>
+            ) : dashboard ? (
+              <>
                 <div class="dash-bars">
                   <DashBar label="CPU" percent={dashboard.resources.cpu.usagePercent} detail={`${dashboard.resources.cpu.cores} cores`} />
                   <DashBar label="Memory" percent={dashboard.resources.memory.percent} detail={`${formatBytes(dashboard.resources.memory.used)} / ${formatBytes(dashboard.resources.memory.limit)}`} />
@@ -294,96 +221,26 @@ export function HomeSection({ onRelogin, onLogout }: HomeSectionProps) {
                       const href = buildPortUrl(port);
                       if (!href) return null;
                       return (
-                        <a key={port} class={`dash-port-link${exposed ? '' : ' unexposed'}`} href={href} target="_blank" rel="noopener noreferrer" title={exposed ? `Open :${port}` : `Port ${port} not mapped — may not be reachable`}>
+                        <a key={port} class={`dash-port-link${exposed ? '' : ' unexposed'}`} href={href} target="_blank" rel="noopener noreferrer" title={exposed ? `Open :${port}` : `Port ${port} not mapped`}>
                           :{port}
                         </a>
                       );
                     })}
                   </div>
                 )}
-              </div>
-
-              {/* Claude Usage */}
-              <div class="dash-card">
-                <div class="dash-card-title">
-                  <IconActivity size={14} />
-                  <span>{agentName.value} Usage</span>
-                </div>
-                {dashboard.claude.available ? (
-                  <div class="dash-bars">
-                    {dashboard.claude.fiveHour && (
-                      <DashBar
-                        label="5h window"
-                        percent={dashboard.claude.fiveHour.percent}
-                        detail={dashboard.claude.fiveHour.resetsAt ? `resets ${formatTimeUntil(dashboard.claude.fiveHour.resetsAt)}` : ''}
-                      />
-                    )}
-                    {dashboard.claude.sevenDay && (
-                      <DashBar
-                        label="7d window"
-                        percent={dashboard.claude.sevenDay.percent}
-                        detail={dashboard.claude.sevenDay.resetsAt ? `resets ${formatTimeUntil(dashboard.claude.sevenDay.resetsAt)}` : ''}
-                      />
-                    )}
-                  </div>
-                ) : (
-                  <p class="dash-unavailable">Not available — authenticate with Claude first</p>
-                )}
-              </div>
-
-              {/* Agent Memory */}
-              {memoryStats && (
-                <div class="dash-card">
-                  <div class="dash-card-title">
-                    <IconBrain size={14} />
-                    <span>Agent Memory</span>
-                  </div>
-                  <div class="dash-memory-stats">
-                    <div class="dash-memory-stat">
-                      <span class="dash-memory-stat-value">{memoryStats.sessionsRemembered}</span>
-                      <span class="dash-memory-stat-label">sessions remembered</span>
-                    </div>
-                    <div class="dash-memory-stat">
-                      <span class="dash-memory-stat-value">{memoryStats.projectsTracked}</span>
-                      <span class="dash-memory-stat-label">projects tracked</span>
-                    </div>
-                    <div class="dash-memory-stat">
-                      <span class="dash-memory-stat-value">{memoryStats.decisionsCount}</span>
-                      <span class="dash-memory-stat-label">decisions recorded</span>
-                    </div>
-                    <div class="dash-memory-stat">
-                      <span class="dash-memory-stat-value">{memoryStats.dailyLogCount}</span>
-                      <span class="dash-memory-stat-label">daily logs</span>
-                    </div>
-                  </div>
-                  <div class="dash-meta">
-                    Last active: {formatTimeAgo(memoryStats.lastActivityAt)} &nbsp;|&nbsp; {memoryStats.totalMemoryKB} KB total
-                  </div>
-                  <div class="dash-memory-status">
-                    <span class="dash-memory-dot" />
-                    <span>Memory active</span>
-                  </div>
-                </div>
-              )}
-
-            </div>
-          )}
+              </>
+            ) : (
+              <div class="dash-meta" style="border-top: none">Failed to load server data.</div>
+            )}
+          </div>
         </div>
 
-        {/* Workspace Export */}
-        <div class="dash-section">
-          <h3 class="dash-title">
-            <IconHardDrive size={16} />
-            <span>Workspace</span>
-          </h3>
-          <button class="btn btn-sm btn-secondary" onClick={handleExport} disabled={exporting}>
-            {exporting ? <span class="loading" /> : <IconDownload size={14} />}
-            Export workspace (.tar.gz)
-          </button>
+        {/* Full-width Filesystem */}
+        <div class="home-filesystem">
+          <FilesBrowser />
         </div>
       </div>
 
-      {/* Confirm modal for account disconnect */}
       <ConfirmModal
         visible={showLogoutConfirm}
         title="Disconnect Claude Account"

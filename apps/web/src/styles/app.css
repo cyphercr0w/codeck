@@ -616,6 +616,76 @@
 .info-card-value { font-size: 15px; font-weight: 600; }
 .info-card-value.muted { color: var(--text-muted); font-weight: 400; font-style: italic; }
 
+/* ── Home Account Card ── */
+
+.home-account-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+
+.home-account-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 13px;
+}
+
+.home-account-label {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.home-account-limits {
+  border-top: 1px solid var(--border);
+  padding-top: 10px;
+  margin-bottom: 12px;
+}
+
+.home-account-limits-title {
+  font-size: 11px;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 6px;
+}
+
+.home-account-relogin {
+  border-top: 1px solid var(--border);
+  padding-top: 10px;
+  margin-bottom: 8px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.home-account-relogin p {
+  margin: 0 0 6px;
+}
+
+.home-account-disconnect {
+  border-top: 1px solid var(--border);
+  padding-top: 10px;
+}
+
+/* ── Home Filesystem ── */
+
+.home-filesystem {
+  margin-top: 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--bg-card);
+  overflow: hidden;
+}
+
+.home-filesystem .files-content {
+  padding: 0;
+}
+
+.home-filesystem .files-header {
+  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+}
+
 .relogin-hint {
   margin-top: 20px;
   padding: 16px;

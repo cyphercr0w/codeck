@@ -16,7 +16,8 @@ function formatSize(bytes: number): string {
   return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
 }
 
-export function FilesSection() {
+/** Standalone file browser — can be embedded without outer wrappers. */
+export function FilesBrowser() {
   const [items, setItems] = useState<FileItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -116,8 +117,7 @@ export function FilesSection() {
   }
 
   return (
-    <div class="content-section">
-      <div class="files-content">
+    <div class="files-content">
         <div class="files-header">
           <div class="files-breadcrumb">
             {breadcrumbs.map((b, i) => (
@@ -214,6 +214,14 @@ export function FilesSection() {
           </div>
         )}
       </div>
+  );
+}
+
+/** Wrapped version for standalone route (backwards compat). */
+export function FilesSection() {
+  return (
+    <div class="content-section">
+      <FilesBrowser />
     </div>
   );
 }

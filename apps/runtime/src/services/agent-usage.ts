@@ -2,7 +2,7 @@ import { markTokenExpired, getCachedOAuthToken, readCredentials, isRealToken, ge
 import { broadcastStatus } from '../web/websocket.js';
 
 const USAGE_API_URL = 'https://api.anthropic.com/api/oauth/usage';
-const CACHE_TTL = 60000; // 60 seconds
+const CACHE_TTL = 120_000; // 2 minutes — avoid hitting Anthropic rate limits
 
 interface ClaudeUsage {
   available: boolean;
@@ -75,6 +75,10 @@ export async function getClaudeUsage(): Promise<ClaudeUsage> {
       if (res.status === 401) {
         markTokenExpired();
         broadcastStatus();
+      }
+      // On rate limit (429), return stale cache if available rather than hiding usage
+      if (res.status === 429 && usageCache) {
+        return usageCache.data;
       }
       return { available: false, fiveHour: null, sevenDay: null };
     }

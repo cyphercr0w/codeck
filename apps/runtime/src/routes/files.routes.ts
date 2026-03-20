@@ -382,4 +382,96 @@ router.post('/upload-image', async (req, res) => {
   }
 });
 
+// Generalized upload — images, videos, text, files
+const UPLOAD_TYPES: Record<string, { maxBytes: number; extensions: Record<string, string> }> = {
+  image: {
+    maxBytes: 5 * 1024 * 1024,
+    extensions: { 'image/png': '.png', 'image/jpeg': '.jpg', 'image/gif': '.gif', 'image/webp': '.webp' },
+  },
+  video: {
+    maxBytes: 10 * 1024 * 1024,
+    extensions: { 'video/mp4': '.mp4', 'video/webm': '.webm', 'video/quicktime': '.mov' },
+  },
+  text: {
+    maxBytes: 5 * 1024 * 1024,
+    extensions: { 'text/plain': '.txt' },
+  },
+  file: {
+    maxBytes: 5 * 1024 * 1024,
+    extensions: {},  // accept any
+  },
+};
+
+router.post('/upload', async (req, res) => {
+  const { data, mimeType, fileName, type } = req.body;
+
+  if (!data || typeof data !== 'string') {
+    res.status(400).json({ error: 'Data required' });
+    return;
+  }
+
+  const uploadType = type || (mimeType?.startsWith('image/') ? 'image' : mimeType?.startsWith('video/') ? 'video' : 'text');
+  const typeConfig = UPLOAD_TYPES[uploadType];
+  if (!typeConfig) {
+    res.status(400).json({ error: `Unsupported type: ${uploadType}` });
+    return;
+  }
+
+  // For text type, data is raw text; for others, it's base64
+  let buffer: Buffer;
+  if (uploadType === 'text') {
+    buffer = Buffer.from(data, 'utf-8');
+  } else {
+    buffer = Buffer.from(data, 'base64');
+  }
+
+  if (buffer.length > typeConfig.maxBytes) {
+    const maxMB = (typeConfig.maxBytes / (1024 * 1024)).toFixed(0);
+    res.status(400).json({ error: `File too large (max ${maxMB} MB for ${uploadType})` });
+    return;
+  }
+
+  if (buffer.length === 0) {
+    res.status(400).json({ error: 'Empty data' });
+    return;
+  }
+
+  // Rate limit (reuse existing tracker)
+  const clientIp = req.ip || req.socket.remoteAddress || 'unknown';
+  const rateLimitError = checkUploadRateLimit(clientIp, buffer.length);
+  if (rateLimitError) {
+    res.status(429).json({ error: rateLimitError });
+    return;
+  }
+
+  // Determine extension
+  let ext = typeConfig.extensions[mimeType || ''] || '';
+  if (!ext && uploadType === 'text') ext = '.txt';
+  if (!ext && uploadType === 'file') {
+    // Try to get extension from fileName
+    const fnExt = fileName ? '.' + fileName.split('.').pop() : '';
+    ext = fnExt || '.bin';
+  }
+
+  try {
+    if (!existsSync(UPLOADS_DIR)) {
+      await mkdir(UPLOADS_DIR, { recursive: true });
+    }
+
+    const timestamp = Date.now();
+    const safeName = fileName
+      ? fileName.replace(/[^a-zA-Z0-9_\-\.]/g, '_').slice(0, 50)
+      : uploadType;
+    const fullName = `${timestamp}-${safeName}${ext.startsWith('.') ? '' : '.'}${ext.replace(/^\./, '')}`;
+    const filePath = join(UPLOADS_DIR, fullName);
+
+    await writeFile(filePath, buffer);
+
+    res.json({ success: true, filePath, type: uploadType, size: buffer.length });
+  } catch (e) {
+    console.error('[Files] Upload failed:', (e as Error).message);
+    res.status(500).json({ error: 'Failed to save file' });
+  }
+});
+
 export default router;

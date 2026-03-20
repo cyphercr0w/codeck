@@ -1,11 +1,11 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { sessions, activeSessionId, setActiveSessionId, addLocalLog, addSession, removeSession, renameSession, agentName, isMobile, restoringPending, wsConnected, sessionStatus, setSessionStatus, clearSessionStatus } from '../state/store';
 import { apiFetch } from '../api';
-import { createTerminal, destroyTerminal, fitTerminal, repaintTerminal, focusTerminal, writeToTerminal, scrollToBottom, getTerminal, markSessionAttaching, clearSessionAttaching, onTerminalWrite, ensureTerminalVisible, setOnImagePaste, getTerminalBuffer } from '../terminal';
+import { createTerminal, destroyTerminal, fitTerminal, repaintTerminal, focusTerminal, writeToTerminal, scrollToBottom, getTerminal, markSessionAttaching, clearSessionAttaching, onTerminalWrite, ensureTerminalVisible, setOnFilePaste, getTerminalBuffer } from '../terminal';
 import { wsSend, setTerminalHandlers, attachSession, setOnSessionReattached, setOnBeforeSessionsRestored, setOnContextLoaded, type ContextLoadedData } from '../ws';
 import { IconPlus, IconX, IconShell, IconTerminal } from './Icons';
 import { MobileTerminalToolbar } from './MobileTerminalToolbar';
-import { ImageUploadOverlay } from './ImageUploadOverlay';
+import { UploadOverlay } from './UploadOverlay';
 
 const IMAGE_MIME_TYPES = new Set(['image/png', 'image/jpeg', 'image/gif', 'image/webp']);
 
@@ -65,7 +65,7 @@ export function ClaudeSection({ onNewSession, onNewShell }: ClaudeSectionProps) 
   const [editingTabId, setEditingTabId] = useState<string | null>(null);
   const [editValue, setEditValue] = useState('');
   const editInputRef = useRef<HTMLInputElement>(null);
-  const [pendingImage, setPendingImage] = useState<File | null>(null);
+  const [pendingFile, setPendingFile] = useState<File | null>(null);
   const [dragOver, setDragOver] = useState(false);
   const [contextBanner, setContextBanner] = useState<{ sessionId: string; projectName: string; kb: string } | null>(null);
   const [bannerFading, setBannerFading] = useState(false);
@@ -230,12 +230,12 @@ export function ClaudeSection({ onNewSession, onNewShell }: ClaudeSectionProps) 
   // Register image paste handler — terminal.ts intercepts Ctrl+V on xterm's
   // textarea, checks the clipboard for images, and calls this callback.
   useEffect(() => {
-    setOnImagePaste((file: File) => {
+    setOnFilePaste((file: File) => {
       if (activeSessionId.value) {
-        setPendingImage(file);
+        setPendingFile(file);
       }
     });
-    return () => setOnImagePaste(null);
+    return () => setOnFilePaste(null);
   }, []);
 
   // ── Session status tracking ──
@@ -333,7 +333,7 @@ export function ClaudeSection({ onNewSession, onNewShell }: ClaudeSectionProps) 
     setDragOver(false);
     const img = getImageFromDrop(e);
     if (img && activeSessionId.value) {
-      setPendingImage(img);
+      setPendingFile(img);
     }
   }
 
@@ -590,7 +590,7 @@ export function ClaudeSection({ onNewSession, onNewShell }: ClaudeSectionProps) 
           </div>
         )}
       </div>
-      <ImageUploadOverlay file={pendingImage} onDone={() => setPendingImage(null)} />
+      <UploadOverlay file={pendingFile} onDone={() => setPendingFile(null)} />
     </div>
   );
 }

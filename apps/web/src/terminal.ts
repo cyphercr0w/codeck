@@ -15,14 +15,16 @@ interface TerminalInstance {
 
 const terminals = new Map<string, TerminalInstance>();
 
-// Image paste callback — set by ClaudeSection to handle image uploads.
-// When set, Ctrl+V in xterm checks the clipboard for images first.
-let onImagePaste: ((file: File) => void) | null = null;
+// File paste callback — set by ClaudeSection to handle uploads (images, videos, large text).
+let onFilePaste: ((file: File) => void) | null = null;
 
-/** Register a callback for image paste events from the terminal. */
-export function setOnImagePaste(handler: ((file: File) => void) | null): void {
-  onImagePaste = handler;
+/** Register a callback for file paste events from the terminal. */
+export function setOnFilePaste(handler: ((file: File) => void) | null): void {
+  onFilePaste = handler;
 }
+
+// Large text threshold — text pastes above this size are converted to .txt uploads
+const LARGE_TEXT_THRESHOLD = 5_000; // 5 KB of text
 
 // Mobile scroll lock: when user scrolls up to read history, prevent
 // xterm's internal auto-scroll from yanking them back to the bottom.
@@ -124,21 +126,36 @@ export function createTerminal(sessionId: string, container: HTMLElement): Termi
     // If the clipboard contains an image, we block xterm from pasting and show
     // the upload overlay. If it's text-only, we let the event propagate normally.
     textarea.addEventListener('paste', (e: ClipboardEvent) => {
-      if (!onImagePaste) return;
+      if (!onFilePaste) return;
       const items = e.clipboardData?.items;
       if (!items) return;
+
+      // Check for images or videos first
       for (let i = 0; i < items.length; i++) {
-        if (items[i].type.startsWith('image/')) {
+        const type = items[i].type;
+        if (type.startsWith('image/') || type.startsWith('video/')) {
           const file = items[i].getAsFile();
           if (file) {
             e.preventDefault();
             e.stopImmediatePropagation();
-            onImagePaste(file);
+            onFilePaste(file);
             return;
           }
         }
       }
-      // No image found — let xterm handle the text paste normally
+
+      // Check for large text — convert to .txt upload to avoid WS buffer crash
+      const text = e.clipboardData?.getData('text/plain');
+      if (text && text.length > LARGE_TEXT_THRESHOLD) {
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        const blob = new Blob([text], { type: 'text/plain' });
+        const file = new File([blob], 'pasted-text.txt', { type: 'text/plain' });
+        onFilePaste(file);
+        return;
+      }
+
+      // Small text — let xterm handle normally
     }, true); // capture phase
 
     // Log blur events to DevTools — useful for diagnosing input freezes locally

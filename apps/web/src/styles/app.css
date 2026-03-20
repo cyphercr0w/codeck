@@ -3163,6 +3163,32 @@
   object-fit: contain;
 }
 
+.upload-text-preview {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 20px;
+  background: var(--bg-secondary);
+  border-radius: 8px;
+}
+
+.upload-text-badge {
+  font-size: 18px;
+  font-weight: 700;
+  font-family: var(--font-mono);
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 15%, transparent);
+  padding: 6px 12px;
+  border-radius: 6px;
+}
+
+.upload-text-chars {
+  font-size: 13px;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+}
+
 .image-upload-info {
   display: flex;
   align-items: center;

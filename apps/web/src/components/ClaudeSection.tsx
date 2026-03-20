@@ -207,6 +207,16 @@ export function ClaudeSection({ onNewSession, onNewShell }: ClaudeSectionProps) 
     };
   }, []);
 
+  // Close new-tab menu when a session is added (e.g. after user picks a project)
+  const prevSessionCount = useRef(sessionList.length);
+  useEffect(() => {
+    if (sessionList.length > prevSessionCount.current) {
+      setShowNewSessionMenu(false);
+      setNewTabLoading(false);
+    }
+    prevSessionCount.current = sessionList.length;
+  }, [sessionList.length]);
+
   // Fetch recent conversations when empty state or menu is shown
   useEffect(() => {
     if (sessionList.length === 0 || showNewSessionMenu) {

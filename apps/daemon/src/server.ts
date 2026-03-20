@@ -5,6 +5,7 @@ import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import {
   isPasswordConfigured,
+  setupPassword,
   validatePassword,
   validateSession,
   touchSession,
@@ -85,6 +86,25 @@ export async function startDaemon(): Promise<void> {
   app.get('/api/auth/status', (_req, res) => {
     res.setHeader('Cache-Control', 'no-store');
     res.json({ configured: isPasswordConfigured() });
+  });
+
+  // Setup — first time password configuration
+  app.post('/api/auth/setup', async (req, res) => {
+    if (isPasswordConfigured()) {
+      res.status(400).json({ error: 'Password already configured' });
+      return;
+    }
+    const { password } = req.body;
+    if (!password || password.length < 8) {
+      res.status(400).json({ error: 'Password must be at least 8 characters' });
+      return;
+    }
+    if (password.length > 256) {
+      res.status(400).json({ error: 'Password must not exceed 256 characters' });
+      return;
+    }
+    const result = await setupPassword(password, req.ip || 'unknown');
+    res.json(result);
   });
 
   // Login

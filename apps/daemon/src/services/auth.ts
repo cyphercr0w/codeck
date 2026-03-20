@@ -63,6 +63,50 @@ export function isPasswordConfigured(): boolean {
   return loadAuthConfig() !== null;
 }
 
+export async function setupPassword(
+  password: string,
+  ip: string,
+): Promise<{ success: boolean; token?: string; error?: string }> {
+  if (isPasswordConfigured()) return { success: false, error: 'Password already configured' };
+
+  const salt = randomBytes(32).toString('hex');
+  const cost = 16384;
+  const key = await scryptAsync(password, salt, 64, {
+    cost,
+    blockSize: SCRYPT_BLOCK_SIZE,
+    parallelization: SCRYPT_PARALLELIZATION,
+    maxmem: SCRYPT_MAXMEM,
+  });
+
+  const config: AuthConfig = {
+    passwordHash: key.toString('hex'),
+    salt,
+    algo: 'scrypt',
+    scryptCost: cost,
+  };
+
+  if (!existsSync(CODECK_DIR)) {
+    mkdirSync(CODECK_DIR, { recursive: true, mode: 0o700 });
+  }
+  atomicWriteFileSync(AUTH_FILE, JSON.stringify(config, null, 2), { mode: 0o600 });
+
+  // Auto-login after setup
+  const token = randomBytes(32).toString('hex');
+  const sessionData: SessionData = {
+    id: randomUUID(),
+    createdAt: Date.now(),
+    ip,
+    deviceId: 'setup',
+    lastSeen: Date.now(),
+  };
+  activeSessions.set(token, sessionData);
+  sessionById.set(sessionData.id, token);
+  saveSessions();
+  logAuthEvent('login_success', ip);
+
+  return { success: true, token };
+}
+
 // ── Sessions ──
 
 export interface SessionData {

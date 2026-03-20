@@ -209,14 +209,15 @@ router.post('/mkdir', async (req, res) => {
     return;
   }
 
-  // Sanitize: only allow alphanumeric, dash, underscore, dot (no leading dot)
-  const sanitized = name.replace(/[^a-zA-Z0-9_\-. ]/g, '').replace(/^\.+/, '').trim();
-  if (!sanitized || sanitized.length > 100) {
+  // Validate: no leading dot in final segment, reasonable length
+  const trimmed = name.trim();
+  const finalSegment = trimmed.split('/').pop() || '';
+  if (!trimmed || finalSegment.startsWith('.') || trimmed.length > 200) {
     res.status(400).json({ error: 'Invalid name' });
     return;
   }
 
-  const fullPath = await safePath(WORKSPACE, sanitized);
+  const fullPath = await safePath(WORKSPACE, trimmed);
 
   if (!fullPath) {
     res.status(403).json({ error: 'Access denied' });
@@ -224,14 +225,15 @@ router.post('/mkdir', async (req, res) => {
   }
 
   try {
-    // Atomic: mkdir with recursive:false throws EEXIST if directory exists
     await mkdir(fullPath, { recursive: false });
     broadcastStatus();
-    res.json({ success: true, name: sanitized, path: '/workspace/' + sanitized });
+    res.json({ success: true, name: trimmed });
   } catch (err: unknown) {
     const code = (err as NodeJS.ErrnoException).code;
     if (code === 'EEXIST') {
       res.status(409).json({ error: 'Already exists' });
+    } else if (code === 'ENOENT') {
+      res.status(404).json({ error: 'Parent directory does not exist' });
     } else {
       res.status(500).json({ error: 'Error creating directory' });
     }

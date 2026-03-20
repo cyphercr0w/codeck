@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { readdir, stat, readFile, writeFile, realpath, access, mkdir, rm } from 'fs/promises';
 import { join, resolve, sep } from 'path';
-import { execFile } from 'child_process';
+import { execFile, spawn } from 'child_process';
 import { promisify } from 'util';
 import { existsSync, createReadStream } from 'fs';
 
@@ -148,14 +148,19 @@ router.put('/files/write', async (req, res) => {
 
 router.get('/export', async (_req, res) => {
   try {
+    if (!existsSync(AGENT_DATA_DIR)) {
+      res.status(404).json({ error: 'No memory data to export' });
+      return;
+    }
+
     const timestamp = new Date().toISOString().slice(0, 10);
     const filename = `codeck-memory-${timestamp}.tar.gz`;
 
     res.setHeader('Content-Type', 'application/gzip');
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
 
-    // Stream tar.gz directly to response — excludes transient files
-    const tar = execFile('tar', [
+    // Use spawn for proper streaming (execFile buffers stdout which breaks pipes)
+    const tar = spawn('tar', [
       'czf', '-',
       '--exclude=./uploads',
       '--exclude=./sessions.json',
@@ -163,21 +168,24 @@ router.get('/export', async (_req, res) => {
       '--exclude=./.codeck-oauth-token',
       '--exclude=./auth.json',
       '--exclude=./config.json',
+      '--exclude=./index',
       '-C', AGENT_DATA_DIR,
       '.',
-    ]);
+    ], { stdio: ['ignore', 'pipe', 'pipe'] });
 
-    tar.stdout?.pipe(res);
-    tar.stderr?.on('data', (d: Buffer) => console.warn('[Export]', d.toString().trim()));
-    tar.on('error', () => {
+    tar.stdout.pipe(res);
+    tar.stderr.on('data', (d: Buffer) => console.warn('[Export]', d.toString().trim()));
+    tar.on('error', (err) => {
+      console.error('[Export] spawn error:', err.message);
       if (!res.headersSent) res.status(500).json({ error: 'Export failed' });
     });
     tar.on('close', (code) => {
       if (code !== 0 && !res.headersSent) {
-        res.status(500).json({ error: 'Export failed' });
+        res.status(500).json({ error: `Export failed (tar exit ${code})` });
       }
     });
-  } catch {
+  } catch (err) {
+    console.error('[Export] error:', (err as Error).message);
     res.status(500).json({ error: 'Export failed' });
   }
 });

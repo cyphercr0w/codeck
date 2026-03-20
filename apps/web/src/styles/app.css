@@ -1609,6 +1609,7 @@
   flex-direction: column;
   gap: 12px;
   color: var(--text-secondary);
+  padding: 24px 16px;
 }
 
 .claude-empty.overlay {

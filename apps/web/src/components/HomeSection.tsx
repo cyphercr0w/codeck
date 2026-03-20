@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'preact/hooks';
 import { accountEmail, claudeAuthenticated, claudeUsage, sessions, agentName, activePorts, wsConnected, dockerExperimental, setActiveSection } from '../state/store';
-import { apiFetch, getAuthToken } from '../api';
-import { IconUser, IconMonitor, IconX, IconDownload } from './Icons';
+import { apiFetch, getAuthToken, setAuthToken } from '../api';
+import { IconUser, IconMonitor, IconX, IconDownload, IconKey } from './Icons';
 import { ConfirmModal } from './ConfirmModal';
 import { FilesBrowser } from './FilesSection';
 
@@ -78,6 +78,13 @@ export function HomeSection({ onRelogin, onLogout }: HomeSectionProps) {
   const [dashLoading, setDashLoading] = useState(true);
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
   const [exporting, setExporting] = useState(false);
+  const [showChangePassword, setShowChangePassword] = useState(false);
+  const [pwCurrent, setPwCurrent] = useState('');
+  const [pwNew, setPwNew] = useState('');
+  const [pwConfirm, setPwConfirm] = useState('');
+  const [pwError, setPwError] = useState('');
+  const [pwSuccess, setPwSuccess] = useState(false);
+  const [pwLoading, setPwLoading] = useState(false);
   const [welcomeDismissed, setWelcomeDismissed] = useState(() => localStorage.getItem('codeck-welcome-dismissed') === '1');
 
   const connected = wsConnected.value;
@@ -97,6 +104,32 @@ export function HomeSection({ onRelogin, onLogout }: HomeSectionProps) {
   useEffect(() => {
     if (connected) loadDashboard();
   }, [connected]);
+
+  async function handleChangePassword() {
+    setPwError('');
+    setPwSuccess(false);
+    if (pwNew.length < 8) { setPwError('Min 8 characters'); return; }
+    if (pwNew !== pwConfirm) { setPwError('Passwords do not match'); return; }
+    setPwLoading(true);
+    try {
+      const res = await apiFetch('/api/auth/change-password', {
+        method: 'POST',
+        body: JSON.stringify({ currentPassword: pwCurrent, newPassword: pwNew }),
+      });
+      const data = await res.json();
+      if (data.success && data.token) {
+        setAuthToken(data.token);
+        setPwSuccess(true);
+        setPwCurrent(''); setPwNew(''); setPwConfirm('');
+        setTimeout(() => { setShowChangePassword(false); setPwSuccess(false); }, 1500);
+      } else {
+        setPwError(data.error || 'Failed');
+      }
+    } catch {
+      setPwError('Connection error');
+    }
+    setPwLoading(false);
+  }
 
   async function loadDashboard() {
     try {
@@ -243,6 +276,11 @@ export function HomeSection({ onRelogin, onLogout }: HomeSectionProps) {
             ) : (
               <div class="dash-meta" style="border-top: none">Failed to load server data.</div>
             )}
+            <div class="home-account-disconnect">
+              <button class="btn btn-xs btn-secondary" onClick={() => setShowChangePassword(true)}>
+                <IconKey size={11} /> Change Password
+              </button>
+            </div>
           </div>
         </div>
 
@@ -268,6 +306,35 @@ export function HomeSection({ onRelogin, onLogout }: HomeSectionProps) {
           </div>
         </div>
       </div>
+
+      {/* Change Password Modal */}
+      {showChangePassword && (
+        <div class="modal-overlay" onClick={() => setShowChangePassword(false)}>
+          <div class="modal" style="max-width: 380px" onClick={e => e.stopPropagation()}>
+            <div class="modal-title"><IconKey size={16} /> Change Password</div>
+            <div class="form-group">
+              <label class="form-label">Current password</label>
+              <input type="password" class="input" value={pwCurrent} onInput={e => setPwCurrent((e.target as HTMLInputElement).value)} autocomplete="current-password" />
+            </div>
+            <div class="form-group">
+              <label class="form-label">New password</label>
+              <input type="password" class="input" value={pwNew} onInput={e => setPwNew((e.target as HTMLInputElement).value)} minLength={8} autocomplete="new-password" />
+            </div>
+            <div class="form-group">
+              <label class="form-label">Confirm new password</label>
+              <input type="password" class="input" value={pwConfirm} onInput={e => setPwConfirm((e.target as HTMLInputElement).value)} autocomplete="new-password" />
+            </div>
+            {pwError && <div class="alert alert-error" style="margin-bottom: 12px">{pwError}</div>}
+            {pwSuccess && <div class="form-success">Password updated</div>}
+            <div class="modal-actions">
+              <button class="btn btn-sm btn-secondary" onClick={() => { setShowChangePassword(false); setPwError(''); setPwSuccess(false); }}>Cancel</button>
+              <button class="btn btn-sm btn-primary" onClick={handleChangePassword} disabled={pwLoading}>
+                {pwLoading ? <span class="spinner-sm" /> : 'Save'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <ConfirmModal
         visible={showLogoutConfirm}

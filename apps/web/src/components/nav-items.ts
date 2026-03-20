@@ -4,7 +4,7 @@ import type { Section } from '../state/store';
 export const NAV_ITEMS: { section: Section; label: string }[] = [
   { section: 'home', label: 'Home' },
   { section: 'claude', label: 'Terminal' },
-  { section: 'agents', label: 'Scheduled Agents' },
+  { section: 'agents', label: 'Automated Agents' },
   { section: 'integrations', label: 'Integrations' },
   { section: 'config', label: 'Memory' },
   { section: 'settings', label: 'Settings' },

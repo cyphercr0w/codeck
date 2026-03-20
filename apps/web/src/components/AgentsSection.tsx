@@ -833,7 +833,7 @@ export function AgentsSection() {
         <div class="home-header">
           <div class="home-title">
             <IconBot size={20} />
-            <span>Scheduled Agents</span>
+            <span>Automated Agents</span>
           </div>
           <button class="btn btn-sm btn-primary" onClick={() => setCreateOpen(true)}>
             <IconPlus size={14} /> New Agent
@@ -843,7 +843,7 @@ export function AgentsSection() {
         {agents.length === 0 ? (
           <div class="empty-state">
             <IconBot size={40} style="color: var(--text-muted); margin-bottom: 16px" />
-            <h3>No Scheduled Agents</h3>
+            <h3>No Automated Agents</h3>
             <p>Create agents that run on a recurring schedule. Define the prompt, set the interval, and the agent executes automatically.</p>
             <button class="btn btn-sm btn-primary" onClick={() => setCreateOpen(true)}>
               <IconPlus size={14} /> Create Your First Agent

@@ -135,21 +135,35 @@ async function main() {
         max_tokens: 600,
         messages: [{
           role: 'user',
-          content: `You are a memory system for a developer sandbox called Codeck. Your job is to extract the USEFUL information from this session transcript and write a concise summary that will help the AI agent (Claude) in future sessions.
+          content: `You are a crystallization engine for a developer sandbox called Codeck. Extract ATOMIC FACTS from this session transcript — discrete, searchable, independent pieces of knowledge.
 
-Write in English. Focus ONLY on:
-1. **What was built/changed** — specific features, fixes, files modified
-2. **Decisions made** — technical or product choices and their rationale
-3. **Problems found** — bugs, blockers, and how they were resolved (or not)
-4. **Current state** — what works, what's broken, what's in progress
-5. **Next steps** — what was discussed as pending or planned
+Output format — one fact per line, categorized:
+
+**Changes:**
+- [file/feature]: what changed and why
+
+**Decisions:**
+- [topic]: what was decided and rationale
+
+**Bugs:**
+- [description]: root cause + fix status (fixed/pending)
+
+**Preferences discovered:**
+- [preference]: what the user prefers (coding style, workflow, communication)
+
+**State:**
+- [what]: current status (working/broken/in-progress)
+
+**Next:**
+- [task]: what's pending or planned
 
 Rules:
-- Be SPECIFIC: mention file names, function names, error messages, version numbers
-- Skip greetings, small talk, typos, and meta-conversation
-- If the session was trivial (just a greeting, quick question), write "No significant activity."
-- Use bullet points, no prose. Max 300 words.
-- Do NOT include the project name or duration — those are added automatically.
+- Each fact must be ONE independent statement, not a paragraph
+- Include file names, function names, version numbers, error messages — be specific
+- Skip greetings, small talk, typos, meta-conversation
+- If the session was trivial, write "No significant activity."
+- Max 25 facts. Quality over quantity.
+- Write in English.
 
 TRANSCRIPT:
 ${transcriptDigest}`,
@@ -170,7 +184,7 @@ ${transcriptDigest}`,
   // Append to daily memory log
   const today = new Date().toISOString().slice(0, 10);
   const time = new Date().toTimeString().slice(0, 8);
-  const entry = `\n### ${time} [${project}] #semantic-summary\n\n${summary.trim()}\n`;
+  const entry = `\n### ${time} [${project}] #crystallized\n\n${summary.trim()}\n`;
 
   try {
     // 1. Write to global daily

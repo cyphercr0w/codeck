@@ -101,14 +101,12 @@ Write a markdown document with sections:
 ### Suggest Removing
 - [entries in MEMORY.md that are now outdated or superseded]
 
-### Summary
-One paragraph: what changed this week, what's important to remember.
-
 Rules:
-- Only suggest changes for SIGNIFICANT information (decisions, patterns, bugs, preferences)
+- Each suggestion must be ONE atomic fact, not a paragraph
+- Only suggest SIGNIFICANT information (decisions, patterns, bugs, preferences)
 - Do NOT suggest adding ephemeral details (debug output, temporary fixes, exploration)
 - Do NOT suggest adding anything already in MEMORY.md
-- Keep suggestions concise — one line per item
+- Daily logs now use crystallized format (atomic facts) — extract and promote the most durable ones
 - If nothing significant to consolidate, just write "No changes needed."`;
 
 // ── Call Haiku via Anthropic API ────────────────────────────────

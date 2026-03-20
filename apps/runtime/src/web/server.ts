@@ -167,8 +167,8 @@ export async function startWebServer(): Promise<void> {
     crossOriginOpenerPolicy: false,
   }));
 
-  // 15MB limit to support base64-encoded image uploads (~10MB image → ~13.3MB base64)
-  app.use(express.json({ limit: '15mb' }));
+  // 65MB limit — supports base64 uploads (images, videos) and memory import archives
+  app.use(express.json({ limit: '65mb' }));
 
   // Internal health endpoint — used by daemon for runtime health checks
   // Registered before auth middleware; not exposed via /api prefix
@@ -409,7 +409,6 @@ export async function startWebServer(): Promise<void> {
   app.use('/api/projects', projectRoutes);
   app.use('/api/workspace', workspaceRoutes);
   app.use('/api/dashboard', dashboardRoutes);
-  app.use('/api/codeck/import', express.json({ limit: '65mb' }));
   app.use('/api/codeck', codeckRoutes);
   app.use('/api/permissions', permissionsRoutes);
   app.use('/api/system', systemRoutes);

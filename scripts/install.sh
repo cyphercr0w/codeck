@@ -71,7 +71,14 @@ if grep -qiE "(microsoft|wsl)" /proc/version 2>/dev/null; then
   echo ""
 fi
 
-[[ "$EUID" -eq 0 ]] || error "Run as root: sudo bash install.sh"
+if [[ "$EUID" -ne 0 ]]; then
+  if command -v sudo &>/dev/null; then
+    warn "Not running as root — re-executing with sudo..."
+    exec sudo bash "$0" "$@"
+  else
+    error "Run as root: su -c 'bash install.sh'"
+  fi
+fi
 log "Running as root"
 
 command -v systemctl &>/dev/null || error "systemd not found"

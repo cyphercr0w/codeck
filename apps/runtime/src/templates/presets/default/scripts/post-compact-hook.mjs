@@ -92,8 +92,5 @@ const reminder = [
 ].join('\n');
 
 console.log(JSON.stringify({
-  hookSpecificOutput: {
-    hookEventName: 'PostCompact',
-    additionalContext: reminder,
-  }
+  systemMessage: reminder,
 }));

@@ -477,15 +477,24 @@ function hasRealMessages(filePath: string): boolean {
  * Reading large .jsonl conversation files synchronously was blocking for 100ms+ per file.
  */
 async function hasRealMessagesAsync(filePath: string): Promise<boolean> {
+  // Stream the file line-by-line instead of reading the entire thing.
+  // Conversation files can be 50-100MB; we only need to find the first
+  // user/assistant line to confirm the conversation is real.
   try {
-    const content = await readFileAsync(filePath, 'utf8');
-    return content.split('\n').some(line => {
-      if (!line) return false;
+    const { createReadStream } = await import('fs');
+    const { createInterface } = await import('readline');
+    const rl = createInterface({ input: createReadStream(filePath, 'utf8'), crlfDelay: Infinity });
+    for await (const line of rl) {
+      if (!line) continue;
       try {
         const d = JSON.parse(line);
-        return d.type === 'user' || d.type === 'assistant';
-      } catch { return false; }
-    });
+        if (d.type === 'user' || d.type === 'assistant') {
+          rl.close();
+          return true;
+        }
+      } catch { /* skip malformed lines */ }
+    }
+    return false;
   } catch { return false; }
 }
 

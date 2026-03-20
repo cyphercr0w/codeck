@@ -51,17 +51,24 @@ const FLUSH_STATE_FILE = join(STATE_DIR, 'flush_state.json');
 // No TOCTOU race — lock is acquired atomically via Map.set before any await.
 const locks = new Map<string, Promise<void>>();
 
+const LOCK_TIMEOUT_MS = 10000; // 10s max wait to prevent deadlocks
+
 async function withWriteLock<T>(filepath: string, fn: () => T | Promise<T>): Promise<T> {
   const prev = locks.get(filepath) ?? Promise.resolve();
   let resolve!: () => void;
   const next = new Promise<void>(r => { resolve = r; });
   locks.set(filepath, next);
   try {
-    await prev;
+    // Wait for previous writer with timeout
+    await Promise.race([
+      prev,
+      new Promise<void>((_, reject) =>
+        setTimeout(() => reject(new Error(`Write lock timeout (${LOCK_TIMEOUT_MS}ms) for ${filepath}`)), LOCK_TIMEOUT_MS)
+      ),
+    ]);
     return await fn();
   } finally {
     resolve();
-    // Only delete if we're still the current lock holder
     if (locks.get(filepath) === next) locks.delete(filepath);
   }
 }

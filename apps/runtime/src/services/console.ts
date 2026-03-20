@@ -31,6 +31,7 @@ interface ConsoleSession {
   outputBufferSize: number;
   attached: boolean;
   conversationId?: string;
+  dataDisposable?: { dispose: () => void };
 }
 
 const sessions = new Map<string, ConsoleSession>();
@@ -252,7 +253,7 @@ export function createConsoleSession(options?: string | CreateSessionOptions): C
   startSessionCapture(id, workDir);
 
   // Buffer PTY output until a WS client attaches (with size cap)
-  pty.onData((data: string) => {
+  const dataDisposable = pty.onData((data: string) => {
     captureOutput(id, data);
     if (!session.attached) {
       session.outputBuffer.push(data);
@@ -263,6 +264,7 @@ export function createConsoleSession(options?: string | CreateSessionOptions): C
       }
     }
   });
+  session.dataDisposable = dataDisposable;
 
   sessions.set(id, session);
   saveSessionState('session_created');
@@ -321,7 +323,7 @@ export function createShellSession(cwd?: string): ConsoleSession {
   startSessionCapture(id, workDir);
   console.log(`[Console] Shell: step3 capture started +${Date.now() - t0}ms`);
 
-  pty.onData((data: string) => {
+  const shellDataDisposable = pty.onData((data: string) => {
     captureOutput(id, data);
     if (!session.attached) {
       session.outputBuffer.push(data);
@@ -332,6 +334,7 @@ export function createShellSession(cwd?: string): ConsoleSession {
       }
     }
   });
+  session.dataDisposable = shellDataDisposable;
 
   sessions.set(id, session);
   saveSessionState('session_created');
@@ -373,11 +376,14 @@ export function destroySession(id: string): void {
   if (!session) return;
 
   endSessionCapture(id);
+
+  // Dispose PTY onData handler to prevent memory leak via closure
+  if (session.dataDisposable) {
+    session.dataDisposable.dispose();
+  }
+
   const sessionCwd = session.cwd;
   sessions.delete(id);
-
-  // Session summarization is handled by the memory-stop-hook.mjs (Haiku LLM).
-  // The old template-based auto-summary was too noisy and generic — disabled.
 
   // Send SIGTERM first to allow graceful shutdown (flush buffers, close files)
   try {

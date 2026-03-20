@@ -2746,7 +2746,7 @@
 /* ── Memory Migration ── */
 
 .mem-migration {
-  margin-top: 16px;
+  margin: 16px 0;
   padding: 14px 16px;
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);

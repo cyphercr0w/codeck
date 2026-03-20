@@ -60,6 +60,7 @@ interface SkillEntry {
 function SkillMarketplace({ onInstalled }: { onInstalled: () => void }) {
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<SkillEntry[]>([]);
+  const [totalSkills, setTotalSkills] = useState(0);
   const [loading, setLoading] = useState(false);
   const [installing, setInstalling] = useState<string | null>(null);
   const [msg, setMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
@@ -72,7 +73,7 @@ function SkillMarketplace({ onInstalled }: { onInstalled: () => void }) {
     setLoading(true);
     apiFetch(`/api/skills/catalog?q=${encodeURIComponent(q)}`)
       .then(r => r.json())
-      .then(data => setResults(data.skills || []))
+      .then(data => { setResults(data.skills || []); if (data.total) setTotalSkills(data.total); })
       .catch(() => setResults([]))
       .finally(() => setLoading(false));
   }
@@ -115,7 +116,7 @@ function SkillMarketplace({ onInstalled }: { onInstalled: () => void }) {
     <div class="skill-market">
       <input
         class="skill-search"
-        placeholder={`Search ${results.length > 0 ? results.length : '...'} skills from skills.sh...`}
+        placeholder={`Search ${totalSkills > 0 ? `${Math.floor(totalSkills / 1000)}K+` : '...'} skills from skills.sh...`}
         value={query}
         onInput={e => handleInput((e.target as HTMLInputElement).value)}
       />

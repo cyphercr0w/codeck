@@ -468,16 +468,25 @@ export function ConfigSection() {
         method: 'POST',
         body: JSON.stringify({ data: base64 }),
       });
-      const data = await res.json();
-      if (data.success) {
-        setMigrationMsg({ type: 'success', text: `Memory imported — ${data.imported} items restored` });
-        loadFiles(dirPath);
-        loadMemoryStats();
+      if (res.status === 413) {
+        setMigrationMsg({ type: 'error', text: 'File too large — if using nginx, add "client_max_body_size 100m;" to your server config and reload nginx.' });
       } else {
-        setMigrationMsg({ type: 'error', text: data.error || 'Import failed' });
+        const data = await res.json();
+        if (data.success) {
+          setMigrationMsg({ type: 'success', text: `Memory imported — ${data.imported} items restored` });
+          loadFiles(dirPath);
+          loadMemoryStats();
+        } else {
+          setMigrationMsg({ type: 'error', text: data.error || 'Import failed' });
+        }
       }
     } catch (err) {
-      setMigrationMsg({ type: 'error', text: 'Import failed: ' + (err as Error).message });
+      const msg = (err as Error).message || '';
+      if (msg.includes('NetworkError') || msg.includes('Failed to fetch')) {
+        setMigrationMsg({ type: 'error', text: 'Upload failed — file may be too large for your reverse proxy. If using nginx, add "client_max_body_size 100m;" to your config.' });
+      } else {
+        setMigrationMsg({ type: 'error', text: 'Import failed: ' + msg });
+      }
     }
     setImporting(false);
     setImportFile(null);

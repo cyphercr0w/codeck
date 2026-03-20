@@ -557,10 +557,12 @@ export function ClaudeSection({ onNewSession, onNewShell }: ClaudeSectionProps) 
                           }
                         }}
                       >
-                        <span class="claude-recent-text">{c.title}</span>
+                        <span class="claude-recent-text">
+                          <span class="claude-recent-project">{c.cwd.split('/').pop() || 'workspace'}</span>
+                          <span class="claude-recent-date">{new Date(c.mtime).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
+                        </span>
                         <span class="claude-recent-meta">
                           {openSession && <span class="claude-recent-open-badge">OPEN</span>}
-                          {c.cwd.split('/').pop()}
                         </span>
                       </button>
                     );

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'preact/hooks';
 import { accountEmail, claudeAuthenticated, claudeUsage, sessions, agentName, activePorts, wsConnected, dockerExperimental, setActiveSection } from '../state/store';
-import { apiFetch } from '../api';
-import { IconUser, IconMonitor, IconX } from './Icons';
+import { apiFetch, getAuthToken } from '../api';
+import { IconUser, IconMonitor, IconX, IconDownload } from './Icons';
 import { ConfirmModal } from './ConfirmModal';
 import { FilesBrowser } from './FilesSection';
 
@@ -77,6 +77,7 @@ export function HomeSection({ onRelogin, onLogout }: HomeSectionProps) {
   const [dashboard, setDashboard] = useState<DashboardData | null>(null);
   const [dashLoading, setDashLoading] = useState(true);
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
+  const [exporting, setExporting] = useState(false);
   const [welcomeDismissed, setWelcomeDismissed] = useState(() => localStorage.getItem('codeck-welcome-dismissed') === '1');
 
   const connected = wsConnected.value;
@@ -238,6 +239,23 @@ export function HomeSection({ onRelogin, onLogout }: HomeSectionProps) {
         {/* Full-width Filesystem */}
         <div class="home-filesystem">
           <FilesBrowser />
+          <div class="home-export">
+            <button class="btn btn-xs btn-secondary" onClick={() => {
+              setExporting(true);
+              const token = getAuthToken();
+              const url = `/api/workspace/export${token ? '?token=' + encodeURIComponent(token) : ''}`;
+              const a = document.createElement('a');
+              a.href = url;
+              a.download = '';
+              document.body.appendChild(a);
+              a.click();
+              document.body.removeChild(a);
+              setTimeout(() => setExporting(false), 3000);
+            }} disabled={exporting}>
+              {exporting ? <span class="spinner-sm" /> : <IconDownload size={12} />}
+              Export workspace (.tar.gz)
+            </button>
+          </div>
         </div>
       </div>
 

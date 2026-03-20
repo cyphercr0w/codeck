@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'preact/hooks';
-import { apiFetch, setAuthToken, getAuthToken } from '../api';
+import { apiFetch, setAuthToken } from '../api';
 import { wsConnected } from '../state/store';
-import { IconShield, IconKey, IconList, IconPlug, IconPlus, IconX, IconDownload, IconHardDrive } from './Icons';
+import { IconShield, IconKey, IconList, IconPlug, IconPlus, IconX } from './Icons';
 import { ConfirmModal } from './ConfirmModal';
 
 // ── Types ──────────────────────────────────────────────────────────────────
@@ -596,41 +596,6 @@ function PortMappingCard() {
   );
 }
 
-// ── Export Card ───────────────────────────────────────────────────────────
-
-function ExportCard() {
-  const [exporting, setExporting] = useState(false);
-
-  function handleExport() {
-    setExporting(true);
-    const token = getAuthToken();
-    const url = `/api/workspace/export${token ? '?token=' + encodeURIComponent(token) : ''}`;
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = '';
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    setTimeout(() => setExporting(false), 3000);
-  }
-
-  return (
-    <div class="dash-card">
-      <div class="dash-card-title">
-        <IconHardDrive size={14} />
-        <span>Workspace</span>
-      </div>
-      <button class="btn btn-sm btn-secondary" onClick={handleExport} disabled={exporting}>
-        {exporting ? <span class="spinner-sm" /> : <IconDownload size={14} />}
-        Export workspace (.tar.gz)
-      </button>
-      <div class="dash-meta">
-        Downloads your entire /workspace directory as a compressed archive.
-      </div>
-    </div>
-  );
-}
-
 // ── Main export ────────────────────────────────────────────────────────────
 
 export function SettingsSection() {
@@ -646,7 +611,6 @@ export function SettingsSection() {
         <div class="dash-grid">
           <ChangePasswordCard />
           <PermissionsCard />
-          <ExportCard />
         </div>
         <div style="margin-top: 16px">
           <PortMappingCard />

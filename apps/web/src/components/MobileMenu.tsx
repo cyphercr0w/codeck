@@ -50,6 +50,7 @@ export function MobileMenu({ open, onClose, onSectionChange }: MobileMenuProps) 
         </nav>
         {claudeUsage.value?.available && (
           <div class="mobile-menu-usage">
+            <span class="sidebar-usage-title">Limits</span>
             {claudeUsage.value.fiveHour && (
               <div class="sidebar-usage-row">
                 <span class="sidebar-usage-label">5h</span>

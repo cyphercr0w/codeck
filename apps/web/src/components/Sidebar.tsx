@@ -37,6 +37,7 @@ function UsageBars({ collapsed }: { collapsed: boolean }) {
 
   return (
     <div class="sidebar-usage">
+      <span class="sidebar-usage-title">Limits</span>
       {usage.fiveHour && (
         <div class="sidebar-usage-row">
           <span class="sidebar-usage-label">5h</span>

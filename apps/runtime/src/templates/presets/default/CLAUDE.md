@@ -16,7 +16,7 @@ You have persistent memory at `/workspace/.codeck/memory/`. It survives between 
 
 1. **Read memory first.** Before responding to the first message, read `<recent-memory>` below, `/workspace/.codeck/preferences.md`, and rules in `/workspace/.codeck/rules/base/` + `rules/user/`.
 
-2. **If path memory is empty, explore then interview.** When you first work in a project directory, resolve its path memory (see `/workspace/.codeck/AGENTS.md` for API). If empty: first run `node /workspace/.codeck/scripts/repo-map-generator.mjs .` to understand the codebase structure, then ask 3 questions: (1) What does this project do? (2) Stack and conventions? (3) Anything to always remember? Create path memory from answers + codebase exploration + repo map.
+2. **If path memory is empty, explore then interview.** When you first work in a project directory, resolve its path memory (see `/workspace/.codeck/AGENTS.md` for API). If empty, do this BEFORE responding: (a) run `node /workspace/.codeck/scripts/repo-map-generator.mjs .` for structural overview, (b) read README.md, package.json/Cargo.toml/go.mod if they exist, (c) read the main entry point file. THEN ask 3 questions: (1) What does this project do? (2) Stack and conventions? (3) Anything to always remember? Create path memory from answers + exploration.
 
 3. **Load the skill before editing.** A hook will block your first edit if you haven't loaded the matching skill. See `rules/base/workflow.md` for the skill-to-area mapping table. Load the skill, then retry.
 

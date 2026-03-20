@@ -4,7 +4,7 @@ import {
   view, activeSection, claudeAuthenticated, presetConfigured, isMobile, mobileKeyboardOpen,
   accountEmail, accountOrg, wsConnected,
   updateStateFromServer, setView, setActiveSection, setAuthMode, setActiveSessionId,
-  setPresetConfigured, setAccountInfo,
+  setPresetConfigured, setAccountInfo, startUsagePolling,
   sessions, activeSessionId, addSession, removeSession, replaceSession,
   addLocalLog,
   sessionStatus,
@@ -84,6 +84,13 @@ export function App() {
 
   // Pull-to-refresh is handled by the PullToRefresh component.
   // It replaces the old preventPullToRefresh handler that blocked all pull gestures.
+
+  // Start usage polling when entering main view
+  useEffect(() => {
+    if (currentView === 'main') {
+      startUsagePolling(apiFetch);
+    }
+  }, [currentView]);
 
   // Router: init popstate listener
   useEffect(() => {

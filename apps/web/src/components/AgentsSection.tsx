@@ -105,6 +105,39 @@ function StatusBadge({ status, running }: { status: string; running?: boolean })
   return <span class={`badge ${map[status] || 'badge-muted'}`}>{status}</span>;
 }
 
+// ── Directory Cache ──
+
+const DIR_CACHE_TTL = 30_000; // 30 seconds
+const dirCache = new Map<string, { entries: DirEntry[], ts: number }>();
+
+function getCachedDirs(path: string): DirEntry[] | null {
+  const cached = dirCache.get(path);
+  if (cached && Date.now() - cached.ts < DIR_CACHE_TTL) return cached.entries;
+  return null;
+}
+
+function setCachedDirs(path: string, entries: DirEntry[]) {
+  dirCache.set(path, { entries, ts: Date.now() });
+}
+
+async function fetchDirs(relPath: string): Promise<DirEntry[]> {
+  const cached = getCachedDirs(relPath);
+  if (cached) return cached;
+
+  try {
+    const res = await apiFetch(`/api/files?path=${encodeURIComponent(relPath)}&type=dir`);
+    const data = await res.json();
+    const entries: DirEntry[] = (data.items || []).map((e: any) => ({
+      name: e.name,
+      path: relPath ? `${relPath}/${e.name}` : e.name,
+    }));
+    setCachedDirs(relPath, entries);
+    return entries;
+  } catch {
+    return [];
+  }
+}
+
 // ── Directory Selector ──
 
 interface DirEntry { name: string; path: string; }
@@ -120,6 +153,11 @@ function DirSelector({ value, onChange }: {
 
   const ws = workspacePath.value;
 
+  // Preload root directory on mount
+  useEffect(() => {
+    fetchDirs('');
+  }, []);
+
   useEffect(() => {
     if (open) loadDirs(relativePath);
   }, [open, relativePath]);
@@ -129,21 +167,26 @@ function DirSelector({ value, onChange }: {
   }
 
   async function loadDirs(relPath: string) {
-    setLoading(true);
-    try {
-      const res = await apiFetch(`/api/files?path=${encodeURIComponent(relPath)}`);
-      const data = await res.json();
-      const entries = (data.items || [])
-        .filter((e: any) => e.isDirectory)
-        .map((e: any) => ({
-          name: e.name,
-          path: relPath ? `${relPath}/${e.name}` : e.name,
-        }));
-      setDirs(entries);
-    } catch {
-      setDirs([]);
+    const cached = getCachedDirs(relPath);
+    if (cached) {
+      setDirs(cached);
+      setLoading(false);
+      // Prefetch children in background
+      for (const entry of cached) {
+        fetchDirs(entry.path);
+      }
+      return;
     }
+
+    setLoading(true);
+    const entries = await fetchDirs(relPath);
+    setDirs(entries);
     setLoading(false);
+
+    // Prefetch children in background
+    for (const entry of entries) {
+      fetchDirs(entry.path);
+    }
   }
 
   function handleSelect(relPath: string) {

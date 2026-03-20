@@ -238,10 +238,11 @@ function openWs(wsUrl: string): void {
       } else if (msg.type === 'console:freeze') {
         // Server detected PTY freeze — log diagnostic info
         if (typeof msg.sessionId === 'string') {
-          const dur = typeof msg.durationMs === 'number' ? Math.round(msg.durationMs / 1000) : '?';
-          const alive = msg.ptyAlive ? 'alive' : 'DEAD';
-          const lag = typeof msg.eventLoopLagMs === 'number' ? msg.eventLoopLagMs : '?';
-          addLog('warn', `Terminal freeze: ${dur}s (PTY: ${alive}, event loop lag: ${lag}ms)`);
+          const raw = msg as Record<string, unknown>;
+          const dur = typeof raw.durationMs === 'number' ? Math.round(raw.durationMs / 1000) : '?';
+          const alive = raw.ptyAlive ? 'alive' : 'DEAD';
+          const lag = typeof raw.eventLoopLagMs === 'number' ? raw.eventLoopLagMs : '?';
+          addLog({ type: 'warn', message: `Terminal freeze: ${dur}s (PTY: ${alive}, event loop lag: ${lag}ms)`, timestamp: Date.now() });
         }
       } else if (msg.type === 'console:exit') {
         if (typeof msg.sessionId === 'string') {
@@ -323,25 +324,23 @@ export async function connectWebSocket(): Promise<void> {
   }
 
   // Ticket request with 2s timeout — if slow, fall back to token-in-URL
-  const ticketCtrl = new AbortController();
-  const ticketTimeout = setTimeout(() => ticketCtrl.abort(), 2000);
-
-  fetch('/api/auth/ws-ticket', {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${token}` },
-    signal: ticketCtrl.signal,
-  })
-    .then(r => { clearTimeout(ticketTimeout); return r.ok ? r.json() : null; })
-    .then(data => {
-      const wsUrl = data?.ticket
-        ? `${protocol}//${location.host}?ticket=${encodeURIComponent(data.ticket)}`
-        : `${protocol}//${location.host}?token=${encodeURIComponent(token)}`;
-      openWs(wsUrl);
-    })
-    .catch(() => {
-      clearTimeout(ticketTimeout);
-      openWs(`${protocol}//${location.host}?token=${encodeURIComponent(token)}`);
+  try {
+    const ticketCtrl = new AbortController();
+    const ticketTimeout = setTimeout(() => ticketCtrl.abort(), 2000);
+    const r = await fetch('/api/auth/ws-ticket', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+      signal: ticketCtrl.signal,
     });
+    clearTimeout(ticketTimeout);
+    const data = r.ok ? await r.json() : null;
+    const wsUrl = data?.ticket
+      ? `${protocol}//${location.host}?ticket=${encodeURIComponent(data.ticket)}`
+      : `${protocol}//${location.host}?token=${encodeURIComponent(token)}`;
+    openWs(wsUrl);
+  } catch {
+    openWs(`${protocol}//${location.host}?token=${encodeURIComponent(token)}`);
+  }
 }
 
 export function disconnectWebSocket(): void {

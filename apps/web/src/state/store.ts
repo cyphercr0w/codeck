@@ -318,3 +318,36 @@ export function clearAgentOutput(agentId: string): void {
   delete copy[agentId];
   agentOutputs.value = copy;
 }
+
+// ── Claude Usage ──
+
+export interface ClaudeUsageData {
+  available: boolean;
+  fiveHour: { percent: number; resetsAt: string | null } | null;
+  sevenDay: { percent: number; resetsAt: string | null } | null;
+}
+
+export const claudeUsage = signal<ClaudeUsageData | null>(null);
+
+export function setClaudeUsage(data: ClaudeUsageData): void {
+  claudeUsage.value = data;
+}
+
+let usagePollTimer: ReturnType<typeof setInterval> | null = null;
+
+export function startUsagePolling(fetchFn: (url: string, opts?: RequestInit) => Promise<Response>): void {
+  if (usagePollTimer) return; // already polling
+
+  async function poll() {
+    try {
+      const res = await fetchFn('/api/dashboard');
+      const data = await res.json();
+      if (data.claude) {
+        setClaudeUsage(data.claude);
+      }
+    } catch { /* ignore */ }
+  }
+
+  poll(); // immediate first fetch
+  usagePollTimer = setInterval(poll, 60_000);
+}

@@ -1,6 +1,12 @@
-import { activeSection, wsConnected, setActiveSection, type Section } from '../state/store';
+import { activeSection, wsConnected, claudeUsage, setActiveSection, type Section } from '../state/store';
 import { IconHome, IconFolder, IconTerminal, IconBot, IconPlug, IconSettings, IconShield, IconBrain } from './Icons';
 import { NAV_ITEMS } from './nav-items';
+
+function barColor(p: number): string {
+  if (p < 60) return 'var(--accent)';
+  if (p < 85) return 'var(--warning)';
+  return 'var(--error)';
+}
 
 const SECTION_ICONS: Record<Section, () => preact.JSX.Element> = {
   home: () => <IconHome size={22} />,
@@ -42,6 +48,28 @@ export function MobileMenu({ open, onClose, onSectionChange }: MobileMenuProps) 
             </button>
           ))}
         </nav>
+        {claudeUsage.value?.available && (
+          <div class="mobile-menu-usage">
+            {claudeUsage.value.fiveHour && (
+              <div class="sidebar-usage-row">
+                <span class="sidebar-usage-label">5h</span>
+                <div class="sidebar-usage-track">
+                  <div class="sidebar-usage-fill" style={{ width: `${Math.min(100, claudeUsage.value.fiveHour.percent)}%`, background: barColor(claudeUsage.value.fiveHour.percent) }} />
+                </div>
+                <span class="sidebar-usage-pct">{claudeUsage.value.fiveHour.percent}%</span>
+              </div>
+            )}
+            {claudeUsage.value.sevenDay && (
+              <div class="sidebar-usage-row">
+                <span class="sidebar-usage-label">7d</span>
+                <div class="sidebar-usage-track">
+                  <div class="sidebar-usage-fill" style={{ width: `${Math.min(100, claudeUsage.value.sevenDay.percent)}%`, background: barColor(claudeUsage.value.sevenDay.percent) }} />
+                </div>
+                <span class="sidebar-usage-pct">{claudeUsage.value.sevenDay.percent}%</span>
+              </div>
+            )}
+          </div>
+        )}
         <div class="mobile-menu-footer">
           <span class={`status-dot${connected ? ' online' : ''}`} />
           <span>{connected ? 'Connected' : 'Disconnected'}</span>

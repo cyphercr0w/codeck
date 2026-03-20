@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'preact/hooks';
 import { accountEmail, accountOrg, claudeAuthenticated, sessions, agentName, activePorts, wsConnected, dockerExperimental, setActiveSection } from '../state/store';
 import { apiFetch, getAuthToken } from '../api';
-import { IconUser, IconMonitor, IconActivity, IconShield, IconHardDrive, IconDownload, IconPlug, IconPlus, IconX, IconBrain } from './Icons';
+import { IconUser, IconMonitor, IconActivity, IconHardDrive, IconDownload, IconPlug, IconPlus, IconX, IconBrain } from './Icons';
 import { ConfirmModal } from './ConfirmModal';
 
 interface DashboardData {
@@ -35,14 +35,6 @@ interface HomeSectionProps {
   onLogout: () => void;
 }
 
-const PERMISSION_LABELS: Record<string, string> = {
-  Read: 'Read files',
-  Edit: 'Edit files',
-  Write: 'Write files',
-  Bash: 'Run commands',
-  WebFetch: 'Fetch URLs',
-  WebSearch: 'Web search',
-};
 
 const DASHBOARD_REFRESH_MS = 30_000;
 
@@ -111,7 +103,6 @@ export function HomeSection({ onRelogin, onLogout }: HomeSectionProps) {
   const [dashboard, setDashboard] = useState<DashboardData | null>(null);
   const [dashLoading, setDashLoading] = useState(true);
   const [dashError, setDashError] = useState(false);
-  const [perms, setPerms] = useState<Record<string, boolean> | null>(null);
   const [networkInfo, setNetworkInfo] = useState<{ mode: string; mappedPorts: number[]; codeckPort: number } | null>(null);
   const [newPort, setNewPort] = useState('');
   const [portStatus, setPortStatus] = useState<{ type: 'success' | 'error' | 'info'; msg: string } | null>(null);
@@ -133,7 +124,6 @@ export function HomeSection({ onRelogin, onLogout }: HomeSectionProps) {
 
   useEffect(() => {
     loadDashboard();
-    loadPermissions();
     loadNetworkInfo();
     loadMemoryStats();
     const interval = setInterval(() => { loadDashboard(); loadMemoryStats(); }, DASHBOARD_REFRESH_MS);
@@ -173,43 +163,6 @@ export function HomeSection({ onRelogin, onLogout }: HomeSectionProps) {
       const res = await apiFetch('/api/dashboard/memory-stats');
       setMemoryStats(await res.json());
     } catch { /* ignore — card just won't show */ }
-  }
-
-  async function loadPermissions() {
-    try {
-      const res = await apiFetch('/api/permissions');
-      setPerms(await res.json());
-    } catch { /* ignore */ }
-  }
-
-  async function togglePerm(name: string) {
-    if (!perms) return;
-    const prev = { ...perms };
-    setPerms(p => p ? { ...p, [name]: !p[name] } : p);
-    try {
-      const res = await apiFetch('/api/permissions', {
-        method: 'POST',
-        body: JSON.stringify({ [name]: !prev[name] }),
-      });
-      setPerms(await res.json());
-    } catch { setPerms(prev); }
-  }
-
-  async function toggleAll() {
-    if (!perms) return;
-    const prev = { ...perms };
-    const allOn = Object.values(perms).every(v => v);
-    const target = !allOn;
-    const updated: Record<string, boolean> = {};
-    for (const key of Object.keys(perms)) updated[key] = target;
-    setPerms(updated);
-    try {
-      const res = await apiFetch('/api/permissions', {
-        method: 'POST',
-        body: JSON.stringify(updated),
-      });
-      setPerms(await res.json());
-    } catch { setPerms(prev); }
   }
 
   async function loadNetworkInfo() {
@@ -476,38 +429,6 @@ export function HomeSection({ onRelogin, onLogout }: HomeSectionProps) {
                   <p class="dash-unavailable">Not available — authenticate with Claude first</p>
                 )}
               </div>
-
-              {/* Permissions */}
-              {perms && (() => {
-                const allOn = Object.values(perms).every(v => v);
-                const enabledCount = Object.values(perms).filter(v => v).length;
-                const totalCount = Object.keys(perms).length;
-                return (
-                  <div class="dash-card">
-                    <div class="dash-card-title">
-                      <IconShield size={14} />
-                      <span>Permissions</span>
-                    </div>
-                    <label class="dash-perm-toggle dash-perm-select-all">
-                      <input type="checkbox" checked={allOn} onChange={toggleAll} />
-                      <span>Select All</span>
-                    </label>
-                    <div class="dash-perms">
-                      {Object.keys(perms).map(p => (
-                        <label key={p} class="dash-perm-toggle">
-                          <input type="checkbox" checked={perms[p]} onChange={() => togglePerm(p)} />
-                          <span>{PERMISSION_LABELS[p] || p}</span>
-                        </label>
-                      ))}
-                    </div>
-                    <div class="dash-meta">
-                      {allOn
-                        ? 'All permissions granted'
-                        : `${enabledCount}/${totalCount} enabled`}
-                    </div>
-                  </div>
-                );
-              })()}
 
               {/* Port Mapping */}
               {networkInfo && networkInfo.mode === 'bridge' && (

@@ -81,7 +81,7 @@ export function NewProjectModal({ visible, onCancel, onConfirm }: NewProjectModa
   async function loadDirs() {
     setDirs([]);
     try {
-      const res = await apiFetch('/api/files?path=');
+      const res = await apiFetch('/api/files?path=&type=dir');
       const data = await res.json();
       if (data.success) {
         const subdirs = data.items

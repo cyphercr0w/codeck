@@ -27,6 +27,7 @@ async function safePath(base: string, relativePath: string): Promise<string | nu
 // List directory contents
 router.get('/files', async (req, res) => {
   const relativePath = (req.query.path || '') as string;
+  const typeFilter = req.query.type as string | undefined;
   const fullPath = await safePath(AGENT_DATA_DIR, relativePath);
 
   if (!fullPath) {
@@ -35,24 +36,31 @@ router.get('/files', async (req, res) => {
   }
 
   try {
-    // Direct readdir — handles missing directory via ENOENT catch
-    const entries = await readdir(fullPath);
-    const items = await Promise.all(
-      entries.map(async name => {
-        const itemPath = join(fullPath, name);
-        try {
-          const s = await stat(itemPath);
-          return {
-            name,
-            isDirectory: s.isDirectory(),
-            size: s.size,
-            modified: s.mtime,
-          };
-        } catch {
-          return { name, isDirectory: false, size: 0 };
-        }
-      })
-    );
+    const entries = await readdir(fullPath, { withFileTypes: true });
+
+    let items;
+    if (typeFilter === 'dir') {
+      // Fast path: only directories, no stat() calls needed
+      items = entries
+        .filter(e => e.isDirectory())
+        .map(e => ({ name: e.name, isDirectory: true as const }));
+    } else {
+      // Full listing with stat for size/modified
+      items = await Promise.all(
+        entries.map(async e => {
+          if (e.isDirectory()) {
+            return { name: e.name, isDirectory: true as const, size: 0 };
+          }
+          const itemPath = join(fullPath, e.name);
+          try {
+            const s = await stat(itemPath);
+            return { name: e.name, isDirectory: false as const, size: s.size, modified: s.mtime };
+          } catch {
+            return { name: e.name, isDirectory: false as const, size: 0 };
+          }
+        })
+      );
+    }
 
     // Sort dirs first
     items.sort((a, b) => {

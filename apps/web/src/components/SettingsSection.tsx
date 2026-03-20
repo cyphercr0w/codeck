@@ -18,6 +18,12 @@ interface AuthLogEntry {
   timestamp: number;
 }
 
+interface IpGroup {
+  ip: string;
+  sessions: SessionInfo[];
+  hasCurrent: boolean;
+}
+
 // ── Helpers ────────────────────────────────────────────────────────────────
 
 function relativeTime(ts: number): string {
@@ -39,6 +45,29 @@ function expiresIn(expiresAt: number): { label: string; urgent: boolean } {
   if (diff < 86400) return { label: `${Math.floor(diff / 3600)}h`, urgent: true };
   return { label: `${Math.floor(diff / 86400)}d`, urgent: false };
 }
+
+function groupByIp(sessions: SessionInfo[]): IpGroup[] {
+  const map = new Map<string, SessionInfo[]>();
+  for (const s of sessions) {
+    const list = map.get(s.ip) || [];
+    list.push(s);
+    map.set(s.ip, list);
+  }
+  return Array.from(map.entries()).map(([ip, list]) => ({
+    ip,
+    sessions: list.sort((a, b) => b.createdAt - a.createdAt),
+    hasCurrent: list.some(s => s.current),
+  }));
+}
+
+const PERMISSION_LABELS: Record<string, string> = {
+  Read: 'Read files',
+  Edit: 'Edit files',
+  Write: 'Write files',
+  Bash: 'Run commands',
+  WebFetch: 'Fetch URLs',
+  WebSearch: 'Web search',
+};
 
 // ── Change Password Card ───────────────────────────────────────────────────
 
@@ -125,19 +154,20 @@ function ChangePasswordCard() {
         {error && <div class="alert alert-error" style="margin-bottom: 12px">{error}</div>}
         {success && <div class="form-success">Password updated successfully.</div>}
         <button type="submit" class="btn btn-sm btn-primary" disabled={loading}>
-          {loading ? <><span class="loading" /> Saving...</> : 'Change Password'}
+          {loading ? <><span class="spinner-sm" /> Saving...</> : 'Change Password'}
         </button>
       </form>
     </div>
   );
 }
 
-// ── Active Sessions Card ───────────────────────────────────────────────────
+// ── Active Sessions Card (grouped by IP) ─────────────────────────────────
 
 function ActiveSessionsCard() {
   const [sessions, setSessions] = useState<SessionInfo[]>([]);
   const [loading, setLoading] = useState(true);
   const [revoking, setRevoking] = useState<string | null>(null);
+  const [revokingIp, setRevokingIp] = useState<string | null>(null);
 
   async function loadSessions() {
     try {
@@ -166,6 +196,23 @@ function ActiveSessionsCard() {
     }
   }
 
+  async function revokeAllForIp(ip: string) {
+    setRevokingIp(ip);
+    const toRevoke = sessions.filter(s => s.ip === ip && !s.current);
+    try {
+      await Promise.all(
+        toRevoke.map(s => apiFetch(`/api/auth/sessions/${s.id}`, { method: 'DELETE' }))
+      );
+      setSessions(prev => prev.filter(s => !(s.ip === ip && !s.current)));
+    } catch {
+      // ignore
+    } finally {
+      setRevokingIp(null);
+    }
+  }
+
+  const groups = groupByIp(sessions);
+
   return (
     <div class="dash-card">
       <div class="dash-card-title">
@@ -173,52 +220,137 @@ function ActiveSessionsCard() {
         <span>Active Sessions</span>
       </div>
       {loading ? (
-        <div class="dash-loading"><span class="loading" /> Loading...</div>
-      ) : sessions.length === 0 ? (
+        <div class="dash-loading"><span class="spinner-sm" /> Loading...</div>
+      ) : groups.length === 0 ? (
         <div class="dash-meta" style="border-top: none; margin-top: 0; padding-top: 0">No active sessions.</div>
       ) : (
-        <div class="dash-table-wrap">
-          <table class="dash-table">
-            <thead>
-              <tr>
-                <th>IP</th>
-                <th>Created</th>
-                <th>Expires</th>
-                <th></th>
-                <th></th>
-              </tr>
-            </thead>
-            <tbody>
-              {sessions.map(s => {
-                const exp = expiresIn(s.expiresAt);
-                return (
-                  <tr key={s.id}>
-                    <td><code>{s.ip}</code></td>
-                    <td title={absoluteTime(s.createdAt)}>{relativeTime(s.createdAt)}</td>
-                    <td title={absoluteTime(s.expiresAt)}>
-                      <span class={exp.urgent ? 'text-error' : ''}>
-                        {exp.label}
-                      </span>
-                    </td>
-                    <td>
-                      {s.current && <span class="badge badge-success">Current</span>}
-                    </td>
-                    <td>
-                      <button
-                        class="btn btn-xs btn-ghost danger"
-                        disabled={s.current || revoking === s.id}
-                        onClick={() => revoke(s.id)}
-                      >
-                        {revoking === s.id ? <span class="loading" /> : 'Revoke'}
-                      </button>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+        <div class="session-groups">
+          {groups.map(group => {
+            const revocable = group.sessions.filter(s => !s.current);
+            return (
+              <div key={group.ip} class="session-group">
+                <div class="session-group-header">
+                  <div class="session-group-ip">
+                    <code>{group.ip}</code>
+                    <span class="badge badge-muted">{group.sessions.length} session{group.sessions.length > 1 ? 's' : ''}</span>
+                    {group.hasCurrent && <span class="badge badge-success">Current</span>}
+                  </div>
+                  {revocable.length > 1 && (
+                    <button
+                      class="btn btn-xs btn-ghost danger"
+                      disabled={revokingIp === group.ip}
+                      onClick={() => revokeAllForIp(group.ip)}
+                    >
+                      {revokingIp === group.ip ? <span class="spinner-sm" /> : `Revoke all (${revocable.length})`}
+                    </button>
+                  )}
+                </div>
+                <div class="session-group-list">
+                  {group.sessions.map(s => {
+                    const exp = expiresIn(s.expiresAt);
+                    return (
+                      <div key={s.id} class="session-group-item">
+                        <span title={absoluteTime(s.createdAt)}>{relativeTime(s.createdAt)}</span>
+                        <span class={exp.urgent ? 'text-error' : ''} title={absoluteTime(s.expiresAt)}>
+                          expires {exp.label}
+                        </span>
+                        {s.current ? (
+                          <span class="session-current-label">this session</span>
+                        ) : (
+                          <button
+                            class="btn btn-xs btn-ghost danger"
+                            disabled={revoking === s.id}
+                            onClick={() => revoke(s.id)}
+                          >
+                            {revoking === s.id ? <span class="spinner-sm" /> : 'Revoke'}
+                          </button>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })}
         </div>
       )}
+    </div>
+  );
+}
+
+// ── Permissions Card ──────────────────────────────────────────────────────
+
+function PermissionsCard() {
+  const [perms, setPerms] = useState<Record<string, boolean> | null>(null);
+
+  useEffect(() => {
+    apiFetch('/api/permissions')
+      .then(r => r.json())
+      .then(data => setPerms(data))
+      .catch(() => {});
+  }, []);
+
+  async function togglePerm(name: string) {
+    if (!perms) return;
+    const prev = { ...perms };
+    setPerms(p => p ? { ...p, [name]: !p[name] } : p);
+    try {
+      await apiFetch('/api/permissions', {
+        method: 'POST',
+        body: JSON.stringify({ [name]: !prev[name] }),
+      });
+    } catch {
+      setPerms(prev);
+    }
+  }
+
+  async function toggleAll() {
+    if (!perms) return;
+    const prev = { ...perms };
+    const allOn = Object.values(perms).every(v => v);
+    const target = !allOn;
+    const updated: Record<string, boolean> = {};
+    for (const key of Object.keys(perms)) updated[key] = target;
+    setPerms(updated);
+    try {
+      await apiFetch('/api/permissions', {
+        method: 'POST',
+        body: JSON.stringify(updated),
+      });
+    } catch {
+      setPerms(prev);
+    }
+  }
+
+  if (!perms) return null;
+
+  const allOn = Object.values(perms).every(v => v);
+  const enabledCount = Object.values(perms).filter(v => v).length;
+  const totalCount = Object.keys(perms).length;
+
+  return (
+    <div class="dash-card">
+      <div class="dash-card-title">
+        <IconShield size={14} />
+        <span>Agent Permissions</span>
+      </div>
+      <label class="dash-perm-toggle dash-perm-select-all">
+        <input type="checkbox" checked={allOn} onChange={toggleAll} />
+        <span>Select All</span>
+      </label>
+      <div class="dash-perms">
+        {Object.keys(perms).map(p => (
+          <label key={p} class="dash-perm-toggle">
+            <input type="checkbox" checked={perms[p]} onChange={() => togglePerm(p)} />
+            <span>{PERMISSION_LABELS[p] || p}</span>
+          </label>
+        ))}
+      </div>
+      <div class="dash-meta">
+        {allOn
+          ? 'All permissions granted'
+          : `${enabledCount}/${totalCount} enabled`}
+      </div>
     </div>
   );
 }
@@ -244,7 +376,7 @@ function AuthLogCard() {
         <span>Authentication Log</span>
       </div>
       {loading ? (
-        <div class="dash-loading"><span class="loading" /> Loading...</div>
+        <div class="dash-loading"><span class="spinner-sm" /> Loading...</div>
       ) : events.length === 0 ? (
         <div class="dash-meta" style="border-top: none; margin-top: 0; padding-top: 0">No authentication events.</div>
       ) : (
@@ -292,6 +424,9 @@ export function SettingsSection() {
         </div>
         <div class="dash-grid">
           <ChangePasswordCard />
+          <PermissionsCard />
+        </div>
+        <div style="margin-top: 16px">
           <ActiveSessionsCard />
         </div>
         <div style="margin-top: 16px">

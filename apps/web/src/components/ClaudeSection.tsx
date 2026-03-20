@@ -423,7 +423,7 @@ export function ClaudeSection({ onNewSession, onNewShell }: ClaudeSectionProps) 
           {sessionList.map(s => (
               <button
                 key={s.id}
-                class={`terminal-tab${s.id === activeId && !showNewSessionMenu ? ' active' : ''}${s.loading ? ' loading' : ''}${s.type === 'shell' ? ' shell' : ''}`}
+                class={`terminal-tab${s.id === activeId && !showNewSessionMenu ? ' active' : ''}${s.loading ? ' is-loading' : ''}${s.type === 'shell' ? ' shell' : ''}`}
                 onClick={() => !s.loading && switchToSession(s.id)}
                 title={s.cwd}
               >
@@ -469,7 +469,7 @@ export function ClaudeSection({ onNewSession, onNewShell }: ClaudeSectionProps) 
             >
               {newTabLoading ? (
                 <>
-                  <span class="loading" style={{ width: '10px', height: '10px', flexShrink: 0 }} />
+                  <span class="spinner-sm" style={{ flexShrink: 0 }} />
                   <span>Loading</span>
                 </>
               ) : (
@@ -522,7 +522,7 @@ export function ClaudeSection({ onNewSession, onNewShell }: ClaudeSectionProps) 
             >
               {newTabLoading ? (
                 <>
-                  <div class="loading" />
+                  <div class="spinner-lg" />
                   <div class="claude-empty-title">Loading session...</div>
                 </>
               ) : (

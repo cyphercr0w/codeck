@@ -86,6 +86,7 @@ async function safePath(base: string, relativePath: string): Promise<string | nu
 // List directory files
 router.get('/', async (req, res) => {
   const relativePath = (req.query.path || '') as string;
+  const typeFilter = req.query.type as string | undefined;
   const fullPath = await safePath(WORKSPACE, relativePath);
 
   if (!fullPath) {
@@ -94,25 +95,32 @@ router.get('/', async (req, res) => {
   }
 
   try {
-    const entries = await readdir(fullPath);
-    const items = await Promise.all(
-      entries
-        .filter(name => !name.startsWith('.'))
-        .map(async name => {
-          const itemPath = join(fullPath, name);
+    const entries = await readdir(fullPath, { withFileTypes: true });
+    const filtered = entries.filter(e => !e.name.startsWith('.'));
+
+    let items;
+    if (typeFilter === 'dir') {
+      // Fast path: only directories, no stat() calls needed
+      items = filtered
+        .filter(e => e.isDirectory())
+        .map(e => ({ name: e.name, isDirectory: true as const }));
+    } else {
+      // Full listing with stat for size/modified
+      items = await Promise.all(
+        filtered.map(async e => {
+          if (e.isDirectory()) {
+            return { name: e.name, isDirectory: true as const, size: 0 };
+          }
+          const itemPath = join(fullPath, e.name);
           try {
             const s = await stat(itemPath);
-            return {
-              name,
-              isDirectory: s.isDirectory(),
-              size: s.size,
-              modified: s.mtime,
-            };
+            return { name: e.name, isDirectory: false as const, size: s.size, modified: s.mtime };
           } catch {
-            return { name, isDirectory: false, size: 0 };
+            return { name: e.name, isDirectory: false as const, size: 0 };
           }
         })
-    );
+      );
+    }
 
     items.sort((a, b) => {
       if (a.isDirectory && !b.isDirectory) return -1;

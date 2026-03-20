@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { apiFetch } from '../api';
-import { workspacePath, agentName } from '../state/store';
+import { workspacePath, agentName, setActiveSection } from '../state/store';
 import { IconFolder, IconPlus, IconGithub } from './Icons';
 
 type Tab = 'existing' | 'create' | 'clone';
@@ -277,9 +277,13 @@ export function NewProjectModal({ visible, onCancel, onConfirm }: NewProjectModa
               {/* SSH warning */}
               {cloneUrl && isSSHUrl(cloneUrl) && !sshConfigured && (
                 <div class="npm-warning">
-                  SSH keys not configured. Private repos will fail. Configure them in Integrations.
+                  SSH keys not configured. Private repos will fail.
                 </div>
               )}
+
+              <div class="npm-hint">
+                For private repos, <button class="npm-link" type="button" onClick={() => { onCancel(); setActiveSection('integrations'); history.pushState(null, '', '/integrations'); }}>configure SSH keys or connect your GitHub account</button> in Integrations first.
+              </div>
 
               <div class="npm-row">
                 <div style={{ flex: 1 }}>

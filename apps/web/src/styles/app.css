@@ -1945,6 +1945,22 @@
   font-size: 12px;
   color: var(--text-muted);
   margin: 0;
+  line-height: 1.5;
+}
+
+.npm-link {
+  background: none;
+  border: none;
+  color: var(--accent);
+  font-size: inherit;
+  font-family: inherit;
+  cursor: pointer;
+  padding: 0;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.npm-link:hover {
+  color: var(--text-primary);
 }
 
 .npm-row {

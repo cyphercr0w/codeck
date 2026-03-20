@@ -378,7 +378,6 @@ export function ClaudeSection({ onNewSession, onNewShell }: ClaudeSectionProps) 
   }
 
   function switchToSession(id: string) {
-    setShowNewSessionMenu(false);
     setActiveSessionId(id);
     requestAnimationFrame(() => {
       fitTerminal(id);
@@ -423,7 +422,7 @@ export function ClaudeSection({ onNewSession, onNewShell }: ClaudeSectionProps) 
           {sessionList.map(s => (
               <button
                 key={s.id}
-                class={`terminal-tab${s.id === activeId && !showNewSessionMenu ? ' active' : ''}${s.loading ? ' is-loading' : ''}${s.type === 'shell' ? ' shell' : ''}`}
+                class={`terminal-tab${s.id === activeId ? ' active' : ''}${s.loading ? ' is-loading' : ''}${s.type === 'shell' ? ' shell' : ''}`}
                 onClick={() => !s.loading && switchToSession(s.id)}
                 title={s.cwd}
               >
@@ -464,7 +463,8 @@ export function ClaudeSection({ onNewSession, onNewShell }: ClaudeSectionProps) 
             ))}
           {(showNewSessionMenu || newTabLoading) && (
             <button
-              class="terminal-tab active"
+              class={`terminal-tab${!activeId || newTabLoading ? ' active' : ''}`}
+              onClick={() => { if (!newTabLoading) setActiveSessionId(null); }}
             >
               {newTabLoading ? (
                 <>
@@ -509,13 +509,12 @@ export function ClaudeSection({ onNewSession, onNewShell }: ClaudeSectionProps) 
               Context loaded: {contextBanner.projectName} &middot; {contextBanner.kb} KB of memory injected
             </div>
           )}
-          {(sessionList.length === 0 || showNewSessionMenu) && !restoringPending.value && (
+          {(sessionList.length === 0 || (showNewSessionMenu && !activeId)) && !restoringPending.value && (
             <div
-              class={`claude-empty${showNewSessionMenu && sessionList.length > 0 ? ' overlay' : ''}`}
+              class="claude-empty"
               onClick={(e) => {
-                // Click outside buttons dismisses the menu (only when overlay)
-                if (showNewSessionMenu && e.target === e.currentTarget) {
-                  setShowNewSessionMenu(false);
+                if (e.target === e.currentTarget) {
+                  // noop — don't dismiss, user can click X on the tab
                 }
               }}
             >

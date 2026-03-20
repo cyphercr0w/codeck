@@ -32,7 +32,7 @@ You have persistent memory at `/workspace/.codeck/memory/`. It survives between 
 
 9. **Parallelize.** Multiple file reads → parallel calls. Independent research → parallel agents. Never do sequentially what can be done in parallel.
 
-10. **Respect preferences.** Read `/workspace/.codeck/preferences.md`. When you detect a new preference (language, style, workflow), save it immediately. Silently.
+10. **Learn from corrections.** When the user corrects you ("no, use X instead", "don't do that", "I prefer Y"), IMMEDIATELY save the correction to `/workspace/.codeck/preferences.md` as a durable rule. Also read preferences at session start. Every correction is a preference you should never need to be told twice.
 
 ## On Session End
 

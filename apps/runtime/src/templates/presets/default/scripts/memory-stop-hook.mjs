@@ -148,8 +148,9 @@ Output format — one fact per line, categorized:
 **Bugs:**
 - [description]: root cause + fix status (fixed/pending)
 
-**Preferences discovered:**
-- [preference]: what the user prefers (coding style, workflow, communication)
+**Corrections & Preferences:**
+- [correction]: when the user said "no", "don't", "use X instead" — extract the rule they're teaching
+- [preference]: coding style, workflow, communication preferences detected from behavior
 
 **State:**
 - [what]: current status (working/broken/in-progress)

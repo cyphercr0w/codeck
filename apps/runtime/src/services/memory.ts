@@ -319,12 +319,15 @@ export async function appendToDaily(entry: string, project?: string, tags?: stri
 
     const sanitized = sanitizeSecrets(entry).trim();
 
+    // Read file once — reused for both dedup check and append
+    const fileExists = existsSync(path);
+    const existing = fileExists ? readFileSync(path, 'utf-8') : '';
+
     // ── Semantic deduplication ──
     // Check last 10 entries for keyword overlap before writing.
     // >85% overlap = SKIP (duplicate), 50-85% = MERGE, <50% = WRITE.
-    if (existsSync(path)) {
-      const existing = readFileSync(path, 'utf-8');
-      const entries = existing.split(/\n### /).slice(-10); // last 10 entries
+    if (fileExists) {
+      const entries = existing.split(/\n### /).slice(-10);
       const newKeywords = extractKeywords(sanitized);
 
       if (newKeywords.size > 0) {
@@ -338,7 +341,6 @@ export async function appendToDaily(entry: string, project?: string, tags?: stri
           console.log(`[Memory] SKIP daily entry (${(maxSimilarity * 100).toFixed(0)}% overlap with existing)`);
           return; // Don't write duplicate
         }
-        // 50-85%: write anyway but log. Full MERGE would require LLM call.
         if (maxSimilarity > 0.5) {
           console.log(`[Memory] Writing daily entry with ${(maxSimilarity * 100).toFixed(0)}% overlap (consider consolidation)`);
         }
@@ -351,12 +353,10 @@ export async function appendToDaily(entry: string, project?: string, tags?: stri
     if (tags && tags.length > 0) line += ` ${tags.map(t => `#${t}`).join(' ')}`;
     line += '\n\n' + sanitized + '\n';
 
-    if (existsSync(path)) {
-      const existing = readFileSync(path, 'utf-8');
-      writeFileSync(path, existing.trimEnd() + '\n\n' + line);
-    } else {
-      writeFileSync(path, `# Daily — ${d}\n\n` + line);
-    }
+    const content = fileExists
+      ? existing.trimEnd() + '\n\n' + line
+      : `# Daily — ${d}\n\n` + line;
+    writeFileSync(path, content);
   });
 
   return { date: d };

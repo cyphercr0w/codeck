@@ -157,9 +157,10 @@ export function search(options: SearchOptions): SearchResult[] {
 				: 0; // no date = no decay
 
 			// Durable/decision memories are truly exempt from decay. Daily logs decay.
+			// Half-life = ln(2)/lambda. For 14-day half-life: lambda = 0.0495
 			const isExempt =
 				row.fileType === "durable" || row.fileType === "decision";
-			const lambda = isExempt ? 0 : 0.16 * (1 - 0.3 * 0.8); // 0.3 importance for daily
+			const lambda = isExempt ? 0 : 0.0495; // ~14-day half-life for daily entries
 			const decayFactor = lambda === 0 ? 1.0 : Math.exp(-lambda * daysOld);
 
 			return {

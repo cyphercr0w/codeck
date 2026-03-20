@@ -337,6 +337,7 @@ function handleConsoleMessage(ws: WebSocket, msg: { type: string; sessionId: str
         sessionHandlers.delete(sid);
         sessionClients.delete(sid);
         sessionMaxDimensions.delete(sid);
+        sessionPtyPaused.delete(sid);
         destroySession(sid);
       });
       sessionExitHandlers.set(sid, exitDisposable);

@@ -47,7 +47,6 @@ export function NewProjectModal({ visible, onCancel, onConfirm }: NewProjectModa
       setError('');
       loadDirs();
       checkSshStatus();
-      checkConversations(ws);
 
       // Focus trap and Escape handler
       const handleKeyDown = (e: KeyboardEvent) => {

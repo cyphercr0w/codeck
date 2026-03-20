@@ -115,7 +115,7 @@ function SkillMarketplace({ onInstalled }: { onInstalled: () => void }) {
     <div class="skill-market">
       <input
         class="skill-search"
-        placeholder="Search 600+ skills from skills.sh..."
+        placeholder={`Search ${results.length > 0 ? results.length : '...'} skills from skills.sh...`}
         value={query}
         onInput={e => handleInput((e.target as HTMLInputElement).value)}
       />

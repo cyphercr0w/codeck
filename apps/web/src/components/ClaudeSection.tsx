@@ -465,7 +465,6 @@ export function ClaudeSection({ onNewSession, onNewShell }: ClaudeSectionProps) 
           {(showNewSessionMenu || newTabLoading) && (
             <button
               class="terminal-tab active"
-              onClick={() => { if (!newTabLoading) { setShowNewSessionMenu(false); } }}
             >
               {newTabLoading ? (
                 <>

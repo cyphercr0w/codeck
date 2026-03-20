@@ -652,6 +652,15 @@
   margin-bottom: 12px;
 }
 
+.home-account-limits-loading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--text-muted);
+  padding: 4px 0;
+}
+
 .home-account-limits-title {
   font-size: 11px;
   color: var(--text-muted);
@@ -796,6 +805,7 @@
 .fb-list {
   max-height: 400px;
   overflow-y: auto;
+  min-height: 120px;
 }
 
 .fb-row {

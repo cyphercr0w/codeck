@@ -169,18 +169,28 @@ export function HomeSection({ onRelogin, onLogout }: HomeSectionProps) {
               </div>
             </div>
 
-            {/* Usage limits inline */}
-            {usage?.available && (
-              <div class="home-account-limits">
-                <div class="home-account-limits-title">Usage limits</div>
-                {usage.fiveHour && (
-                  <DashBar label="5h" percent={usage.fiveHour.percent} detail={usage.fiveHour.resetsAt ? `resets ${formatTimeUntil(usage.fiveHour.resetsAt)}` : ''} />
-                )}
-                {usage.sevenDay && (
-                  <DashBar label="7d" percent={usage.sevenDay.percent} detail={usage.sevenDay.resetsAt ? `resets ${formatTimeUntil(usage.sevenDay.resetsAt)}` : ''} />
-                )}
-              </div>
-            )}
+            {/* Usage limits — always shown */}
+            <div class="home-account-limits">
+              <div class="home-account-limits-title">Usage limits</div>
+              {usage?.available ? (
+                <>
+                  {usage.fiveHour && (
+                    <DashBar label="5h" percent={usage.fiveHour.percent} detail={usage.fiveHour.resetsAt ? `resets ${formatTimeUntil(usage.fiveHour.resetsAt)}` : ''} />
+                  )}
+                  {usage.sevenDay && (
+                    <DashBar label="7d" percent={usage.sevenDay.percent} detail={usage.sevenDay.resetsAt ? `resets ${formatTimeUntil(usage.sevenDay.resetsAt)}` : ''} />
+                  )}
+                </>
+              ) : (
+                <div class="home-account-limits-loading">
+                  {usage === null ? (
+                    <><span class="spinner-sm" /> Loading...</>
+                  ) : (
+                    <span class="text-muted">Not available — usage data requires an active Claude session</span>
+                  )}
+                </div>
+              )}
+            </div>
 
             {showRelogin && (
               <div class="home-account-relogin">

@@ -345,14 +345,34 @@ export async function startDaemon(): Promise<void> {
   process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
   process.on('SIGINT', () => gracefulShutdown('SIGINT'));
 
-  server.listen(PORT, () => {
-    console.log(`\n[Daemon] Codeck managed mode running on :${PORT}`);
-    console.log(`[Daemon] Serving web from ${WEB_DIST}`);
-    console.log(`[Daemon] Proxying API to ${getRuntimeUrl()}`);
-    const wsUrl = getRuntimeWsUrl();
-    if (wsUrl !== getRuntimeUrl()) {
-      console.log(`[Daemon] Proxying WS  to ${wsUrl}`);
-    }
-    console.log('');
-  });
+  // Retry listen with backoff in case the port isn't released yet (fast systemd restart)
+  let retries = 0;
+  const MAX_RETRIES = 5;
+
+  function tryListen() {
+    server.listen(PORT, () => {
+      console.log(`\n[Daemon] Codeck managed mode running on :${PORT}`);
+      console.log(`[Daemon] Serving web from ${WEB_DIST}`);
+      console.log(`[Daemon] Proxying API to ${getRuntimeUrl()}`);
+      const wsUrl = getRuntimeWsUrl();
+      if (wsUrl !== getRuntimeUrl()) {
+        console.log(`[Daemon] Proxying WS  to ${wsUrl}`);
+      }
+      console.log('');
+    });
+
+    server.on('error', (err: NodeJS.ErrnoException) => {
+      if (err.code === 'EADDRINUSE' && retries < MAX_RETRIES) {
+        retries++;
+        const delay = retries * 2000;
+        console.log(`[Daemon] Port ${PORT} busy, retrying in ${delay / 1000}s (${retries}/${MAX_RETRIES})...`);
+        setTimeout(tryListen, delay);
+      } else {
+        console.error(`[Daemon] Fatal: ${err.message}`);
+        process.exit(1);
+      }
+    });
+  }
+
+  tryListen();
 }

@@ -151,7 +151,7 @@ function SkillMarketplace({ onInstalled }: { onInstalled: () => void }) {
 // ── Quick Input (rules/preferences/skills) ──
 
 function QuickInput({ onSaved }: { onSaved: () => void }) {
-  const [type, setType] = useState<'preference' | 'rule' | 'skill'>('preference');
+  const [type, setType] = useState<'preference' | 'rule' | 'skill'>('skill');
   const [text, setText] = useState('');
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
@@ -207,14 +207,14 @@ function QuickInput({ onSaved }: { onSaved: () => void }) {
   return (
     <div class="mem-quick">
       <div class="mem-quick-tabs">
+        <button class={`mem-quick-tab${type === 'skill' ? ' active' : ''}`} onClick={() => setType('skill')}>
+          Skills
+        </button>
         <button class={`mem-quick-tab${type === 'preference' ? ' active' : ''}`} onClick={() => setType('preference')}>
           Preference
         </button>
         <button class={`mem-quick-tab${type === 'rule' ? ' active' : ''}`} onClick={() => setType('rule')}>
           Rule
-        </button>
-        <button class={`mem-quick-tab${type === 'skill' ? ' active' : ''}`} onClick={() => setType('skill')}>
-          Skills
         </button>
       </div>
       <div class="mem-quick-body">

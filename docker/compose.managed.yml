@@ -85,7 +85,7 @@ services:
     volumes:
       - ${CODECK_WORKSPACE:-workspace}:/workspace
       - ${CODECK_CLAUDE_CONFIG:-claude-config}:/root/.claude
-      - ${CODECK_SSH_DATA:-ssh-data}:/root/.ssh:ro
+      - ${CODECK_SSH_DATA:-ssh-data}:/root/.ssh
       - ${CODECK_GH_CONFIG:-gh-config}:/root/.config/gh
       # Shared data dir — bind-mounted from host so daemon and runtime share auth.json
       - ${CODECK_DATA_DIR:-./.codeck-data}:/data/.codeck

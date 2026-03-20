@@ -61,6 +61,7 @@ function GitHubDetail({ onBack }: { onBack: () => void }) {
   const [github, setGitHub] = useState<GitHubStatus>({ authenticated: false, loginInProgress: false, code: null, url: null, username: null, email: null, avatarUrl: null });
   const [loading, setLoading] = useState(true);
   const [sshGenerating, setSSHGenerating] = useState(false);
+  const [ghConnecting, setGhConnecting] = useState(false);
   const [copied, setCopied] = useState(false);
   const [error, setError] = useState('');
   const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -168,6 +169,7 @@ function GitHubDetail({ onBack }: { onBack: () => void }) {
 
   async function handleGitHubLogin() {
     setError('');
+    setGhConnecting(true);
     try {
       const res = await apiFetch('/api/github/login', { method: 'POST' });
       const data = await res.json();
@@ -175,6 +177,7 @@ function GitHubDetail({ onBack }: { onBack: () => void }) {
     } catch {
       setError('Error starting GitHub login');
     }
+    setGhConnecting(false);
   }
 
   function pollGitHubLogin() {
@@ -331,8 +334,9 @@ function GitHubDetail({ onBack }: { onBack: () => void }) {
           ) : (
             <>
               <p class="integ-section-info">Connect your GitHub account to access private repos via HTTPS.</p>
-              <button class="btn btn-sm btn-primary" onClick={handleGitHubLogin}>
-                <IconGithub size={13} /> Connect GitHub
+              <button class="btn btn-sm btn-primary" onClick={handleGitHubLogin} disabled={ghConnecting}>
+                {ghConnecting ? <span class="spinner-sm" /> : <IconGithub size={13} />}
+                {ghConnecting ? 'Connecting...' : 'Connect GitHub'}
               </button>
             </>
           )}

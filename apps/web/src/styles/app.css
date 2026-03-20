@@ -2614,10 +2614,10 @@
 }
 .mem-quick-tab {
   flex: 1;
-  padding: 8px 12px;
+  padding: 10px 12px;
   background: none;
   border: none;
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 500;
   color: var(--text-muted);
   cursor: pointer;
@@ -2625,10 +2625,12 @@
   font-family: inherit;
   border-bottom: 2px solid transparent;
 }
-.mem-quick-tab:hover { color: var(--text-primary); }
+.mem-quick-tab:hover { color: var(--text-primary); background: var(--bg-hover); }
 .mem-quick-tab.active {
   color: var(--accent);
+  font-weight: 600;
   border-bottom-color: var(--accent);
+  background: var(--bg-hover);
 }
 .mem-quick-body { padding: 10px 12px; }
 .mem-quick-input {

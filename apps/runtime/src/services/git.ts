@@ -270,7 +270,9 @@ export function startGitHubFullLogin(callbacks: {
         gitHubConfig.authenticated = true;
         invalidateGhAuthCache();
         loadGitHubAccountInfo();
-        console.log('\n✓ GitHub authenticated successfully\n');
+        // Configure git to use gh as credential helper so shell sessions can clone
+        spawnSync('gh', ['auth', 'setup-git'], { stdio: 'pipe', timeout: 5000 });
+        console.log('\n✓ GitHub authenticated successfully (git credential helper configured)\n');
         if (callbacks.onSuccess) callbacks.onSuccess();
         resolve(true);
       } else {
@@ -624,11 +626,21 @@ export function generateSSHKey(force = false): { success: boolean; exists?: bool
 
     // Generate ed25519 key without passphrase
     console.log('[SSH] Generating new SSH key...');
-    spawnSync('ssh-keygen', ['-t', 'ed25519', '-f', SSH_KEY_PATH, '-N', '', '-C', 'codeck'], {
+    const keygen = spawnSync('ssh-keygen', ['-t', 'ed25519', '-f', SSH_KEY_PATH, '-N', '', '-C', 'codeck'], {
       stdio: 'pipe',
     });
 
-    // Set correct permissions using fs.chmodSync (no shell needed)
+    if (keygen.status !== 0) {
+      const stderr = keygen.stderr?.toString().trim() || 'unknown error';
+      console.error('[SSH] ssh-keygen failed:', stderr);
+      return { success: false, error: `ssh-keygen failed: ${stderr}` };
+    }
+
+    if (!existsSync(SSH_KEY_PATH)) {
+      return { success: false, error: 'ssh-keygen ran but key file was not created' };
+    }
+
+    // Set correct permissions
     chmodSync(SSH_KEY_PATH, 0o600);
     chmodSync(SSH_PUB_PATH, 0o644);
 

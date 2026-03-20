@@ -2,7 +2,7 @@ import { spawn as ptySpawn, type IPty } from 'node-pty';
 import { readFileSync, existsSync, readdirSync, mkdirSync, unlinkSync, renameSync, statSync } from 'fs';
 import { readdir as readdirAsync, stat as statAsync, readFile as readFileAsync } from 'fs/promises';
 import { randomUUID } from 'crypto';
-import { resolve } from 'path';
+import { resolve, join } from 'path';
 import { realpathSync } from 'fs';
 import { execFileSync } from 'child_process';
 import { ACTIVE_AGENT } from './agent.js';
@@ -167,7 +167,27 @@ export function createConsoleSession(options?: string | CreateSessionOptions): C
   syncToClaudeSettings();
 
   const oauthEnv = getOAuthEnv();
-  const finalEnv = { ...buildCleanEnv(), ...oauthEnv, TERM: 'xterm-256color' };
+
+  // Load user .env file (API keys, tokens saved by the agent)
+  const userEnv: Record<string, string> = {};
+  const dotenvPath = join(process.env.WORKSPACE || '/workspace', '.codeck', '.env');
+  if (existsSync(dotenvPath)) {
+    try {
+      const content = readFileSync(dotenvPath, 'utf-8');
+      for (const line of content.split('\n')) {
+        const trimmed = line.trim();
+        if (!trimmed || trimmed.startsWith('#')) continue;
+        const eqIdx = trimmed.indexOf('=');
+        if (eqIdx > 0) {
+          const key = trimmed.slice(0, eqIdx).trim();
+          const val = trimmed.slice(eqIdx + 1).trim().replace(/^["']|["']$/g, '');
+          if (key && val) userEnv[key] = val;
+        }
+      }
+    } catch { /* non-fatal */ }
+  }
+
+  const finalEnv = { ...buildCleanEnv(), ...userEnv, ...oauthEnv, TERM: 'xterm-256color' };
 
   // Build CLI args from launch options
   const args: string[] = [];

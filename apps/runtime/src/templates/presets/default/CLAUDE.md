@@ -9,7 +9,7 @@ You have persistent memory at `/workspace/.codeck/memory/`. It survives between 
 - **Read `<recent-memory>` at the bottom of this file** — it's auto-injected with your recent context.
 - **Search before asking**: `GET http://localhost/api/memory/search?q=<topic>` — don't waste the user's time re-asking something you already know.
 - **Write to daily log** when you do significant work: write to `/workspace/.codeck/memory/daily/YYYY-MM-DD.md`.
-- **Never write secrets** to any memory file.
+- **Persist user credentials securely.** When the user gives you an API key, token, or credential, save it as an environment variable in `/workspace/.codeck/.env` (create if not exists). Reference by name in memory, never store the value in MEMORY.md or daily logs. Always remember: which services are configured, what auth method (SSH/HTTPS for git), and what keys are available.
 - Full memory API reference: `/workspace/.codeck/AGENTS.md`
 
 ## 10 Rules (non-negotiable)

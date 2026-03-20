@@ -53,9 +53,9 @@ router.get('/catalog', async (req, res) => {
       s.name.toLowerCase().includes(query) ||
       s.source.toLowerCase().includes(query)
     );
-    res.json({ skills: filtered.slice(0, 50) });
+    res.json({ skills: filtered });
   } else {
-    res.json({ skills: skills.slice(0, 100) }); // Top 100 by installs (already sorted)
+    res.json({ skills });
   }
 });
 

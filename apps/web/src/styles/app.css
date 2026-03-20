@@ -1619,9 +1619,9 @@
 }
 
 .claude-recent-convos {
-  margin-top: 16px;
+  margin-top: 20px;
   width: 100%;
-  max-width: 400px;
+  max-width: 520px;
   display: flex;
   flex-direction: column;
   gap: 4px;
@@ -1637,13 +1637,14 @@
 
 .claude-recent-item {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
-  gap: 8px;
-  padding: 8px 12px;
+  min-height: 44px;
+  gap: 10px;
+  padding: 10px 14px;
   background: var(--bg-secondary);
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: 8px;
   cursor: pointer;
   transition: background 0.1s;
   text-align: left;
@@ -1658,8 +1659,10 @@
 .claude-recent-text {
   flex: 1;
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  line-height: 1.4;
 }
 
 .claude-recent-meta {
@@ -3706,6 +3709,13 @@
   border: 1px solid var(--border);
   border-radius: 8px;
   overflow: hidden;
+}
+
+.session-group-toggle {
+  display: flex;
+  align-items: center;
+  color: var(--text-muted);
+  flex-shrink: 0;
 }
 
 .session-group-header {

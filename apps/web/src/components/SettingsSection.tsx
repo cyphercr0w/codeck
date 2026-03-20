@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'preact/hooks';
 import { apiFetch, setAuthToken } from '../api';
 import { wsConnected } from '../state/store';
-import { IconShield, IconKey, IconList, IconPlug, IconPlus, IconX } from './Icons';
+import { IconShield, IconKey, IconList, IconPlug, IconPlus, IconX, IconChevronDown, IconChevronRight } from './Icons';
 import { ConfirmModal } from './ConfirmModal';
 
 // ── Types ──────────────────────────────────────────────────────────────────
@@ -170,6 +170,16 @@ function ActiveSessionsCard() {
   const [loading, setLoading] = useState(true);
   const [revoking, setRevoking] = useState<string | null>(null);
   const [revokingIp, setRevokingIp] = useState<string | null>(null);
+  const [expandedIps, setExpandedIps] = useState<Set<string>>(new Set());
+
+  function toggleIp(ip: string) {
+    setExpandedIps(prev => {
+      const next = new Set(prev);
+      if (next.has(ip)) next.delete(ip);
+      else next.add(ip);
+      return next;
+    });
+  }
 
   async function loadSessions() {
     try {
@@ -229,48 +239,54 @@ function ActiveSessionsCard() {
         <div class="session-groups">
           {groups.map(group => {
             const revocable = group.sessions.filter(s => !s.current);
+            const expanded = expandedIps.has(group.ip);
             return (
               <div key={group.ip} class="session-group">
-                <div class="session-group-header">
+                <div class="session-group-header" onClick={() => toggleIp(group.ip)} style="cursor: pointer">
+                  <span class="session-group-toggle">
+                    {expanded ? <IconChevronDown size={12} /> : <IconChevronRight size={12} />}
+                  </span>
                   <div class="session-group-ip">
                     <code>{group.ip}</code>
-                    <span class="badge badge-muted">{group.sessions.length} session{group.sessions.length > 1 ? 's' : ''}</span>
+                    <span class="badge badge-muted">{group.sessions.length}</span>
                     {group.hasCurrent && <span class="badge badge-success">Current</span>}
                   </div>
                   {revocable.length > 1 && (
                     <button
                       class="btn btn-xs btn-ghost danger"
                       disabled={revokingIp === group.ip}
-                      onClick={() => revokeAllForIp(group.ip)}
+                      onClick={e => { e.stopPropagation(); revokeAllForIp(group.ip); }}
                     >
                       {revokingIp === group.ip ? <span class="spinner-sm" /> : `Revoke all (${revocable.length})`}
                     </button>
                   )}
                 </div>
-                <div class="session-group-list">
-                  {group.sessions.map(s => {
-                    const exp = expiresIn(s.expiresAt);
-                    return (
-                      <div key={s.id} class="session-group-item">
-                        <span title={absoluteTime(s.createdAt)}>{relativeTime(s.createdAt)}</span>
-                        <span class={exp.urgent ? 'text-error' : ''} title={absoluteTime(s.expiresAt)}>
-                          expires {exp.label}
-                        </span>
-                        {s.current ? (
-                          <span class="session-current-label">this session</span>
-                        ) : (
-                          <button
-                            class="btn btn-xs btn-ghost danger"
-                            disabled={revoking === s.id}
-                            onClick={() => revoke(s.id)}
-                          >
-                            {revoking === s.id ? <span class="spinner-sm" /> : 'Revoke'}
-                          </button>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
+                {expanded && (
+                  <div class="session-group-list">
+                    {group.sessions.map(s => {
+                      const exp = expiresIn(s.expiresAt);
+                      return (
+                        <div key={s.id} class="session-group-item">
+                          <span title={absoluteTime(s.createdAt)}>{relativeTime(s.createdAt)}</span>
+                          <span class={exp.urgent ? 'text-error' : ''} title={absoluteTime(s.expiresAt)}>
+                            expires {exp.label}
+                          </span>
+                          {s.current ? (
+                            <span class="session-current-label">this session</span>
+                          ) : (
+                            <button
+                              class="btn btn-xs btn-ghost danger"
+                              disabled={revoking === s.id}
+                              onClick={() => revoke(s.id)}
+                            >
+                              {revoking === s.id ? <span class="spinner-sm" /> : 'Revoke'}
+                            </button>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
             );
           })}

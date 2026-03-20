@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { apiFetch } from '../api';
-import { IconKey, IconGithub, IconPackage, IconCopy, IconCheck, IconRefresh, IconX } from './Icons';
+import { IconKey, IconGithub, IconPackage, IconCopy, IconCheck, IconRefresh, IconX, IconChevronLeft, IconPlug } from './Icons';
+
+// ── Types ──
 
 interface SSHStatus {
   hasKey: boolean;
@@ -18,7 +20,43 @@ interface GitHubStatus {
   avatarUrl: string | null;
 }
 
-export function IntegrationsSection() {
+// ── Integration Registry ──
+
+interface IntegrationDef {
+  id: string;
+  name: string;
+  description: string;
+  icon: () => preact.JSX.Element;
+  available: boolean;
+}
+
+const INTEGRATIONS: IntegrationDef[] = [
+  {
+    id: 'github',
+    name: 'GitHub',
+    description: 'SSH keys and account authentication for repositories',
+    icon: () => <IconGithub size={22} />,
+    available: true,
+  },
+  {
+    id: 'gitlab',
+    name: 'GitLab',
+    description: 'Connect to GitLab repositories',
+    icon: () => <IconPackage size={22} />,
+    available: false,
+  },
+  {
+    id: 'docker',
+    name: 'Docker Hub',
+    description: 'Pull and push container images',
+    icon: () => <IconPackage size={22} />,
+    available: false,
+  },
+];
+
+// ── GitHub Detail ──
+
+function GitHubDetail({ onBack }: { onBack: () => void }) {
   const [ssh, setSSH] = useState<SSHStatus>({ hasKey: false, publicKey: null, authenticated: false });
   const [github, setGitHub] = useState<GitHubStatus>({ authenticated: false, loginInProgress: false, code: null, url: null, username: null, email: null, avatarUrl: null });
   const [loading, setLoading] = useState(true);
@@ -49,7 +87,6 @@ export function IntegrationsSection() {
       const ghData = await ghRes.json();
 
       const sshState: SSHStatus = { hasKey: sshData.hasKey, publicKey: null, authenticated: false };
-
       if (sshData.hasKey) {
         try {
           const [pubRes, testRes] = await Promise.all([
@@ -74,7 +111,7 @@ export function IntegrationsSection() {
         avatarUrl: ghData.avatarUrl || null,
       });
     } catch {
-      setError('Error loading integrations status');
+      setError('Error loading status');
     } finally {
       setLoading(false);
     }
@@ -90,11 +127,8 @@ export function IntegrationsSection() {
         body: JSON.stringify({ force }),
       });
       const data = await res.json();
-      if (data.success) {
-        await loadStatus();
-      } else {
-        setError(data.error || 'Error generating SSH key');
-      }
+      if (data.success) await loadStatus();
+      else setError(data.error || 'Error generating SSH key');
     } catch {
       setError('Connection error');
     } finally {
@@ -113,24 +147,20 @@ export function IntegrationsSection() {
       if (el) {
         const range = document.createRange();
         range.selectNodeContents(el);
-        const sel = window.getSelection();
-        sel?.removeAllRanges();
-        sel?.addRange(range);
+        window.getSelection()?.removeAllRanges();
+        window.getSelection()?.addRange(range);
       }
     }
   }
 
   async function handleDeleteSSH() {
-    if (!confirm('Delete your SSH key? You will need to generate a new one and add it to GitHub.')) return;
+    if (!confirm('Delete your SSH key? You will need to generate a new one.')) return;
     setError('');
     try {
       const res = await apiFetch('/api/ssh/key', { method: 'DELETE' });
       const data = await res.json();
-      if (data.success) {
-        await loadStatus();
-      } else {
-        setError(data.error || 'Error deleting SSH key');
-      }
+      if (data.success) await loadStatus();
+      else setError(data.error || 'Error deleting SSH key');
     } catch {
       setError('Connection error');
     }
@@ -141,23 +171,17 @@ export function IntegrationsSection() {
     try {
       const res = await apiFetch('/api/github/login', { method: 'POST' });
       const data = await res.json();
-      if (data.started) {
-        pollGitHubLogin();
-      }
+      if (data.started) pollGitHubLogin();
     } catch {
       setError('Error starting GitHub login');
     }
   }
 
   function pollGitHubLogin() {
-    if (pollIntervalRef.current) {
-      clearInterval(pollIntervalRef.current);
-    }
-
-    const MAX_POLL_DURATION = 20 * 60 * 1000; // 20 minutes — device codes typically expire in 15-30 min
+    if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
     const startTime = Date.now();
     pollIntervalRef.current = setInterval(async () => {
-      if (Date.now() - startTime > MAX_POLL_DURATION) {
+      if (Date.now() - startTime > 20 * 60 * 1000) {
         clearInterval(pollIntervalRef.current!);
         pollIntervalRef.current = null;
         setGitHub(prev => ({ ...prev, loginInProgress: false }));
@@ -189,14 +213,145 @@ export function IntegrationsSection() {
 
   if (loading) {
     return (
+      <div class="integ-detail">
+        <button class="btn btn-xs btn-ghost" onClick={onBack} style="margin-bottom: 16px">
+          <IconChevronLeft size={14} /> Back
+        </button>
+        <div style="display: flex; justify-content: center; padding: 48px">
+          <span class="spinner-lg" />
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div class="integ-detail">
+      <button class="btn btn-xs btn-ghost" onClick={onBack} style="margin-bottom: 16px">
+        <IconChevronLeft size={14} /> Integrations
+      </button>
+
+      <div class="integ-detail-header">
+        <IconGithub size={24} />
+        <div>
+          <h2 class="integ-detail-title">GitHub</h2>
+          <p class="integ-detail-desc">Connect to GitHub repositories via SSH or HTTPS</p>
+        </div>
+      </div>
+
+      {error && <div class="integ-error">{error}</div>}
+
+      {/* SSH Section */}
+      <div class="integ-section">
+        <div class="integ-section-header">
+          <IconKey size={14} />
+          <span>Connect via SSH</span>
+          <span class={`badge ${ssh.hasKey ? (ssh.authenticated ? 'badge-success' : 'badge-warning') : 'badge-muted'}`}>
+            {ssh.hasKey ? (ssh.authenticated ? 'Connected' : 'Key generated') : 'Not configured'}
+          </span>
+        </div>
+
+        <div class="integ-section-body">
+          {!ssh.hasKey ? (
+            <>
+              <p class="integ-section-info">Generate an SSH key pair to access private repositories via git@github.com.</p>
+              <button class="btn btn-sm btn-primary" onClick={() => handleGenerateSSH()} disabled={sshGenerating}>
+                {sshGenerating ? <span class="spinner-sm" /> : <IconKey size={13} />}
+                Generate SSH key
+              </button>
+            </>
+          ) : (
+            <>
+              <div class="integ-key-block">
+                <label class="integ-key-label">Public key</label>
+                <div class="integ-key-container">
+                  <code class="integ-key-text">{ssh.publicKey || 'Loading...'}</code>
+                </div>
+                <div class="integ-key-actions">
+                  <button class="btn btn-xs btn-secondary" onClick={handleCopyKey}>
+                    {copied ? <><IconCheck size={11} /> Copied</> : <><IconCopy size={11} /> Copy</>}
+                  </button>
+                  <button class="btn btn-xs btn-ghost" onClick={() => handleGenerateSSH(true)} disabled={sshGenerating}>
+                    {sshGenerating ? <span class="spinner-sm" /> : <IconRefresh size={11} />}
+                    Regenerate
+                  </button>
+                  <button class="btn btn-xs btn-ghost danger" onClick={handleDeleteSSH}>
+                    <IconX size={11} /> Delete
+                  </button>
+                </div>
+              </div>
+              <p class="integ-section-hint">
+                Add this key at{' '}
+                <a href="https://github.com/settings/ssh/new" target="_blank" rel="noopener noreferrer">
+                  github.com/settings/ssh/new
+                </a>
+              </p>
+            </>
+          )}
+        </div>
+      </div>
+
+      {/* HTTPS Section */}
+      <div class="integ-section">
+        <div class="integ-section-header">
+          <IconGithub size={14} />
+          <span>Connect via HTTPS</span>
+          <span class={`badge ${github.authenticated ? 'badge-success' : 'badge-muted'}`}>
+            {github.authenticated ? 'Authenticated' : 'Not connected'}
+          </span>
+        </div>
+
+        <div class="integ-section-body">
+          {github.loginInProgress ? (
+            <div class="integ-login-flow">
+              <p class="integ-section-info">
+                Open{' '}
+                <a href={github.url || 'https://github.com/login/device'} target="_blank" rel="noopener noreferrer">
+                  github.com/login/device
+                </a>{' '}
+                and enter the code:
+              </p>
+              <div class="integ-device-code">{github.code || '...'}</div>
+              <p class="integ-section-hint">
+                Only enter this code if you initiated this login yourself.
+              </p>
+              <div class="integ-waiting">
+                <span class="spinner-sm" /> Waiting for authentication...
+              </div>
+            </div>
+          ) : github.authenticated ? (
+            <div class="integ-connected-info">
+              {github.username && (
+                <span class="integ-username">@{github.username}</span>
+              )}
+              {github.email && (
+                <span class="integ-email">{github.email}</span>
+              )}
+              <p class="integ-section-hint">Clone private repos via HTTPS using GitHub CLI.</p>
+            </div>
+          ) : (
+            <>
+              <p class="integ-section-info">Connect your GitHub account to access private repos via HTTPS.</p>
+              <button class="btn btn-sm btn-primary" onClick={handleGitHubLogin}>
+                <IconGithub size={13} /> Connect GitHub
+              </button>
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Main Component ──
+
+export function IntegrationsSection() {
+  const [selected, setSelected] = useState<string | null>(null);
+
+  if (selected === 'github') {
+    return (
       <div class="content-section">
         <div class="integ-content">
-          <div class="integ-header">
-            <h2 class="integ-title">Integrations</h2>
-          </div>
-          <div style={{ display: 'flex', justifyContent: 'center', padding: '48px' }}>
-            <span class="spinner" />
-          </div>
+          <GitHubDetail onBack={() => setSelected(null)} />
         </div>
       </div>
     );
@@ -206,123 +361,29 @@ export function IntegrationsSection() {
     <div class="content-section">
       <div class="integ-content">
         <div class="integ-header">
-          <h2 class="integ-title">Integrations</h2>
-          <p class="integ-subtitle">Manage connections with external services</p>
+          <h2 class="integ-title">
+            <IconPlug size={20} />
+            Integrations
+          </h2>
+          <p class="integ-subtitle">Connect external services to your workspace</p>
         </div>
 
-        {error && <div class="npm-error" style={{ margin: '0 0 16px' }}>{error}</div>}
-
-        {/* GitHub SSH Card */}
-        <div class="integ-card">
-          <div class="integ-card-header">
-            <div class="integ-card-icon"><IconKey size={20} /></div>
-            <div>
-              <h3 class="integ-card-title">GitHub SSH</h3>
-              <p class="integ-card-desc">SSH access to GitHub repositories</p>
-            </div>
-            <span class={`badge ${ssh.hasKey ? (ssh.authenticated ? 'badge-success' : 'badge-warning') : 'badge-muted'}`}>
-              {ssh.hasKey ? (ssh.authenticated ? 'Connected' : 'Key generated') : 'Not configured'}
-            </span>
-          </div>
-
-          {!ssh.hasKey ? (
-            <div class="integ-card-body">
-              <p class="integ-card-info">Generate an SSH key pair to access private GitHub repositories.</p>
-              <button class="btn btn-primary btn-sm" onClick={handleGenerateSSH} disabled={sshGenerating}>
-                {sshGenerating ? <span class="loading" /> : <IconKey size={14} />}
-                Generate SSH key
-              </button>
-            </div>
-          ) : (
-            <div class="integ-card-body">
-              <div class="integ-key-block">
-                <label class="npm-label">Public key:</label>
-                <div class="integ-key-container">
-                  <code class="integ-key-text">{ssh.publicKey || 'Loading...'}</code>
-                </div>
-                <div class="integ-key-actions">
-                  <button class="btn btn-sm btn-secondary" onClick={handleCopyKey}>
-                    {copied ? <><IconCheck size={12} /> Copied!</> : <><IconCopy size={12} /> Copy key</>}
-                  </button>
-                  <button class="btn btn-sm btn-ghost" onClick={() => handleGenerateSSH(true)} disabled={sshGenerating}>
-                    {sshGenerating ? <span class="loading" /> : <IconRefresh size={12} />}
-                    Regenerate
-                  </button>
-                  <button class="btn btn-sm btn-ghost" onClick={handleDeleteSSH} style={{ color: 'var(--error)' }}>
-                    <IconX size={12} />
-                    Delete
-                  </button>
-                </div>
+        <div class="integ-grid">
+          {INTEGRATIONS.map(integ => (
+            <button
+              key={integ.id}
+              class={`integ-tile${!integ.available ? ' disabled' : ''}`}
+              onClick={() => integ.available && setSelected(integ.id)}
+              disabled={!integ.available}
+            >
+              <div class="integ-tile-icon">{integ.icon()}</div>
+              <div class="integ-tile-info">
+                <span class="integ-tile-name">{integ.name}</span>
+                <span class="integ-tile-desc">{integ.description}</span>
               </div>
-              <div class="integ-help">
-                Add this key at{' '}
-                <a href="https://github.com/settings/ssh/new" target="_blank" rel="noopener noreferrer">
-                  github.com/settings/ssh/new
-                </a>
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* GitHub Account Card */}
-        <div class="integ-card">
-          <div class="integ-card-header">
-            <div class="integ-card-icon"><IconGithub size={20} /></div>
-            <div>
-              <h3 class="integ-card-title">GitHub Account</h3>
-              <p class="integ-card-desc">Authentication with GitHub CLI (gh)</p>
-            </div>
-            <span class={`badge ${github.authenticated ? 'badge-success' : 'badge-muted'}`}>
-              {github.authenticated ? 'Authenticated' : 'Not connected'}
-            </span>
-          </div>
-
-          <div class="integ-card-body">
-            {github.loginInProgress ? (
-              <div class="integ-login-flow">
-                <p class="integ-card-info">
-                  Open <a href={github.url || 'https://github.com/login/device'} target="_blank" rel="noopener noreferrer">
-                    github.com/login/device
-                  </a> and enter the code:
-                </p>
-                <div class="integ-device-code">{github.code || '...'}</div>
-                <p class="integ-card-info" style={{ fontSize: '11px', opacity: 0.7 }}>
-                  Only enter this code if you initiated this login yourself. Never share device codes received from others.
-                </p>
-                <div class="integ-waiting">
-                  <span class="loading" /> Waiting for authentication...
-                </div>
-              </div>
-            ) : github.authenticated ? (
-              <>
-                {github.username && (
-                  <p class="integ-card-info" style={{ fontWeight: 500 }}>
-                    @{github.username}{github.email ? ` · ${github.email}` : ''}
-                  </p>
-                )}
-                <p class="integ-card-info">Clone private repos via HTTPS.</p>
-              </>
-            ) : (
-              <>
-                <p class="integ-card-info">Connect your GitHub account to access private repos via HTTPS.</p>
-                <button class="btn btn-primary btn-sm" onClick={handleGitHubLogin}>
-                  <IconGithub size={14} />
-                  Connect GitHub
-                </button>
-              </>
-            )}
-          </div>
-        </div>
-
-        {/* Future integrations placeholder */}
-        <div class="integ-card integ-card-placeholder">
-          <div class="integ-card-header">
-            <div class="integ-card-icon"><IconPackage size={20} /></div>
-            <div>
-              <h3 class="integ-card-title">More integrations</h3>
-              <p class="integ-card-desc">GitLab, Bitbucket, Docker Hub, and more coming soon</p>
-            </div>
-          </div>
+              {!integ.available && <span class="badge badge-muted">Coming soon</span>}
+            </button>
+          ))}
         </div>
       </div>
     </div>

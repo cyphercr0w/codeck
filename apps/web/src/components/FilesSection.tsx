@@ -41,6 +41,7 @@ export function FilesBrowser() {
   // Delete confirmation
   const [deleteTarget, setDeleteTarget] = useState<FileItem | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [forceDelete, setForceDelete] = useState(false);
 
   // Rename
   const [renameTarget, setRenameTarget] = useState<FileItem | null>(null);
@@ -166,7 +167,7 @@ export function FilesBrowser() {
       const relPath = dirPath ? `${dirPath}/${deleteTarget.name}` : deleteTarget.name;
       const res = await apiFetch('/api/files/delete', {
         method: 'DELETE',
-        body: JSON.stringify({ path: relPath }),
+        body: JSON.stringify({ path: relPath, force: forceDelete }),
       });
       const data = await res.json();
       if (data.success) {
@@ -423,9 +424,15 @@ export function FilesBrowser() {
         <div class="fb-confirm">
           <div class="fb-confirm-box">
             <p>Delete <strong>{deleteTarget.name}</strong>?</p>
-            {deleteTarget.isDirectory && <p class="fb-confirm-hint">Directory must be empty.</p>}
+            {deleteTarget.isDirectory && (
+              <label class="fb-confirm-force">
+                <input type="checkbox" checked={forceDelete} onChange={e => setForceDelete((e.target as HTMLInputElement).checked)} />
+                <span>Delete all contents (force)</span>
+              </label>
+            )}
+            {deleteTarget.isDirectory && !forceDelete && <p class="fb-confirm-hint">Directory must be empty.</p>}
             <div class="fb-confirm-actions">
-              <button class="btn btn-xs btn-secondary" onClick={() => setDeleteTarget(null)} disabled={deleting}>Cancel</button>
+              <button class="btn btn-xs btn-secondary" onClick={() => { setDeleteTarget(null); setForceDelete(false); }} disabled={deleting}>Cancel</button>
               <button class="btn btn-xs btn-danger" onClick={handleDelete} disabled={deleting}>
                 {deleting ? <span class="spinner-sm" /> : 'Delete'}
               </button>

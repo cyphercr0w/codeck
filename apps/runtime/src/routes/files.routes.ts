@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { readdir, stat, readFile, writeFile, mkdir, unlink, rmdir, rename } from 'fs/promises';
+import { readdir, stat, readFile, writeFile, mkdir, unlink, rmdir, rm, rename } from 'fs/promises';
 import { existsSync } from 'fs';
 import { join, resolve, sep, extname } from 'path';
 import { broadcastStatus } from '../web/websocket.js';
@@ -240,9 +240,9 @@ router.post('/mkdir', async (req, res) => {
   }
 });
 
-// Delete file or empty directory
+// Delete file or directory
 router.delete('/delete', async (req, res) => {
-  const { path: relativePath } = req.body;
+  const { path: relativePath, force } = req.body;
   if (!relativePath || typeof relativePath !== 'string') {
     res.status(400).json({ error: 'Path required' });
     return;
@@ -264,8 +264,11 @@ router.delete('/delete', async (req, res) => {
   try {
     const s = await stat(fullPath);
     if (s.isDirectory()) {
-      // rmdir only removes empty directories — safe by default
-      await rmdir(fullPath);
+      if (force) {
+        await rm(fullPath, { recursive: true, force: true });
+      } else {
+        await rmdir(fullPath);
+      }
     } else {
       await unlink(fullPath);
     }

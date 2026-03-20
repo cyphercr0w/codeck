@@ -465,7 +465,10 @@ router.post('/upload', async (req, res) => {
     const safeName = fileName
       ? fileName.replace(/[^a-zA-Z0-9_\-\.]/g, '_').slice(0, 50)
       : uploadType;
-    const fullName = `${timestamp}-${safeName}${ext.startsWith('.') ? '' : '.'}${ext.replace(/^\./, '')}`;
+    // Don't double the extension if safeName already ends with it
+    const extNorm = ext.startsWith('.') ? ext : `.${ext}`;
+    const needsExt = ext && !safeName.toLowerCase().endsWith(extNorm.toLowerCase());
+    const fullName = `${timestamp}-${safeName}${needsExt ? extNorm : ''}`;
     const filePath = join(UPLOADS_DIR, fullName);
 
     await writeFile(filePath, buffer);

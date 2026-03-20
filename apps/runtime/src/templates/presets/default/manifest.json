@@ -106,6 +106,10 @@
 		{
 			"src": "scripts/statusline.sh",
 			"dest": "/workspace/.codeck/scripts/statusline.sh"
+		},
+		{
+			"src": "scripts/repo-map-generator.mjs",
+			"dest": "/workspace/.codeck/scripts/repo-map-generator.mjs"
 		}
 	],
 	"directories": [

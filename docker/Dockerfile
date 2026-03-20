@@ -29,7 +29,7 @@ COPY apps/runtime/src/templates ./apps/runtime/dist/templates
 VOLUME ["/workspace", "/root/.claude"]
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-  CMD curl -f http://localhost/api/auth/status || exit 1
+  CMD curl -sf http://localhost/api/runtime/health || exit 1
 
 EXPOSE 80
 

@@ -60,12 +60,10 @@ services:
     deploy:
       resources:
         limits:
-          memory: ${CODECK_MEMORY_LIMIT:-4G}
-          cpus: '${CODECK_CPU_LIMIT:-2.0}'
+          memory: ${CODECK_MEMORY_LIMIT:-0}
           pids: 512
         reservations:
-          memory: 512M
-          cpus: '0.5'
+          memory: 256M
     logging:
       driver: "json-file"
       options:

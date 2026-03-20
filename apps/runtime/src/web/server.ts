@@ -409,6 +409,7 @@ export async function startWebServer(): Promise<void> {
   app.use('/api/projects', projectRoutes);
   app.use('/api/workspace', workspaceRoutes);
   app.use('/api/dashboard', dashboardRoutes);
+  app.use('/api/codeck/import', express.json({ limit: '65mb' }));
   app.use('/api/codeck', codeckRoutes);
   app.use('/api/permissions', permissionsRoutes);
   app.use('/api/system', systemRoutes);

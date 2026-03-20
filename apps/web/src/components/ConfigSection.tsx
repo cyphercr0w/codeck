@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
-import { apiFetch } from '../api';
+import { apiFetch, getAuthToken } from '../api';
 import { ConfirmModal } from './ConfirmModal';
-import { IconBrain, IconFolder, IconRefresh, IconArrowUp, IconEdit, IconSave, IconX, IconPlus, getFileIcon } from './Icons';
+import { IconBrain, IconFolder, IconRefresh, IconArrowUp, IconEdit, IconSave, IconX, IconPlus, IconDownload, getFileIcon } from './Icons';
 
 // ── Types ──
 
@@ -278,6 +278,14 @@ export function ConfigSection() {
   // Memory stats
   const [memStats, setMemStats] = useState<MemoryStats | null>(null);
 
+  // Migration
+  const [exporting, setExporting] = useState(false);
+  const [importing, setImporting] = useState(false);
+  const [showImportConfirm, setShowImportConfirm] = useState(false);
+  const [importFile, setImportFile] = useState<File | null>(null);
+  const [migrationMsg, setMigrationMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const importInputRef = useRef<HTMLInputElement>(null);
+
   async function loadFiles(path: string) {
     setDirPath(path);
     setLoading(true);
@@ -413,6 +421,67 @@ export function ConfigSection() {
     }
     setSwitching(false);
     setTimeout(() => setActionMsg(null), 4000);
+  }
+
+  function handleExportMemory() {
+    setExporting(true);
+    const token = getAuthToken();
+    const url = `/api/codeck/export${token ? '?token=' + encodeURIComponent(token) : ''}`;
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = '';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(() => setExporting(false), 2000);
+  }
+
+  function handleImportSelect(e: Event) {
+    const input = e.target as HTMLInputElement;
+    const file = input.files?.[0];
+    if (!file) return;
+    if (!file.name.endsWith('.tar.gz') && !file.name.endsWith('.tgz')) {
+      setMigrationMsg({ type: 'error', text: 'File must be a .tar.gz archive' });
+      setTimeout(() => setMigrationMsg(null), 4000);
+      return;
+    }
+    setImportFile(file);
+    setShowImportConfirm(true);
+    input.value = '';
+  }
+
+  async function handleImportConfirm() {
+    if (!importFile) return;
+    setShowImportConfirm(false);
+    setImporting(true);
+    setMigrationMsg(null);
+
+    try {
+      const base64 = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve((reader.result as string).split(',')[1] || '');
+        reader.onerror = () => reject(reader.error);
+        reader.readAsDataURL(importFile);
+      });
+
+      const res = await apiFetch('/api/codeck/import', {
+        method: 'POST',
+        body: JSON.stringify({ data: base64 }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setMigrationMsg({ type: 'success', text: `Memory imported — ${data.imported} items restored` });
+        loadFiles(dirPath);
+        loadMemoryStats();
+      } else {
+        setMigrationMsg({ type: 'error', text: data.error || 'Import failed' });
+      }
+    } catch (err) {
+      setMigrationMsg({ type: 'error', text: 'Import failed: ' + (err as Error).message });
+    }
+    setImporting(false);
+    setImportFile(null);
+    setTimeout(() => setMigrationMsg(null), 5000);
   }
 
   useEffect(() => {
@@ -636,6 +705,43 @@ export function ConfigSection() {
           )}
         </div>
       </div>
+
+      {/* Migration buttons */}
+      <div class="mem-migration">
+        <div class="mem-migration-label">Memory Migration</div>
+        <div class="mem-migration-actions">
+          <button class="btn btn-xs btn-secondary" onClick={handleExportMemory} disabled={exporting}>
+            {exporting ? <span class="spinner-sm" /> : <IconDownload size={12} />}
+            Export memory
+          </button>
+          <button class="btn btn-xs btn-secondary" onClick={() => importInputRef.current?.click()} disabled={importing}>
+            {importing ? <span class="spinner-sm" /> : <IconPlus size={12} />}
+            Import memory
+          </button>
+          <input
+            ref={importInputRef}
+            type="file"
+            accept=".tar.gz,.tgz"
+            style="display: none"
+            onChange={handleImportSelect}
+          />
+        </div>
+        {migrationMsg && (
+          <div class={`mem-migration-msg mem-quick-msg-${migrationMsg.type}`}>{migrationMsg.text}</div>
+        )}
+        <div class="mem-migration-hint">
+          Export downloads all memory, preferences, rules, and skills as a .tar.gz archive. Import replaces them from a previously exported archive.
+        </div>
+      </div>
+
+      <ConfirmModal
+        visible={showImportConfirm}
+        title="Import Memory"
+        message={`This will replace your current memory, preferences, rules, and skills with the contents of "${importFile?.name || 'archive'}". Your auth config and sessions will NOT be affected. This action cannot be undone.`}
+        confirmLabel="Import & Replace"
+        onConfirm={handleImportConfirm}
+        onCancel={() => { setShowImportConfirm(false); setImportFile(null); }}
+      />
 
       <ConfirmModal
         visible={showUpdateModal}

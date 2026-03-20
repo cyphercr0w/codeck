@@ -1,6 +1,11 @@
 import { Router } from 'express';
-import { readdir, stat, readFile, writeFile, realpath, access } from 'fs/promises';
+import { readdir, stat, readFile, writeFile, realpath, access, mkdir, rm } from 'fs/promises';
 import { join, resolve, sep } from 'path';
+import { execFile } from 'child_process';
+import { promisify } from 'util';
+import { existsSync, createReadStream } from 'fs';
+
+const execFileAsync = promisify(execFile);
 
 const WORKSPACE = resolve(process.env.WORKSPACE || '/workspace');
 const AGENT_DATA_DIR = join(WORKSPACE, '.codeck');
@@ -136,6 +141,112 @@ router.put('/files/write', async (req, res) => {
     res.json({ success: true });
   } catch {
     res.status(500).json({ error: 'Write failed' });
+  }
+});
+
+// ── Memory Export (tar.gz of .codeck/) ──
+
+router.get('/export', async (_req, res) => {
+  try {
+    const timestamp = new Date().toISOString().slice(0, 10);
+    const filename = `codeck-memory-${timestamp}.tar.gz`;
+
+    res.setHeader('Content-Type', 'application/gzip');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+
+    // Stream tar.gz directly to response — excludes transient files
+    const tar = execFile('tar', [
+      'czf', '-',
+      '--exclude=./uploads',
+      '--exclude=./sessions.json',
+      '--exclude=./daemon-sessions.json',
+      '--exclude=./.codeck-oauth-token',
+      '--exclude=./auth.json',
+      '--exclude=./config.json',
+      '-C', AGENT_DATA_DIR,
+      '.',
+    ]);
+
+    tar.stdout?.pipe(res);
+    tar.stderr?.on('data', (d: Buffer) => console.warn('[Export]', d.toString().trim()));
+    tar.on('error', () => {
+      if (!res.headersSent) res.status(500).json({ error: 'Export failed' });
+    });
+    tar.on('close', (code) => {
+      if (code !== 0 && !res.headersSent) {
+        res.status(500).json({ error: 'Export failed' });
+      }
+    });
+  } catch {
+    res.status(500).json({ error: 'Export failed' });
+  }
+});
+
+// ── Memory Import (tar.gz upload → replace .codeck/) ──
+
+// Increase body limit for this endpoint (max 50MB)
+router.post('/import', async (req, res) => {
+  const { data } = req.body;
+  if (!data || typeof data !== 'string') {
+    res.status(400).json({ error: 'Base64-encoded tar.gz data required' });
+    return;
+  }
+
+  const buffer = Buffer.from(data, 'base64');
+  const MAX_IMPORT_SIZE = 50 * 1024 * 1024; // 50 MB
+  if (buffer.length > MAX_IMPORT_SIZE) {
+    res.status(400).json({ error: `Import too large (max ${MAX_IMPORT_SIZE / 1024 / 1024} MB)` });
+    return;
+  }
+
+  if (buffer.length === 0) {
+    res.status(400).json({ error: 'Empty data' });
+    return;
+  }
+
+  // Extract to a temp directory first, then merge into .codeck/
+  const tmpDir = join(AGENT_DATA_DIR, '.import-tmp-' + Date.now());
+  try {
+    await mkdir(tmpDir, { recursive: true });
+
+    // Write buffer to temp file and extract
+    const tmpFile = join(tmpDir, 'import.tar.gz');
+    await writeFile(tmpFile, buffer);
+
+    await execFileAsync('tar', ['xzf', tmpFile, '-C', tmpDir], { timeout: 30_000 });
+
+    // Remove the temp tar file
+    await rm(tmpFile);
+
+    // Directories to import (preserve auth.json, config.json, sessions)
+    const importDirs = ['memory', 'rules', 'skills', 'preferences.md', 'ecc', 'agents'];
+
+    let imported = 0;
+    for (const entry of await readdir(tmpDir)) {
+      // Copy each directory/file from extracted archive into .codeck/
+      const src = join(tmpDir, entry);
+      const dest = join(AGENT_DATA_DIR, entry);
+      const s = await stat(src);
+
+      if (s.isDirectory() || importDirs.includes(entry) || entry.endsWith('.md')) {
+        // Remove existing and replace
+        if (existsSync(dest)) {
+          await rm(dest, { recursive: true, force: true });
+        }
+        await execFileAsync('cp', ['-a', src, dest], { timeout: 10_000 });
+        imported++;
+      }
+    }
+
+    // Cleanup temp dir
+    await rm(tmpDir, { recursive: true, force: true });
+
+    res.json({ success: true, imported, message: `Imported ${imported} items` });
+  } catch (err) {
+    // Cleanup on error
+    try { await rm(tmpDir, { recursive: true, force: true }); } catch { /* ignore */ }
+    console.error('[Import] Failed:', (err as Error).message);
+    res.status(500).json({ error: 'Import failed: ' + (err as Error).message });
   }
 });
 

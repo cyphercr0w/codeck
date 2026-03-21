@@ -643,12 +643,6 @@ function TerminalStatusBar() {
   return (
     <div class="terminal-status-bar">
       <div class="tsb-left">
-        <span class={`tsb-dot tsb-dot-${status}`} />
-        <span class="tsb-label">{status === 'waiting' ? 'Waiting' : status}</span>
-        <span class="tsb-sep">|</span>
-        <span class="tsb-uptime">Session: {formatUptime(uptime)}</span>
-      </div>
-      <div class="tsb-right">
         {ctx && ctx.contextPercent > 0 && (
           <>
             <div class="tsb-limit">
@@ -690,6 +684,12 @@ function TerminalStatusBar() {
             )}
           </>
         )}
+      </div>
+      <div class="tsb-right">
+        <span class={`tsb-dot tsb-dot-${status}`} />
+        <span class="tsb-label">{status === 'waiting' ? 'Waiting' : status}</span>
+        <span class="tsb-sep">|</span>
+        <span class="tsb-uptime">Session: {formatUptime(uptime)}</span>
       </div>
     </div>
   );

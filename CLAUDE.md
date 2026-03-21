@@ -25,46 +25,32 @@ The docs explain architecture, data flows, APIs, and conventions that you won't 
 - Preset manifests use absolute paths to drive file placement
 - Three CLAUDE.md layers: global (`/root/.claude/`), workspace (`/workspace/`), project (`/workspace/<project>/`)
 
+## Quick Start (Self-Hosted)
+
+```bash
+# Install on any Linux VPS:
+curl -fsSL https://codeck.xyz/install | bash
+
+# Or manually with Docker:
+docker run -d --name codeck -p 8080:80 \
+  -v codeck-workspace:/workspace \
+  -v codeck-claude:/root/.claude \
+  --restart unless-stopped \
+  ghcr.io/cyphercr0w/codeck:latest --web
+```
+
 ## Dev Commands
 
 ```bash
 # Build base image (once):
 docker build -t codeck-base -f docker/Dockerfile.base .
 
-# Isolated mode (single container — runtime + webapp):
+# Run locally (builds from source):
 docker compose -f docker/compose.isolated.yml up --build
-
-# Managed mode (daemon on host + runtime in container):
-codeck start    # starts container + daemon in foreground
 
 # Local build check:
 npm run build
-
-# CLI (workspace package in apps/cli/):
-npm run build:cli   # from project root
 ```
-
-## LAN Access
-
-Via CLI (recommended):
-
-```bash
-codeck lan start   # start mDNS advertiser (macOS/Windows — requires admin/UAC)
-codeck lan stop    # stop and clean up hosts file entries
-codeck lan status  # check status
-```
-
-Or run the advertiser directly (skips CLI lifecycle management):
-
-```bash
-# One-time setup:
-cd scripts && npm install
-
-# Run (requires admin for hosts file management):
-node scripts/mdns-advertiser.cjs
-```
-
-This makes `codeck.local` and `{port}.codeck.local` resolvable from phones, tablets, and other LAN devices. On Linux, LAN access is configured via `codeck init` (host networking). See `docs/DEPLOYMENT.md` for details.
 
 ## Conventions
 
@@ -73,25 +59,16 @@ This makes `codeck.local` and `{port}.codeck.local` resolvable from phones, tabl
 - **Branching**: work directly on `main`
 - **Code style**: follow existing patterns in the codebase (no reformatting unrelated code)
 
-## Self-Deploy (VPS / systemd mode)
+## Self-Deploy (dev instances)
 
-If you are running on a VPS where this repo IS the live Codeck installation (`/opt/codeck`), you can deploy your own changes:
+If you are running on a VPS where this repo IS the live Codeck installation:
 
 ```bash
 # After editing code:
-npm run build && docker build -t codeck -f docker/Dockerfile . && sudo systemctl restart codeck
+npm run build && docker build -t codeck -f docker/Dockerfile . && docker restart codeck
 ```
-
-Or use the helper script: `bash scripts/self-deploy.sh`
-
-**Important:**
-- The service restart kills your terminal session. The frontend auto-reconnects.
-- `systemctl restart codeck` manages both the daemon and the runtime container.
-- Always `git commit` before deploying — your files stay on disk, but committed code is safer.
-- If a deploy breaks the server, SSH in: `sudo git checkout . && sudo npm run build && docker build -t codeck -f docker/Dockerfile . && sudo systemctl restart codeck`
-- You have sudo for: `systemctl restart/stop/start codeck`
 
 ## Rules
 
 - **Always update docs after any change.** README.md, docs/, and CLAUDE.md must reflect the current state. Update them in the same commit as the code change — never leave docs stale.
-- Always kill existing servers before starting new ones (`netstat -ano | findstr ":8080"`)
+- Always kill existing servers before starting new ones

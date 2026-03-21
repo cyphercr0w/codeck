@@ -1,43 +1,38 @@
-# Codeck — Isolated Mode
+# Codeck — Self-Hosted
 #
-# Single container running the runtime with the webapp.
-# No daemon, no Docker socket. Simple and secure.
-# Works on Linux, macOS, and Windows.
+# Single container with everything: runtime, web UI, terminal, memory.
+# No daemon needed. Just docker compose up.
 #
-# Usage:
-#   docker compose -f docker/compose.isolated.yml up --build
+# Quick start:
+#   docker compose up -d
 #
-# With LAN access (codeck.local from any device):
-#   codeck lan start   (macOS/Windows — requires admin/UAC)
-#   On Linux: configured via codeck init (host networking)
+# Or with the installer:
+#   curl -fsSL https://codeck.xyz/install | bash
 
 services:
-  sandbox:
-    build:
-      context: ..
-      dockerfile: docker/Dockerfile
+  codeck:
+    image: ${CODECK_IMAGE:-ghcr.io/cyphercr0w/codeck:latest}
+    container_name: codeck
     restart: unless-stopped
-    init: true          # tini as PID 1 — reaps zombie processes from dev servers
+    init: true
     stdin_open: true
     tty: true
     ports:
-      - "${CODECK_PORT:-80}:${CODECK_PORT:-80}"
+      - "${CODECK_PORT:-8080}:80"
     cap_drop:
       - ALL
     cap_add:
-      - CHOWN           # File ownership changes (npm, git)
-      - SETUID          # User switching (dbus, keyring)
-      - SETGID          # Group switching (dbus, keyring)
-      - NET_BIND_SERVICE # Bind to ports < 1024
-      - KILL            # Signal processes (dev server cleanup)
-      # DAC_OVERRIDE removed: container runs as root, which owns all its files.
-      # Root does not need DAC_OVERRIDE when cap_drop: ALL is in effect for its own files.
+      - CHOWN
+      - SETUID
+      - SETGID
+      - NET_BIND_SERVICE
+      - KILL
+      - DAC_OVERRIDE
     security_opt:
       - no-new-privileges:true
     deploy:
       resources:
         limits:
-          memory: ${CODECK_MEMORY_LIMIT:-0}
           pids: 512
         reservations:
           memory: 256M
@@ -49,43 +44,25 @@ services:
         compress: "true"
     stop_grace_period: 30s
     healthcheck:
-      test: ["CMD", "curl", "-sf", "http://localhost:7777/api/status"]
+      test: ["CMD", "curl", "-sf", "http://localhost:80/api/status"]
       interval: 30s
       timeout: 5s
       retries: 3
-      start_period: 10s
-    # read_only: true — disabled: Claude CLI auto-update requires writable /usr/local/
+      start_period: 15s
     tmpfs:
       - /tmp:size=512M,mode=1777
       - /run:size=100M,mode=0755
-      - /run/dbus:size=10M,mode=0755
-      - /var/run:size=10M,mode=0755
     volumes:
-      - ${CODECK_WORKSPACE:-workspace}:/workspace
-      - claude-config:/root/.claude
-      - ssh-data:/root/.ssh
-      - gh-config:/root/.config/gh
-      # Optional: mount Docker socket for automatic port exposure (port-manager).
-      # Grants host-level Docker access — breaks container isolation.
-      # Only uncomment on trusted systems where dynamic port mapping is needed.
-      # - /var/run/docker.sock:/var/run/docker.sock
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
+      - codeck-workspace:/workspace
+      - codeck-claude:/root/.claude
+      - codeck-ssh:/root/.ssh
+      - codeck-gh:/root/.config/gh
     environment:
-      - CODECK_NETWORK_MODE=bridge
-      - CODECK_PORT=${CODECK_PORT:-80}
-      - CODECK_MAPPED_PORTS=${CODECK_PORT:-80}
-
-      # GitHub token legacy (optional)
-      - GITHUB_TOKEN=${GITHUB_TOKEN:-}
-
-      # Anthropic API Key (alternative to OAuth login)
+      - CODECK_PORT=80
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
 
-    command: ["--web"]
-
 volumes:
-  workspace:
-  claude-config:
-  ssh-data:
-  gh-config:
+  codeck-workspace:
+  codeck-claude:
+  codeck-ssh:
+  codeck-gh:

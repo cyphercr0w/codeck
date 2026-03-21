@@ -1,22 +1,17 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Codeck Installation Script — Hosted Mode
+# Codeck Self-Hosted Installer
 #
-# Deploys Codeck as: daemon (host, systemd) + runtime (Docker container).
-# The daemon serves the web UI on port 8080 and proxies to the runtime container.
+# One command to install Codeck on any Linux VPS or macOS machine.
+# Pulls a pre-built Docker image — no compilation, no Node.js required.
 #
 # Usage:
-#   curl -fsSL https://raw.githubusercontent.com/cyphercr0w/codeck/main/scripts/install.sh | sudo bash
-#
-# Or manually:
-#   sudo bash install.sh
+#   curl -fsSL https://codeck.xyz/install | bash
 
-CODECK_REPO="https://github.com/cyphercr0w/codeck.git"
-CODECK_BRANCH="${CODECK_BRANCH:-main}"
-CODECK_DIR="/opt/codeck"
-CODECK_USER="codeck"
-NODE_MAJOR=22
+CODECK_IMAGE="${CODECK_IMAGE:-ghcr.io/cyphercr0w/codeck:latest}"
+CODECK_PORT="${CODECK_PORT:-8080}"
+CONTAINER_NAME="codeck"
 
 # Colors
 RED='\033[0;31m'
@@ -24,383 +19,142 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 CYAN='\033[0;36m'
 NC='\033[0m'
+BOLD='\033[1m'
 
-log()   { echo -e "${GREEN}[+]${NC} $*"; }
-warn()  { echo -e "${YELLOW}[!]${NC} $*"; }
-error() { echo -e "${RED}[✗]${NC} $*" >&2; exit 1; }
-step()  { echo -e "\n${CYAN}── $* ──${NC}"; }
+log()  { echo -e "${GREEN}[+]${NC} $*"; }
+warn() { echo -e "${YELLOW}[!]${NC} $*"; }
+err()  { echo -e "${RED}[x]${NC} $*" >&2; }
+die()  { err "$*"; exit 1; }
 
-# ─── Pre-flight checks ──────────────────────────────────────────────
-
-step "Pre-flight checks"
-
-[[ "$(uname -s)" == "Linux" ]] || error "Linux required. Detected: $(uname -s)"
-log "OS: Linux ($(uname -r))"
-
-# Detect WSL — systemd support is limited; warn before proceeding
-if grep -qiE "(microsoft|wsl)" /proc/version 2>/dev/null; then
-  echo ""
-  echo -e "${YELLOW}┌──────────────────────────────────────────────────────────┐${NC}"
-  echo -e "${YELLOW}│                  ⚠  WSL DETECTED                        │${NC}"
-  echo -e "${YELLOW}├──────────────────────────────────────────────────────────┤${NC}"
-  echo -e "${YELLOW}│  You appear to be running inside Windows Subsystem for   │${NC}"
-  echo -e "${YELLOW}│  Linux (WSL). systemd support in WSL is limited and      │${NC}"
-  echo -e "${YELLOW}│  may not work correctly.                                  │${NC}"
-  echo -e "${YELLOW}│                                                           │${NC}"
-  echo -e "${YELLOW}│  Recommended: use Docker Desktop on Windows instead.      │${NC}"
-  echo -e "${YELLOW}│  Install the Codeck CLI and run: codeck init              │${NC}"
-  echo -e "${YELLOW}└──────────────────────────────────────────────────────────┘${NC}"
-  echo ""
-  if [ -t 0 ]; then
-    read -r -p "Continue anyway? [y/N] " _wsl_confirm
-    case "$_wsl_confirm" in
-      [yY][eE][sS]|[yY]) : ;;
-      *)
-        echo -e "${RED}Aborted.${NC}"
-        exit 1
-        ;;
-    esac
-  else
-    echo -e "${YELLOW}[!]${NC} Running non-interactively. Continuing in 10 seconds — press Ctrl+C to abort."
-    for i in 10 9 8 7 6 5 4 3 2 1; do
-      printf "\r    %d... " "$i"
-      sleep 1
-    done
-    echo ""
-  fi
-  echo ""
-fi
+# ─── Auto-elevate with sudo if needed ─────────────────────────────────
 
 if [[ "$EUID" -ne 0 ]]; then
   if command -v sudo &>/dev/null; then
-    warn "Not running as root — re-executing with sudo..."
     exec sudo bash "$0" "$@"
-  else
-    error "Run as root: su -c 'bash install.sh'"
   fi
-fi
-log "Running as root"
-
-command -v systemctl &>/dev/null || error "systemd not found"
-log "systemd detected"
-
-if command -v apt-get &>/dev/null; then
-  PKG_MANAGER="apt"
-elif command -v dnf &>/dev/null; then
-  PKG_MANAGER="dnf"
-elif command -v yum &>/dev/null; then
-  PKG_MANAGER="yum"
-else
-  error "No supported package manager (apt, dnf, yum)"
-fi
-log "Package manager: $PKG_MANAGER"
-
-# ─── Security warning ────────────────────────────────────────────────
-
-echo ""
-echo -e "${YELLOW}┌──────────────────────────────────────────────────────────┐${NC}"
-echo -e "${YELLOW}│                  ⚠  SECURITY WARNING                    │${NC}"
-echo -e "${YELLOW}├──────────────────────────────────────────────────────────┤${NC}"
-echo -e "${YELLOW}│  This installs Codeck in hosted mode:                    │${NC}"
-echo -e "${YELLOW}│    • Daemon runs on the host (serves web UI on port 808080)  │${NC}"
-echo -e "${YELLOW}│    • Runtime runs in a Docker container (sandboxed)      │${NC}"
-echo -e "${YELLOW}│                                                           │${NC}"
-echo -e "${YELLOW}│  The agent (Claude Code) runs inside the container with  │${NC}"
-echo -e "${YELLOW}│  access to the workspace directory (no Docker socket).   │${NC}"
-echo -e "${YELLOW}│                                                           │${NC}"
-echo -e "${YELLOW}│  Recommended: run on a dedicated VPS, not your personal  │${NC}"
-echo -e "${YELLOW}│  workstation. For local use, prefer Docker mode instead.  │${NC}"
-echo -e "${YELLOW}└──────────────────────────────────────────────────────────┘${NC}"
-echo ""
-
-if [ -t 0 ]; then
-  read -r -p "Continue? [y/N] " _confirm
-  case "$_confirm" in
-    [yY][eE][sS]|[yY]) : ;;
-    *)
-      echo -e "${RED}Aborted.${NC}"
-      exit 1
-      ;;
-  esac
-else
-  echo -e "${YELLOW}[!]${NC} Running non-interactively. Continuing in 10 seconds — press Ctrl+C to abort."
-  for i in 10 9 8 7 6 5 4 3 2 1; do
-    printf "\r    %d... " "$i"
-    sleep 1
-  done
-  echo ""
+  # Not root and no sudo — try anyway, Docker might work without root
 fi
 
-echo ""
+# ─── Detect OS ─────────────────────────────────────────────────────────
 
-# ─── System dependencies ────────────────────────────────────────────
-
-step "System dependencies"
-
-case "$PKG_MANAGER" in
-  apt)
-    apt-get update -qq
-    apt-get install -y -qq curl git >/dev/null
-    ;;
-  dnf|yum)
-    $PKG_MANAGER install -y -q curl git >/dev/null
-    ;;
+OS="$(uname -s)"
+case "$OS" in
+  Linux)  log "OS: Linux" ;;
+  Darwin) log "OS: macOS" ;;
+  *)      die "Unsupported OS: $OS. Codeck requires Linux or macOS." ;;
 esac
-log "Installed: curl, git"
 
-# ─── Node.js ────────────────────────────────────────────────────────
+# ─── Install Docker if missing ─────────────────────────────────────────
 
-step "Node.js $NODE_MAJOR"
-
-if command -v node &>/dev/null; then
-  ver=$(node -v | sed 's/v//' | cut -d. -f1)
-  if [[ "$ver" -ge "$NODE_MAJOR" ]]; then
-    log "Node.js $(node -v) already installed"
-  else
-    warn "Node.js $(node -v) too old, upgrading..."
-    curl -fsSL "https://deb.nodesource.com/setup_${NODE_MAJOR}.x" | bash - >/dev/null 2>&1
-    apt-get install -y -qq nodejs >/dev/null
-    log "Node.js $(node -v) installed"
+if ! command -v docker &>/dev/null; then
+  log "Docker not found — installing..."
+  if [[ "$OS" == "Linux" ]]; then
+    curl -fsSL https://get.docker.com | sh
+    systemctl enable docker 2>/dev/null || true
+    systemctl start docker 2>/dev/null || true
+  elif [[ "$OS" == "Darwin" ]]; then
+    die "Docker not installed. Install Docker Desktop from https://docker.com/products/docker-desktop and re-run this script."
   fi
-else
-  log "Installing Node.js $NODE_MAJOR..."
-  case "$PKG_MANAGER" in
-    apt)
-      curl -fsSL "https://deb.nodesource.com/setup_${NODE_MAJOR}.x" | bash - >/dev/null 2>&1
-      apt-get install -y -qq nodejs >/dev/null
-      ;;
-    dnf|yum)
-      curl -fsSL "https://rpm.nodesource.com/setup_${NODE_MAJOR}.x" | bash - >/dev/null 2>&1
-      $PKG_MANAGER install -y -q nodejs >/dev/null
-      ;;
-  esac
-  log "Node.js $(node -v) installed"
-fi
-
-# ─── Docker ──────────────────────────────────────────────────────────
-
-step "Docker"
-
-if command -v docker &>/dev/null; then
-  log "Docker already installed: $(docker --version)"
-else
-  log "Installing Docker..."
-  curl -fsSL https://get.docker.com | sh >/dev/null 2>&1
-  systemctl enable docker >/dev/null
-  systemctl start docker
-  log "Docker installed: $(docker --version)"
 fi
 
 # Verify Docker is running
-if ! docker info &>/dev/null; then
-  systemctl start docker
-  sleep 2
-  docker info &>/dev/null || error "Docker is not running"
-fi
-log "Docker is running"
-
-# ─── User and directories ───────────────────────────────────────────
-
-step "User and directories"
-
-if id "$CODECK_USER" &>/dev/null; then
-  log "User '$CODECK_USER' already exists"
-else
-  useradd -r -m -s /bin/bash "$CODECK_USER"
-  log "User '$CODECK_USER' created"
+if ! docker info &>/dev/null 2>&1; then
+  if [[ "$OS" == "Linux" ]]; then
+    systemctl start docker 2>/dev/null || true
+    sleep 2
+  fi
+  docker info &>/dev/null 2>&1 || die "Docker is installed but not running. Start Docker and re-run this script."
 fi
 
-usermod -aG docker "$CODECK_USER" 2>/dev/null || true
-log "User '$CODECK_USER' in docker group"
+log "Docker: $(docker --version | head -1)"
 
-CODECK_HOME="/home/$CODECK_USER"
-for dir in "$CODECK_HOME/workspace" "$CODECK_HOME/.codeck" "$CODECK_HOME/.claude" "$CODECK_HOME/.ssh" "$CODECK_HOME/.config/gh"; do
-  mkdir -p "$dir"
+# ─── Stop existing container if running ────────────────────────────────
+
+if docker ps -a --format '{{.Names}}' | grep -q "^${CONTAINER_NAME}$"; then
+  warn "Existing '${CONTAINER_NAME}' container found — stopping..."
+  docker stop "$CONTAINER_NAME" 2>/dev/null || true
+  docker rm "$CONTAINER_NAME" 2>/dev/null || true
+fi
+
+# ─── Pull image ────────────────────────────────────────────────────────
+
+log "Pulling Codeck image..."
+docker pull "$CODECK_IMAGE"
+
+# ─── Run container ─────────────────────────────────────────────────────
+
+log "Starting Codeck..."
+docker run -d \
+  --name "$CONTAINER_NAME" \
+  --restart unless-stopped \
+  --init \
+  -p "${CODECK_PORT}:80" \
+  -v codeck-workspace:/workspace \
+  -v codeck-claude:/root/.claude \
+  -v codeck-ssh:/root/.ssh \
+  -v codeck-gh:/root/.config/gh \
+  --cap-drop ALL \
+  --cap-add CHOWN \
+  --cap-add SETUID \
+  --cap-add SETGID \
+  --cap-add NET_BIND_SERVICE \
+  --cap-add KILL \
+  --cap-add DAC_OVERRIDE \
+  --security-opt no-new-privileges:true \
+  --stop-timeout 30 \
+  "$CODECK_IMAGE" --web
+
+# ─── Wait for healthy ──────────────────────────────────────────────────
+
+log "Waiting for Codeck to start..."
+for i in $(seq 1 30); do
+  if docker exec "$CONTAINER_NAME" curl -sf http://localhost:80/api/status &>/dev/null; then
+    break
+  fi
+  sleep 1
 done
-chmod 700 "$CODECK_HOME/.codeck" "$CODECK_HOME/.claude" "$CODECK_HOME/.ssh"
-chown -R "$CODECK_USER:$CODECK_USER" "$CODECK_HOME"
-log "Directories ready under $CODECK_HOME"
 
-# Create /workspace symlink so agent memory paths (/workspace/.codeck/...) resolve correctly
-if [ ! -e /workspace ]; then
-  ln -sf "$CODECK_HOME/workspace" /workspace
-  log "/workspace → $CODECK_HOME/workspace symlink created"
-elif [ -L /workspace ]; then
-  log "/workspace symlink already exists ($(readlink /workspace))"
-else
-  log "WARNING: /workspace exists as a non-symlink — skipping (may be Docker volume)"
+if ! docker exec "$CONTAINER_NAME" curl -sf http://localhost:80/api/status &>/dev/null; then
+  warn "Codeck is starting but not healthy yet. Check: docker logs codeck"
 fi
 
-# Sudoers: allow codeck user to manage the service and Docker compose
-SUDOERS_FILE="/etc/sudoers.d/codeck"
-cat > "$SUDOERS_FILE" <<'SUDOERS'
-# Codeck: service management and Docker compose
-codeck ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart codeck
-codeck ALL=(ALL) NOPASSWD: /usr/bin/systemctl stop codeck
-codeck ALL=(ALL) NOPASSWD: /usr/bin/systemctl start codeck
-codeck ALL=(ALL) NOPASSWD: /usr/bin/docker compose *
-codeck ALL=(ALL) NOPASSWD: /usr/bin/chown *
-SUDOERS
-chmod 440 "$SUDOERS_FILE"
-log "Sudoers configured"
-
-# ─── Git identity ───────────────────────────────────────────────────
-
-step "Git identity"
-
-sudo -u "$CODECK_USER" git config --global user.name "Codeck"
-log "Git user.name = Codeck (set for $CODECK_USER)"
-
-# ─── Clone and build Codeck ─────────────────────────────────────────
-
-step "Codeck (clone + build)"
-
-if [[ -d "$CODECK_DIR/.git" ]]; then
-  log "Repo already exists, pulling latest..."
-  cd "$CODECK_DIR"
-  git fetch origin
-  git reset --hard "origin/$CODECK_BRANCH"
-else
-  log "Cloning $CODECK_REPO ($CODECK_BRANCH)..."
-  rm -rf "$CODECK_DIR"
-  git clone --branch "$CODECK_BRANCH" --depth 1 "$CODECK_REPO" "$CODECK_DIR"
-fi
-
-cd "$CODECK_DIR"
-
-log "Installing dependencies..."
-npm ci --ignore-scripts 2>&1 | tail -3
-
-log "Building (TypeScript compile)..."
-npm run build 2>&1 | tail -5
-
-chown -R "$CODECK_USER:$CODECK_USER" "$CODECK_DIR"
-log "Codeck built at $CODECK_DIR"
-
-# ─── Docker images ───────────────────────────────────────────────────
-
-step "Docker images"
-
-log "Building base image (this takes a few minutes on first run)..."
-docker build -t codeck-base -f docker/Dockerfile.base . 2>&1 | tail -5
-
-log "Building runtime image..."
-docker build -t codeck -f docker/Dockerfile . 2>&1 | tail -5
-
-log "Docker images ready"
-
-# ─── Environment file ────────────────────────────────────────────────
-
-step "Environment file"
-
-CODECK_UID=$(id -u "$CODECK_USER")
-CODECK_GID=$(id -g "$CODECK_USER")
-
-ENV_FILE="$CODECK_DIR/.env"
-cat > "$ENV_FILE" <<EOF
-# Codeck hosted mode — generated by install.sh
-CODECK_UID=$CODECK_UID
-CODECK_GID=$CODECK_GID
-EOF
-chown "$CODECK_USER:$CODECK_USER" "$ENV_FILE"
-log "Created $ENV_FILE (UID=$CODECK_UID, GID=$CODECK_GID)"
-
-# ─── Systemd service ────────────────────────────────────────────────
-
-step "Systemd service"
-
-cat > /etc/systemd/system/codeck.service <<'UNIT'
-[Unit]
-Description=Codeck - Claude Code Sandbox
-After=network.target docker.service
-Requires=docker.service
-
-[Service]
-Type=simple
-User=codeck
-Group=codeck
-WorkingDirectory=/opt/codeck
-
-Environment="PATH=/usr/local/bin:/usr/bin:/bin"
-Environment="NODE_ENV=production"
-Environment="CODECK_DAEMON_PORT=8080"
-Environment="CODECK_RUNTIME_URL=http://127.0.0.1:7777"
-Environment="CODECK_RUNTIME_WS_URL=http://127.0.0.1:7778"
-Environment="CODECK_DIR=/opt/codeck/.codeck-data"
-Environment="CODECK_DATA_DIR=/opt/codeck/.codeck-data"
-Environment="CODECK_PROJECT_DIR=/opt/codeck"
-Environment="CODECK_COMPOSE_FILE=docker/compose.managed.yml"
-Environment="HOME=/home/codeck"
-
-ExecStartPre=/usr/bin/mkdir -p /opt/codeck/.codeck-data
-ExecStart=/bin/bash /opt/codeck/scripts/start-managed.sh
-ExecStopPost=/usr/bin/docker compose -f /opt/codeck/docker/compose.managed.yml down
-
-Restart=always
-RestartSec=10
-CPUQuota=100%
-MemoryMax=512M
-NoNewPrivileges=true
-ProtectSystem=full
-AmbientCapabilities=CAP_NET_BIND_SERVICE
-
-[Install]
-WantedBy=multi-user.target
-UNIT
-
-systemctl daemon-reload
-systemctl enable codeck >/dev/null 2>&1
-systemctl start codeck
-log "Service installed and started"
-
-sleep 3
-if systemctl is-active --quiet codeck; then
-  log "Service is running!"
-else
-  warn "Service may have failed. Check: journalctl -u codeck -n 30"
-fi
-
-# ─── Firewall ───────────────────────────────────────────────────────
-
-step "Firewall"
+# ─── Firewall ──────────────────────────────────────────────────────────
 
 if command -v ufw &>/dev/null; then
-  ufw allow 8080/tcp >/dev/null 2>&1 && log "UFW: port 8080 allowed" || true
+  ufw allow "${CODECK_PORT}/tcp" >/dev/null 2>&1 && log "UFW: port ${CODECK_PORT} allowed" || true
 elif command -v firewall-cmd &>/dev/null; then
-  firewall-cmd --permanent --add-port=8080/tcp >/dev/null 2>&1
+  firewall-cmd --permanent --add-port="${CODECK_PORT}/tcp" >/dev/null 2>&1
   firewall-cmd --reload >/dev/null 2>&1
-  log "firewalld: port 8080 allowed"
-else
-  log "No firewall detected — port 8080 should be open"
+  log "firewalld: port ${CODECK_PORT} allowed"
 fi
 
-# ─── Done ────────────────────────────────────────────────────────────
+# ─── Done ──────────────────────────────────────────────────────────────
 
-PUBLIC_IP=$(curl -fsSL --max-time 5 https://ifconfig.me 2>/dev/null || hostname -I | awk '{print $1}')
+PUBLIC_IP=$(curl -fsSL --max-time 5 https://ifconfig.me 2>/dev/null || hostname -I 2>/dev/null | awk '{print $1}' || echo "localhost")
 
 echo ""
-echo -e "${GREEN}════════════════════════════════════════${NC}"
-echo -e "${GREEN}  Codeck installed successfully!${NC}"
-echo -e "${GREEN}════════════════════════════════════════${NC}"
+echo -e "${GREEN}${BOLD}════════════════════════════════════════${NC}"
+echo -e "${GREEN}${BOLD}  Codeck installed successfully!${NC}"
+echo -e "${GREEN}${BOLD}════════════════════════════════════════${NC}"
 echo ""
-echo -e "  Open: ${CYAN}http://${PUBLIC_IP}${NC}"
+echo -e "  Open: ${CYAN}http://${PUBLIC_IP}:${CODECK_PORT}${NC}"
 echo ""
-echo "  Architecture:"
-echo "    Daemon (host)    → :8080 (web UI + proxy)"
-echo "    Runtime (Docker) → :7777/:7778 (localhost only)"
+echo -e "  ${BOLD}Commands:${NC}"
+echo "    docker logs codeck -f        — view logs"
+echo "    docker restart codeck        — restart"
+echo "    docker stop codeck           — stop"
+echo "    docker start codeck          — start"
 echo ""
-echo "  Commands:"
-echo "    systemctl status codeck     — status"
-echo "    systemctl restart codeck    — restart (daemon + container)"
-echo "    journalctl -u codeck -f     — daemon logs"
-echo "    docker logs codeck-runtime  — runtime logs"
+echo -e "  ${BOLD}Update:${NC}"
+echo "    docker pull ${CODECK_IMAGE}"
+echo "    docker stop codeck && docker rm codeck"
+echo "    # Re-run this script"
 echo ""
-echo "  Update:"
-echo "    cd /opt/codeck && sudo git pull && npm ci --ignore-scripts && npm run build"
-echo "    docker build -t codeck -f docker/Dockerfile . && sudo systemctl restart codeck"
+echo -e "  ${BOLD}Data:${NC}"
+echo "    Workspace:  codeck-workspace volume"
+echo "    Claude CLI: codeck-claude volume"
+echo "    SSH keys:   codeck-ssh volume"
 echo ""
-echo "  Paths:"
-echo "    /opt/codeck/                — app code"
-echo "    /home/codeck/workspace/     — workspace (bind-mounted into container)"
-echo "    /home/codeck/.claude/       — Claude CLI config"
+echo -e "  ${BOLD}SSL (optional):${NC}"
+echo "    Put nginx in front with certbot for HTTPS."
 echo ""

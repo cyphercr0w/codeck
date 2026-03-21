@@ -635,7 +635,7 @@ function TerminalStatusBar() {
   }
 
   function barColor(p: number): string {
-    if (p < 60) return 'var(--success)';
+    if (p < 60) return 'var(--accent)';
     if (p < 85) return 'var(--warning)';
     return 'var(--error)';
   }

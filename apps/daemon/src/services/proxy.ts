@@ -4,7 +4,7 @@ import type { Request, Response } from 'express';
 // Runtime internal URL — in managed mode, the runtime is on a private Docker network
 // Default matches the plan: codeck-runtime container on port 7777
 const RUNTIME_URL = process.env.CODECK_RUNTIME_URL || 'http://codeck-runtime:7777';
-const PROXY_TIMEOUT = parseInt(process.env.PROXY_TIMEOUT_MS || '30000', 10);
+const PROXY_TIMEOUT = parseInt(process.env.PROXY_TIMEOUT_MS || '600000', 10); // 10 min — clone/install can take a while
 const INTERNAL_SECRET = process.env.CODECK_INTERNAL_SECRET || '';
 const MAX_BODY_SIZE = 65 * 1024 * 1024; // 65 MB — supports memory import archives
 

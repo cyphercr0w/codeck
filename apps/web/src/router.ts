@@ -6,7 +6,8 @@ const SECTION_ROUTES: Record<Section, string> = {
   claude: '/terminal',
   agents: '/agents',
   integrations: '/integrations',
-  config: '/config',
+  config: '/memory',
+  settings: '/settings',
 };
 
 const ROUTE_SECTIONS: Record<string, Section> = Object.fromEntries(

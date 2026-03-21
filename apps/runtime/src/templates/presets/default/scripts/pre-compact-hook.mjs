@@ -3,8 +3,8 @@
 /**
  * PreCompact Hook — Save critical state before context compaction.
  *
- * Writes a marker file with current task state, modified files,
- * and active agents. The PostCompact hook reads this to re-inject context.
+ * Captures: modified files, active agents, today's daily log,
+ * and current task context so PostCompact can re-inject it.
  */
 
 import { execSync } from 'child_process';
@@ -31,6 +31,8 @@ const state = {
   projectName: cwd.split('/').pop(),
   modifiedFiles: [],
   activeAgents: [],
+  dailyLog: '',
+  recentDecisions: [],
 };
 
 // Gather modified files
@@ -68,9 +70,34 @@ try {
   }
 } catch { /* non-fatal */ }
 
+// Capture today's daily log (full content — this is the most important context)
+try {
+  const today = new Date().toISOString().slice(0, 10);
+  const dailyPath = join('/workspace/.codeck/memory/daily', `${today}.md`);
+  if (existsSync(dailyPath)) {
+    state.dailyLog = readFileSync(dailyPath, 'utf-8');
+  }
+} catch { /* non-fatal */ }
+
+// Capture recent decisions
+try {
+  const decisionsDir = '/workspace/.codeck/memory/decisions';
+  if (existsSync(decisionsDir)) {
+    const files = readdirSync(decisionsDir).filter(f => f.endsWith('.md')).sort().slice(-3);
+    for (const f of files) {
+      try {
+        const content = readFileSync(join(decisionsDir, f), 'utf-8').slice(0, 500);
+        state.recentDecisions.push({ file: f, excerpt: content });
+      } catch { /* skip */ }
+    }
+  }
+} catch { /* non-fatal */ }
+
 try {
   writeFileSync(markerPath, JSON.stringify(state, null, 2));
 } catch { /* non-fatal */ }
 
-// PreCompact hooks don't output anything — they just save state
-process.exit(0);
+// Output a reminder to the agent that compaction is happening
+console.log(JSON.stringify({
+  additionalContext: 'IMPORTANT: Context is about to be compacted. If you have critical findings or decisions that are only in conversation context (not yet written to daily log or memory), write them NOW before they are lost.'
+}));

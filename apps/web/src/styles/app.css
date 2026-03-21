@@ -2698,9 +2698,19 @@
 
 .skill-list {
   max-height: 250px;
+  min-height: 80px;
   overflow-y: auto;
   border: 1px solid var(--border);
   border-radius: var(--radius);
+  display: flex;
+  flex-direction: column;
+}
+
+.skill-list .fb-empty {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .skill-item {

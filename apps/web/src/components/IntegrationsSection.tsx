@@ -357,6 +357,14 @@ function GitHubDetail({ onBack }: { onBack: () => void }) {
 
 export function IntegrationsSection() {
   const [selected, setSelected] = useState<string | null>(null);
+  const [ghAuth, setGhAuth] = useState(false);
+
+  useEffect(() => {
+    apiFetch('/api/github/login-status')
+      .then(r => r.json())
+      .then(d => setGhAuth(d.authenticated || false))
+      .catch(() => {});
+  }, [selected]); // re-check when returning from detail view
 
   if (selected === 'github') {
     return (
@@ -393,6 +401,7 @@ export function IntegrationsSection() {
                 <span class="integ-tile-desc">{integ.description}</span>
               </div>
               {!integ.available && <span class="badge badge-muted">Coming soon</span>}
+              {integ.id === 'github' && ghAuth && <span class="badge badge-success">Connected</span>}
             </button>
           ))}
         </div>

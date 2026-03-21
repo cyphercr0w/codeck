@@ -612,6 +612,108 @@ function PortMappingCard() {
   );
 }
 
+// ── Environment Variables Card ─────────────────────────────────────────────
+
+function EnvVarsCard() {
+  const [vars, setVars] = useState<Array<{ key: string; hasValue: boolean }>>([]);
+  const [newKey, setNewKey] = useState('');
+  const [newValue, setNewValue] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [msg, setMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
+  useEffect(() => { loadVars(); }, []);
+
+  async function loadVars() {
+    try {
+      const res = await apiFetch('/api/codeck/env');
+      const data = await res.json();
+      setVars(data.vars || []);
+    } catch { /* ignore */ }
+  }
+
+  async function handleAdd() {
+    const key = newKey.trim().toUpperCase();
+    if (!key || !newValue) return;
+    setSaving(true);
+    setMsg(null);
+    try {
+      const res = await apiFetch('/api/codeck/env', {
+        method: 'POST',
+        body: JSON.stringify({ key, value: newValue }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setMsg({ type: 'success', text: `${key} saved` });
+        setNewKey('');
+        setNewValue('');
+        loadVars();
+      } else {
+        setMsg({ type: 'error', text: data.error || 'Failed' });
+      }
+    } catch {
+      setMsg({ type: 'error', text: 'Connection error' });
+    }
+    setSaving(false);
+    setTimeout(() => setMsg(null), 3000);
+  }
+
+  async function handleDelete(key: string) {
+    try {
+      await apiFetch('/api/codeck/env', {
+        method: 'DELETE',
+        body: JSON.stringify({ key }),
+      });
+      loadVars();
+    } catch { /* ignore */ }
+  }
+
+  return (
+    <div class="dash-card">
+      <div class="dash-card-title">
+        <IconKey size={14} />
+        <span>Environment Variables</span>
+      </div>
+      <div class="env-hint">
+        Variables are injected into every new terminal session. Changes apply on next session start.
+      </div>
+      {vars.length > 0 && (
+        <div class="env-list">
+          {vars.map(v => (
+            <div key={v.key} class="env-row">
+              <code class="env-key">{v.key}</code>
+              <span class="env-value">{v.hasValue ? '••••••••' : '(empty)'}</span>
+              <button class="btn btn-xs btn-ghost danger" onClick={() => handleDelete(v.key)}>
+                <IconX size={11} />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+      <div class="env-add">
+        <input
+          class="input env-input"
+          placeholder="KEY_NAME"
+          value={newKey}
+          onInput={e => setNewKey((e.target as HTMLInputElement).value.toUpperCase())}
+          onKeyDown={e => e.key === 'Enter' && handleAdd()}
+        />
+        <input
+          class="input env-input"
+          type="password"
+          placeholder="value"
+          value={newValue}
+          onInput={e => setNewValue((e.target as HTMLInputElement).value)}
+          onKeyDown={e => e.key === 'Enter' && handleAdd()}
+        />
+        <button class="btn btn-xs btn-primary" onClick={handleAdd} disabled={saving || !newKey.trim() || !newValue}>
+          {saving ? <span class="spinner-sm" /> : <IconPlus size={11} />}
+        </button>
+      </div>
+      {msg && <div class={`env-msg ${msg.type === 'success' ? 'text-success' : 'text-error'}`}>{msg.text}</div>}
+    </div>
+  );
+}
+
 // ── Main export ────────────────────────────────────────────────────────────
 
 export function SettingsSection() {
@@ -626,7 +728,7 @@ export function SettingsSection() {
         </div>
         <div class="dash-grid">
           <PermissionsCard />
-          <PortMappingCard />
+          <EnvVarsCard />
         </div>
         <div style="margin-top: 24px; padding-top: 24px; border-top: 1px solid var(--border)">
           <h3 class="dash-title" style="margin-bottom: 16px"><IconShield size={14} /> Security</h3>

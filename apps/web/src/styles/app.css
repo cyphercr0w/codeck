@@ -3966,6 +3966,65 @@
   overflow: hidden;
 }
 
+/* ── Environment Variables ── */
+
+.env-hint {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-bottom: 10px;
+  line-height: 1.4;
+}
+
+.env-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 10px;
+}
+
+.env-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px;
+  background: var(--bg-secondary);
+  border-radius: 4px;
+  font-size: 12px;
+}
+
+.env-key {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  min-width: 80px;
+}
+
+.env-value {
+  flex: 1;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.env-add {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.env-input {
+  flex: 1;
+  font-size: 12px;
+  padding: 5px 8px;
+  min-width: 0;
+}
+
+.env-msg {
+  font-size: 11px;
+  margin-top: 6px;
+}
+
+.text-success { color: var(--success); }
+
 .session-group-toggle {
   display: flex;
   align-items: center;

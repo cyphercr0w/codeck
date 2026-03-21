@@ -3,7 +3,7 @@ import { readdir, stat, readFile, writeFile, realpath, access, mkdir, rm } from 
 import { join, resolve, sep } from 'path';
 import { execFile, spawn } from 'child_process';
 import { promisify } from 'util';
-import { existsSync, createReadStream } from 'fs';
+import { existsSync, createReadStream, readFileSync, writeFileSync } from 'fs';
 
 const execFileAsync = promisify(execFile);
 
@@ -142,6 +142,69 @@ router.put('/files/write', async (req, res) => {
   } catch {
     res.status(500).json({ error: 'Write failed' });
   }
+});
+
+// ── Environment Variables (.codeck/.env) ──
+
+const ENV_FILE = join(AGENT_DATA_DIR, '.env');
+
+function parseEnvFile(): Array<{ key: string; value: string }> {
+  if (!existsSync(ENV_FILE)) return [];
+  try {
+    const content = readFileSync(ENV_FILE, 'utf-8');
+    const vars: Array<{ key: string; value: string }> = [];
+    for (const line of content.split('\n')) {
+      const trimmed = line.trim();
+      if (!trimmed || trimmed.startsWith('#')) continue;
+      const eqIdx = trimmed.indexOf('=');
+      if (eqIdx > 0) {
+        const key = trimmed.slice(0, eqIdx).trim();
+        const val = trimmed.slice(eqIdx + 1).trim().replace(/^["']|["']$/g, '');
+        if (key) vars.push({ key, value: val });
+      }
+    }
+    return vars;
+  } catch { return []; }
+}
+
+function writeEnvFile(vars: Array<{ key: string; value: string }>) {
+  const content = vars.map(v => `${v.key}=${v.value}`).join('\n') + '\n';
+  writeFileSync(ENV_FILE, content, { mode: 0o600 });
+}
+
+router.get('/env', (_req, res) => {
+  // Return keys only — never expose values via API
+  const vars = parseEnvFile();
+  res.json({ vars: vars.map(v => ({ key: v.key, hasValue: v.value.length > 0 })) });
+});
+
+router.post('/env', (req, res) => {
+  const { key, value } = req.body;
+  if (!key || typeof key !== 'string' || !/^[A-Z_][A-Z0-9_]*$/i.test(key)) {
+    res.status(400).json({ error: 'Invalid key (use UPPER_SNAKE_CASE)' });
+    return;
+  }
+  if (typeof value !== 'string') {
+    res.status(400).json({ error: 'Value required' });
+    return;
+  }
+  const vars = parseEnvFile();
+  const existing = vars.findIndex(v => v.key === key);
+  if (existing >= 0) {
+    vars[existing].value = value;
+  } else {
+    vars.push({ key, value });
+  }
+  writeEnvFile(vars);
+  res.json({ success: true });
+});
+
+router.delete('/env', (req, res) => {
+  const { key } = req.body;
+  if (!key) { res.status(400).json({ error: 'Key required' }); return; }
+  const vars = parseEnvFile().filter(v => v.key !== key);
+  writeEnvFile(vars);
+  res.json({ success: true });
 });
 
 // ── Memory Export (tar.gz of .codeck/) ──

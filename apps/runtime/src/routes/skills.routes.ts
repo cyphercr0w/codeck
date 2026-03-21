@@ -97,7 +97,7 @@ router.post('/install', async (req, res) => {
 
   try {
     const { stdout, stderr } = await execFileAsync('npx', [
-      '-y', 'skills', 'add', `${source}/${skillId}`, '--all',
+      '-y', 'skills', 'add', `${source}@${skillId}`, '--all', '-y',
     ], {
       timeout: 30_000,
       cwd: '/workspace',

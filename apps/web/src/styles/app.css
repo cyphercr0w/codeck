@@ -827,6 +827,15 @@
   max-height: 400px;
   overflow-y: auto;
   min-height: 120px;
+  display: flex;
+  flex-direction: column;
+}
+
+.fb-list > .fb-empty {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .fb-row {

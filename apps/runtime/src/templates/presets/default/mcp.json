@@ -16,6 +16,22 @@
 		"playwright": {
 			"command": "npx",
 			"args": ["-y", "@playwright/mcp@latest", "--headless", "--no-sandbox"]
+		},
+		"brave-search": {
+			"command": "npx",
+			"args": ["-y", "@anthropic-ai/mcp-server-brave-search"],
+			"env": {
+				"BRAVE_API_KEY": ""
+			},
+			"description": "Web search via Brave Search API"
+		},
+		"github": {
+			"command": "npx",
+			"args": ["-y", "@anthropic-ai/mcp-server-github"],
+			"env": {
+				"GITHUB_TOKEN": ""
+			},
+			"description": "GitHub repos, PRs, issues, and code search"
 		}
 	}
 }

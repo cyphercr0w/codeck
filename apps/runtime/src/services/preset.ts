@@ -1,4 +1,5 @@
 import { existsSync, readFileSync, writeFileSync, mkdirSync, readdirSync, copyFileSync, realpathSync, statSync, renameSync } from 'fs';
+import { execFileSync } from 'child_process';
 import { join, dirname, resolve } from 'path';
 import { fileURLToPath } from 'url';
 
@@ -391,9 +392,34 @@ function registerMcpServers(presetDir: string): void {
     }
     const existing = claudeJson.mcpServers as Record<string, unknown>;
 
+    // Auto-populate GitHub token from gh CLI if available
+    if (servers.github && typeof servers.github === 'object') {
+      const ghConfig = servers.github as Record<string, unknown>;
+      const ghEnv = (ghConfig.env || {}) as Record<string, string>;
+      if (!ghEnv.GITHUB_TOKEN) {
+        try {
+          const token = execFileSync('gh', ['auth', 'token'], { encoding: 'utf-8', timeout: 5000 }).trim();
+          if (token) {
+            ghEnv.GITHUB_TOKEN = token;
+            ghConfig.env = ghEnv;
+            console.log('[Preset]   Auto-populated GITHUB_TOKEN from gh CLI');
+          }
+        } catch { /* gh not authenticated — leave empty */ }
+      }
+    }
+
     let added = 0;
     for (const [name, config] of Object.entries(servers)) {
       if (existing[name]) continue; // don't overwrite user-configured servers
+      // Skip servers with required env vars that are empty (they'd fail silently)
+      const env = (config as Record<string, unknown>).env as Record<string, string> | undefined;
+      if (env) {
+        const missingRequired = Object.entries(env).some(([, v]) => v === '');
+        if (missingRequired) {
+          console.log(`[Preset]   SKIP MCP server: ${name} (missing required env vars — configure in Integrations)`);
+          continue;
+        }
+      }
       existing[name] = config;
       added++;
       console.log(`[Preset]   REGISTER MCP server: ${name}`);

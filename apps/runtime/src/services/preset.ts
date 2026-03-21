@@ -354,6 +354,17 @@ function mergePresetHooks(presetDir: string): void {
       }
     }
 
+    // Also merge statusLine if present in template and not in current
+    if (template.statusLine && !current.statusLine) {
+      const sl = JSON.parse(JSON.stringify(template.statusLine));
+      if (typeof sl.command === 'string') {
+        sl.command = rewritePath(sl.command);
+      }
+      current.statusLine = sl;
+      added++;
+      console.log(`[Preset]   MERGE statusLine: ${sl.command}`);
+    }
+
     if (added > 0) {
       writeFileSync(settingsDest, JSON.stringify(current, null, 2));
       console.log(`[Preset]   Merged ${added} new hook(s) into settings.json`);

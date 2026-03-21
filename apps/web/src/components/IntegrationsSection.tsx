@@ -173,11 +173,16 @@ function GitHubDetail({ onBack }: { onBack: () => void }) {
     try {
       const res = await apiFetch('/api/github/login', { method: 'POST' });
       const data = await res.json();
-      if (data.started) pollGitHubLogin();
+      if (data.started) {
+        pollGitHubLogin();
+        // Stay in connecting state — poll will update github state which re-renders
+      } else {
+        setGhConnecting(false);
+      }
     } catch {
       setError('Error starting GitHub login');
+      setGhConnecting(false);
     }
-    setGhConnecting(false);
   }
 
   function pollGitHubLogin() {
@@ -203,6 +208,8 @@ function GitHubDetail({ onBack }: { onBack: () => void }) {
           email: data.email || null,
           avatarUrl: data.avatarUrl || null,
         });
+        // Clear connecting spinner once device code arrives or login completes
+        if (data.code || !data.inProgress) setGhConnecting(false);
         if (!data.inProgress) {
           clearInterval(pollIntervalRef.current!);
           pollIntervalRef.current = null;

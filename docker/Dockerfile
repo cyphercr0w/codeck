@@ -26,8 +26,8 @@ COPY apps/runtime/src apps/runtime/src
 COPY apps/daemon/src apps/daemon/src
 COPY apps/web/src apps/web/src
 
-# Build everything inside the container — no stale cache possible
-RUN npm run build
+# Build inside container — skip CLI (not needed in container)
+RUN npm run build:frontend && npm run build:backend && npm run build:daemon
 
 # Remove devDependencies after build
 RUN npm prune --omit=dev \

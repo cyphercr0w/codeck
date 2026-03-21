@@ -59,7 +59,21 @@ export function syncToClaudeSettings(): void {
       settings = JSON.parse(readFileSync(settingsPath, 'utf8'));
     }
     const permissions = (settings.permissions || {}) as Record<string, unknown>;
-    permissions.allow = enabled;
+
+    // Include MCP server tools — allow all tools from registered MCP servers
+    const mcpAllow: string[] = [];
+    try {
+      const claudeJsonPath = `${dirname(settingsPath)}/.claude.json`;
+      if (existsSync(claudeJsonPath)) {
+        const claudeJson = JSON.parse(readFileSync(claudeJsonPath, 'utf8'));
+        const mcpServers = claudeJson.mcpServers || {};
+        for (const serverName of Object.keys(mcpServers)) {
+          mcpAllow.push(`mcp__${serverName}`);
+        }
+      }
+    } catch { /* non-fatal */ }
+
+    permissions.allow = [...enabled, ...mcpAllow];
     settings.permissions = permissions;
 
     const dir = dirname(settingsPath);

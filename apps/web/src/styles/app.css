@@ -1477,26 +1477,28 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 4px 12px;
+  padding: 6px 14px;
   background: var(--bg-secondary);
   border-top: 1px solid var(--border);
-  font-size: 11px;
+  font-size: 12px;
   color: var(--text-muted);
-  min-height: 26px;
+  min-height: 32px;
   flex-shrink: 0;
+  gap: 16px;
 }
 
 .tsb-left {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
 }
 
 .tsb-dot {
-  width: 6px;
-  height: 6px;
+  width: 7px;
+  height: 7px;
   border-radius: 50%;
   background: var(--text-muted);
+  flex-shrink: 0;
 }
 .tsb-dot-active { background: var(--success); }
 .tsb-dot-idle { background: var(--text-muted); }
@@ -1510,30 +1512,43 @@
 .tsb-label {
   text-transform: capitalize;
   font-family: var(--font-mono);
+  font-size: 12px;
+}
+
+.tsb-sep {
+  color: var(--border);
+  font-size: 11px;
+  user-select: none;
+}
+
+.tsb-uptime {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-muted);
 }
 
 .tsb-right {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 8px;
 }
 
 .tsb-limit {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 5px;
 }
 
 .tsb-limit-label {
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: 11px;
   color: var(--text-muted);
-  width: 14px;
+  width: 16px;
 }
 
 .tsb-limit-bar {
-  width: 40px;
-  height: 3px;
+  width: 50px;
+  height: 4px;
   background: var(--bg-tertiary, rgba(255,255,255,0.06));
   border-radius: 2px;
   overflow: hidden;
@@ -1547,13 +1562,13 @@
 
 .tsb-limit-pct {
   font-family: var(--font-mono);
-  font-size: 10px;
-  width: 22px;
+  font-size: 11px;
+  width: 26px;
   text-align: right;
 }
 
 .tsb-limit-reset {
-  font-size: 9px;
+  font-size: 10px;
   color: var(--text-muted);
   opacity: 0.7;
 }

@@ -612,6 +612,15 @@ export function ClaudeSection({ onNewSession, onNewShell }: ClaudeSectionProps) 
 function TerminalStatusBar() {
   const usage = claudeUsage.value;
   const status = sessionStatus.value[activeSessionId.value || ''] || 'idle';
+  const activeSession = sessions.value.find(s => s.id === activeSessionId.value);
+  const uptime = activeSession ? Math.floor((Date.now() - activeSession.createdAt) / 60000) : 0;
+
+  function formatUptime(mins: number): string {
+    if (mins < 60) return `${mins}m`;
+    const h = Math.floor(mins / 60);
+    const m = mins % 60;
+    return `${h}h ${m}m`;
+  }
 
   function formatReset(iso: string | null): string {
     if (!iso) return '';
@@ -634,27 +643,34 @@ function TerminalStatusBar() {
     <div class="terminal-status-bar">
       <div class="tsb-left">
         <span class={`tsb-dot tsb-dot-${status}`} />
-        <span class="tsb-label">{status === 'waiting' ? 'Waiting for input' : status}</span>
+        <span class="tsb-label">{status === 'waiting' ? 'Waiting' : status}</span>
+        <span class="tsb-sep">|</span>
+        <span class="tsb-uptime">Session: {formatUptime(uptime)}</span>
       </div>
       <div class="tsb-right">
-        {usage?.available && usage.fiveHour && (
-          <div class="tsb-limit">
-            <span class="tsb-limit-label">5h</span>
-            <div class="tsb-limit-bar">
-              <div class="tsb-limit-fill" style={{ width: `${Math.min(100, usage.fiveHour.percent)}%`, background: barColor(usage.fiveHour.percent) }} />
-            </div>
-            <span class="tsb-limit-pct">{usage.fiveHour.percent}%</span>
-            {usage.fiveHour.resetsAt && <span class="tsb-limit-reset">{formatReset(usage.fiveHour.resetsAt)}</span>}
-          </div>
-        )}
-        {usage?.available && usage.sevenDay && (
-          <div class="tsb-limit">
-            <span class="tsb-limit-label">7d</span>
-            <div class="tsb-limit-bar">
-              <div class="tsb-limit-fill" style={{ width: `${Math.min(100, usage.sevenDay.percent)}%`, background: barColor(usage.sevenDay.percent) }} />
-            </div>
-            <span class="tsb-limit-pct">{usage.sevenDay.percent}%</span>
-          </div>
+        {usage?.available && (
+          <>
+            {usage.fiveHour && (
+              <div class="tsb-limit">
+                <span class="tsb-limit-label">5h</span>
+                <div class="tsb-limit-bar">
+                  <div class="tsb-limit-fill" style={{ width: `${Math.min(100, usage.fiveHour.percent)}%`, background: barColor(usage.fiveHour.percent) }} />
+                </div>
+                <span class="tsb-limit-pct">{usage.fiveHour.percent}%</span>
+                {usage.fiveHour.resetsAt && <span class="tsb-limit-reset">{formatReset(usage.fiveHour.resetsAt)}</span>}
+              </div>
+            )}
+            {usage.fiveHour && usage.sevenDay && <span class="tsb-sep">|</span>}
+            {usage.sevenDay && (
+              <div class="tsb-limit">
+                <span class="tsb-limit-label">7d</span>
+                <div class="tsb-limit-bar">
+                  <div class="tsb-limit-fill" style={{ width: `${Math.min(100, usage.sevenDay.percent)}%`, background: barColor(usage.sevenDay.percent) }} />
+                </div>
+                <span class="tsb-limit-pct">{usage.sevenDay.percent}%</span>
+              </div>
+            )}
+          </>
         )}
       </div>
     </div>

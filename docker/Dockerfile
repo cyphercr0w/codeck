@@ -15,6 +15,7 @@ COPY package.json package-lock.json tsconfig.json ./
 COPY apps/runtime/package.json apps/runtime/tsconfig.json apps/runtime/
 COPY apps/daemon/package.json apps/daemon/tsconfig.json apps/daemon/
 COPY apps/web/package.json apps/web/tsconfig.json apps/web/vite.config.ts apps/web/index.html apps/web/
+COPY apps/web/public apps/web/public
 
 # Install ALL dependencies (including devDependencies for build)
 RUN npm ci \

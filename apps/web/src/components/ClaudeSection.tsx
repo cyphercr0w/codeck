@@ -490,7 +490,7 @@ export function ClaudeSection({ onNewSession, onNewShell }: ClaudeSectionProps) 
               class="terminal-tab-new"
               aria-label="New Session"
               disabled={sessionList.length >= 5}
-              onClick={() => setShowNewSessionMenu(true)}
+              onClick={() => { setShowNewSessionMenu(true); setActiveSessionId(null); }}
             >
               <IconPlus size={14} />
             </button>
@@ -509,7 +509,7 @@ export function ClaudeSection({ onNewSession, onNewShell }: ClaudeSectionProps) 
               Context loaded: {contextBanner.projectName} &middot; {contextBanner.kb} KB of memory injected
             </div>
           )}
-          {(sessionList.length === 0 || (showNewSessionMenu && !activeId)) && !restoringPending.value && (
+          {(sessionList.length === 0 || (showNewSessionMenu && !activeId) || newTabLoading) && !restoringPending.value && (
             <div
               class="claude-empty"
               onClick={(e) => {

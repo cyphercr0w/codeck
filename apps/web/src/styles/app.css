@@ -355,8 +355,26 @@
 .sidebar-footer-row {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  gap: 8px;
 }
+
+.sidebar-settings-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 6px;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 0;
+  flex-shrink: 0;
+  transition: all 0.15s;
+}
+.sidebar-settings-btn:hover { background: var(--bg-hover); color: var(--text-primary); }
+.sidebar-settings-btn.active { color: var(--accent); }
 
 .sidebar-status {
   display: flex;
@@ -686,6 +704,7 @@
   border-top: 1px solid var(--border);
   padding-top: 10px;
   text-align: center;
+  margin-top: auto;
 }
 
 /* ── Home Filesystem ── */
@@ -1041,6 +1060,8 @@
   border-radius: var(--radius-lg);
   padding: 16px 20px;
   transition: border-color var(--transition);
+  display: flex;
+  flex-direction: column;
 }
 
 .dash-card:hover {

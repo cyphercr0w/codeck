@@ -125,11 +125,18 @@ export function Sidebar({ onSectionChange, mobileOpen, onClose, collapsed, onTog
         <div class="sidebar-footer">
           <UsageBars collapsed={collapsed} />
           <div class="sidebar-footer-row">
+            <button
+              class={`sidebar-settings-btn${current === 'settings' ? ' active' : ''}`}
+              onClick={() => { setActiveSection('settings'); onSectionChange('settings'); onClose(); }}
+              aria-label="Settings"
+              title="Settings"
+            >
+              <IconSettings size={14} />
+            </button>
             <div class="sidebar-status">
               <span class={`status-dot${connected ? ' online' : ''}`} />
               {!collapsed && <span>{connected ? 'Connected' : 'Disconnected'}</span>}
             </div>
-            {!collapsed && <div class="sidebar-version">v0.1</div>}
           </div>
         </div>
       </aside>

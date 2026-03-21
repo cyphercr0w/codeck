@@ -72,6 +72,12 @@ export function MobileMenu({ open, onClose, onSectionChange }: MobileMenuProps) 
           </div>
         )}
         <div class="mobile-menu-footer">
+          <button
+            class={`sidebar-settings-btn${current === 'settings' ? ' active' : ''}`}
+            onClick={() => { setActiveSection('settings'); onSectionChange('settings'); onClose(); }}
+          >
+            <IconSettings size={14} />
+          </button>
           <span class={`status-dot${connected ? ' online' : ''}`} />
           <span>{connected ? 'Connected' : 'Disconnected'}</span>
         </div>

@@ -482,7 +482,15 @@ export function ClaudeSection({ onNewSession, onNewShell }: ClaudeSectionProps) 
                 <button
                   class="terminal-tab-close"
                   aria-label="Cancel new session"
-                  onClick={(e) => { e.stopPropagation(); setShowNewSessionMenu(false); }}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setShowNewSessionMenu(false);
+                    const id = sessionList.length > 0 ? sessionList[sessionList.length - 1].id : null;
+                    if (id) {
+                      setActiveSessionId(id);
+                      requestAnimationFrame(() => { fitTerminal(id); focusTerminal(id); });
+                    }
+                  }}
                 >
                   <IconX size={12} />
                 </button>

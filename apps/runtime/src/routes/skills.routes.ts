@@ -1,6 +1,8 @@
 import { Router } from 'express';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
+import { readdir } from 'fs/promises';
+import { join } from 'path';
 
 const execFileAsync = promisify(execFile);
 const router = Router();
@@ -76,6 +78,18 @@ router.get('/catalog', async (req, res) => {
   const query = ((req.query.q || '') as string).trim();
   const skills = await searchSkills(query);
   res.json({ skills });
+});
+
+// GET /installed — list installed skill names
+router.get('/installed', async (_req, res) => {
+  try {
+    const skillsDir = join(process.env.HOME || '/root', '.claude', 'skills');
+    const entries = await readdir(skillsDir).catch(() => [] as string[]);
+    const names = entries.filter((e: string) => !e.startsWith('.'));
+    res.json({ installed: names });
+  } catch {
+    res.json({ installed: [] });
+  }
 });
 
 // POST /install — install a skill

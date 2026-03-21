@@ -60,10 +60,21 @@ interface SkillEntry {
 function SkillMarketplace({ onInstalled }: { onInstalled: () => void }) {
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<SkillEntry[]>([]);
+  const [installed, setInstalled] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(false);
   const [installing, setInstalling] = useState<string | null>(null);
   const [msg, setMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Load installed skills on mount
+  useEffect(() => { loadInstalled(); }, []);
+
+  function loadInstalled() {
+    apiFetch('/api/skills/installed')
+      .then(r => r.json())
+      .then(data => setInstalled(new Set(data.installed || [])))
+      .catch(() => {});
+  }
 
   function searchSkills(q: string) {
     if (!q.trim()) { setResults([]); setLoading(false); return; }
@@ -92,6 +103,7 @@ function SkillMarketplace({ onInstalled }: { onInstalled: () => void }) {
       const data = await res.json();
       if (data.success) {
         setMsg({ type: 'success', text: `Installed ${skill.name}` });
+        loadInstalled();
         onInstalled();
       } else {
         setMsg({ type: 'error', text: data.error || 'Installation failed' });
@@ -132,13 +144,17 @@ function SkillMarketplace({ onInstalled }: { onInstalled: () => void }) {
               <span class="skill-item-source">{skill.source}</span>
             </div>
             <span class="skill-item-installs">{formatInstalls(skill.installs)}</span>
-            <button
-              class="btn btn-xs btn-primary"
-              onClick={() => handleInstall(skill)}
-              disabled={installing !== null}
-            >
-              {installing === skill.skillId ? <span class="spinner-sm" /> : 'Install'}
-            </button>
+            {installed.has(skill.name) ? (
+              <span class="badge badge-success">Installed</span>
+            ) : (
+              <button
+                class="btn btn-xs btn-primary"
+                onClick={() => handleInstall(skill)}
+                disabled={installing !== null}
+              >
+                {installing === skill.skillId ? <span class="spinner-sm" /> : 'Install'}
+              </button>
+            )}
           </div>
         ))}
       </div>

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
-import { sessions, activeSessionId, setActiveSessionId, addLocalLog, addSession, removeSession, renameSession, agentName, isMobile, restoringPending, wsConnected, sessionStatus, setSessionStatus, clearSessionStatus } from '../state/store';
+import { sessions, activeSessionId, setActiveSessionId, addLocalLog, addSession, removeSession, renameSession, agentName, isMobile, restoringPending, wsConnected, sessionStatus, setSessionStatus, clearSessionStatus, claudeUsage } from '../state/store';
 import { apiFetch } from '../api';
 import { createTerminal, destroyTerminal, fitTerminal, repaintTerminal, focusTerminal, writeToTerminal, scrollToBottom, getTerminal, markSessionAttaching, clearSessionAttaching, onTerminalWrite, ensureTerminalVisible, setOnFilePaste, getTerminalBuffer } from '../terminal';
 import { wsSend, setTerminalHandlers, attachSession, setOnSessionReattached, setOnBeforeSessionsRestored, setOnContextLoaded, type ContextLoadedData } from '../ws';
@@ -604,6 +604,59 @@ export function ClaudeSection({ onNewSession, onNewShell }: ClaudeSectionProps) 
         )}
       </div>
       <UploadOverlay file={pendingFile} onDone={() => setPendingFile(null)} />
+      {activeId && !mobile && <TerminalStatusBar />}
+    </div>
+  );
+}
+
+function TerminalStatusBar() {
+  const usage = claudeUsage.value;
+  const status = sessionStatus.value[activeSessionId.value || ''] || 'idle';
+
+  function formatReset(iso: string | null): string {
+    if (!iso) return '';
+    const diff = new Date(iso).getTime() - Date.now();
+    if (diff <= 0) return 'now';
+    const h = Math.floor(diff / 3600000);
+    const m = Math.floor((diff % 3600000) / 60000);
+    if (h >= 24) return `${Math.floor(h / 24)}d`;
+    if (h > 0) return `${h}h${m}m`;
+    return `${m}m`;
+  }
+
+  function barColor(p: number): string {
+    if (p < 60) return 'var(--success)';
+    if (p < 85) return 'var(--warning)';
+    return 'var(--error)';
+  }
+
+  return (
+    <div class="terminal-status-bar">
+      <div class="tsb-left">
+        <span class={`tsb-dot tsb-dot-${status}`} />
+        <span class="tsb-label">{status === 'waiting' ? 'Waiting for input' : status}</span>
+      </div>
+      <div class="tsb-right">
+        {usage?.available && usage.fiveHour && (
+          <div class="tsb-limit">
+            <span class="tsb-limit-label">5h</span>
+            <div class="tsb-limit-bar">
+              <div class="tsb-limit-fill" style={{ width: `${Math.min(100, usage.fiveHour.percent)}%`, background: barColor(usage.fiveHour.percent) }} />
+            </div>
+            <span class="tsb-limit-pct">{usage.fiveHour.percent}%</span>
+            {usage.fiveHour.resetsAt && <span class="tsb-limit-reset">{formatReset(usage.fiveHour.resetsAt)}</span>}
+          </div>
+        )}
+        {usage?.available && usage.sevenDay && (
+          <div class="tsb-limit">
+            <span class="tsb-limit-label">7d</span>
+            <div class="tsb-limit-bar">
+              <div class="tsb-limit-fill" style={{ width: `${Math.min(100, usage.sevenDay.percent)}%`, background: barColor(usage.sevenDay.percent) }} />
+            </div>
+            <span class="tsb-limit-pct">{usage.sevenDay.percent}%</span>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

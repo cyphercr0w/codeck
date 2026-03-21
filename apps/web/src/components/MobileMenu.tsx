@@ -48,29 +48,6 @@ export function MobileMenu({ open, onClose, onSectionChange }: MobileMenuProps) 
             </button>
           ))}
         </nav>
-        {claudeUsage.value?.available && (
-          <div class="mobile-menu-usage">
-            <span class="sidebar-usage-title">Limits</span>
-            {claudeUsage.value.fiveHour && (
-              <div class="sidebar-usage-row">
-                <span class="sidebar-usage-label">5h</span>
-                <div class="sidebar-usage-track">
-                  <div class="sidebar-usage-fill" style={{ width: `${Math.min(100, claudeUsage.value.fiveHour.percent)}%`, background: barColor(claudeUsage.value.fiveHour.percent) }} />
-                </div>
-                <span class="sidebar-usage-pct">{claudeUsage.value.fiveHour.percent}%</span>
-              </div>
-            )}
-            {claudeUsage.value.sevenDay && (
-              <div class="sidebar-usage-row">
-                <span class="sidebar-usage-label">7d</span>
-                <div class="sidebar-usage-track">
-                  <div class="sidebar-usage-fill" style={{ width: `${Math.min(100, claudeUsage.value.sevenDay.percent)}%`, background: barColor(claudeUsage.value.sevenDay.percent) }} />
-                </div>
-                <span class="sidebar-usage-pct">{claudeUsage.value.sevenDay.percent}%</span>
-              </div>
-            )}
-          </div>
-        )}
         <div class="mobile-menu-footer">
           <button
             class={`sidebar-settings-btn${current === 'settings' ? ' active' : ''}`}

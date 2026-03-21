@@ -123,7 +123,6 @@ export function Sidebar({ onSectionChange, mobileOpen, onClose, collapsed, onTog
           ))}
         </nav>
         <div class="sidebar-footer">
-          <UsageBars collapsed={collapsed} />
           <div class="sidebar-footer-row">
             <button
               class={`sidebar-settings-btn${current === 'settings' ? ' active' : ''}`}

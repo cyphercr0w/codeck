@@ -1471,6 +1471,93 @@
   font-size: 14px;
 }
 
+/* ── Terminal Status Bar ── */
+
+.terminal-status-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 12px;
+  background: var(--bg-secondary);
+  border-top: 1px solid var(--border);
+  font-size: 11px;
+  color: var(--text-muted);
+  min-height: 26px;
+  flex-shrink: 0;
+}
+
+.tsb-left {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.tsb-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--text-muted);
+}
+.tsb-dot-active { background: var(--success); }
+.tsb-dot-idle { background: var(--text-muted); }
+.tsb-dot-waiting { background: var(--warning); animation: pulse 1.5s ease infinite; }
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+.tsb-label {
+  text-transform: capitalize;
+  font-family: var(--font-mono);
+}
+
+.tsb-right {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.tsb-limit {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.tsb-limit-label {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-muted);
+  width: 14px;
+}
+
+.tsb-limit-bar {
+  width: 40px;
+  height: 3px;
+  background: var(--bg-tertiary, rgba(255,255,255,0.06));
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.tsb-limit-fill {
+  height: 100%;
+  border-radius: 2px;
+  transition: width 0.3s ease;
+}
+
+.tsb-limit-pct {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  width: 22px;
+  text-align: right;
+}
+
+.tsb-limit-reset {
+  font-size: 9px;
+  color: var(--text-muted);
+  opacity: 0.7;
+}
+
 /* Context Loaded banner — appears briefly when memory is injected */
 .context-loaded-banner {
   position: absolute;

@@ -56,9 +56,11 @@ async function searchSkills(query: string): Promise<SkillEntry[]> {
     return cached.skills;
   }
 
+  // Empty query makes `skills find` enter interactive mode — skip CLI, use fallback
+  if (!query) return [];
+
   try {
-    const args = query ? ['find', query] : ['find', ''];
-    const { stdout } = await execFileAsync('npx', ['-y', 'skills', ...args], {
+    const { stdout } = await execFileAsync('npx', ['-y', 'skills', 'find', query], {
       timeout: 15_000,
       env: { ...process.env, HOME: process.env.HOME || '/root', NO_COLOR: '1' },
     });
@@ -108,14 +110,16 @@ async function fetchCatalogFallback(): Promise<SkillEntry[]> {
   return defaultCache?.skills || [];
 }
 
-// GET /catalog — search 89K+ skills via CLI, fallback to HTML scrape
+// GET /catalog — no query: top 600 from HTML (cached 1hr), with query: CLI search (cached 5min)
 router.get('/catalog', async (req, res) => {
   const query = ((req.query.q || '') as string).trim();
 
-  let skills = await searchSkills(query);
-
-  // Fallback to HTML scrape if CLI returns nothing
-  if (skills.length === 0 && !query) {
+  let skills: SkillEntry[];
+  if (query) {
+    // CLI search for full 89K+ catalog
+    skills = await searchSkills(query);
+  } else {
+    // Default: top 600 from HTML scrape (fast, cached)
     skills = await fetchCatalogFallback();
   }
 

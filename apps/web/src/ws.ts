@@ -1,11 +1,11 @@
-import { setWsConnected, updateStateFromServer, addLog, sessions, activeSessionId, addSession, setActiveSessionId, setActivePorts, setActiveSection, setRestoringPending, type LogEntry, removeSession, updateProactiveAgent, appendAgentOutput, setAgentRunning, claudeAuthenticated } from './state/store';
+import { setWsConnected, updateStateFromServer, addLog, sessions, activeSessionId, addSession, setActiveSessionId, setActivePorts, setActiveSection, setRestoringPending, type LogEntry, removeSession, updateProactiveAgent, appendAgentOutput, setAgentRunning, claudeAuthenticated, setContextData } from './state/store';
 import { getAuthToken } from './api';
 
 // Known WebSocket message types — reject anything not in this set
 const KNOWN_MSG_TYPES = new Set([
   'heartbeat', 'status', 'log', 'logs', 'ports', 'sessions:restored',
   'console:error', 'console:output', 'console:exit', 'console:freeze',
-  'console:context_loaded',
+  'console:context_loaded', 'context',
   'agent:update', 'agent:output', 'agent:execution:start', 'agent:execution:complete',
   'auth:expiring', 'auth:expired',
 ]);
@@ -269,6 +269,10 @@ function openWs(wsUrl: string): void {
         addLog({ type: 'warn', message: `Claude session expires in ${minutes} minutes. Please re-login to avoid interruptions.`, timestamp: Date.now() });
       } else if (msg.type === 'auth:expired') {
         claudeAuthenticated.value = false;
+      } else if (msg.type === 'context') {
+        if (typeof msg.data === 'object' && msg.data !== null) {
+          setContextData(msg.data as any);
+        }
       }
     } catch (err) {
       console.warn('[WS] Failed to parse message:', err);

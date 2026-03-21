@@ -333,6 +333,22 @@ export function setClaudeUsage(data: ClaudeUsageData): void {
   claudeUsage.value = data;
 }
 
+// ── Context Data (from statusline) ──
+
+export interface ContextData {
+  contextPercent: number;
+  contextTokens: number;
+  contextWindow: number;
+  model: string;
+  updatedAt: number;
+}
+
+export const contextData = signal<ContextData | null>(null);
+
+export function setContextData(data: ContextData): void {
+  contextData.value = data;
+}
+
 let usagePollTimer: ReturnType<typeof setInterval> | null = null;
 
 export function startUsagePolling(fetchFn: (url: string, opts?: RequestInit) => Promise<Response>): void {

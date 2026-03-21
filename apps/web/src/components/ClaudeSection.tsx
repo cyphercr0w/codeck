@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
-import { sessions, activeSessionId, setActiveSessionId, addLocalLog, addSession, removeSession, renameSession, agentName, isMobile, restoringPending, wsConnected, sessionStatus, setSessionStatus, clearSessionStatus, claudeUsage } from '../state/store';
+import { sessions, activeSessionId, setActiveSessionId, addLocalLog, addSession, removeSession, renameSession, agentName, isMobile, restoringPending, wsConnected, sessionStatus, setSessionStatus, clearSessionStatus, claudeUsage, contextData } from '../state/store';
 import { apiFetch } from '../api';
 import { createTerminal, destroyTerminal, fitTerminal, repaintTerminal, focusTerminal, writeToTerminal, scrollToBottom, getTerminal, markSessionAttaching, clearSessionAttaching, onTerminalWrite, ensureTerminalVisible, setOnFilePaste, getTerminalBuffer } from '../terminal';
 import { wsSend, setTerminalHandlers, attachSession, setOnSessionReattached, setOnBeforeSessionsRestored, setOnContextLoaded, type ContextLoadedData } from '../ws';
@@ -611,6 +611,7 @@ export function ClaudeSection({ onNewSession, onNewShell }: ClaudeSectionProps) 
 
 function TerminalStatusBar() {
   const usage = claudeUsage.value;
+  const ctx = contextData.value;
   const status = sessionStatus.value[activeSessionId.value || ''] || 'idle';
   const activeSession = sessions.value.find(s => s.id === activeSessionId.value);
   const uptime = activeSession ? Math.floor((Date.now() - activeSession.createdAt) / 60000) : 0;
@@ -648,6 +649,18 @@ function TerminalStatusBar() {
         <span class="tsb-uptime">Session: {formatUptime(uptime)}</span>
       </div>
       <div class="tsb-right">
+        {ctx && ctx.contextPercent > 0 && (
+          <>
+            <div class="tsb-limit">
+              <span class="tsb-limit-label">CTX</span>
+              <div class="tsb-limit-bar">
+                <div class="tsb-limit-fill" style={{ width: `${Math.min(100, ctx.contextPercent)}%`, background: barColor(ctx.contextPercent) }} />
+              </div>
+              <span class="tsb-limit-pct">{ctx.contextPercent}%</span>
+            </div>
+            <span class="tsb-sep">|</span>
+          </>
+        )}
         {usage?.available && (
           <>
             {usage.fiveHour && (

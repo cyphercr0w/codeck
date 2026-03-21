@@ -14,6 +14,7 @@ import {
   hasResumableConversations,
 } from '../services/console.js';
 import { broadcastStatus } from '../web/websocket.js';
+import { broadcast } from '../web/logger.js';
 
 const router = Router();
 
@@ -235,6 +236,26 @@ router.post('/destroy', (req, res) => {
   console.log(`[Console] Session destroyed: ${sessionId}`);
   broadcastStatus();
   res.json({ success: true });
+});
+
+// Context usage — receives data from statusline.sh and broadcasts to web clients
+let contextData: { contextPercent: number; contextTokens: number; contextWindow: number; model: string; updatedAt: number } | null = null;
+
+router.post('/context', (req, res) => {
+  const { contextPercent, contextTokens, contextWindow, model } = req.body;
+  contextData = {
+    contextPercent: contextPercent || 0,
+    contextTokens: contextTokens || 0,
+    contextWindow: contextWindow || 0,
+    model: model || '',
+    updatedAt: Date.now(),
+  };
+  broadcast({ type: 'context', data: contextData });
+  res.json({ ok: true });
+});
+
+router.get('/context', (_req, res) => {
+  res.json(contextData || { contextPercent: 0, contextTokens: 0, contextWindow: 0, model: '', updatedAt: 0 });
 });
 
 export default router;

@@ -5,25 +5,34 @@
 #   docker build -t codeck-base -f docker/Dockerfile.base .
 #
 # Then build normally:
-#   docker compose -f docker/compose.yml build
+#   docker build -t codeck -f docker/Dockerfile .
 
 ARG BASE_IMAGE=codeck-base:latest
 FROM ${BASE_IMAGE}
 
-# Copy package.json files for all workspaces so npm ci installs everything
-COPY package.json package-lock.json ./
-COPY apps/runtime/package.json apps/runtime/
-COPY apps/daemon/package.json apps/daemon/
-COPY apps/web/package.json apps/web/
-RUN if [ -f package-lock.json ]; then npm ci --omit=dev; else npm install --omit=dev; fi \
+# Copy everything needed for build (source + configs)
+COPY package.json package-lock.json tsconfig.json ./
+COPY apps/runtime/package.json apps/runtime/tsconfig.json apps/runtime/
+COPY apps/daemon/package.json apps/daemon/tsconfig.json apps/daemon/
+COPY apps/web/package.json apps/web/tsconfig.json apps/web/vite.config.ts apps/web/index.html apps/web/
+
+# Install ALL dependencies (including devDependencies for build)
+RUN npm ci \
     && cp -r /prebuilt/node_modules/better-sqlite3 node_modules/better-sqlite3 2>/dev/null || true
 
-# Copy built outputs (runtime backend + daemon backend + web frontend)
-COPY apps/runtime/dist ./apps/runtime/dist
-COPY apps/daemon/dist ./apps/daemon/dist
-COPY apps/web/dist ./apps/web/dist
+# Copy source code
+COPY apps/runtime/src apps/runtime/src
+COPY apps/daemon/src apps/daemon/src
+COPY apps/web/src apps/web/src
 
-# Copy templates into runtime dist (same layout as local build)
+# Build everything inside the container — no stale cache possible
+RUN npm run build
+
+# Remove devDependencies after build
+RUN npm prune --omit=dev \
+    && cp -r /prebuilt/node_modules/better-sqlite3 node_modules/better-sqlite3 2>/dev/null || true
+
+# Copy templates into runtime dist
 COPY apps/runtime/src/templates ./apps/runtime/dist/templates
 
 VOLUME ["/workspace", "/root/.claude"]
@@ -33,11 +42,7 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
 
 EXPOSE 80
 
-# NODE_ENV is NOT set globally — user dev servers need NODE_ENV=development.
-# Our process sets it inline via the entrypoint.
 ENV WORKSPACE=/workspace
-# Limit V8 heap to ~50% of container memory limit (default: 2GB of 4GB).
-# Override via CODECK_NODE_HEAP_MB env var in your .env file.
 ENV NODE_OPTIONS="--max-old-space-size=2048"
 
 ENTRYPOINT ["/usr/local/bin/init-keyring.sh", "env", "NODE_ENV=production", "node", "apps/runtime/dist/index.js"]

@@ -22,6 +22,8 @@ jobs:
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
+        with:
+          driver: docker
 
       - name: Login to GHCR
         uses: docker/login-action@v3
@@ -35,51 +37,38 @@ jobs:
         run: |
           TAG=${GITHUB_REF#refs/tags/}
           echo "tag=$TAG" >> $GITHUB_OUTPUT
-
-          # Determine if this is a beta or stable release
           if [[ "$TAG" == *"beta"* ]]; then
             echo "is_beta=true" >> $GITHUB_OUTPUT
-            echo "tags<<EOF" >> $GITHUB_OUTPUT
-            echo "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:$TAG" >> $GITHUB_OUTPUT
-            echo "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:beta" >> $GITHUB_OUTPUT
-            echo "EOF" >> $GITHUB_OUTPUT
           else
             echo "is_beta=false" >> $GITHUB_OUTPUT
-            echo "tags<<EOF" >> $GITHUB_OUTPUT
-            echo "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:$TAG" >> $GITHUB_OUTPUT
-            echo "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest" >> $GITHUB_OUTPUT
-            echo "EOF" >> $GITHUB_OUTPUT
           fi
 
       - name: Build base image
-        uses: docker/build-push-action@v5
-        with:
-          context: .
-          file: docker/Dockerfile.base
-          load: true
-          tags: codeck-base:latest
-          cache-from: type=gha,scope=base
-          cache-to: type=gha,mode=max,scope=base
+        run: docker build -t codeck-base:latest -f docker/Dockerfile.base .
 
-      - name: Build and push app image
-        uses: docker/build-push-action@v5
-        with:
-          context: .
-          file: docker/Dockerfile
-          push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          build-args: |
-            BASE_IMAGE=codeck-base:latest
-          cache-from: type=gha,scope=app
-          cache-to: type=gha,mode=max,scope=app
+      - name: Build app image
+        run: docker build -t app:latest --build-arg BASE_IMAGE=codeck-base:latest -f docker/Dockerfile .
+
+      - name: Tag and push
+        run: |
+          TAG=${{ steps.meta.outputs.tag }}
+          IS_BETA=${{ steps.meta.outputs.is_beta }}
+
+          # Tag with version
+          docker tag app:latest ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:$TAG
+          docker push ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:$TAG
+
+          # Tag with beta or latest
+          if [ "$IS_BETA" = "true" ]; then
+            docker tag app:latest ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:beta
+            docker push ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:beta
+          else
+            docker tag app:latest ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+            docker push ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+          fi
 
       - name: Summary
         run: |
           echo "### Docker Image Published" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Tag:** ${{ steps.meta.outputs.tag }}" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Images:**" >> $GITHUB_STEP_SUMMARY
-          echo '```' >> $GITHUB_STEP_SUMMARY
-          echo "${{ steps.meta.outputs.tags }}" >> $GITHUB_STEP_SUMMARY
-          echo '```' >> $GITHUB_STEP_SUMMARY
+          echo "**Beta:** ${{ steps.meta.outputs.is_beta }}" >> $GITHUB_STEP_SUMMARY

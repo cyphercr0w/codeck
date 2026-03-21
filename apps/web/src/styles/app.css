@@ -1477,12 +1477,12 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 8px 14px;
+  padding: 6px 14px;
   background: var(--bg-secondary);
   border-top: 1px solid var(--border);
   font-size: 12px;
   color: var(--text-muted);
-  min-height: 38px;
+  min-height: 40px;
   flex-shrink: 0;
   gap: 16px;
 }
@@ -1530,7 +1530,14 @@
 .tsb-right {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
+}
+
+.tsb-limit-group {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
 }
 
 .tsb-limit {
@@ -1568,9 +1575,10 @@
 }
 
 .tsb-limit-reset {
-  font-size: 10px;
+  font-size: 9px;
+  font-family: var(--font-mono);
   color: var(--text-muted);
-  opacity: 0.7;
+  opacity: 0.6;
 }
 
 /* Context Loaded banner — appears briefly when memory is injected */

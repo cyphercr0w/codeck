@@ -664,23 +664,28 @@ function TerminalStatusBar() {
         {usage?.available && (
           <>
             {usage.fiveHour && (
-              <div class="tsb-limit">
-                <span class="tsb-limit-label">5h</span>
-                <div class="tsb-limit-bar">
-                  <div class="tsb-limit-fill" style={{ width: `${Math.min(100, usage.fiveHour.percent)}%`, background: barColor(usage.fiveHour.percent) }} />
+              <div class="tsb-limit-group">
+                <div class="tsb-limit">
+                  <span class="tsb-limit-label">5h</span>
+                  <div class="tsb-limit-bar">
+                    <div class="tsb-limit-fill" style={{ width: `${Math.min(100, usage.fiveHour.percent)}%`, background: barColor(usage.fiveHour.percent) }} />
+                  </div>
+                  <span class="tsb-limit-pct">{usage.fiveHour.percent}%</span>
                 </div>
-                <span class="tsb-limit-pct">{usage.fiveHour.percent}%</span>
-                {usage.fiveHour.resetsAt && <span class="tsb-limit-reset">{formatReset(usage.fiveHour.resetsAt)}</span>}
+                {usage.fiveHour.resetsAt && <span class="tsb-limit-reset">resets {formatReset(usage.fiveHour.resetsAt)}</span>}
               </div>
             )}
             {usage.fiveHour && usage.sevenDay && <span class="tsb-sep">|</span>}
             {usage.sevenDay && (
-              <div class="tsb-limit">
-                <span class="tsb-limit-label">7d</span>
-                <div class="tsb-limit-bar">
-                  <div class="tsb-limit-fill" style={{ width: `${Math.min(100, usage.sevenDay.percent)}%`, background: barColor(usage.sevenDay.percent) }} />
+              <div class="tsb-limit-group">
+                <div class="tsb-limit">
+                  <span class="tsb-limit-label">7d</span>
+                  <div class="tsb-limit-bar">
+                    <div class="tsb-limit-fill" style={{ width: `${Math.min(100, usage.sevenDay.percent)}%`, background: barColor(usage.sevenDay.percent) }} />
+                  </div>
+                  <span class="tsb-limit-pct">{usage.sevenDay.percent}%</span>
                 </div>
-                <span class="tsb-limit-pct">{usage.sevenDay.percent}%</span>
+                {usage.sevenDay.resetsAt && <span class="tsb-limit-reset">resets {formatReset(usage.sevenDay.resetsAt)}</span>}
               </div>
             )}
           </>

@@ -60,20 +60,17 @@ interface SkillEntry {
 function SkillMarketplace({ onInstalled }: { onInstalled: () => void }) {
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<SkillEntry[]>([]);
-  const [totalSkills, setTotalSkills] = useState(0);
   const [loading, setLoading] = useState(false);
   const [installing, setInstalling] = useState<string | null>(null);
   const [msg, setMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Load top skills on mount
-  useEffect(() => { searchSkills(''); }, []);
-
   function searchSkills(q: string) {
+    if (!q.trim()) { setResults([]); setLoading(false); return; }
     setLoading(true);
     apiFetch(`/api/skills/catalog?q=${encodeURIComponent(q)}`)
       .then(r => r.json())
-      .then(data => { setResults(data.skills || []); if (data.total) setTotalSkills(data.total); })
+      .then(data => setResults(data.skills || []))
       .catch(() => setResults([]))
       .finally(() => setLoading(false));
   }
@@ -116,7 +113,7 @@ function SkillMarketplace({ onInstalled }: { onInstalled: () => void }) {
     <div class="skill-market">
       <input
         class="skill-search"
-        placeholder={`Search ${totalSkills > 0 ? `${Math.floor(totalSkills / 1000)}K+` : '...'} skills from skills.sh...`}
+        placeholder="Search 89K+ skills from skills.sh..."
         value={query}
         onInput={e => handleInput((e.target as HTMLInputElement).value)}
       />
@@ -125,8 +122,8 @@ function SkillMarketplace({ onInstalled }: { onInstalled: () => void }) {
         {loading && results.length === 0 && (
           <div class="fb-empty"><span class="spinner-sm" /> Loading skills...</div>
         )}
-        {!loading && results.length === 0 && query && (
-          <div class="fb-empty">No skills found for "{query}"</div>
+        {!loading && results.length === 0 && (
+          <div class="fb-empty">{query ? `No skills found for "${query}"` : 'Type to search 89K+ skills'}</div>
         )}
         {results.map(skill => (
           <div key={`${skill.source}/${skill.skillId}`} class="skill-item">

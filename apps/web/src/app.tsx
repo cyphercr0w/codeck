@@ -538,7 +538,7 @@ export function App() {
             {section === 'settings' && <SettingsSection />}
           </ErrorBoundary>
         </main>
-        {!mobileKeyboardOpen.value && <LogsDrawer />}
+        {!mobileKeyboardOpen.value && section === 'settings' && <LogsDrawer />}
       </div>
       <LoginModal visible={loginModalOpen} onClose={handleLoginClose} onSuccess={handleLoginSuccess} />
       <NewProjectModal visible={newProjectOpen} onCancel={() => setNewProjectOpen(false)} onConfirm={handleProjectConfirm} />

@@ -171,9 +171,13 @@ export function ClaudeSection({ onNewSession, onNewShell }: ClaudeSectionProps) 
   // Toggle visible terminal when active tab changes
   useEffect(() => {
     const container = instancesRef.current;
-    if (!container || !activeId) return;
+    if (!container) return;
 
+    // Clear all active states first
     container.querySelectorAll('.terminal-instance').forEach(el => el.classList.remove('active'));
+
+    if (!activeId) return; // New Tab — no terminal visible
+
     const activeEl = document.getElementById('term-' + activeId);
     if (activeEl) activeEl.classList.add('active');
     // Use ensureTerminalVisible instead of bare rAF — handles the case where

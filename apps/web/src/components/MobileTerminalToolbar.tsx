@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'preact/hooks';
 import { activeSessionId, activeSection } from '../state/store';
-import { sendTerminalInput, getTerminalBuffer, scrollToBottom, fitTerminal, repaintTerminal, onTerminalWrite } from '../terminal';
+import { sendTerminalInput, scrollToBottom, fitTerminal, repaintTerminal } from '../terminal';
 
 // Escape sequences for special keys
 const SPECIAL_KEYS: Record<string, string> = {
@@ -75,7 +75,7 @@ export function MobileTerminalToolbar() {
     catch { return true; }
   });
   const [feedback, setFeedback] = useState<string | null>(null);
-  const [adaptiveMode, setAdaptiveMode] = useState<'default' | 'yesno'>('default');
+  const adaptiveMode = 'default'; // Y/N adaptive mode removed
   const hiddenInputRef = useRef<HTMLInputElement>(null);
   const feedbackTimer = useRef<ReturnType<typeof setTimeout>>();
 
@@ -185,11 +185,6 @@ export function MobileTerminalToolbar() {
     showFeedback(label);
   }, [send, showFeedback, handlePaste]);
 
-  const handleQuickResponse = useCallback((char: string) => {
-    send(char + '\r');
-    showFeedback(char.toUpperCase());
-  }, [send, showFeedback]);
-
   // --- Layout: calculate terminal height to fill space above fixed toolbar ---
 
   useEffect(() => {
@@ -220,40 +215,6 @@ export function MobileTerminalToolbar() {
     }
   }, [currentSection, sessionId]);
 
-  // --- Adaptive prompt detection (event-driven, not polling) ---
-
-  useEffect(() => {
-    if (!sessionId) return;
-    const YN_PATTERN = /\(y\/n\)|\[y\/n\]|\[Y\/n\]|\[y\/N\]/i;
-
-    // Check on mount for current buffer state
-    const lines = getTerminalBuffer(sessionId);
-    setAdaptiveMode(YN_PATTERN.test(lines.join('\n')) ? 'yesno' : 'default');
-
-    // Throttle buffer reads: getTerminalBuffer() iterates xterm's line buffer and
-    // runs synchronously in the WS onmessage handler. During heavy streaming output,
-    // calling it on every newline saturates the main thread and causes input freezes.
-    let bufferCheckTimer: ReturnType<typeof setTimeout> | null = null;
-
-    return onTerminalWrite((sid, data) => {
-      if (sid !== sessionId) return;
-      // Check incoming data chunk first (fast path — no buffer read needed)
-      if (YN_PATTERN.test(data)) {
-        if (bufferCheckTimer) { clearTimeout(bufferCheckTimer); bufferCheckTimer = null; }
-        setAdaptiveMode('yesno');
-        return;
-      }
-      // On newline/enter, re-check buffer — but throttle to avoid main-thread pressure.
-      if (data.includes('\r') || data.includes('\n')) {
-        if (bufferCheckTimer) return; // already scheduled
-        bufferCheckTimer = setTimeout(() => {
-          bufferCheckTimer = null;
-          const current = getTerminalBuffer(sessionId);
-          setAdaptiveMode(YN_PATTERN.test(current.join('\n')) ? 'yesno' : 'default');
-        }, 300);
-      }
-    });
-  }, [sessionId]);
 
   return (
     <>
@@ -323,25 +284,12 @@ export function MobileTerminalToolbar() {
 
             {/* Row 2: Shortcuts (or adaptive Y/N) */}
             <div class="mobile-toolbar-row">
-              {adaptiveMode === 'yesno' ? (
-                <>
-                  <button class="mobile-shortcut-key yes" {...tap(() => handleQuickResponse('y'))} aria-label="Yes">
-                    <span class="mobile-shortcut-label">Y</span>
-                    <span class="mobile-shortcut-desc">Yes</span>
-                  </button>
-                  <button class="mobile-shortcut-key no" {...tap(() => handleQuickResponse('n'))} aria-label="No">
-                    <span class="mobile-shortcut-label">N</span>
-                    <span class="mobile-shortcut-desc">No</span>
-                  </button>
-                </>
-              ) : (
-                SHORTCUTS.map(({ id, seq, label, desc }) => (
-                  <button key={id} class="mobile-shortcut-key" {...tap(() => handleShortcut(seq, label))} aria-label={desc}>
-                    <span class="mobile-shortcut-label">{label}</span>
-                    <span class="mobile-shortcut-desc">{desc}</span>
-                  </button>
-                ))
-              )}
+              {SHORTCUTS.map(({ id, seq, label, desc }) => (
+                <button key={id} class="mobile-shortcut-key" {...tap(() => handleShortcut(seq, label))} aria-label={desc}>
+                  <span class="mobile-shortcut-label">{label}</span>
+                  <span class="mobile-shortcut-desc">{desc}</span>
+                </button>
+              ))}
             </div>
           </>
         ) : (

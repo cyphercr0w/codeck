@@ -214,13 +214,13 @@ export function HomeSection({ onRelogin, onLogout }: HomeSectionProps) {
                     <DashBar label="7d" percent={usage.sevenDay.percent} detail={usage.sevenDay.resetsAt ? `resets ${formatTimeUntil(usage.sevenDay.resetsAt)}` : ''} />
                   )}
                 </>
+              ) : usage === null ? (
+                <div class="home-account-limits-loading" style={{ justifyContent: 'center' }}>
+                  <span class="spinner-sm" /> Loading...
+                </div>
               ) : (
                 <div class="home-account-limits-loading">
-                  {usage === null ? (
-                    <><span class="spinner-sm" /> Loading...</>
-                  ) : (
-                    <span class="text-muted">Not available — usage data requires an active Claude session</span>
-                  )}
+                  <span class="text-muted">Not available — usage data requires an active Claude session</span>
                 </div>
               )}
             </div>

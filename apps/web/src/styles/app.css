@@ -709,6 +709,7 @@
   background: var(--bg-card);
   overflow: hidden;
   position: relative;
+  min-height: 200px;
 }
 
 .fb-toolbar {

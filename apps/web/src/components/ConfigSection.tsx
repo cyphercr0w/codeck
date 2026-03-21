@@ -563,7 +563,7 @@ export function ConfigSection() {
                     <span class="mem-stat-label">daily logs</span>
                   </div>
                   <div class="mem-stat">
-                    <span class="mem-stat-value">{memStats.totalMemoryKB} KB</span>
+                    <span class="mem-stat-value">{memStats.totalMemoryKB >= 1024 ? `${(memStats.totalMemoryKB / 1024).toFixed(1)} MB` : `${memStats.totalMemoryKB} KB`}</span>
                     <span class="mem-stat-label">total size</span>
                   </div>
                 </div>

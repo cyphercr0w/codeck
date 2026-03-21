@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'preact/hooks';
 import { activeSessionId } from '../state/store';
 import { apiFetch } from '../api';
-import { sendTerminalInput } from '../terminal';
+import { sendTerminalInput, focusTerminal } from '../terminal';
 
 interface UploadOverlayProps {
   file: File | null;
@@ -103,7 +103,7 @@ export function UploadOverlay({ file, onDone }: UploadOverlayProps) {
 
       sendTerminalInput(sessionId, result.filePath + ' ');
       setState('done');
-      setTimeout(onDone, 400);
+      setTimeout(() => { onDone(); focusTerminal(sessionId); }, 400);
     } catch (e: any) {
       if (e?.name === 'AbortError') return;
       setError(e?.message || 'Upload failed');
@@ -114,6 +114,8 @@ export function UploadOverlay({ file, onDone }: UploadOverlayProps) {
   function handleCancel() {
     abortRef.current?.abort();
     onDone();
+    const sid = activeSessionId.value;
+    if (sid) requestAnimationFrame(() => focusTerminal(sid));
   }
 
   useEffect(() => {

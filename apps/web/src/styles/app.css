@@ -4885,8 +4885,15 @@
   line-height: 1.5;
 }
 
+/* Two-column row for desktop */
+.ac-row {
+  display: flex;
+  gap: 20px;
+}
+
 /* Responsive */
 @media (max-width: 600px) {
+  .ac-row { flex-direction: column; }
   .ac-tabs { padding: 0 8px; }
   .ac-tab { padding: 8px 10px; font-size: 12px; }
   .ac-tab-content { padding: 12px; }

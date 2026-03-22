@@ -224,9 +224,10 @@ export function MemoryTab() {
         )}
       </div>
 
-      {/* Preset */}
+      {/* Preset + Migration side by side on desktop */}
+      <div class="ac-row">
       {presetStatus?.configured && (
-        <div class="ac-section">
+        <div class="ac-section" style="flex: 1; min-width: 0">
           <div class="ac-section-title"><IconFolder size={14} /> Preset</div>
           <div class="mem-preset-info">
             <div class="mem-preset-row">
@@ -259,7 +260,7 @@ export function MemoryTab() {
       )}
 
       {/* Migration */}
-      <div class="ac-section">
+      <div class="ac-section" style="flex: 1; min-width: 0">
         <div class="ac-section-title">Memory Migration</div>
         <div class="ac-migration-actions">
           <button class="btn btn-xs btn-secondary" onClick={handleExport} disabled={exporting}>
@@ -282,6 +283,7 @@ export function MemoryTab() {
           Export downloads all memory, preferences, rules, and skills as a .tar.gz archive.
         </div>
       </div>
+      </div>{/* close ac-row */}
 
       <ConfirmModal
         visible={showImportConfirm}

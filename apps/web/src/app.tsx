@@ -206,59 +206,57 @@ export function App() {
     setView('loading');
 
     try {
-      // Check password auth
-      const authRes = await fetch('/api/auth/status', { signal });
-      if (!authRes.ok) throw new Error(`Auth status check failed: ${authRes.status}`);
-      const authData = await authRes.json();
+      // Fast path: if we have a token, skip /api/auth/status and go straight
+      // to /api/status (saves 250ms RTT). If 401 → token is bad → show login.
+      // If server isn't configured yet → /api/status returns needsAuth.
+      const token = getAuthToken();
 
-      if (authData.configured) {
-        const token = getAuthToken();
-        if (!token) {
+      if (!token) {
+        // No token — check if password is configured
+        const authRes = await fetch('/api/auth/status', { signal });
+        if (!authRes.ok) throw new Error(`Auth status check failed: ${authRes.status}`);
+        const authData = await authRes.json();
+        if (authData.configured) {
           setView('auth');
           setAuthMode('login');
-          return;
-        }
-        const testRes = await apiFetch('/api/status', { signal });
-        if (testRes.status === 401) {
+        } else {
           setView('auth');
-          setAuthMode('login');
-          return;
+          setAuthMode('setup');
         }
-        // Treat gateway errors as "runtime not ready" — propagate to outer
-        // catch which handles exponential backoff retries
-        if (testRes.status >= 500) {
-          throw new Error(`Server returned ${testRes.status} — runtime not ready`);
-        }
-        const data = await testRes.json();
-        updateStateFromServer(data);
-      } else {
-        // Server says password not configured. If we have a stale token, clear it
-        // so we don't confuse the user — they need to set up the password again.
-        const existingToken = getAuthToken();
-        if (existingToken) {
-          console.warn('[Init] Server reports unconfigured but we have a stored token — clearing stale token');
-          clearAuthToken();
-        }
-        setView('auth');
-        setAuthMode('setup');
         return;
       }
 
+      // Have token → try /api/status directly (single roundtrip)
+      const testRes = await apiFetch('/api/status', { signal });
+      if (testRes.status === 401) {
+        // Token invalid or password not configured
+        clearAuthToken();
+        setView('auth');
+        setAuthMode('login');
+        return;
+      }
+      if (testRes.status >= 500) {
+        throw new Error(`Server returned ${testRes.status} — runtime not ready`);
+      }
+      const data = await testRes.json();
+      updateStateFromServer(data);
+
       // Claude check
-      initRetryCount.current = 0; // Reset on success
+      initRetryCount.current = 0;
       if (claudeAuthenticated.value) {
-        // Fire account info + WS connection in parallel (not sequential)
-        // This saves ~250ms on high-latency connections
-        const accountPromise = loadAccountInfo(signal);
         if (!presetConfigured.value) {
           setView('preset');
           connectWebSocket();
-          await accountPromise;
+          loadAccountInfo(signal); // fire and forget
         } else {
+          // Show main view IMMEDIATELY — don't wait for account info or sessions.
+          // Terminal appears faster, account info fills in ~250ms later.
           setActiveSection(sectionFromUrl());
           setView('main');
-          connectWebSocket(); // starts WS handshake immediately
-          await Promise.all([accountPromise, restoreSessions()]);
+          connectWebSocket();
+          // Fire in parallel, don't block rendering
+          loadAccountInfo(signal);
+          restoreSessions();
         }
       } else {
         setView('setup');
@@ -293,15 +291,16 @@ export function App() {
       updateStateFromServer(data);
 
       if (claudeAuthenticated.value) {
-        await loadAccountInfo();
         if (!presetConfigured.value) {
           setView('preset');
           connectWebSocket();
+          loadAccountInfo();
         } else {
           setActiveSection(sectionFromUrl());
           setView('main');
           connectWebSocket();
-          await restoreSessions();
+          loadAccountInfo();
+          restoreSessions();
         }
       } else {
         setView('setup');
@@ -346,21 +345,21 @@ export function App() {
 
   async function handleLoginSuccess() {
     setLoginModalOpen(false);
-    // Reload status from server and transition
     try {
       const res = await apiFetch('/api/status');
       const data = await res.json();
       updateStateFromServer(data);
     } catch { /* ignore */ }
-    await loadAccountInfo();
     if (!presetConfigured.value) {
       setView('preset');
       connectWebSocket();
+      loadAccountInfo();
     } else {
       setActiveSection(sectionFromUrl());
       setView('main');
       connectWebSocket();
-      await restoreSessions();
+      loadAccountInfo();
+      restoreSessions();
     }
   }
 

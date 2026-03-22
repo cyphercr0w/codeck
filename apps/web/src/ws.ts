@@ -332,24 +332,10 @@ export async function connectWebSocket(): Promise<void> {
     return;
   }
 
-  // Ticket request with 2s timeout — if slow, fall back to token-in-URL
-  try {
-    const ticketCtrl = new AbortController();
-    const ticketTimeout = setTimeout(() => ticketCtrl.abort(), 2000);
-    const r = await fetch('/api/auth/ws-ticket', {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${token}` },
-      signal: ticketCtrl.signal,
-    });
-    clearTimeout(ticketTimeout);
-    const data = r.ok ? await r.json() : null;
-    const wsUrl = data?.ticket
-      ? `${protocol}//${location.host}?ticket=${encodeURIComponent(data.ticket)}`
-      : `${protocol}//${location.host}?token=${encodeURIComponent(token)}`;
-    openWs(wsUrl);
-  } catch {
-    openWs(`${protocol}//${location.host}?token=${encodeURIComponent(token)}`);
-  }
+  // Connect directly with token — skip the ticket roundtrip (saves 250ms).
+  // Tickets were designed to avoid token-in-URL, but the token is session-based
+  // (not a password), WS is same-origin only, and the 250ms RTT cost is too high.
+  openWs(`${protocol}//${location.host}?token=${encodeURIComponent(token)}`);
 }
 
 export function disconnectWebSocket(): void {

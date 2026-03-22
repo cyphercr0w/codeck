@@ -124,4 +124,30 @@ router.post('/install', async (req, res) => {
   }
 });
 
+// DELETE /uninstall — remove an installed skill
+router.delete('/uninstall', async (req, res) => {
+  const { name } = req.body;
+  if (!name || typeof name !== 'string') {
+    res.status(400).json({ error: 'name is required' });
+    return;
+  }
+
+  // Validate name: no path traversal
+  if (name.includes('/') || name.includes('\\') || name.includes('..') || name.startsWith('.')) {
+    res.status(400).json({ error: 'Invalid skill name' });
+    return;
+  }
+
+  const skillsDir = join(process.env.HOME || '/root', '.claude', 'skills');
+  const skillPath = join(skillsDir, name);
+
+  try {
+    const { rm } = await import('fs/promises');
+    await rm(skillPath, { recursive: true, force: true });
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to remove skill: ' + (err as Error).message });
+  }
+});
+
 export default router;

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { apiFetch } from '../../api';
-import { IconPlus } from '../Icons';
+import { IconPlus, IconX } from '../Icons';
 
 interface SkillEntry {
   source: string;
@@ -21,6 +21,7 @@ export function SkillsTab() {
   const [installed, setInstalled] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
   const [installing, setInstalling] = useState<string | null>(null);
+  const [uninstalling, setUninstalling] = useState<string | null>(null);
   const [msg, setMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -68,6 +69,28 @@ export function SkillsTab() {
       setMsg({ type: 'error', text: 'Connection error' });
     }
     setInstalling(null);
+    setTimeout(() => setMsg(null), 4000);
+  }
+
+  async function handleUninstall(name: string) {
+    setUninstalling(name);
+    setMsg(null);
+    try {
+      const res = await apiFetch('/api/skills/uninstall', {
+        method: 'DELETE',
+        body: JSON.stringify({ name }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setMsg({ type: 'success', text: `Removed ${name}` });
+        loadInstalled();
+      } else {
+        setMsg({ type: 'error', text: data.error || 'Remove failed' });
+      }
+    } catch {
+      setMsg({ type: 'error', text: 'Connection error' });
+    }
+    setUninstalling(null);
     setTimeout(() => setMsg(null), 4000);
   }
 
@@ -123,7 +146,14 @@ export function SkillsTab() {
             {installed.map(name => (
               <div key={name} class="ac-list-item">
                 <span class="ac-list-item-name">{name}</span>
-                <span class="badge badge-success">Installed</span>
+                <button
+                  class="btn btn-xs btn-ghost"
+                  onClick={() => handleUninstall(name)}
+                  disabled={uninstalling !== null}
+                  title="Remove skill"
+                >
+                  {uninstalling === name ? <span class="spinner-sm" /> : <IconX size={12} />}
+                </button>
               </div>
             ))}
           </div>

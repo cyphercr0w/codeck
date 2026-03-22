@@ -670,8 +670,20 @@ function TerminalStatusBar() {
           <>
             <div class="tsb-limit">
               <span class="tsb-limit-label">CTX</span>
-              <div class="tsb-limit-bar">
-                <div class="tsb-limit-fill" style={{ width: `${Math.min(100, ctx.contextPercent)}%`, background: barColor(ctx.contextPercent) }} />
+              <div class="ctx-segments">
+                {[0, 1, 2, 3, 4].map(i => {
+                  const segStart = i * 20;
+                  const pct = ctx.contextPercent;
+                  const filled = pct >= segStart + 20;
+                  const partial = !filled && pct > segStart;
+                  return (
+                    <div
+                      key={i}
+                      class={`ctx-seg${filled ? ' filled' : ''}${partial ? ' partial' : ''}`}
+                      style={filled ? { background: barColor(pct) } : partial ? { background: `linear-gradient(to right, ${barColor(pct)} ${((pct - segStart) / 20) * 100}%, var(--bg-tertiary, #333) ${((pct - segStart) / 20) * 100}%)` } : undefined}
+                    />
+                  );
+                })}
               </div>
               <span class="tsb-limit-pct">{ctx.contextPercent}%</span>
             </div>

@@ -3965,6 +3965,29 @@
   color: var(--text-muted);
 }
 
+/* ── CTX segmented bar (5 bars × 20% each) ── */
+.ctx-segments {
+  display: flex;
+  gap: 2px;
+  align-items: center;
+}
+
+.ctx-seg {
+  width: 8px;
+  height: 6px;
+  border-radius: 1px;
+  background: var(--bg-tertiary, #333);
+  transition: background 0.3s ease;
+}
+
+/* Desktop: slightly larger */
+.tsb-limit .ctx-segments { gap: 2px; }
+.tsb-limit .ctx-seg { width: 10px; height: 5px; }
+
+/* Mobile: compact */
+.mobile-limits-item .ctx-segments { gap: 1.5px; }
+.mobile-limits-item .ctx-seg { width: 7px; height: 5px; }
+
 /* --- Mobile terminal layout adjustments --- */
 
 /* Terminal fills remaining space in the flex column (after tabs and toolbar).

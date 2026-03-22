@@ -8,7 +8,7 @@ interface McpServer {
   name: string;
   command: string;
   args: string[];
-  env?: Record<string, string>;
+  envKeys?: string[];
   description?: string;
   enabled: boolean;
 }
@@ -38,8 +38,12 @@ export function McpServersTab() {
   const [installing, setInstalling] = useState<string | null>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Env var form for servers that need API keys
+  // Env var form for servers that need API keys (from registry search)
   const [envForm, setEnvForm] = useState<{ server: RegistryServer; values: Record<string, string> } | null>(null);
+
+  // Enable modal for disabled servers that need API keys
+  const [enableTarget, setEnableTarget] = useState<{ server: McpServer; values: Record<string, string> } | null>(null);
+  const [enabling, setEnabling] = useState(false);
 
   useEffect(() => { loadServers(); }, []);
 
@@ -122,6 +126,15 @@ export function McpServersTab() {
   }
 
   async function handleToggle(name: string) {
+    const server = servers.find(s => s.name === name);
+    // If enabling a disabled server that needs API keys, show the env form first
+    if (server && !server.enabled && server.envKeys && server.envKeys.length > 0) {
+      const values: Record<string, string> = {};
+      for (const k of server.envKeys) values[k] = '';
+      setEnableTarget({ server, values });
+      return;
+    }
+
     setToggling(name);
     try {
       const res = await apiFetch(`/api/mcp-servers/${encodeURIComponent(name)}/toggle`, { method: 'POST' });
@@ -135,6 +148,36 @@ export function McpServersTab() {
       setMsg({ type: 'error', text: 'Connection error' });
     }
     setToggling(null);
+  }
+
+  async function handleEnableWithKeys() {
+    if (!enableTarget) return;
+    setEnabling(true);
+    try {
+      // First set env vars, then toggle
+      for (const [key, value] of Object.entries(enableTarget.values)) {
+        if (value.trim()) {
+          await apiFetch('/api/codeck/env', {
+            method: 'POST',
+            body: JSON.stringify({ key, value: value.trim() }),
+          });
+        }
+      }
+      // Now enable the server and inject env vars into its config
+      const res = await apiFetch(`/api/mcp-servers/${encodeURIComponent(enableTarget.server.name)}/toggle`, { method: 'POST' });
+      const data = await res.json();
+      if (data.success) {
+        setMsg({ type: 'success', text: `Enabled ${enableTarget.server.name}` });
+        await loadServers();
+      } else {
+        setMsg({ type: 'error', text: data.error || 'Enable failed' });
+      }
+    } catch {
+      setMsg({ type: 'error', text: 'Connection error' });
+    }
+    setEnableTarget(null);
+    setEnabling(false);
+    setTimeout(() => setMsg(null), 3000);
   }
 
   async function handleDelete() {
@@ -286,6 +329,48 @@ export function McpServersTab() {
         onConfirm={handleDelete}
         onCancel={() => setDeleteTarget(null)}
       />
+
+      {/* Enable modal — asks for API keys before enabling a disabled server */}
+      {enableTarget && (
+        <div class="ac-viewer-overlay" onClick={() => setEnableTarget(null)}>
+          <div class="ac-viewer" onClick={e => e.stopPropagation()} style="max-width: 450px">
+            <div class="ac-viewer-header">
+              <span>Enable {enableTarget.server.name}</span>
+              <button class="btn btn-xs btn-ghost" onClick={() => setEnableTarget(null)}>
+                <IconX size={12} />
+              </button>
+            </div>
+            <div style="padding: 16px; display: flex; flex-direction: column; gap: 12px">
+              <div class="ac-hint">This server requires API keys to work. Fill them in below.</div>
+              {Object.keys(enableTarget.values).map(key => (
+                <div key={key}>
+                  <label class="ac-list-item-meta" style="display: block; margin-bottom: 4px">{key}</label>
+                  <input
+                    class="ac-input"
+                    type="password"
+                    placeholder={key}
+                    value={enableTarget.values[key]}
+                    onInput={e => setEnableTarget(prev => prev ? ({
+                      ...prev,
+                      values: { ...prev.values, [key]: (e.target as HTMLInputElement).value },
+                    }) : null)}
+                  />
+                </div>
+              ))}
+              <div style="display: flex; justify-content: flex-end; gap: 8px; margin-top: 4px">
+                <button class="btn btn-xs btn-ghost" onClick={() => setEnableTarget(null)}>Cancel</button>
+                <button
+                  class="btn btn-xs btn-primary"
+                  onClick={handleEnableWithKeys}
+                  disabled={enabling || Object.values(enableTarget.values).some(v => !v.trim())}
+                >
+                  {enabling ? <span class="spinner-sm" /> : 'Enable'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

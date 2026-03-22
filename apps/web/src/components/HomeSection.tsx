@@ -55,7 +55,7 @@ function formatTimeUntil(isoDate: string | null): string {
 }
 
 function barColor(percent: number): string {
-  if (percent < 60) return 'var(--success)';
+  if (percent < 60) return 'var(--accent)';
   if (percent < 80) return 'var(--warning)';
   return 'var(--error)';
 }

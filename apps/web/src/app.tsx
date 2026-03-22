@@ -11,7 +11,7 @@ import {
   type View, type Section,
 } from './state/store';
 import { apiFetch, getAuthToken, clearAuthToken } from './api';
-import { connectWebSocket } from './ws';
+import { connectWebSocket, disconnectWebSocket } from './ws';
 import { fitTerminal, scrollToBottom, repaintTerminal, ensureTerminalVisible } from './terminal';
 import { LoadingView } from './components/LoadingView';
 import { AuthView } from './components/AuthView';
@@ -226,11 +226,16 @@ export function App() {
         return;
       }
 
-      // Have token → try /api/status directly (single roundtrip)
+      // Start WS connection IN PARALLEL with /api/status — don't wait.
+      // WS handshake takes ~250ms, same as the HTTP request. Running both
+      // simultaneously means the WS is ready by the time we process the response.
+      // If /api/status returns 401, we close the WS (no harm done).
+      connectWebSocket();
+
       const testRes = await apiFetch('/api/status', { signal });
       if (testRes.status === 401) {
-        // Token invalid or password not configured
         clearAuthToken();
+        disconnectWebSocket();
         setView('auth');
         setAuthMode('login');
         return;
@@ -241,7 +246,6 @@ export function App() {
       const data = await testRes.json();
       updateStateFromServer(data);
 
-      // /api/status now bundles account + sessions — skip separate requests
       const hasAccount = !!data.account;
       const hasSessions = !!data.sessions;
 
@@ -249,18 +253,15 @@ export function App() {
       if (claudeAuthenticated.value) {
         if (!presetConfigured.value) {
           setView('preset');
-          connectWebSocket();
           if (!hasAccount) loadAccountInfo(signal);
         } else {
           setActiveSection(sectionFromUrl());
           setView('main');
-          connectWebSocket();
           if (!hasAccount) loadAccountInfo(signal);
           if (!hasSessions) restoreSessions();
         }
       } else {
         setView('setup');
-        connectWebSocket();
       }
     } catch (e: any) {
       if (e?.name === 'AbortError') return;

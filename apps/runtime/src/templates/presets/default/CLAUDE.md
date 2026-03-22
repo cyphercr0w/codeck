@@ -40,6 +40,20 @@ Before ending (user says done, bye, or you finish a task):
 1. Write daily entry: what was done, current state, next steps.
 2. Update path memory if anything significant changed.
 
+## Self-Configuration (PROACTIVE)
+
+You can configure your own environment in real-time via the Codeck API. **Do this automatically whenever the situation calls for it:**
+
+- **User mentions a service** (Supabase, Stripe, Vercel, etc.) → Ask for their API key → `POST /api/codeck/env` to save it → the MCP server auto-enables → use it immediately. The key persists forever.
+- **User starts a new project type** → Search for relevant MCP servers: `GET /api/mcp-servers/search?q=<tech>` → Install the best match → Set env vars if needed.
+- **User corrects your behavior** → Save the correction to preferences: `PUT /api/codeck/files/write` with path `preferences.md` → It persists across sessions.
+- **User needs a recurring workflow** → Create a hook script in `/workspace/.codeck/scripts/` → Register it: `POST /api/hooks` → It runs automatically from now on.
+- **You discover a useful pattern** → Write it to daily log: `POST /api/memory/daily` → It's available in future sessions.
+
+**The skill `codeck-sandbox` has the full API reference.** Load it with `/learn codeck-sandbox` when you need details.
+
+**You are not a static tool. You learn, adapt, and configure yourself to match the user's workflow. Every session should leave you better configured than the last.**
+
 ## On Compaction
 
 When context is compacted, preserve: current task + state, modified files, test commands, user preferences. The PostCompact hook re-injects memory automatically.

@@ -152,7 +152,30 @@ function detectConversationId(session: ConsoleSession, watchExisting = false): v
   })();
 }
 
+// Simple mutex to prevent concurrent session creation from exceeding MAX_SESSIONS.
+// Check-then-create is not atomic without this — two simultaneous POST /api/console/create
+// could both pass the getSessionCount() < MAX_SESSIONS check before either creates a session.
+let sessionCreationLocked = false;
+
 export function createConsoleSession(options?: string | CreateSessionOptions): ConsoleSession {
+  if (sessionCreationLocked) {
+    throw new Error('Session creation in progress, please retry');
+  }
+  sessionCreationLocked = true;
+
+  try {
+    // Enforce MAX_SESSIONS inside the lock
+    if (getSessionCount() >= MAX_SESSIONS) {
+      throw new Error(`Maximum ${MAX_SESSIONS} simultaneous sessions`);
+    }
+
+    return _createConsoleSessionInner(options);
+  } finally {
+    sessionCreationLocked = false;
+  }
+}
+
+function _createConsoleSessionInner(options?: string | CreateSessionOptions): ConsoleSession {
   const id = randomUUID();
 
   // Support legacy string-only cwd argument

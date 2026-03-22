@@ -209,15 +209,21 @@ router.post('/mkdir', async (req, res) => {
     return;
   }
 
-  // Validate: no leading dot in final segment, reasonable length
-  const trimmed = name.trim();
-  const finalSegment = trimmed.split('/').pop() || '';
-  if (!trimmed || finalSegment.startsWith('.') || trimmed.length > 200) {
+  // Sanitize: strip special characters (keep word chars, dash, dot, slash, space)
+  const sanitized = name.trim().replace(/[^\w\-\.\/\s]/g, '');
+
+  // Strip leading dots from the final path segment to prevent hidden directories
+  const segments = sanitized.split('/');
+  const lastIdx = segments.length - 1;
+  segments[lastIdx] = segments[lastIdx].replace(/^\.+/, '');
+  const cleanName = segments.join('/').trim();
+
+  if (!cleanName || cleanName.length > 200) {
     res.status(400).json({ error: 'Invalid name' });
     return;
   }
 
-  const fullPath = await safePath(WORKSPACE, trimmed);
+  const fullPath = await safePath(WORKSPACE, cleanName);
 
   if (!fullPath) {
     res.status(403).json({ error: 'Access denied' });
@@ -227,7 +233,7 @@ router.post('/mkdir', async (req, res) => {
   try {
     await mkdir(fullPath, { recursive: false });
     broadcastStatus();
-    res.json({ success: true, name: trimmed });
+    res.json({ success: true, name: cleanName });
   } catch (err: unknown) {
     const code = (err as NodeJS.ErrnoException).code;
     if (code === 'EEXIST') {

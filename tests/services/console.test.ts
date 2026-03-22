@@ -71,6 +71,7 @@ import {
   getSession,
   getSessionCount,
   destroySession,
+  destroyAllSessions,
 } from '../../apps/runtime/src/services/console.js';
 
 const CODECK_DIR = process.env.CODECK_DIR || '/workspace/.codeck';
@@ -108,6 +109,9 @@ describe('services/console.ts - Session Management', () => {
     if (existsSync(TEST_WORKSPACE)) {
       rmSync(TEST_WORKSPACE, { recursive: true, force: true });
     }
+
+    // Destroy all sessions to prevent exceeding MAX_SESSIONS across tests
+    destroyAllSessions();
 
     // Clean up sessions state file
     if (existsSync(SESSIONS_STATE_FILE)) {

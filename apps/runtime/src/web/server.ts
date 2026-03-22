@@ -36,6 +36,8 @@ import permissionsRoutes from '../routes/permissions.routes.js';
 import systemRoutes from '../routes/system.routes.js';
 import proactiveAgentsRoutes from '../routes/agents.routes.js';
 import skillsRoutes from '../routes/skills.routes.js';
+import mcpRoutes from '../routes/mcp.routes.js';
+import hooksRoutes from '../routes/hooks.routes.js';
 import { initProactiveAgents, shutdownProactiveAgents } from '../services/proactive-agents.js';
 import { initializeEmbeddings, shutdownEmbeddings } from '../services/embeddings.js';
 import { cleanupOldSessions } from '../services/session-summarizer.js';
@@ -414,6 +416,8 @@ export async function startWebServer(): Promise<void> {
   app.use('/api/system', systemRoutes);
   app.use('/api/agents', proactiveAgentsRoutes);
   app.use('/api/skills', skillsRoutes);
+  app.use('/api/mcp-servers', mcpRoutes);
+  app.use('/api/hooks', hooksRoutes);
 
   // Account endpoint
   app.get('/api/account', (_req, res) => {

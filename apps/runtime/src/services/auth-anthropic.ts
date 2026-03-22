@@ -1,213 +1,82 @@
+/**
+ * Claude OAuth PKCE authentication — main facade.
+ *
+ * Sub-modules:
+ *   ./auth-anthropic/encryption.ts   — AES-256-GCM encrypt/decrypt, key derivation
+ *   ./auth-anthropic/account-cache.ts — Account info caching
+ *   ./auth-anthropic/token-manager.ts — Token cache, refresh, file watcher
+ *
+ * This file contains the orchestration layer: login flow, auth checks,
+ * logout, and the public API surface that the rest of the codebase imports.
+ */
 import { execSync } from 'child_process';
-import { existsSync, writeFileSync, mkdirSync, readFileSync, chmodSync, statSync, unlinkSync, watch } from 'fs';
-import { randomBytes, createHash, scryptSync, createCipheriv, createDecipheriv } from 'crypto';
+import { existsSync, readFileSync, unlinkSync } from 'fs';
+import { randomBytes, createHash } from 'crypto';
 import { join } from 'path';
 import { ACTIVE_AGENT } from './agent.js';
 import { atomicWriteFileSync } from './memory.js';
+
+// Re-export types from sub-modules
+export type { AccountInfo, PlaintextCredentials, EncryptedValue, EncryptedCredentials } from './auth-anthropic/encryption.js';
+
+// Re-export encryption utilities
+export { encryptValue, decryptValue, deriveEncryptionKey, CODECK_DIR, AUTO_KEY_PATH } from './auth-anthropic/encryption.js';
+
+// Re-export account cache
+export { cacheAccountInfo, getCachedAccountInfo, ACCOUNT_INFO_CACHE_PATH } from './auth-anthropic/account-cache.js';
+
+// Re-export token manager
+export {
+  isRealToken,
+  readCredentials,
+  getCachedOAuthToken,
+  saveOAuthToken,
+  backupCredentials,
+  syncCredentialsAfterCLI,
+  markTokenExpired,
+  invalidateAuthCache,
+  getInMemoryToken,
+  getInMemoryTokenExpiresAt,
+  _resetInMemoryTokenForTesting,
+  startTokenRefreshMonitor,
+  stopTokenRefreshMonitor,
+  performTokenRefresh,
+  tryRefreshToken,
+  scheduleProactiveRefresh,
+  clearAllCredentialFiles,
+  TOKEN_CACHE_PATH,
+} from './auth-anthropic/token-manager.js';
+
+// Imports used internally by this facade
+import {
+  isRealToken,
+  readCredentials,
+  getCachedOAuthToken,
+  saveOAuthToken,
+  invalidateAuthCache,
+  getInMemoryToken,
+  stopTokenRefreshMonitor,
+  clearAllCredentialFiles,
+  tryRefreshToken,
+  scheduleProactiveRefresh,
+  tokenMarkedExpired,
+  setTokenMarkedExpired,
+  setLoggedOut,
+  getAuthCache,
+  setAuthCache,
+  getAuthCacheTTL,
+} from './auth-anthropic/token-manager.js';
+import { getCachedAccountInfo } from './auth-anthropic/account-cache.js';
+import type { AccountInfo } from './auth-anthropic/encryption.js';
+
+// ============ Path Constants ============
 
 const CLAUDE_CONFIG_PATH = ACTIVE_AGENT.configDir;
 const CLAUDE_CREDENTIALS_PATH = ACTIVE_AGENT.credentialsFile;
 const PKCE_STATE_PATH = join(CLAUDE_CONFIG_PATH, '.pkce-state.json');
 
-// Backup location for OAuth credentials (same volume, different name to avoid CLI interference)
+// Backup location for reading account info in getAccountInfo()
 const CREDENTIALS_BACKUP = join(CLAUDE_CONFIG_PATH, '.codeck-credentials-backup.json');
-// Plaintext token file that Claude CLI won't touch — used by getOAuthEnv as fallback
-const TOKEN_CACHE_PATH = join(CLAUDE_CONFIG_PATH, '.codeck-oauth-token');
-// Account info cache — survives CLI credential overwrites
-const ACCOUNT_INFO_CACHE_PATH = join(CLAUDE_CONFIG_PATH, '.codeck-account-info.json');
-
-/**
- * After Claude CLI execution, sync credentials: if CLI wrote a new .credentials.json
- * (possibly in its own format), try to read it and update our plaintext cache + backup.
- * This prevents stale tokens after CLI refreshes/rewrites the file.
- */
-/** Check if a token looks like a real OAuth token (not a mock/placeholder from CLI) */
-export function isRealToken(token: string): boolean {
-  // Real tokens are long (>50 chars). CLI writes "sk-ant-oat01-mock-access-token" (30 chars) as placeholder.
-  return token.startsWith('sk-ant-oat01-') && token.length > 50;
-}
-
-/**
- * After Claude CLI execution, check if CLI wrote a new valid token to .credentials.json.
- * Only update our cache if the token is real (not a mock placeholder).
- */
-export function syncCredentialsAfterCLI(): void {
-  try {
-    if (!existsSync(CLAUDE_CREDENTIALS_PATH)) return;
-    const raw = JSON.parse(readFileSync(CLAUDE_CREDENTIALS_PATH, 'utf-8'));
-
-    // Migration path: if an old v2 encrypted file still exists (upgrade from older Codeck),
-    // decrypt it and rewrite as plaintext so the CLI can use it going forward.
-    if (raw.version === 2 && raw.claudeAiOauth?.accessToken?.encrypted) {
-      const token = decryptValue(raw.claudeAiOauth.accessToken);
-      if (token && isRealToken(token)) {
-        const refreshToken = raw.claudeAiOauth.refreshToken ? decryptValue(raw.claudeAiOauth.refreshToken) : '';
-        const expiresAt: number = raw.claudeAiOauth.expiresAt ?? (Date.now() + 365 * 24 * 60 * 60 * 1000);
-        const expiresIn = Math.max(0, Math.round((expiresAt - Date.now()) / 1000));
-        const accountInfo = raw.accountInfo ?? getCachedAccountInfo() ?? undefined;
-        saveOAuthToken(token, refreshToken, accountInfo || undefined, expiresIn);
-        console.log('[Claude] Migrated v2 encrypted credentials to plaintext after CLI execution');
-      }
-      return;
-    }
-
-    // Plaintext format — the CLI may have refreshed the token and written back a new file.
-    if (raw.claudeAiOauth?.accessToken && typeof raw.claudeAiOauth.accessToken === 'string') {
-      const token = raw.claudeAiOauth.accessToken;
-      if (!isRealToken(token)) {
-        if (token.includes('mock')) console.log('[Claude] Ignoring mock token from CLI in .credentials.json');
-        return;
-      }
-      if (token === inMemoryToken) return; // no change
-      const refreshToken = typeof raw.claudeAiOauth?.refreshToken === 'string' ? raw.claudeAiOauth.refreshToken : '';
-      const expiresAt: number = raw.claudeAiOauth?.expiresAt ?? 0;
-      const expiresIn = expiresAt > 0 ? Math.max(0, Math.round((expiresAt - Date.now()) / 1000)) : undefined;
-      const accountInfo = raw.accountInfo ?? getCachedAccountInfo() ?? undefined;
-      saveOAuthToken(token, refreshToken, accountInfo || undefined, expiresIn);
-      console.log('[Claude] Synced updated credentials after CLI execution');
-    }
-  } catch (e) {
-    console.warn('[Claude] syncCredentialsAfterCLI error:', (e as Error).message);
-  }
-}
-
-/** Read cached plaintext OAuth token (fallback when .credentials.json is gone/corrupted) */
-export function getCachedOAuthToken(): string | null {
-  try {
-    if (!existsSync(TOKEN_CACHE_PATH)) return null;
-    const token = readFileSync(TOKEN_CACHE_PATH, 'utf-8').trim();
-    return token.startsWith('sk-ant-oat01-') ? token : null;
-  } catch {
-    return null;
-  }
-}
-
-/** Save account info to a separate cache file (survives CLI credential overwrites) */
-function cacheAccountInfo(info: AccountInfo): void {
-  try {
-    writeFileSync(ACCOUNT_INFO_CACHE_PATH, JSON.stringify(info), { mode: 0o600 });
-  } catch { /* non-fatal */ }
-}
-
-/** Read cached account info */
-function getCachedAccountInfo(): AccountInfo | null {
-  try {
-    if (!existsSync(ACCOUNT_INFO_CACHE_PATH)) return null;
-    return JSON.parse(readFileSync(ACCOUNT_INFO_CACHE_PATH, 'utf-8'));
-  } catch {
-    return null;
-  }
-}
-
-/** Backup credentials as encrypted AES-256-GCM to the backup file. */
-function backupCredentials(token: string, refreshToken: string, accountInfo: AccountInfo | undefined, expiresAt: number): void {
-  try {
-    const encrypted: EncryptedCredentials = {
-      version: 2,
-      claudeAiOauth: {
-        accessToken: encryptValue(token),
-        refreshToken: encryptValue(refreshToken),
-        expiresAt,
-      },
-      accountInfo,
-    };
-    atomicWriteFileSync(CREDENTIALS_BACKUP, JSON.stringify(encrypted, null, 2), { mode: 0o600 });
-  } catch (e) {
-    console.warn('[Claude] Failed to write encrypted credentials backup:', (e as Error).message);
-  }
-}
-
-/** Restore credentials from encrypted backup, writing as plaintext for CLI compatibility. */
-function restoreCredentials(): boolean {
-  if (existsSync(CLAUDE_CREDENTIALS_PATH)) return false;
-  if (!existsSync(CREDENTIALS_BACKUP)) return false;
-  try {
-    const raw = JSON.parse(readFileSync(CREDENTIALS_BACKUP, 'utf-8'));
-    if (raw.version === 2 && raw.claudeAiOauth?.accessToken?.encrypted) {
-      // Decrypt and write plaintext so the CLI can use it
-      const token = decryptValue(raw.claudeAiOauth.accessToken);
-      const refreshToken = raw.claudeAiOauth.refreshToken ? decryptValue(raw.claudeAiOauth.refreshToken) : '';
-      const plain = {
-        claudeAiOauth: {
-          accessToken: token,
-          ...(refreshToken ? { refreshToken } : {}),
-          expiresAt: raw.claudeAiOauth.expiresAt,
-        },
-        ...(raw.accountInfo ? { accountInfo: raw.accountInfo } : {}),
-      };
-      writeFileSync(CLAUDE_CREDENTIALS_PATH, JSON.stringify(plain, null, 2), { mode: 0o600 });
-      console.log('[Claude] Restored .credentials.json from encrypted backup (plaintext)');
-      return true;
-    }
-    // Fallback: backup is already plaintext, copy as-is
-    writeFileSync(CLAUDE_CREDENTIALS_PATH, readFileSync(CREDENTIALS_BACKUP), { mode: 0o600 });
-    console.log('[Claude] Restored .credentials.json from backup');
-    return true;
-  } catch (e) {
-    console.error('[Claude] Failed to restore credentials:', (e as Error).message);
-    return false;
-  }
-}
-
-// Restore on module load
-restoreCredentials();
-
-// Watch for credentials file deletion and auto-restore (with debounce to avoid
-// fighting with Claude CLI's own atomicWrite which causes transient rename events)
-let credentialsRestoreTimer: ReturnType<typeof setTimeout> | null = null;
-try {
-  if (existsSync(CLAUDE_CONFIG_PATH)) {
-    watch(CLAUDE_CONFIG_PATH, (eventType, filename) => {
-      if (filename === '.credentials.json') {
-        if (!existsSync(CLAUDE_CREDENTIALS_PATH)) {
-          // Debounce: wait 500ms to see if it reappears (atomicWrite rename)
-          if (credentialsRestoreTimer) clearTimeout(credentialsRestoreTimer);
-          credentialsRestoreTimer = setTimeout(() => {
-            if (!existsSync(CLAUDE_CREDENTIALS_PATH)) {
-              console.log(`[Claude] WATCH: .credentials.json confirmed DELETED — ${new Date().toISOString()}`);
-              if (existsSync(CREDENTIALS_BACKUP)) {
-                try {
-                  writeFileSync(CLAUDE_CREDENTIALS_PATH, readFileSync(CREDENTIALS_BACKUP), { mode: 0o600 });
-                  console.log('[Claude] WATCH: auto-restored credentials from backup');
-                } catch (e) {
-                  console.error('[Claude] WATCH: auto-restore failed:', (e as Error).message);
-                }
-              }
-            }
-          }, 500);
-        } else if (eventType === 'change' || eventType === 'rename') {
-          // Skip if user explicitly logged out — don't re-sync deleted credentials
-          if (loggedOut) return;
-          // File was rewritten — sync to in-memory state if it contains a valid token.
-          // This handles the case where the Claude CLI refreshes its own token and writes
-          // back a new plaintext .credentials.json.
-          try {
-            const raw = JSON.parse(readFileSync(CLAUDE_CREDENTIALS_PATH, 'utf-8'));
-            // Plaintext format (CLI-native or our new format)
-            if (raw.claudeAiOauth?.accessToken && typeof raw.claudeAiOauth.accessToken === 'string') {
-              const token = raw.claudeAiOauth.accessToken;
-              if (isRealToken(token) && token !== inMemoryToken) {
-                const refreshToken = typeof raw.claudeAiOauth?.refreshToken === 'string' ? raw.claudeAiOauth.refreshToken : '';
-                const expiresAt: number = raw.claudeAiOauth?.expiresAt ?? 0;
-                console.log('[Claude] WATCH: CLI refreshed token — syncing to in-memory state');
-                inMemoryToken = token;
-                inMemoryTokenExpiresAt = expiresAt;
-                tokenMarkedExpired = false;
-                lastTokenSaveAt = Date.now();
-                invalidateAuthCache();
-                try { writeFileSync(TOKEN_CACHE_PATH, token, { mode: 0o600 }); } catch { /* non-fatal */ }
-                const accountInfo = raw.accountInfo ?? getCachedAccountInfo() ?? undefined;
-                backupCredentials(token, refreshToken, accountInfo, expiresAt);
-              }
-            }
-          } catch { /* ignore — may be mid-write */ }
-        }
-      }
-    });
-  }
-} catch (e) {
-  console.warn('[Claude] Could not set up credentials watcher:', (e as Error).message);
-}
 
 // OAuth constants (from Claude CLI)
 const OAUTH_CLIENT_ID = '9d1c250a-e61b-44d9-88ed-5944d1962f5e';
@@ -216,177 +85,88 @@ const OAUTH_SCOPE = 'user:inference user:profile';
 const OAUTH_AUTHORIZE_URL = 'https://claude.ai/oauth/authorize';
 const OAUTH_TOKEN_URL = 'https://platform.claude.com/v1/oauth/token';
 
-// ============ Token Encryption at Rest ============
-
-const ENCRYPTION_SALT = 'codeck-credential-encryption-v1';
-
-interface EncryptedValue {
-  encrypted: string;
-  iv: string;
-  tag: string;
-}
-
-interface EncryptedCredentials {
-  version: 2;
-  claudeAiOauth: {
-    accessToken: EncryptedValue;
-    refreshToken: EncryptedValue;
-    expiresAt: number;
-  };
-  accountInfo?: AccountInfo;
-}
-
-interface PlaintextCredentials {
-  claudeAiOauth?: {
-    accessToken?: string;
-    refreshToken?: string;
-    expiresAt?: number;
-  };
-  accountInfo?: AccountInfo;
-}
-
-const CODECK_DIR = process.env.CODECK_DIR || '/workspace/.codeck';
-const AUTO_KEY_PATH = join(CODECK_DIR, '.encryption-key');
+// ============ Auth Check ============
 
 /**
- * Derive an encryption key from a stable source.
- * Priority: CODECK_ENCRYPTION_KEY env var > auto-generated persisted key > hostname fallback.
- * Result is cached — scryptSync is CPU-intensive and blocks the event loop.
+ * Check if Claude CLI is installed
  */
-let _cachedEncryptionKey: Buffer | null = null;
-function deriveEncryptionKey(): Buffer {
-  if (_cachedEncryptionKey) return _cachedEncryptionKey;
+let claudeInstalled: boolean | null = null;
 
-  let key: Buffer;
-  if (process.env.CODECK_ENCRYPTION_KEY) {
-    key = scryptSync(process.env.CODECK_ENCRYPTION_KEY, ENCRYPTION_SALT, 32);
-  } else {
-    // Auto-generate and persist a random key on first use
-    try {
-      if (!existsSync(AUTO_KEY_PATH)) {
-        if (!existsSync(CODECK_DIR)) mkdirSync(CODECK_DIR, { recursive: true, mode: 0o700 });
-        const randomKey = randomBytes(32).toString('hex');
-        writeFileSync(AUTO_KEY_PATH, randomKey, { mode: 0o600 });
-        console.log('[Security] Generated new encryption key at .codeck/.encryption-key');
-      }
-      const persistedKey = readFileSync(AUTO_KEY_PATH, 'utf8').trim();
-      if (persistedKey.length >= 32) {
-        key = scryptSync(persistedKey, ENCRYPTION_SALT, 32);
-      } else {
-        throw new Error('Key too short');
-      }
-    } catch (e) {
-      console.warn('[Security] Could not read/write auto-generated encryption key:', (e as Error).message);
-      // Final fallback: hostname-based (least secure)
-      console.warn('[Security] Using hostname-based encryption key. Set CODECK_ENCRYPTION_KEY for production.');
-      key = scryptSync(`codeck-${process.env.HOSTNAME || 'local'}-credential-key`, ENCRYPTION_SALT, 32);
-    }
+export function isClaudeInstalled(): boolean {
+  if (claudeInstalled !== null) return claudeInstalled;
+  try {
+    execSync(`${ACTIVE_AGENT.command} ${ACTIVE_AGENT.flags.version}`, { stdio: 'pipe' });
+    claudeInstalled = true;
+  } catch {
+    claudeInstalled = false;
+  }
+  return claudeInstalled;
+}
+
+/**
+ * Check if there is an active Claude session.
+ * Priority: 1) env var, 2) .credentials.json, 3) plaintext cache, 4) oauthAccount config
+ *
+ * tokenMarkedExpired (set by 401) forces false UNLESS a new token was saved after the 401.
+ */
+export function isClaudeAuthenticated(): boolean {
+  const now = Date.now();
+  const authCache = getAuthCache();
+  const AUTH_CACHE_TTL = getAuthCacheTTL();
+  if (authCache.checked && (now - authCache.checkedAt) < AUTH_CACHE_TTL) {
+    return authCache.authenticated;
   }
 
-  _cachedEncryptionKey = key;
-  return key;
-}
-
-function encryptValue(value: string): EncryptedValue {
-  const key = deriveEncryptionKey();
-  const iv = randomBytes(16);
-  const cipher = createCipheriv('aes-256-gcm', key, iv);
-  let encrypted = cipher.update(value, 'utf8', 'base64');
-  encrypted += cipher.final('base64');
-  const tag = cipher.getAuthTag();
-  return { encrypted, iv: iv.toString('base64'), tag: tag.toString('base64') };
-}
-
-function decryptValue(data: EncryptedValue): string {
-  const key = deriveEncryptionKey();
-  const decipher = createDecipheriv('aes-256-gcm', key, Buffer.from(data.iv, 'base64'));
-  decipher.setAuthTag(Buffer.from(data.tag, 'base64'));
-  let decrypted = decipher.update(data.encrypted, 'base64', 'utf8');
-  decrypted += decipher.final('utf8');
-  return decrypted;
-}
-
-/**
- * Validate that credentials file has secure permissions (owner-only).
- * Returns false if file has insecure permissions (group/world readable).
- */
-function validateCredentialsPermissions(): boolean {
-  try {
-    if (!existsSync(CLAUDE_CREDENTIALS_PATH)) return true; // no file = ok
-    const stat = statSync(CLAUDE_CREDENTIALS_PATH);
-    if ((stat.mode & 0o077) !== 0) {
-      console.log('[Claude] ⚠ Credentials file has insecure permissions:', '0o' + (stat.mode & 0o777).toString(8));
-      // Attempt to fix permissions
-      chmodSync(CLAUDE_CREDENTIALS_PATH, 0o600);
-      console.log('[Claude] ✓ Fixed credentials file permissions to 0o600');
-    }
-    return true;
-  } catch (e) {
-    console.log('[Claude] Error checking credentials permissions:', (e as Error).message);
+  // If token was marked expired by an API call (401) and no new token has been saved since,
+  // don't trust any file — force re-login
+  if (tokenMarkedExpired) {
+    setAuthCache({ checked: true, authenticated: false, checkedAt: now });
     return false;
   }
+
+  // 1) In-memory token is authoritative — survives file deletions
+  const memToken = getInMemoryToken();
+  if (memToken && isRealToken(memToken)) {
+    setAuthCache({ checked: true, authenticated: true, checkedAt: now });
+    return true;
+  }
+
+  // 2) Check environment variable
+  if (process.env.CLAUDE_CODE_OAUTH_TOKEN && process.env.CLAUDE_CODE_OAUTH_TOKEN.startsWith('sk-ant-oat01-')) {
+    setAuthCache({ checked: true, authenticated: true, checkedAt: now });
+    return true;
+  }
+
+  // 3) Check credentials file (handles both encrypted v2 and legacy plaintext)
+  const creds = readCredentials();
+  if (creds?.claudeAiOauth?.accessToken && isRealToken(creds.claudeAiOauth.accessToken)) {
+    // Check if the token has expired
+    if (creds.claudeAiOauth.expiresAt && creds.claudeAiOauth.expiresAt <= now) {
+      console.log('[Claude] ⚠ Token has expired, attempting refresh...');
+      const refreshed = tryRefreshToken(creds as Record<string, unknown>);
+      if (!refreshed) {
+        setAuthCache({ checked: true, authenticated: false, checkedAt: now });
+        return false;
+      }
+    }
+    // Proactively refresh if token is within 5 minutes of expiry
+    scheduleProactiveRefresh(creds as Record<string, unknown>);
+    setAuthCache({ checked: true, authenticated: true, checkedAt: now });
+    return true;
+  }
+
+  // 4) Check plaintext token cache (survives Claude CLI rewriting .credentials.json)
+  const cached = getCachedOAuthToken();
+  if (cached) {
+    setAuthCache({ checked: true, authenticated: true, checkedAt: now });
+    return true;
+  }
+
+  setAuthCache({ checked: true, authenticated: false, checkedAt: now });
+  return false;
 }
 
-/**
- * Read credentials. Primary source is the plaintext .credentials.json (CLI-compatible).
- * Falls back to the encrypted backup (.codeck-credentials-backup.json) if the primary is missing.
- * Also handles legacy v2 encrypted .credentials.json for backward compatibility.
- */
-export function readCredentials(): PlaintextCredentials | null {
-  // Ensure the primary file exists (restore from backup if missing)
-  if (!existsSync(CLAUDE_CREDENTIALS_PATH)) {
-    if (!restoreCredentials()) {
-      // Last resort: try reading encrypted backup directly
-      return readEncryptedBackup();
-    }
-  }
-  validateCredentialsPermissions();
-
-  try {
-    const raw = JSON.parse(readFileSync(CLAUDE_CREDENTIALS_PATH, 'utf-8'));
-
-    // Legacy v2 encrypted format — decrypt on the fly (migration path)
-    if (raw.version === 2 && raw.claudeAiOauth?.accessToken?.encrypted) {
-      const enc = raw as EncryptedCredentials;
-      return {
-        claudeAiOauth: {
-          accessToken: decryptValue(enc.claudeAiOauth.accessToken),
-          refreshToken: decryptValue(enc.claudeAiOauth.refreshToken),
-          expiresAt: enc.claudeAiOauth.expiresAt,
-        },
-        accountInfo: enc.accountInfo,
-      };
-    }
-
-    // Plaintext format (our new primary format, also CLI-native)
-    return raw as PlaintextCredentials;
-  } catch (e) {
-    console.log('[Claude] Error reading credentials, trying encrypted backup:', (e as Error).message);
-    return readEncryptedBackup();
-  }
-}
-
-/** Read and decrypt the encrypted credentials backup. */
-function readEncryptedBackup(): PlaintextCredentials | null {
-  if (!existsSync(CREDENTIALS_BACKUP)) return null;
-  try {
-    const raw = JSON.parse(readFileSync(CREDENTIALS_BACKUP, 'utf-8'));
-    if (raw.version === 2 && raw.claudeAiOauth?.accessToken?.encrypted) {
-      const enc = raw as EncryptedCredentials;
-      return {
-        claudeAiOauth: {
-          accessToken: decryptValue(enc.claudeAiOauth.accessToken),
-          refreshToken: decryptValue(enc.claudeAiOauth.refreshToken),
-          expiresAt: enc.claudeAiOauth.expiresAt,
-        },
-        accountInfo: enc.accountInfo,
-      };
-    }
-    return null;
-  } catch {
-    return null;
-  }
-}
+// ============ Login Flow (direct OAuth PKCE) ============
 
 interface LoginState {
   active: boolean;
@@ -415,69 +195,22 @@ interface SendCodeResult {
   error?: string;
 }
 
-export interface AccountInfo {
-  email: string | null;
-  accountUuid: string | null;
-  organizationName: string | null;
-  organizationUuid: string | null;
-}
+// PKCE state for current login flow
+let currentCodeVerifier: string | null = null;
+let currentState: string | null = null;
+let currentNonce: string | null = null;
 
-/**
- * Save OAuth token to credentials file
- * Format required by Claude Code
- */
-function saveOAuthToken(token: string, refreshToken = '', accountInfo?: AccountInfo, expiresIn?: number): boolean {
-  if (!existsSync(CLAUDE_CONFIG_PATH)) {
-    mkdirSync(CLAUDE_CONFIG_PATH, { recursive: true, mode: 0o700 });
-  }
+let loginState: LoginState = {
+  active: false,
+  url: null,
+  error: null,
+  waitingForCode: false,
+  startedAt: 0,
+};
 
-  // Use actual expires_in from OAuth response (seconds), fallback to 365 days
-  const ttlMs = expiresIn ? expiresIn * 1000 : 365 * 24 * 60 * 60 * 1000;
-  const expiresAt = Date.now() + ttlMs;
+const LOGIN_TIMEOUT_MS = 5 * 60 * 1000;
 
-  // Write PLAINTEXT credentials in Claude CLI-compatible format.
-  // This allows the CLI to read refreshToken and perform its own token refresh,
-  // extending sessions beyond the access token's 8-hour lifetime.
-  const plainCredentials: PlaintextCredentials = {
-    claudeAiOauth: {
-      accessToken: token,
-      ...(refreshToken ? { refreshToken } : {}),
-      expiresAt,
-    },
-    ...(accountInfo ? { accountInfo } : {}),
-  };
-  atomicWriteFileSync(CLAUDE_CREDENTIALS_PATH, JSON.stringify(plainCredentials, null, 2), { mode: 0o600 });
-
-  // Write encrypted backup for security (in case the plaintext file is read by unintended parties)
-  backupCredentials(token, refreshToken, accountInfo, expiresAt);
-
-  // Save plaintext token cache (extra fallback — a single file with just the access token)
-  try {
-    writeFileSync(TOKEN_CACHE_PATH, token, { mode: 0o600 });
-  } catch { /* non-fatal */ }
-
-  if (accountInfo) cacheAccountInfo(accountInfo);
-
-  // Set in-memory token and expiry — authoritative while server runs
-  inMemoryToken = token;
-  inMemoryTokenExpiresAt = expiresAt;
-
-  tokenMarkedExpired = false;
-  loggedOut = false; // Clear logout flag — user has re-authenticated
-  lastTokenSaveAt = Date.now();
-  invalidateAuthCache();
-
-  // Restart token refresh monitor if it was stopped (e.g., after logout)
-  if (!refreshMonitorInterval) {
-    startTokenRefreshMonitor(refreshMonitorBroadcast ?? undefined);
-  }
-
-  const expiresInHours = Math.round(ttlMs / 3600000);
-  console.log(`[Claude] ✓ Token saved (plaintext + encrypted backup, expires in ${expiresInHours}h, refresh_token: ${refreshToken ? 'yes' : 'no'})`);
-  return true;
-}
-
-// ============ PKCE Helpers ============
+// ---- PKCE Helpers ----
 
 function base64url(buffer: Buffer): string {
   return buffer.toString('base64')
@@ -497,374 +230,6 @@ function generateCodeChallenge(verifier: string): string {
 function generateState(): string {
   return base64url(randomBytes(32));
 }
-
-// ============ Token Refresh ============
-
-const REFRESH_MARGIN_MS = 5 * 60 * 1000; // 5 minutes before expiry
-let refreshInProgress = false;
-
-/**
- * Attempt to refresh the access token using the stored refresh token.
- * This is async and runs in the background — the caller should not await it.
- */
-async function performTokenRefresh(refreshToken: string): Promise<boolean> {
-  if (refreshInProgress) return false;
-  refreshInProgress = true;
-
-  try {
-    const response = await fetch(OAUTH_TOKEN_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        grant_type: 'refresh_token',
-        refresh_token: refreshToken,
-        client_id: OAUTH_CLIENT_ID,
-      }),
-    });
-
-    if (!response.ok) {
-      console.log('[Claude] Token refresh failed:', response.status);
-      return false;
-    }
-
-    const tokenData = await response.json() as {
-      access_token?: string;
-      refresh_token?: string;
-      expires_in?: number;
-      error?: string;
-    };
-
-    if (tokenData.error || !tokenData.access_token) {
-      console.log('[Claude] Token refresh error:', tokenData.error || 'no access_token');
-      return false;
-    }
-
-    // Read existing credentials to preserve accountInfo
-    const existing = readCredentials();
-    const accountInfo = existing?.accountInfo;
-
-    saveOAuthToken(tokenData.access_token, tokenData.refresh_token || refreshToken, accountInfo, tokenData.expires_in);
-    tokenMarkedExpired = false;
-    invalidateAuthCache();
-    console.log('[Claude] ✓ Token refreshed successfully');
-    return true;
-  } catch (e) {
-    console.log('[Claude] Token refresh exception:', (e as Error).message);
-    return false;
-  } finally {
-    refreshInProgress = false;
-  }
-}
-
-/**
- * Synchronously check if token needs refresh and trigger it if needed.
- * Returns false if token is expired and no refresh token is available.
- */
-function tryRefreshToken(creds: Record<string, unknown>): boolean {
-  const oauth = creds.claudeAiOauth as { refreshToken?: string; expiresAt?: number } | undefined;
-  if (!oauth?.refreshToken) {
-    console.log('[Claude] No refresh token available');
-    return false;
-  }
-
-  // Trigger async refresh in background
-  performTokenRefresh(oauth.refreshToken);
-  return false; // Return false so caller knows token is currently expired
-}
-
-/**
- * Schedule a proactive refresh if token is within the refresh margin.
- */
-function scheduleProactiveRefresh(creds: Record<string, unknown>): void {
-  const oauth = creds.claudeAiOauth as { refreshToken?: string; expiresAt?: number } | undefined;
-  if (!oauth?.refreshToken || !oauth?.expiresAt) return;
-
-  const now = Date.now();
-  const timeUntilExpiry = oauth.expiresAt - now;
-  if (timeUntilExpiry > 0 && timeUntilExpiry <= REFRESH_MARGIN_MS) {
-    console.log('[Claude] Token expires soon, triggering proactive refresh');
-    performTokenRefresh(oauth.refreshToken);
-  }
-}
-
-// ============ Background Token Refresh Monitor ============
-
-const REFRESH_CHECK_INTERVAL_MS = 5 * 60 * 1000;      // Check every 5 minutes
-const REFRESH_MARGIN_PROACTIVE_MS = 30 * 60 * 1000;   // Refresh 30 min before expiry
-const REFRESH_WARN_MARGIN_MS = 60 * 60 * 1000;        // Warn user 60 min before expiry
-
-let refreshMonitorInterval: ReturnType<typeof setInterval> | null = null;
-let refreshMonitorBroadcast: ((data: unknown) => void) | null = null;
-
-export function startTokenRefreshMonitor(broadcast?: (data: unknown) => void): void {
-  if (refreshMonitorInterval) return; // Already running
-
-  if (broadcast) refreshMonitorBroadcast = broadcast;
-  console.log('[Claude] Starting token refresh monitor (every 5min, 30min proactive margin)');
-
-  refreshMonitorInterval = setInterval(async () => {
-    // Skip if token already marked expired — markTokenExpired() handles recovery
-    if (tokenMarkedExpired) return;
-
-    const creds = readCredentials();
-    if (!creds?.claudeAiOauth?.expiresAt) return;
-
-    const timeUntilExpiry = creds.claudeAiOauth.expiresAt - Date.now();
-    const hasRefreshToken = !!creds.claudeAiOauth?.refreshToken?.trim();
-
-    if (timeUntilExpiry <= 0) {
-      // Already expired
-      if (hasRefreshToken) {
-        console.log('[Claude] Token expired, attempting recovery via refresh token...');
-        const ok = await performTokenRefresh(creds.claudeAiOauth.refreshToken!);
-        if (!ok) {
-          console.log('[Claude] Refresh failed — token is dead, user must re-login');
-          refreshMonitorBroadcast?.({ type: 'auth:expired' });
-        }
-      } else {
-        console.log('[Claude] Token expired with no refresh token available — user must re-login');
-        refreshMonitorBroadcast?.({ type: 'auth:expired' });
-      }
-    } else if (timeUntilExpiry <= REFRESH_MARGIN_PROACTIVE_MS) {
-      // Expiring within 30 min — refresh proactively
-      if (hasRefreshToken) {
-        console.log(`[Claude] Token expires in ${Math.round(timeUntilExpiry / 60000)}min, refreshing proactively...`);
-        const ok = await performTokenRefresh(creds.claudeAiOauth.refreshToken!);
-        if (!ok) {
-          console.log('[Claude] Proactive refresh failed — notifying frontend');
-          refreshMonitorBroadcast?.({ type: 'auth:expiring', minutesLeft: Math.round(timeUntilExpiry / 60000) });
-        }
-      } else {
-        // No refresh token — warn the user so they can re-login before it's too late
-        console.log(`[Claude] Token expires in ${Math.round(timeUntilExpiry / 60000)}min, no refresh token — notifying frontend`);
-        refreshMonitorBroadcast?.({ type: 'auth:expiring', minutesLeft: Math.round(timeUntilExpiry / 60000) });
-      }
-    } else if (timeUntilExpiry <= REFRESH_WARN_MARGIN_MS) {
-      // Expiring within 60 min — log only (first warning)
-      console.log(`[Claude] Token expires in ${Math.round(timeUntilExpiry / 60000)}min`);
-    }
-  }, REFRESH_CHECK_INTERVAL_MS);
-}
-
-export function stopTokenRefreshMonitor(): void {
-  if (refreshMonitorInterval) {
-    clearInterval(refreshMonitorInterval);
-    refreshMonitorInterval = null;
-  }
-}
-
-// ============ Auth Check ============
-
-/**
- * Check if Claude CLI is installed
- */
-let claudeInstalled: boolean | null = null;
-
-export function isClaudeInstalled(): boolean {
-  if (claudeInstalled !== null) return claudeInstalled;
-  try {
-    execSync(`${ACTIVE_AGENT.command} ${ACTIVE_AGENT.flags.version}`, { stdio: 'pipe' });
-    claudeInstalled = true;
-  } catch {
-    claudeInstalled = false;
-  }
-  return claudeInstalled;
-}
-
-let authCache = { checked: false, authenticated: false, checkedAt: 0 };
-let tokenMarkedExpired = false;
-// Set by logoutClaude() to prevent file watcher from re-syncing deleted credentials
-let loggedOut = false;
-// Timestamp of the last successful token save — used to distinguish fresh logins from stale cache
-let lastTokenSaveAt = 0;
-const AUTH_CACHE_TTL = 5000;
-
-// In-memory token — authoritative while server is running.
-// File deletions (Docker WSL2 sync) cannot break auth once a token is loaded.
-let inMemoryToken: string | null = null;
-let inMemoryTokenExpiresAt = 0; // ms since epoch; 0 = unknown (treated as valid)
-
-// Eagerly populate in-memory token from disk at startup so the first
-// WebSocket status broadcast reports authenticated=true immediately.
-try {
-  const _creds = readCredentials();
-  if (_creds?.claudeAiOauth?.accessToken && isRealToken(_creds.claudeAiOauth.accessToken)) {
-    inMemoryToken = _creds.claudeAiOauth.accessToken;
-    inMemoryTokenExpiresAt = _creds.claudeAiOauth.expiresAt || 0;
-    console.log('[Claude] Auth pre-loaded from credentials file at startup');
-  }
-} catch { /* non-fatal — first WS connect will do a lazy read */ }
-
-/** Get the in-memory token (authoritative, survives file deletions). Returns null if expired. */
-export function getInMemoryToken(): string | null {
-  if (!inMemoryToken) return null;
-  if (inMemoryTokenExpiresAt > 0 && Date.now() >= inMemoryTokenExpiresAt) return null;
-  return inMemoryToken;
-}
-
-/** Get the in-memory token expiry timestamp (ms) */
-export function getInMemoryTokenExpiresAt(): number {
-  return inMemoryTokenExpiresAt;
-}
-
-/** Reset in-memory token — ONLY for testing */
-export function _resetInMemoryTokenForTesting(): void {
-  inMemoryToken = null;
-  inMemoryTokenExpiresAt = 0;
-}
-
-/**
- * Check if there is an active Claude session.
- * Priority: 1) env var, 2) .credentials.json, 3) plaintext cache, 4) oauthAccount config
- *
- * tokenMarkedExpired (set by 401) forces false UNLESS a new token was saved after the 401.
- */
-export function isClaudeAuthenticated(): boolean {
-  const now = Date.now();
-  if (authCache.checked && (now - authCache.checkedAt) < AUTH_CACHE_TTL) {
-    return authCache.authenticated;
-  }
-
-  // If token was marked expired by an API call (401) and no new token has been saved since,
-  // don't trust any file — force re-login
-  if (tokenMarkedExpired) {
-    authCache = { checked: true, authenticated: false, checkedAt: now };
-    return false;
-  }
-
-  // 1) In-memory token is authoritative — survives file deletions
-  if (inMemoryToken && isRealToken(inMemoryToken)) {
-    authCache = { checked: true, authenticated: true, checkedAt: now };
-    return true;
-  }
-
-  // 2) Check environment variable
-  if (process.env.CLAUDE_CODE_OAUTH_TOKEN && process.env.CLAUDE_CODE_OAUTH_TOKEN.startsWith('sk-ant-oat01-')) {
-    authCache = { checked: true, authenticated: true, checkedAt: now };
-    return true;
-  }
-
-  // 3) Check credentials file (handles both encrypted v2 and legacy plaintext)
-  const creds = readCredentials();
-  if (creds?.claudeAiOauth?.accessToken && isRealToken(creds.claudeAiOauth.accessToken)) {
-    // Cache in memory for resilience
-    inMemoryToken = creds.claudeAiOauth.accessToken;
-    // Check if the token has expired
-    if (creds.claudeAiOauth.expiresAt && creds.claudeAiOauth.expiresAt <= now) {
-      console.log('[Claude] ⚠ Token has expired, attempting refresh...');
-      const refreshed = tryRefreshToken(creds as Record<string, unknown>);
-      if (!refreshed) {
-        authCache = { checked: true, authenticated: false, checkedAt: now };
-        return false;
-      }
-    }
-    // Proactively refresh if token is within 5 minutes of expiry
-    scheduleProactiveRefresh(creds as Record<string, unknown>);
-    authCache = { checked: true, authenticated: true, checkedAt: now };
-    return true;
-  }
-
-  // 4) Check plaintext token cache (survives Claude CLI rewriting .credentials.json)
-  const cached = getCachedOAuthToken();
-  if (cached) {
-    inMemoryToken = cached; // Cache in memory for resilience
-    authCache = { checked: true, authenticated: true, checkedAt: now };
-    return true;
-  }
-
-  authCache = { checked: true, authenticated: false, checkedAt: now };
-  return false;
-}
-
-export function invalidateAuthCache(): void {
-  authCache = { checked: false, authenticated: false, checkedAt: 0 };
-}
-
-/**
- * Mark the current token as expired (called when an API returns 401).
- * This forces isClaudeAuthenticated() to return false until a new login.
- */
-export function markTokenExpired(): void {
-  // Guard: if a token was saved very recently, this expiry signal is a stale PTY output
-  // from before re-authentication — ignore it to prevent wiping fresh credentials.
-  const FRESH_TOKEN_GRACE_MS = 10_000;
-  if (lastTokenSaveAt > 0 && Date.now() - lastTokenSaveAt < FRESH_TOKEN_GRACE_MS) {
-    console.log('[Claude] markTokenExpired ignored — token was just saved (<10s ago), stale PTY signal discarded');
-    return;
-  }
-  console.log('[Claude] ⚠ Token marked as expired (API returned 401)');
-  tokenMarkedExpired = true;
-  inMemoryToken = null;
-  inMemoryTokenExpiresAt = 0;
-  invalidateAuthCache();
-
-  // Attempt recovery via refresh token BEFORE wiping files
-  const creds = readCredentials();
-  if (creds?.claudeAiOauth?.refreshToken) {
-    console.log('[Claude] Attempting token refresh before clearing credentials...');
-    performTokenRefresh(creds.claudeAiOauth.refreshToken).then(ok => {
-      if (ok) {
-        console.log('[Claude] Token recovered after 401');
-      } else {
-        console.log('[Claude] Refresh failed — clearing all credentials');
-        clearAllCredentialFiles();
-      }
-    });
-  } else {
-    clearAllCredentialFiles();
-  }
-}
-
-function clearAllCredentialFiles(): void {
-  try { if (existsSync(TOKEN_CACHE_PATH)) unlinkSync(TOKEN_CACHE_PATH); } catch { /* ignore */ }
-  try { if (existsSync(CREDENTIALS_BACKUP)) unlinkSync(CREDENTIALS_BACKUP); } catch { /* ignore */ }
-  try { if (existsSync(CLAUDE_CREDENTIALS_PATH)) unlinkSync(CLAUDE_CREDENTIALS_PATH); } catch { /* ignore */ }
-  try { if (existsSync(ACCOUNT_INFO_CACHE_PATH)) unlinkSync(ACCOUNT_INFO_CACHE_PATH); } catch { /* ignore */ }
-  console.log('[Claude] Cleared all cached credentials');
-}
-
-/** Full Claude logout: clear all auth state (tokens, caches, monitors) but keep workspace data. */
-export function logoutClaude(): void {
-  console.log('[Claude] Logging out — clearing all OAuth state');
-
-  // Prevent file watcher from re-syncing deleted credentials
-  loggedOut = true;
-
-  // Clear in-memory state
-  inMemoryToken = null;
-  inMemoryTokenExpiresAt = 0;
-  tokenMarkedExpired = false;
-  lastTokenSaveAt = 0;
-  invalidateAuthCache();
-
-  // Stop background monitors
-  stopTokenRefreshMonitor();
-
-  // Clear all credential files on disk
-  clearAllCredentialFiles();
-
-  // Clear PKCE login state if active
-  cleanupLogin();
-
-  console.log('[Claude] ✓ Logged out — ready for new login');
-}
-
-// ============ Login Flow (direct OAuth PKCE) ============
-
-// PKCE state for current login flow
-let currentCodeVerifier: string | null = null;
-let currentState: string | null = null;
-let currentNonce: string | null = null;
-
-let loginState: LoginState = {
-  active: false,
-  url: null,
-  error: null,
-  waitingForCode: false,
-  startedAt: 0,
-};
-
-const LOGIN_TIMEOUT_MS = 5 * 60 * 1000;
 
 // ---- PKCE state persistence (survives server restart during login) ----
 
@@ -1147,7 +512,7 @@ export async function sendLoginCode(code: string): Promise<SendCodeResult> {
 
     // Save token + account info (use actual expiry from OAuth response)
     saveOAuthToken(tokenData.access_token, tokenData.refresh_token || '', accountInfo, tokenData.expires_in);
-    tokenMarkedExpired = false;
+    setTokenMarkedExpired(false);
     invalidateAuthCache();
 
     if (isClaudeAuthenticated()) {
@@ -1164,6 +529,33 @@ export async function sendLoginCode(code: string): Promise<SendCodeResult> {
     return { success: false, error: `Network error: ${errMsg}. Login again.` };
   }
 }
+
+// ============ Logout ============
+
+/** Full Claude logout: clear all auth state (tokens, caches, monitors) but keep workspace data. */
+export function logoutClaude(): void {
+  console.log('[Claude] Logging out — clearing all OAuth state');
+
+  // Prevent file watcher from re-syncing deleted credentials
+  setLoggedOut(true);
+
+  // Clear in-memory state via token manager
+  setTokenMarkedExpired(false);
+  invalidateAuthCache();
+
+  // Stop background monitors
+  stopTokenRefreshMonitor();
+
+  // Clear all credential files on disk
+  clearAllCredentialFiles();
+
+  // Clear PKCE login state if active
+  cleanupLogin();
+
+  console.log('[Claude] ✓ Logged out — ready for new login');
+}
+
+// ============ Account Info ============
 
 /**
  * Read stored account info — tries credentials file first, then backup, then separate cache.
@@ -1195,6 +587,8 @@ export function getAccountInfo(): AccountInfo | null {
   // Priority 3: separate account info cache
   return getCachedAccountInfo();
 }
+
+// ============ Status ============
 
 /**
  * Full Claude status

@@ -237,6 +237,7 @@ router.get('/export', async (_req, res) => {
       '--exclude=./backups',
       '--exclude=./agents/*/executions',
       '--exclude=./.import-tmp-*',
+      '--exclude=./.env',
       '-C', AGENT_DATA_DIR,
       '.',
     ], { stdio: ['ignore', 'pipe', 'pipe'] });
@@ -310,24 +311,23 @@ router.post('/import', async (req, res) => {
     // Remove the temp tar file
     await rm(tmpFile);
 
-    // Directories to import (preserve auth.json, config.json, sessions)
-    const importDirs = ['memory', 'rules', 'skills', 'preferences.md', 'ecc', 'agents'];
+    // Strict allowlist — only import known safe directories/files.
+    // Never import auth.json, config.json, sessions, .env, or unknown entries.
+    const IMPORT_ALLOWLIST = new Set(['memory', 'rules', 'skills', 'preferences.md', 'ecc', 'agents', 'daily']);
 
     let imported = 0;
     for (const entry of await readdir(tmpDir)) {
-      // Copy each directory/file from extracted archive into .codeck/
+      if (!IMPORT_ALLOWLIST.has(entry)) continue; // skip anything not in allowlist
+
       const src = join(tmpDir, entry);
       const dest = join(AGENT_DATA_DIR, entry);
-      const s = await stat(src);
 
-      if (s.isDirectory() || importDirs.includes(entry) || entry.endsWith('.md')) {
-        // Remove existing and replace
-        if (existsSync(dest)) {
-          await rm(dest, { recursive: true, force: true });
-        }
-        await execFileAsync('cp', ['-a', src, dest], { timeout: 10_000 });
-        imported++;
+      // Remove existing and replace
+      if (existsSync(dest)) {
+        await rm(dest, { recursive: true, force: true });
       }
+      await execFileAsync('cp', ['-a', src, dest], { timeout: 10_000 });
+      imported++;
     }
 
     // Cleanup temp dir

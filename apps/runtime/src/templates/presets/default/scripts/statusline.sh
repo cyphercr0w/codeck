@@ -31,8 +31,8 @@ if not used_pct and window_size > 0:
 model = d.get('model', {})
 model_name = model.get('display_name', '') or model.get('id', '')
 
-# Send to runtime (localhost, no auth needed for internal endpoints)
-if used_pct or total_tokens:
+# Always send to runtime — even 0% is valid (e.g. after compaction)
+if True:
     payload = json.dumps({
         'contextPercent': used_pct,
         'contextTokens': total_tokens,

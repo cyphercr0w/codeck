@@ -25,7 +25,7 @@ import { NewProjectModal } from './components/NewProjectModal';
 import { LogsDrawer } from './components/LogsDrawer';
 import { PresetWizard } from './components/PresetWizard';
 import { IntegrationsSection } from './components/IntegrationsSection';
-import { ConfigSection } from './components/ConfigSection';
+import { AgentConfigSection } from './components/AgentConfigSection';
 
 import { AgentsSection } from './components/AgentsSection';
 import { SettingsSection } from './components/SettingsSection';
@@ -534,7 +534,7 @@ export function App() {
 
             {section === 'agents' && <AgentsSection />}
             {section === 'integrations' && <IntegrationsSection />}
-            {section === 'config' && <ConfigSection />}
+            {section === 'config' && <AgentConfigSection />}
             {section === 'settings' && <SettingsSection />}
           </ErrorBoundary>
         </main>

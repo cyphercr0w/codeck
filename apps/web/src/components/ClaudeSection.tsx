@@ -583,7 +583,7 @@ export function ClaudeSection({ onNewSession, onNewShell }: ClaudeSectionProps) 
               )}
             </div>
           )}
-          {activeId && sessionList.find(s => s.id === activeId)?.loading && (
+          {activeId && sessionList.find(s => s.id === activeId)?.loading && !getTerminal(activeId) && (
             <div class="terminal-loading-overlay">
               <div class="spinner" />
               <div class="terminal-loading-text">Starting session...</div>
@@ -611,7 +611,10 @@ export function ClaudeSection({ onNewSession, onNewShell }: ClaudeSectionProps) 
 
 function TerminalStatusBar() {
   const usage = claudeUsage.value;
-  const ctx = contextData.value;
+  const rawCtx = contextData.value;
+  // Ignore stale context data (>30s old) — statusline pushes every ~300ms,
+  // so if updatedAt is old the session likely ended or compacted.
+  const ctx = rawCtx && (Date.now() - rawCtx.updatedAt < 30_000) ? rawCtx : null;
   const status = sessionStatus.value[activeSessionId.value || ''] || 'idle';
   const activeSession = sessions.value.find(s => s.id === activeSessionId.value);
   const uptime = activeSession ? Math.floor((Date.now() - activeSession.createdAt) / 60000) : 0;

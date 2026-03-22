@@ -291,6 +291,8 @@ export function destroyTerminal(sessionId: string): void {
     instance.term.dispose();
     terminals.delete(sessionId);
     scrollLocked.delete(sessionId);
+    attachingSession.delete(sessionId);
+    programmaticScrollUntil.delete(sessionId);
     const raf = pendingScrollRaf.get(sessionId);
     if (raf) { cancelAnimationFrame(raf); pendingScrollRaf.delete(sessionId); }
   }

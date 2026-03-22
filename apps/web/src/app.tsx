@@ -241,22 +241,22 @@ export function App() {
       const data = await testRes.json();
       updateStateFromServer(data);
 
-      // Claude check
+      // /api/status now bundles account + sessions — skip separate requests
+      const hasAccount = !!data.account;
+      const hasSessions = !!data.sessions;
+
       initRetryCount.current = 0;
       if (claudeAuthenticated.value) {
         if (!presetConfigured.value) {
           setView('preset');
           connectWebSocket();
-          loadAccountInfo(signal); // fire and forget
+          if (!hasAccount) loadAccountInfo(signal);
         } else {
-          // Show main view IMMEDIATELY — don't wait for account info or sessions.
-          // Terminal appears faster, account info fills in ~250ms later.
           setActiveSection(sectionFromUrl());
           setView('main');
           connectWebSocket();
-          // Fire in parallel, don't block rendering
-          loadAccountInfo(signal);
-          restoreSessions();
+          if (!hasAccount) loadAccountInfo(signal);
+          if (!hasSessions) restoreSessions();
         }
       } else {
         setView('setup');
@@ -294,13 +294,13 @@ export function App() {
         if (!presetConfigured.value) {
           setView('preset');
           connectWebSocket();
-          loadAccountInfo();
+          if (!data.account) loadAccountInfo();
         } else {
           setActiveSection(sectionFromUrl());
           setView('main');
           connectWebSocket();
-          loadAccountInfo();
-          restoreSessions();
+          if (!data.account) loadAccountInfo();
+          if (!data.sessions) restoreSessions();
         }
       } else {
         setView('setup');
@@ -345,21 +345,22 @@ export function App() {
 
   async function handleLoginSuccess() {
     setLoginModalOpen(false);
+    let data: Record<string, any> = {};
     try {
       const res = await apiFetch('/api/status');
-      const data = await res.json();
+      data = await res.json();
       updateStateFromServer(data);
     } catch { /* ignore */ }
     if (!presetConfigured.value) {
       setView('preset');
       connectWebSocket();
-      loadAccountInfo();
+      if (!data.account) loadAccountInfo();
     } else {
       setActiveSection(sectionFromUrl());
       setView('main');
       connectWebSocket();
-      loadAccountInfo();
-      restoreSessions();
+      if (!data.account) loadAccountInfo();
+      if (!data.sessions) restoreSessions();
     }
   }
 

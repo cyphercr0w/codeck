@@ -13,7 +13,7 @@ import { isPasswordConfigured, setupPassword, validatePassword, validateSession,
 import { getClaudeStatus, isClaudeAuthenticated, getAccountInfo, startTokenRefreshMonitor, stopTokenRefreshMonitor } from '../services/auth-anthropic.js';
 import { ACTIVE_AGENT } from '../services/agent.js';
 import { getGitStatus, updateClaudeMd, initGitHub } from '../services/git.js';
-import { destroyAllSessions, hasSavedSessions, restoreSavedSessions, saveSessionState, updateAgentBinary, clearPendingRestore } from '../services/console.js';
+import { destroyAllSessions, hasSavedSessions, restoreSavedSessions, saveSessionState, updateAgentBinary, clearPendingRestore, listSessions } from '../services/console.js';
 import { getPresetStatus } from '../services/preset.js';
 import agentRoutes from '../routes/agent.routes.js';
 import githubRoutes from '../routes/github.routes.js';
@@ -400,7 +400,21 @@ export async function startWebServer(): Promise<void> {
 
   // Status + logs
   app.get('/api/status', (_req, res) => {
-    res.json({ claude: getClaudeStatus(), git: getGitStatus(), preset: getPresetStatus(), agent: { name: ACTIVE_AGENT.name, id: ACTIVE_AGENT.id } });
+    // Bundle everything the frontend needs in ONE response.
+    // Eliminates separate /api/account + /api/console/sessions roundtrips (saves 500ms at 250ms latency).
+    const sessionList = listSessions();
+    const account = isClaudeAuthenticated() ? getAccountInfo() : null;
+
+    res.json({
+      claude: getClaudeStatus(),
+      git: getGitStatus(),
+      preset: getPresetStatus(),
+      agent: { name: ACTIVE_AGENT.name, id: ACTIVE_AGENT.id },
+      // Bundled data — frontend uses these instead of separate requests
+      account: account || undefined,
+      sessions: sessionList.length > 0 ? sessionList : undefined,
+      pendingRestore: hasSavedSessions() && sessionList.length === 0 ? true : undefined,
+    });
   });
   app.get('/api/logs', (_req, res) => {
     res.json({ logs: getLogBuffer() });

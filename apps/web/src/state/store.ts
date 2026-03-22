@@ -162,6 +162,14 @@ export function updateStateFromServer(data: Record<string, any>): void {
   if (data.preset) {
     setPresetConfigured(data.preset.configured);
   }
+  // Account info bundled in /api/status response — skip separate /api/account call
+  if (data.account) {
+    setAccountInfo(
+      data.account.email,
+      data.account.organizationName,
+      data.account.accountUuid,
+    );
+  }
   if (data.workspace) {
     workspacePath.value = data.workspace;
   }

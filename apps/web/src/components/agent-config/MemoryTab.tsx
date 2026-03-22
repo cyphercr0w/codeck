@@ -260,7 +260,7 @@ export function MemoryTab() {
       )}
 
       {/* Migration */}
-      <div class="ac-section" style="flex: 1; min-width: 0">
+      <div class="ac-section" style="flex: 1; min-width: 0; border-left: 1px solid var(--border); padding-left: 20px">
         <div class="ac-section-title">Memory Migration</div>
         <div class="ac-migration-actions">
           <button class="btn btn-xs btn-secondary" onClick={handleExport} disabled={exporting}>

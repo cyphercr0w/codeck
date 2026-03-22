@@ -1,4 +1,5 @@
 import express from 'express';
+import compression from 'compression';
 import helmet from 'helmet';
 import { createServer } from 'http';
 import { join, dirname } from 'path';
@@ -198,6 +199,10 @@ export async function startWebServer(): Promise<void> {
       res.redirect(`http://${req.hostname}${portSuffix}${req.originalUrl}`);
     });
   }
+
+  // Compress all responses (JS/CSS/JSON) — reduces 483KB JS bundle to ~126KB over the wire.
+  // Level 1 = fastest compression, minimal CPU overhead. Threshold 1KB skips tiny responses.
+  app.use(compression({ level: 1, threshold: 1024 }));
 
   // Hashed assets (JS/CSS) get long cache; index.html always revalidates
   app.use(express.static(WEB_DIST, {

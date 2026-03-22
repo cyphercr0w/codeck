@@ -158,12 +158,21 @@ router.put('/files/write', async (req, res) => {
     return;
   }
 
-  // Only allow writing to existing files (no creating new ones via API)
+  // Allow writing to existing files OR creating new files in existing directories
+  // (needed for adding new rules, preferences, etc.)
   try {
     await access(fullPath);
   } catch {
-    res.status(404).json({ error: 'File not found' });
-    return;
+    // File doesn't exist — check if parent directory exists (allow creation there)
+    const { dirname: dirFn } = await import('path');
+    const parentDir = dirFn(fullPath);
+    try {
+      await access(parentDir);
+    } catch {
+      // Parent dir doesn't exist — create it (for rules/user/ etc.)
+      const { mkdir: mkdirFn } = await import('fs/promises');
+      await mkdirFn(parentDir, { recursive: true });
+    }
   }
 
   try {

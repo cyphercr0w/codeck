@@ -99,4 +99,55 @@ router.get('/export', async (_req, res) => {
   });
 });
 
+// Import workspace from tar.gz
+router.post('/import', async (req, res) => {
+  const { data } = req.body;
+  if (!data || typeof data !== 'string') {
+    res.status(400).json({ error: 'Base64-encoded tar.gz data required' });
+    return;
+  }
+
+  const buffer = Buffer.from(data, 'base64');
+  const MAX_IMPORT_SIZE = 500 * 1024 * 1024; // 500 MB
+  if (buffer.length > MAX_IMPORT_SIZE) {
+    res.status(413).json({ error: `Import too large (max ${MAX_IMPORT_SIZE / 1024 / 1024} MB)` });
+    return;
+  }
+
+  const { writeFile: writeFileAsync, rm, mkdir } = await import('fs/promises');
+  const { join } = await import('path');
+  const tmpDir = join(WORKSPACE, '.workspace-import-tmp-' + Date.now());
+
+  try {
+    await mkdir(tmpDir, { recursive: true });
+    const tmpFile = join(tmpDir, 'import.tar.gz');
+    await writeFileAsync(tmpFile, buffer);
+
+    // Extract into workspace — merge with existing files
+    await new Promise<void>((resolve, reject) => {
+      const extract = spawn('tar', [
+        'xzf', tmpFile, '-C', WORKSPACE,
+        '--no-same-owner',
+        '--no-same-permissions',
+        '--warning=no-timestamp',
+        '--skip-old-files', // don't overwrite existing files
+      ], { stdio: ['ignore', 'pipe', 'pipe'] });
+      let stderr = '';
+      extract.stderr.on('data', (d: Buffer) => { stderr += d.toString(); });
+      extract.on('error', reject);
+      extract.on('close', () => {
+        if (stderr) console.warn('[Workspace Import]', stderr.slice(0, 500));
+        resolve();
+      });
+    });
+
+    await rm(tmpDir, { recursive: true, force: true });
+    res.json({ success: true, message: 'Workspace imported' });
+  } catch (err) {
+    try { await rm(tmpDir, { recursive: true, force: true }); } catch { /* ignore */ }
+    console.error('[Workspace Import] Failed:', (err as Error).message);
+    res.status(500).json({ error: 'Import failed: ' + (err as Error).message });
+  }
+});
+
 export default router;

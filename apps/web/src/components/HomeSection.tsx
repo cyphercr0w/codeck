@@ -1,7 +1,7 @@
-import { useEffect, useState } from 'preact/hooks';
+import { useEffect, useState, useRef } from 'preact/hooks';
 import { accountEmail, claudeAuthenticated, claudeUsage, sessions, agentName, activePorts, wsConnected, dockerExperimental, setActiveSection } from '../state/store';
 import { apiFetch, getAuthToken, setAuthToken } from '../api';
-import { IconUser, IconMonitor, IconX, IconDownload, IconKey } from './Icons';
+import { IconUser, IconMonitor, IconX, IconDownload, IconPlus, IconKey } from './Icons';
 import { ConfirmModal } from './ConfirmModal';
 import { FilesBrowser } from './FilesSection';
 
@@ -78,6 +78,9 @@ export function HomeSection({ onRelogin, onLogout }: HomeSectionProps) {
   const [dashLoading, setDashLoading] = useState(true);
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
   const [exporting, setExporting] = useState(false);
+  const [wsImporting, setWsImporting] = useState(false);
+  const [wsImportMsg, setWsImportMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const wsImportRef = useRef<HTMLInputElement>(null);
   const [showChangePassword, setShowChangePassword] = useState(false);
   const [pwCurrent, setPwCurrent] = useState('');
   const [pwNew, setPwNew] = useState('');
@@ -301,8 +304,55 @@ export function HomeSection({ onRelogin, onLogout }: HomeSectionProps) {
               setTimeout(() => setExporting(false), 3000);
             }} disabled={exporting}>
               {exporting ? <span class="spinner-sm" /> : <IconDownload size={12} />}
-              Export workspace (.tar.gz)
+              Export workspace
             </button>
+            <button class="btn btn-xs btn-secondary" onClick={() => wsImportRef.current?.click()} disabled={wsImporting}>
+              {wsImporting ? <span class="spinner-sm" /> : <IconPlus size={12} />}
+              Import workspace
+            </button>
+            <input
+              ref={wsImportRef}
+              type="file"
+              accept=".tar.gz,.tgz"
+              style="display: none"
+              onChange={async (e: Event) => {
+                const file = (e.target as HTMLInputElement).files?.[0];
+                if (!file) return;
+                if (!file.name.endsWith('.tar.gz') && !file.name.endsWith('.tgz')) {
+                  setWsImportMsg({ type: 'error', text: 'File must be .tar.gz' });
+                  setTimeout(() => setWsImportMsg(null), 4000);
+                  return;
+                }
+                setWsImporting(true);
+                setWsImportMsg(null);
+                try {
+                  const base64 = await new Promise<string>((resolve, reject) => {
+                    const reader = new FileReader();
+                    reader.onload = () => resolve((reader.result as string).split(',')[1] || '');
+                    reader.onerror = () => reject(reader.error);
+                    reader.readAsDataURL(file);
+                  });
+                  const res = await apiFetch('/api/workspace/import', {
+                    method: 'POST',
+                    body: JSON.stringify({ data: base64 }),
+                  });
+                  if (res.status === 413) {
+                    setWsImportMsg({ type: 'error', text: 'File too large' });
+                  } else {
+                    const data = await res.json();
+                    setWsImportMsg(data.success
+                      ? { type: 'success', text: 'Workspace imported' }
+                      : { type: 'error', text: data.error || 'Import failed' });
+                  }
+                } catch {
+                  setWsImportMsg({ type: 'error', text: 'Import failed' });
+                }
+                setWsImporting(false);
+                (e.target as HTMLInputElement).value = '';
+                setTimeout(() => setWsImportMsg(null), 5000);
+              }}
+            />
+            {wsImportMsg && <span class={`mem-quick-msg mem-quick-msg-${wsImportMsg.type}`}>{wsImportMsg.text}</span>}
           </div>
         </div>
       </div>

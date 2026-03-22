@@ -15,8 +15,9 @@
   <style>
     :root { --bg-primary: #09090b; --accent: #8b5cf6; }
     body { margin: 0; background: var(--bg-primary); color: #fafafa; font-family: -apple-system, sans-serif; }
-    #app { height: 100dvh; display: flex; align-items: center; justify-content: center; }
-    .view-loading { text-align: center; }
+    #app { height: 100dvh; }
+    /* Only center the inline loading spinner — removed once Preact mounts */
+    #app > .view-loading { height: 100%; display: flex; align-items: center; justify-content: center; text-align: center; }
     @keyframes spin { to { transform: rotate(360deg); } }
     .spinner { width: 28px; height: 28px; border: 2px solid #333; border-top-color: var(--accent); border-radius: 50%; animation: spin 0.6s linear infinite; margin: 0 auto 12px; }
   </style>

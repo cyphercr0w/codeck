@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { apiFetch } from '../../api';
 import { IconPlus, IconX } from '../Icons';
+import { ConfirmModal } from '../ConfirmModal';
 
 interface SkillEntry {
   source: string;
@@ -22,6 +23,7 @@ export function SkillsTab() {
   const [loading, setLoading] = useState(false);
   const [installing, setInstalling] = useState<string | null>(null);
   const [uninstalling, setUninstalling] = useState<string | null>(null);
+  const [uninstallTarget, setUninstallTarget] = useState<string | null>(null);
   const [msg, setMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -148,7 +150,7 @@ export function SkillsTab() {
                 <span class="ac-list-item-name">{name}</span>
                 <button
                   class="btn btn-xs btn-ghost"
-                  onClick={() => handleUninstall(name)}
+                  onClick={() => setUninstallTarget(name)}
                   disabled={uninstalling !== null}
                   title="Remove skill"
                 >
@@ -159,6 +161,15 @@ export function SkillsTab() {
           </div>
         </div>
       )}
+
+      <ConfirmModal
+        visible={uninstallTarget !== null}
+        title="Remove Skill"
+        message={`Remove "${uninstallTarget}" from your installed skills? You can reinstall it later from the catalog.`}
+        confirmLabel="Remove"
+        onConfirm={() => { if (uninstallTarget) handleUninstall(uninstallTarget); setUninstallTarget(null); }}
+        onCancel={() => setUninstallTarget(null)}
+      />
     </div>
   );
 }

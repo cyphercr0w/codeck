@@ -36,8 +36,10 @@ const payload = JSON.stringify({
 });
 
 // Fire and forget — don't block Claude Code
+// Use 127.0.0.1 (not localhost) to hit the runtime directly without proxy auth
+const port = parseInt(process.env.CODECK_PORT || '80', 10);
 const req = request(
-  { hostname: 'localhost', port: 80, path: '/api/console/subagents', method: 'POST',
+  { hostname: '127.0.0.1', port, path: '/api/console/subagents', method: 'POST',
     headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(payload) },
     timeout: 2000 },
   () => {}

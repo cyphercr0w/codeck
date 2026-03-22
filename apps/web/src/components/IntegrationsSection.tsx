@@ -229,17 +229,26 @@ function TokenIntegrationDetail({ integ, onBack }: { integ: IntegrationDef; onBa
 
   return (
     <div class="integ-detail">
-      <button class="integ-back" onClick={onBack}>
-        <IconChevronLeft size={14} /> Back to Integrations
-      </button>
+      <div class="integ-detail-topbar">
+        <button class="btn btn-xs btn-ghost" onClick={onBack}>
+          <IconChevronLeft size={12} /> Integrations
+        </button>
+        {connected && (
+          <button class="btn btn-xs btn-ghost danger" onClick={handleDisconnect}>
+            <IconX size={11} /> Disconnect
+          </button>
+        )}
+      </div>
 
       <div class="integ-detail-header">
         <div class="integ-detail-icon">{integ.icon()}</div>
-        <div>
+        <div style="flex: 1">
           <h3 class="integ-detail-name">{integ.name}</h3>
           <p class="integ-detail-desc">{integ.description}</p>
         </div>
-        {connected && <span class="badge badge-success">Connected</span>}
+        <span class={`badge ${connected ? 'badge-success' : 'badge-muted'}`}>
+          {checking ? 'Checking...' : connected ? 'Connected' : 'Not connected'}
+        </span>
       </div>
 
       {msg && <div class={`fb-toast fb-toast-${msg.type}`}>{msg.text}</div>}
@@ -248,9 +257,6 @@ function TokenIntegrationDetail({ integ, onBack }: { integ: IntegrationDef; onBa
         <div class="integ-section-header">
           <IconKey size={14} />
           <span>API Token</span>
-          <span class={`badge ${connected ? 'badge-success' : 'badge-muted'}`}>
-            {checking ? 'Checking...' : connected ? 'Connected' : 'Not connected'}
-          </span>
         </div>
 
         <div class="integ-section-body">
@@ -259,9 +265,6 @@ function TokenIntegrationDetail({ integ, onBack }: { integ: IntegrationDef; onBa
               <p class="integ-section-info">
                 {integ.name} is connected. The MCP server is active and ready to use.
               </p>
-              <button class="btn btn-sm btn-ghost" onClick={handleDisconnect}>
-                Disconnect
-              </button>
             </div>
           ) : (
             <>

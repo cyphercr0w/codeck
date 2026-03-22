@@ -2325,6 +2325,13 @@
 /* Detail view */
 .integ-detail {}
 
+.integ-detail-topbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+}
+
 .integ-detail-header {
   display: flex;
   align-items: center;

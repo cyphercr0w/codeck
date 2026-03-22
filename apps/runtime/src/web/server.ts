@@ -338,7 +338,9 @@ export async function startWebServer(): Promise<void> {
     // a reverse proxy (e.g. nginx) and is NOT truly local. With trust proxy enabled,
     // req.ip already reflects the real client IP, but X-Forwarded-For presence is an
     // additional signal that the request was proxied from outside.
-    if (req.path.startsWith('/memory')) {
+    // Localhost bypass for internal APIs — agent hooks inside container post here directly.
+    const localBypassPaths = ['/memory', '/console/context', '/console/subagents'];
+    if (localBypassPaths.some(p => req.path.startsWith(p))) {
       const ip = req.ip || '';
       const isLocalIp = ip === '127.0.0.1' || ip === '::1' || ip === '::ffff:127.0.0.1';
       const isProxied = !!req.headers['x-forwarded-for'];

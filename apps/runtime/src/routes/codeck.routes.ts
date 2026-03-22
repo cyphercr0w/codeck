@@ -9,7 +9,37 @@ const execFileAsync = promisify(execFile);
 
 const WORKSPACE = resolve(process.env.WORKSPACE || '/workspace');
 const AGENT_DATA_DIR = join(WORKSPACE, '.codeck');
+const CLAUDE_JSON_PATH = join(process.env.HOME || '/root', '.claude.json');
 const router = Router();
+
+/**
+ * Sync an env var value into MCP server configs in .claude.json.
+ * When a user saves e.g. SUPABASE_ACCESS_TOKEN=xxx, we need to update
+ * the matching env field in mcpServers (or _disabledMcpServers) so
+ * Claude Code can pass it to the MCP subprocess on start.
+ */
+function syncEnvToMcpServers(key: string, value: string | null): void {
+  try {
+    const raw = readFileSync(CLAUDE_JSON_PATH, 'utf-8');
+    const config = JSON.parse(raw);
+    let changed = false;
+
+    for (const section of ['mcpServers', '_disabledMcpServers']) {
+      const servers = config[section];
+      if (!servers || typeof servers !== 'object') continue;
+      for (const serverConfig of Object.values(servers) as Array<{ env?: Record<string, string> }>) {
+        if (serverConfig.env && key in serverConfig.env) {
+          serverConfig.env[key] = value ?? '';
+          changed = true;
+        }
+      }
+    }
+
+    if (changed) {
+      writeFileSync(CLAUDE_JSON_PATH, JSON.stringify(config, null, 2));
+    }
+  } catch { /* non-fatal — .claude.json may not exist yet */ }
+}
 
 /**
  * Resolve a relative path against a base directory, validate it stays within bounds,
@@ -196,6 +226,8 @@ router.post('/env', (req, res) => {
     vars.push({ key, value });
   }
   writeEnvFile(vars);
+  // Sync to MCP server configs so Claude Code picks up the new value
+  syncEnvToMcpServers(key, value);
   res.json({ success: true });
 });
 
@@ -204,6 +236,8 @@ router.delete('/env', (req, res) => {
   if (!key) { res.status(400).json({ error: 'Key required' }); return; }
   const vars = parseEnvFile().filter(v => v.key !== key);
   writeEnvFile(vars);
+  // Clear the value in MCP configs (set to empty, don't remove the key)
+  syncEnvToMcpServers(key, '');
   res.json({ success: true });
 });
 

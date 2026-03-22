@@ -215,6 +215,7 @@ router.get('/search', async (req, res) => {
           name: string;
           title?: string;
           description?: string;
+          remotes?: Array<unknown>;
           packages?: Array<{
             registryType?: string;
             identifier?: string;
@@ -229,7 +230,9 @@ router.get('/search', async (req, res) => {
       }>;
     };
 
-    // Transform to a simpler format for the frontend
+    // Transform to a simpler format for the frontend.
+    // Many registry servers are remote-only (Smithery hosted) with no local packages.
+    // We include all but prioritize those with installable packages.
     const servers = (raw.servers || []).map(entry => {
       const s = entry.server;
       const pkg = s.packages?.[0];
@@ -252,9 +255,15 @@ router.get('/search', async (req, res) => {
         args = ['-y', pkg.identifier];
       }
 
+      // Derive a readable title from the registry name (e.g. "ai.smithery/faithk7-gmail-mcp" → "gmail-mcp")
+      const nameParts = s.name.split('/');
+      const shortName = nameParts[nameParts.length - 1] || s.name;
+      // Clean up smithery-style names: remove author prefix if present (e.g. "faithk7-gmail-mcp" → "gmail-mcp")
+      const cleanName = shortName.replace(/^[a-z0-9]+-/, '');
+
       return {
         registryName: s.name,
-        title: s.title || s.name.split('/').pop() || s.name,
+        title: s.title || cleanName || shortName,
         description: s.description || '',
         command,
         args,
@@ -263,9 +272,12 @@ router.get('/search', async (req, res) => {
           description: v.description || '',
           required: v.isRequired ?? false,
         })),
-        runtime: pkg?.runtimeHint || pkg?.registryType || 'unknown',
+        runtime: pkg?.runtimeHint || pkg?.registryType || (s.remotes?.length ? 'remote' : 'unknown'),
+        installable: !!command,
       };
-    });
+    })
+    // Sort: installable (local) servers first, then remote
+    .sort((a, b) => (b.installable ? 1 : 0) - (a.installable ? 1 : 0));
 
     const result = { servers };
     searchCache.set(cacheKey, { data: result, ts: Date.now() });

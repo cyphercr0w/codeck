@@ -726,16 +726,19 @@ export function SettingsSection() {
             <span>Settings</span>
           </div>
         </div>
-        <div class="dash-grid">
-          <PermissionsCard />
-          <EnvVarsCard />
-        </div>
-        <div style="margin-top: 24px; padding-top: 24px; border-top: 1px solid var(--border)">
+        <div style="margin-bottom: 24px">
           <h3 class="dash-title" style="margin-bottom: 16px"><IconShield size={14} /> Security</h3>
-          <ActiveSessionsCard />
+          <ChangePasswordCard />
+          <div style="margin-top: 16px">
+            <ActiveSessionsCard />
+          </div>
           <div style="margin-top: 16px">
             <AuthLogCard />
           </div>
+        </div>
+        <div style="padding-top: 24px; border-top: 1px solid var(--border)">
+          <h3 class="dash-title" style="margin-bottom: 16px"><IconPlug size={14} /> Ports</h3>
+          <PortMappingCard />
         </div>
       </div>
     </div>

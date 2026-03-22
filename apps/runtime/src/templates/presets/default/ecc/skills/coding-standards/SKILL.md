@@ -1,14 +1,7 @@
-<!--
-  Source: affaan-m/everything-claude-code (MIT License)
-  https://github.com/affaan-m/everything-claude-code
-  Author: Affaan Mustafa — integrated into Codeck with modifications.
--->
-
 ---
 name: coding-standards
-description: "TypeScript/React/Node.js code quality standards. Load when reviewing or starting new modules."
-context: fork
-allowed-tools: Read, Grep, Glob
+description: Universal coding standards, best practices, and patterns for TypeScript, JavaScript, React, and Node.js development.
+origin: ECC
 ---
 
 # Coding Standards & Best Practices

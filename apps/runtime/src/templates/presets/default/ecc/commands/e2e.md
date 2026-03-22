@@ -1,9 +1,3 @@
-<!--
-  Source: affaan-m/everything-claude-code (MIT License)
-  https://github.com/affaan-m/everything-claude-code
-  Author: Affaan Mustafa — integrated into Codeck with modifications.
--->
-
 ---
 description: Generate and run end-to-end tests with Playwright. Creates test journeys, runs tests, captures screenshots/videos/traces, and uploads artifacts.
 ---
@@ -343,8 +337,10 @@ For PMX, prioritize these E2E tests:
 
 ## Related Agents
 
-This command invokes the `e2e-runner` agent located at:
-`~/.claude/agents/e2e-runner.md`
+This command invokes the `e2e-runner` agent provided by ECC.
+
+For manual installs, the source file lives at:
+`agents/e2e-runner.md`
 
 ## Quick Commands
 

@@ -1,13 +1,3 @@
-<!--
-  Source: affaan-m/everything-claude-code (MIT License)
-  https://github.com/affaan-m/everything-claude-code
-  Author: Affaan Mustafa — integrated into Codeck with modifications.
--->
-
----
-description: "Fix build errors incrementally. Run when the build is failing."
----
-
 # Build and Fix
 
 Incrementally fix build and type errors with minimal, safe changes.

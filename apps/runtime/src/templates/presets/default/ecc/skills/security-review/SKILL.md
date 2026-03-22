@@ -1,14 +1,7 @@
-<!--
-  Source: affaan-m/everything-claude-code (MIT License)
-  https://github.com/affaan-m/everything-claude-code
-  Author: Affaan Mustafa — integrated into Codeck with modifications.
--->
-
 ---
 name: security-review
-description: "Security checklist for auth, input handling, secrets, and APIs. Load before security-sensitive code."
-context: fork
-allowed-tools: Read, Grep, Glob, Bash
+description: Use this skill when adding authentication, handling user input, working with secrets, creating API endpoints, or implementing payment/sensitive features. Provides comprehensive security checklist and patterns.
+origin: ECC
 ---
 
 # Security Review Skill

@@ -1,13 +1,3 @@
-<!--
-  Source: affaan-m/everything-claude-code (MIT License)
-  https://github.com/affaan-m/everything-claude-code
-  Author: Affaan Mustafa — integrated into Codeck with modifications.
--->
-
----
-description: "Regenerate codebase map files for improved navigation and context."
----
-
 # Update Codemaps
 
 Analyze the codebase structure and generate token-lean architecture documentation.

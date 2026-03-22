@@ -1,12 +1,7 @@
-<!--
-  Source: affaan-m/everything-claude-code (MIT License)
-  https://github.com/affaan-m/everything-claude-code
-  Author: Affaan Mustafa — integrated into Codeck with modifications.
--->
-
 ---
 name: tdd-workflow
-description: "TDD: write tests first, implement, verify 80%+ coverage. Load for features, fixes, or refactors."
+description: Use this skill when writing new features, fixing bugs, or refactoring code. Enforces test-driven development with 80%+ coverage including unit, integration, and E2E tests.
+origin: ECC
 ---
 
 # Test-Driven Development Workflow

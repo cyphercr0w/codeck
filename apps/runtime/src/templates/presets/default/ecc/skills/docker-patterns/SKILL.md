@@ -1,12 +1,7 @@
-<!--
-  Source: affaan-m/everything-claude-code (MIT License)
-  https://github.com/affaan-m/everything-claude-code
-  Author: Affaan Mustafa — integrated into Codeck with modifications.
--->
-
 ---
 name: docker-patterns
-description: "Docker and Compose patterns: builds, networking, volumes, security. Load for container work."
+description: Docker and Docker Compose patterns for local development, container security, networking, volume strategies, and multi-service orchestration.
+origin: ECC
 ---
 
 # Docker Patterns

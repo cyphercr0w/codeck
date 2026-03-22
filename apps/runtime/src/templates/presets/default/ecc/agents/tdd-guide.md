@@ -1,9 +1,3 @@
-<!--
-  Source: affaan-m/everything-claude-code (MIT License)
-  https://github.com/affaan-m/everything-claude-code
-  Author: Affaan Mustafa — integrated into Codeck with modifications.
--->
-
 ---
 name: tdd-guide
 description: Test-Driven Development specialist enforcing write-tests-first methodology. Use PROACTIVELY when writing new features, fixing bugs, or refactoring code. Ensures 80%+ test coverage.
@@ -84,3 +78,14 @@ npm run test:coverage
 - [ ] Coverage is 80%+
 
 For detailed mocking patterns and framework-specific examples, see `skill: tdd-workflow`.
+
+## v1.8 Eval-Driven TDD Addendum
+
+Integrate eval-driven development into TDD flow:
+
+1. Define capability + regression evals before implementation.
+2. Run baseline and capture failure signatures.
+3. Implement minimum passing change.
+4. Re-run tests and evals; report pass@1 and pass@3.
+
+Release-critical paths should target pass^3 stability before merge.

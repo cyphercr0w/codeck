@@ -1,12 +1,7 @@
-<!--
-  Source: affaan-m/everything-claude-code (MIT License)
-  https://github.com/affaan-m/everything-claude-code
-  Author: Affaan Mustafa — integrated into Codeck with modifications.
--->
-
 ---
 name: iterative-retrieval
-description: "Progressive context retrieval for subagents. Load when subagent context is insufficient."
+description: Pattern for progressively refining context retrieval to solve the subagent context problem
+origin: ECC
 ---
 
 # Iterative Retrieval Pattern
@@ -213,4 +208,4 @@ When retrieving context for this task:
 
 - [The Longform Guide](https://x.com/affaanmustafa/status/2014040193557471352) - Subagent orchestration section
 - `continuous-learning` skill - For patterns that improve over time
-- Agent definitions in `~/.claude/agents/`
+- Agent definitions bundled with ECC (manual install path: `agents/`)

@@ -28,273 +28,415 @@ interface IntegrationDef {
   description: string;
   icon: () => preact.JSX.Element;
   available: boolean;
+  // For token-based integrations
+  tokenBased?: boolean;
+  tokenEnvKey?: string;
+  tokenUrl?: string;
+  tokenHint?: string;
+  mcpServerName?: string;
 }
 
 const INTEGRATIONS: IntegrationDef[] = [
   {
     id: 'github',
     name: 'GitHub',
-    description: 'SSH keys and account authentication for repositories',
+    description: 'Repos, PRs, issues, and code search',
     icon: () => <IconGithub size={22} />,
     available: true,
+    mcpServerName: 'github',
   },
   {
-    id: 'gitlab',
-    name: 'GitLab',
-    description: 'Connect to GitLab repositories',
+    id: 'supabase',
+    name: 'Supabase',
+    description: 'Database, auth, storage, and edge functions',
     icon: () => <IconPackage size={22} />,
-    available: false,
+    available: true,
+    tokenBased: true,
+    tokenEnvKey: 'SUPABASE_ACCESS_TOKEN',
+    tokenUrl: 'https://supabase.com/dashboard/account/tokens',
+    tokenHint: 'Generate a token at supabase.com → Account → Access Tokens',
+    mcpServerName: 'supabase',
   },
   {
-    id: 'docker',
-    name: 'Docker Hub',
-    description: 'Pull and push container images',
+    id: 'vercel',
+    name: 'Vercel',
+    description: 'Deployments, projects, and domains',
     icon: () => <IconPackage size={22} />,
-    available: false,
+    available: true,
+    tokenBased: true,
+    tokenEnvKey: 'VERCEL_TOKEN',
+    tokenUrl: 'https://vercel.com/account/tokens',
+    tokenHint: 'Generate a token at vercel.com → Account → Tokens',
+    mcpServerName: 'vercel',
+  },
+  {
+    id: 'stripe',
+    name: 'Stripe',
+    description: 'Payments, subscriptions, and invoices',
+    icon: () => <IconPackage size={22} />,
+    available: true,
+    tokenBased: true,
+    tokenEnvKey: 'STRIPE_SECRET_KEY',
+    tokenUrl: 'https://dashboard.stripe.com/apikeys',
+    tokenHint: 'Copy your Secret Key from the Stripe Dashboard → API Keys',
+    mcpServerName: 'stripe',
+  },
+  {
+    id: 'notion',
+    name: 'Notion',
+    description: 'Pages, databases, and workspaces',
+    icon: () => <IconPackage size={22} />,
+    available: true,
+    tokenBased: true,
+    tokenEnvKey: 'NOTION_API_KEY',
+    tokenUrl: 'https://www.notion.so/my-integrations',
+    tokenHint: 'Create an integration at notion.so/my-integrations and copy the secret',
+    mcpServerName: 'notion',
   },
 ];
+
+// ── Token-Based Integration Detail ──
+
+function TokenIntegrationDetail({ integ, onBack }: { integ: IntegrationDef; onBack: () => void }) {
+  const [token, setToken] = useState('');
+  const [connected, setConnected] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [msg, setMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [checking, setChecking] = useState(true);
+
+  // Check if already connected (env var exists)
+  useEffect(() => {
+    setChecking(true);
+    apiFetch('/api/codeck/env')
+      .then(r => r.json())
+      .then(data => {
+        const vars = data.vars || [];
+        setConnected(vars.some((v: { key: string; hasValue: boolean }) => v.key === integ.tokenEnvKey && v.hasValue));
+      })
+      .catch(() => {})
+      .finally(() => setChecking(false));
+  }, []);
+
+  async function handleConnect() {
+    if (!token.trim()) return;
+    setSaving(true);
+    setMsg(null);
+    try {
+      // Save token as env var
+      const envRes = await apiFetch('/api/codeck/env', {
+        method: 'POST',
+        body: JSON.stringify({ key: integ.tokenEnvKey, value: token.trim() }),
+      });
+      const envData = await envRes.json();
+      if (!envData.success) {
+        setMsg({ type: 'error', text: envData.error || 'Failed to save token' });
+        setSaving(false);
+        return;
+      }
+
+      // Enable the MCP server if it's disabled
+      if (integ.mcpServerName) {
+        try {
+          // Check current MCP servers
+          const mcpRes = await apiFetch('/api/mcp-servers');
+          const mcpData = await mcpRes.json();
+          const servers = mcpData.servers || [];
+          const server = servers.find((s: { name: string }) => s.name === integ.mcpServerName);
+
+          if (server && !server.enabled) {
+            // Enable it
+            await apiFetch(`/api/mcp-servers/${encodeURIComponent(integ.mcpServerName!)}/toggle`, { method: 'POST' });
+          } else if (!server) {
+            // Server doesn't exist yet — add it from disabled list
+            await apiFetch(`/api/mcp-servers/${encodeURIComponent(integ.mcpServerName!)}/toggle`, { method: 'POST' });
+          }
+        } catch { /* MCP enable is best-effort */ }
+      }
+
+      setConnected(true);
+      setToken('');
+      setMsg({ type: 'success', text: `${integ.name} connected! MCP server enabled.` });
+    } catch {
+      setMsg({ type: 'error', text: 'Connection error' });
+    }
+    setSaving(false);
+    setTimeout(() => setMsg(null), 4000);
+  }
+
+  async function handleDisconnect() {
+    try {
+      // Remove env var
+      await apiFetch('/api/codeck/env', {
+        method: 'DELETE',
+        body: JSON.stringify({ key: integ.tokenEnvKey }),
+      });
+
+      // Disable MCP server
+      if (integ.mcpServerName) {
+        try {
+          const mcpRes = await apiFetch('/api/mcp-servers');
+          const mcpData = await mcpRes.json();
+          const server = (mcpData.servers || []).find((s: { name: string; enabled: boolean }) => s.name === integ.mcpServerName && s.enabled);
+          if (server) {
+            await apiFetch(`/api/mcp-servers/${encodeURIComponent(integ.mcpServerName!)}/toggle`, { method: 'POST' });
+          }
+        } catch { /* best-effort */ }
+      }
+
+      setConnected(false);
+      setMsg({ type: 'success', text: `${integ.name} disconnected` });
+    } catch {
+      setMsg({ type: 'error', text: 'Failed to disconnect' });
+    }
+    setTimeout(() => setMsg(null), 3000);
+  }
+
+  return (
+    <div class="integ-detail">
+      <button class="integ-back" onClick={onBack}>
+        <IconChevronLeft size={14} /> Back to Integrations
+      </button>
+
+      <div class="integ-detail-header">
+        <div class="integ-detail-icon">{integ.icon()}</div>
+        <div>
+          <h3 class="integ-detail-name">{integ.name}</h3>
+          <p class="integ-detail-desc">{integ.description}</p>
+        </div>
+        {connected && <span class="badge badge-success">Connected</span>}
+      </div>
+
+      {msg && <div class={`fb-toast fb-toast-${msg.type}`}>{msg.text}</div>}
+
+      <div class="integ-section">
+        <div class="integ-section-header">
+          <IconKey size={14} />
+          <span>API Token</span>
+          <span class={`badge ${connected ? 'badge-success' : 'badge-muted'}`}>
+            {checking ? 'Checking...' : connected ? 'Connected' : 'Not connected'}
+          </span>
+        </div>
+
+        <div class="integ-section-body">
+          {connected ? (
+            <div class="integ-connected-info">
+              <p class="integ-section-info">
+                {integ.name} is connected. The MCP server is active and ready to use.
+              </p>
+              <button class="btn btn-sm btn-ghost" onClick={handleDisconnect}>
+                Disconnect
+              </button>
+            </div>
+          ) : (
+            <>
+              <p class="integ-section-info">{integ.tokenHint}</p>
+              {integ.tokenUrl && (
+                <p class="integ-section-info">
+                  <a href={integ.tokenUrl} target="_blank" rel="noopener noreferrer" style="color: var(--accent)">
+                    Open {integ.name} Dashboard →
+                  </a>
+                </p>
+              )}
+              <div style="display: flex; gap: 8px; margin-top: 8px">
+                <input
+                  class="input"
+                  type="password"
+                  placeholder={`Paste your ${integ.name} token`}
+                  value={token}
+                  onInput={e => setToken((e.target as HTMLInputElement).value)}
+                  onKeyDown={e => e.key === 'Enter' && handleConnect()}
+                  style="flex: 1"
+                />
+                <button class="btn btn-sm btn-primary" onClick={handleConnect} disabled={saving || !token.trim()}>
+                  {saving ? <span class="spinner-sm" /> : 'Connect'}
+                </button>
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
 
 // ── GitHub Detail ──
 
 function GitHubDetail({ onBack }: { onBack: () => void }) {
   const [ssh, setSSH] = useState<SSHStatus>({ hasKey: false, publicKey: null, authenticated: false });
-  const [github, setGitHub] = useState<GitHubStatus>({ authenticated: false, loginInProgress: false, code: null, url: null, username: null, email: null, avatarUrl: null });
-  const [loading, setLoading] = useState(true);
-  const [sshGenerating, setSSHGenerating] = useState(false);
+  const [github, setGitHub] = useState<GitHubStatus>({
+    authenticated: false, loginInProgress: false,
+    code: null, url: null, username: null, email: null, avatarUrl: null,
+  });
+  const [generating, setGenerating] = useState(false);
+  const [testing, setTesting] = useState(false);
   const [ghConnecting, setGhConnecting] = useState(false);
   const [copied, setCopied] = useState(false);
-  const [error, setError] = useState('');
-  const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const [msg, setMsg] = useState('');
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
-    loadStatus();
-    return () => {
-      if (pollIntervalRef.current) {
-        clearInterval(pollIntervalRef.current);
-        pollIntervalRef.current = null;
-      }
-    };
+    loadSSH();
+    loadGitHub();
+    return () => { if (pollRef.current) clearInterval(pollRef.current); };
   }, []);
 
-  async function loadStatus() {
-    setLoading(true);
-    setError('');
+  async function loadSSH() {
     try {
-      const [sshRes, ghRes] = await Promise.all([
-        apiFetch('/api/ssh/status'),
-        apiFetch('/api/github/login-status'),
-      ]);
-      const sshData = await sshRes.json();
-      const ghData = await ghRes.json();
-
-      const sshState: SSHStatus = { hasKey: sshData.hasKey, publicKey: null, authenticated: false };
-      if (sshData.hasKey) {
-        try {
-          const [pubRes, testRes] = await Promise.all([
-            apiFetch('/api/ssh/public-key'),
-            apiFetch('/api/ssh/test'),
-          ]);
-          const pubData = await pubRes.json();
-          const testData = await testRes.json();
-          sshState.publicKey = pubData.publicKey || null;
-          sshState.authenticated = testData.authenticated || false;
-        } catch { /* ignore */ }
-      }
-
-      setSSH(sshState);
-      setGitHub({
-        authenticated: ghData.authenticated || false,
-        loginInProgress: ghData.inProgress || false,
-        code: ghData.code || null,
-        url: ghData.url || null,
-        username: ghData.username || null,
-        email: ghData.email || null,
-        avatarUrl: ghData.avatarUrl || null,
+      const res = await apiFetch('/api/ssh/status');
+      const data = await res.json();
+      setSSH({
+        hasKey: data.hasKey || false,
+        publicKey: data.publicKey || null,
+        authenticated: data.authenticated || false,
       });
-    } catch {
-      setError('Error loading status');
-    } finally {
-      setLoading(false);
-    }
+    } catch { /* ignore */ }
   }
 
-  async function handleGenerateSSH(force = false) {
-    setSSHGenerating(true);
-    setError('');
+  async function loadGitHub() {
+    try {
+      const res = await apiFetch('/api/github/login-status');
+      const data = await res.json();
+      setGitHub(data);
+    } catch { /* ignore */ }
+  }
+
+  async function handleGenerate(force = false) {
+    setGenerating(true);
+    setMsg('');
     try {
       const res = await apiFetch('/api/ssh/generate', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ force }),
       });
       const data = await res.json();
-      if (data.success) await loadStatus();
-      else setError(data.error || 'Error generating SSH key');
+      if (data.success) {
+        setMsg('SSH key generated');
+        loadSSH();
+      } else {
+        setMsg(data.error || 'Generation failed');
+      }
     } catch {
-      setError('Connection error');
-    } finally {
-      setSSHGenerating(false);
+      setMsg('Error generating key');
     }
+    setGenerating(false);
   }
 
-  async function handleCopyKey() {
+  async function handleTest() {
+    setTesting(true);
+    try {
+      const res = await apiFetch('/api/ssh/test');
+      const data = await res.json();
+      if (data.authenticated) {
+        setSSH(prev => ({ ...prev, authenticated: true }));
+        setMsg('SSH connection successful');
+      } else {
+        setMsg('SSH test failed — add key to GitHub first');
+      }
+    } catch {
+      setMsg('Test failed');
+    }
+    setTesting(false);
+  }
+
+  async function handleCopy() {
     if (!ssh.publicKey) return;
     try {
       await navigator.clipboard.writeText(ssh.publicKey);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
-    } catch {
-      const el = document.querySelector('.integ-key-text') as HTMLElement;
-      if (el) {
-        const range = document.createRange();
-        range.selectNodeContents(el);
-        window.getSelection()?.removeAllRanges();
-        window.getSelection()?.addRange(range);
-      }
-    }
-  }
-
-  async function handleDeleteSSH() {
-    if (!confirm('Delete your SSH key? You will need to generate a new one.')) return;
-    setError('');
-    try {
-      const res = await apiFetch('/api/ssh/key', { method: 'DELETE' });
-      const data = await res.json();
-      if (data.success) await loadStatus();
-      else setError(data.error || 'Error deleting SSH key');
-    } catch {
-      setError('Connection error');
-    }
+    } catch { /* ignore */ }
   }
 
   async function handleGitHubLogin() {
-    setError('');
     setGhConnecting(true);
     try {
       const res = await apiFetch('/api/github/login', { method: 'POST' });
       const data = await res.json();
-      if (data.started) {
-        pollGitHubLogin();
-        // Stay in connecting state — poll will update github state which re-renders
-      } else {
-        setGhConnecting(false);
+      if (data.code) {
+        setGitHub(prev => ({
+          ...prev,
+          loginInProgress: true,
+          code: data.code,
+          url: data.url,
+        }));
+        // Poll for completion
+        if (pollRef.current) clearInterval(pollRef.current);
+        pollRef.current = setInterval(async () => {
+          try {
+            const r = await apiFetch('/api/github/login-status');
+            const d = await r.json();
+            if (d.authenticated) {
+              if (pollRef.current) clearInterval(pollRef.current);
+              setGitHub(d);
+              setGhConnecting(false);
+            }
+          } catch { /* retry */ }
+        }, 2000);
       }
     } catch {
-      setError('Error starting GitHub login');
       setGhConnecting(false);
     }
   }
 
-  function pollGitHubLogin() {
-    if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
-    const startTime = Date.now();
-    pollIntervalRef.current = setInterval(async () => {
-      if (Date.now() - startTime > 20 * 60 * 1000) {
-        clearInterval(pollIntervalRef.current!);
-        pollIntervalRef.current = null;
-        setGitHub(prev => ({ ...prev, loginInProgress: false }));
-        setError('Login timed out. Please try again.');
-        return;
-      }
-      try {
-        const res = await apiFetch('/api/github/login-status');
-        const data = await res.json();
-        setGitHub({
-          authenticated: data.authenticated || false,
-          loginInProgress: data.inProgress || false,
-          code: data.code || null,
-          url: data.url || null,
-          username: data.username || null,
-          email: data.email || null,
-          avatarUrl: data.avatarUrl || null,
-        });
-        // Clear connecting spinner once device code arrives or login completes
-        if (data.code || !data.inProgress) setGhConnecting(false);
-        if (!data.inProgress) {
-          clearInterval(pollIntervalRef.current!);
-          pollIntervalRef.current = null;
-        }
-      } catch {
-        clearInterval(pollIntervalRef.current!);
-        pollIntervalRef.current = null;
-      }
-    }, 2000);
-  }
-
-  if (loading) {
-    return (
-      <div class="integ-detail">
-        <button class="btn btn-xs btn-ghost" onClick={onBack} style="margin-bottom: 16px">
-          <IconChevronLeft size={14} /> Back
-        </button>
-        <div style="display: flex; justify-content: center; padding: 48px">
-          <span class="spinner-lg" />
-        </div>
-      </div>
-    );
-  }
-
   return (
     <div class="integ-detail">
-      <button class="btn btn-xs btn-ghost" onClick={onBack} style="margin-bottom: 16px">
-        <IconChevronLeft size={14} /> Integrations
+      <button class="integ-back" onClick={onBack}>
+        <IconChevronLeft size={14} /> Back to Integrations
       </button>
 
       <div class="integ-detail-header">
-        <IconGithub size={24} />
+        <div class="integ-detail-icon"><IconGithub size={28} /></div>
         <div>
-          <h2 class="integ-detail-title">GitHub</h2>
-          <p class="integ-detail-desc">Connect to GitHub repositories via SSH or HTTPS</p>
+          <h3 class="integ-detail-name">GitHub</h3>
+          <p class="integ-detail-desc">SSH keys and account authentication for repositories</p>
         </div>
+        {github.authenticated && <span class="badge badge-success">Connected</span>}
       </div>
 
-      {error && <div class="integ-error">{error}</div>}
+      {msg && <div class={`fb-toast fb-toast-${msg.includes('fail') || msg.includes('Error') ? 'error' : 'success'}`}>{msg}</div>}
 
       {/* SSH Section */}
       <div class="integ-section">
         <div class="integ-section-header">
           <IconKey size={14} />
-          <span>Connect via SSH</span>
-          <span class={`badge ${ssh.hasKey ? (ssh.authenticated ? 'badge-success' : 'badge-warning') : 'badge-muted'}`}>
-            {ssh.hasKey ? (ssh.authenticated ? 'Connected' : 'Key generated') : 'Not configured'}
+          <span>SSH Key</span>
+          <span class={`badge ${ssh.hasKey ? (ssh.authenticated ? 'badge-success' : 'badge-info') : 'badge-muted'}`}>
+            {ssh.hasKey ? (ssh.authenticated ? 'Verified' : 'Key exists') : 'No key'}
           </span>
         </div>
 
         <div class="integ-section-body">
-          {!ssh.hasKey ? (
+          {ssh.hasKey ? (
             <>
-              <p class="integ-section-info">Generate an SSH key pair to access private repositories via git@github.com.</p>
-              <button class="btn btn-sm btn-primary" onClick={() => handleGenerateSSH()} disabled={sshGenerating}>
-                {sshGenerating ? <span class="spinner-sm" /> : <IconKey size={13} />}
-                Generate SSH key
-              </button>
-            </>
-          ) : (
-            <>
-              <div class="integ-key-block">
-                <label class="integ-key-label">Public key</label>
-                <div class="integ-key-container">
-                  <code class="integ-key-text">{ssh.publicKey || 'Loading...'}</code>
-                </div>
-                <div class="integ-key-actions">
-                  <button class="btn btn-xs btn-secondary" onClick={handleCopyKey}>
-                    {copied ? <><IconCheck size={11} /> Copied</> : <><IconCopy size={11} /> Copy</>}
-                  </button>
-                  <button class="btn btn-xs btn-ghost" onClick={() => handleGenerateSSH(true)} disabled={sshGenerating}>
-                    {sshGenerating ? <span class="spinner-sm" /> : <IconRefresh size={11} />}
-                    Regenerate
-                  </button>
-                  <button class="btn btn-xs btn-ghost danger" onClick={handleDeleteSSH}>
-                    <IconX size={11} /> Delete
-                  </button>
-                </div>
+              <div class="integ-pubkey-box">
+                <code class="integ-pubkey">{ssh.publicKey || '...'}</code>
+                <button class="btn btn-xs btn-ghost" onClick={handleCopy} title="Copy">
+                  {copied ? <IconCheck size={12} /> : <IconCopy size={12} />}
+                </button>
               </div>
               <p class="integ-section-hint">
                 Add this key at{' '}
-                <a href="https://github.com/settings/ssh/new" target="_blank" rel="noopener noreferrer">
-                  github.com/settings/ssh/new
+                <a href="https://github.com/settings/keys" target="_blank" rel="noopener noreferrer">
+                  github.com/settings/keys
                 </a>
               </p>
+              <div class="integ-actions">
+                <button class="btn btn-xs btn-secondary" onClick={handleTest} disabled={testing}>
+                  {testing ? <span class="spinner-sm" /> : <IconRefresh size={11} />}
+                  Test Connection
+                </button>
+                <button class="btn btn-xs btn-ghost" onClick={() => handleGenerate(true)} disabled={generating}>
+                  Regenerate
+                </button>
+              </div>
+            </>
+          ) : (
+            <>
+              <p class="integ-section-info">Generate an SSH key to clone repos via SSH.</p>
+              <button class="btn btn-sm btn-primary" onClick={() => handleGenerate(false)} disabled={generating}>
+                {generating ? <span class="spinner-sm" /> : <IconKey size={13} />}
+                Generate SSH Key
+              </button>
             </>
           )}
         </div>
@@ -357,23 +499,60 @@ function GitHubDetail({ onBack }: { onBack: () => void }) {
 
 export function IntegrationsSection() {
   const [selected, setSelected] = useState<string | null>(null);
-  const [ghAuth, setGhAuth] = useState(false);
+  const [connectedServices, setConnectedServices] = useState<Set<string>>(new Set());
 
+  // Check which services are connected
   useEffect(() => {
-    apiFetch('/api/github/login-status')
-      .then(r => r.json())
-      .then(d => setGhAuth(d.authenticated || false))
-      .catch(() => {});
+    async function checkConnections() {
+      const connected = new Set<string>();
+
+      // GitHub via gh CLI
+      try {
+        const ghRes = await apiFetch('/api/github/login-status');
+        const ghData = await ghRes.json();
+        if (ghData.authenticated) connected.add('github');
+      } catch { /* ignore */ }
+
+      // Token-based services via env vars
+      try {
+        const envRes = await apiFetch('/api/codeck/env');
+        const envData = await envRes.json();
+        const vars = new Set((envData.vars || []).filter((v: { hasValue: boolean }) => v.hasValue).map((v: { key: string }) => v.key));
+
+        for (const integ of INTEGRATIONS) {
+          if (integ.tokenEnvKey && vars.has(integ.tokenEnvKey)) {
+            connected.add(integ.id);
+          }
+        }
+      } catch { /* ignore */ }
+
+      setConnectedServices(connected);
+    }
+
+    checkConnections();
   }, [selected]); // re-check when returning from detail view
 
-  if (selected === 'github') {
-    return (
-      <div class="content-section">
-        <div class="integ-content">
-          <GitHubDetail onBack={() => setSelected(null)} />
+  // Render detail view
+  const selectedInteg = INTEGRATIONS.find(i => i.id === selected);
+  if (selectedInteg) {
+    if (selectedInteg.id === 'github') {
+      return (
+        <div class="content-section">
+          <div class="integ-content">
+            <GitHubDetail onBack={() => setSelected(null)} />
+          </div>
         </div>
-      </div>
-    );
+      );
+    }
+    if (selectedInteg.tokenBased) {
+      return (
+        <div class="content-section">
+          <div class="integ-content">
+            <TokenIntegrationDetail integ={selectedInteg} onBack={() => setSelected(null)} />
+          </div>
+        </div>
+      );
+    }
   }
 
   return (
@@ -401,7 +580,7 @@ export function IntegrationsSection() {
                 <span class="integ-tile-desc">{integ.description}</span>
               </div>
               {!integ.available && <span class="badge badge-muted">Coming soon</span>}
-              {integ.id === 'github' && ghAuth && <span class="badge badge-success">Connected</span>}
+              {connectedServices.has(integ.id) && <span class="badge badge-success">Connected</span>}
             </button>
           ))}
         </div>

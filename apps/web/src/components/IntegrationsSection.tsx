@@ -606,7 +606,11 @@ export function IntegrationsSection() {
         </div>
 
         <div class="integ-grid">
-          {INTEGRATIONS.map(integ => (
+          {[...INTEGRATIONS].sort((a, b) => {
+            const aC = connectedServices.has(a.id) ? 0 : 1;
+            const bC = connectedServices.has(b.id) ? 0 : 1;
+            return aC - bC;
+          }).map(integ => (
             <button
               key={integ.id}
               class={`integ-tile${!integ.available ? ' disabled' : ''}`}

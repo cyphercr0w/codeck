@@ -367,17 +367,35 @@ export function ClaudeSection({ onNewSession, onNewShell }: ClaudeSectionProps) 
   async function resumeConversation(convId: string, cwd: string) {
     if (newTabLoading) return; // prevent double-click
     setNewTabLoading(true);
-    try {
-      const res = await apiFetch('/api/console/resume', {
-        method: 'POST',
-        body: JSON.stringify({ conversationId: convId, cwd }),
-      });
-      const data = await res.json();
-      if (data.sessionId) {
-        addSession({ id: data.sessionId, type: 'agent', cwd: data.cwd, name: data.name || cwd.split('/').pop() || 'session', createdAt: Date.now(), conversationId: convId });
-        setActiveSessionId(data.sessionId);
+
+    // Retry once after a short delay — handles the race where a session was
+    // just destroyed but the server hasn't freed the slot yet.
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        const res = await apiFetch('/api/console/resume', {
+          method: 'POST',
+          body: JSON.stringify({ conversationId: convId, cwd }),
+        });
+        const data = await res.json();
+        if (data.sessionId) {
+          addSession({ id: data.sessionId, type: 'agent', cwd: data.cwd, name: data.name || cwd.split('/').pop() || 'session', createdAt: Date.now(), conversationId: convId });
+          setActiveSessionId(data.sessionId);
+          mountTerminalForSession(data.sessionId, data.cwd || cwd, data.name);
+          break; // success
+        }
+        if (data.error && attempt === 0) {
+          // First attempt failed (likely MAX_SESSIONS race) — wait and retry
+          await new Promise(r => setTimeout(r, 500));
+          continue;
+        }
+      } catch {
+        if (attempt === 0) {
+          await new Promise(r => setTimeout(r, 500));
+          continue;
+        }
       }
-    } catch { /* non-fatal */ }
+    }
+
     setNewTabLoading(false);
     setShowNewSessionMenu(false);
   }
@@ -390,11 +408,16 @@ export function ClaudeSection({ onNewSession, onNewShell }: ClaudeSectionProps) 
     });
   }
 
-  function closeSession(id: string) {
-    apiFetch('/api/console/destroy', {
-      method: 'POST',
-      body: JSON.stringify({ sessionId: id }),
-    }).catch(() => {});
+  async function closeSession(id: string) {
+    // Await destroy so the server frees the session slot before any new
+    // session creation. Without this, rapid close→resume fails because
+    // the server still counts the old session against MAX_SESSIONS.
+    try {
+      await apiFetch('/api/console/destroy', {
+        method: 'POST',
+        body: JSON.stringify({ sessionId: id }),
+      });
+    } catch { /* proceed with local cleanup regardless */ }
     destroyTerminal(id);
     const el = document.getElementById('term-' + id);
     if (el) el.remove();

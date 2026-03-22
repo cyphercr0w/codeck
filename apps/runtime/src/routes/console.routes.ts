@@ -258,4 +258,142 @@ router.get('/context', (_req, res) => {
   res.json(contextData || { contextPercent: 0, contextTokens: 0, contextWindow: 0, model: '', updatedAt: 0 });
 });
 
+// ── Subagent tracking — real-time panel for background sub-agents ──
+
+import { watch, type FSWatcher } from 'fs';
+import { readFile } from 'fs/promises';
+
+interface ActiveSubagent {
+  agentId: string;
+  agentType: string;
+  sessionId: string;
+  cwd: string;
+  transcriptPath: string;
+  startedAt: number;
+  lastLine: string;
+  linesRead: number;
+}
+
+const activeSubagents = new Map<string, ActiveSubagent>();
+const transcriptWatchers = new Map<string, FSWatcher>();
+
+/** Parse a JSONL transcript line and extract a human-readable summary */
+function summarizeTranscriptLine(line: string): string | null {
+  try {
+    const entry = JSON.parse(line);
+    // Assistant text content
+    if (entry.type === 'assistant' && entry.message?.content) {
+      for (const block of entry.message.content) {
+        if (block.type === 'text' && block.text) {
+          return block.text.slice(0, 200);
+        }
+        if (block.type === 'tool_use') {
+          const input = typeof block.input === 'string' ? block.input.slice(0, 100) : JSON.stringify(block.input).slice(0, 100);
+          return `[${block.name}] ${input}`;
+        }
+      }
+    }
+    // Tool result
+    if (entry.type === 'tool_result') {
+      return `[result] ${String(entry.content || '').slice(0, 150)}`;
+    }
+  } catch { /* not valid JSON line */ }
+  return null;
+}
+
+/** Start watching a subagent's transcript file for real-time output */
+function startTranscriptWatch(agentId: string, transcriptPath: string): void {
+  if (!transcriptPath || !existsSync(transcriptPath)) return;
+  if (transcriptWatchers.has(agentId)) return;
+
+  let lastSize = 0;
+  try { lastSize = statSync(transcriptPath).size; } catch { /* new file */ }
+
+  const watcher = watch(transcriptPath, async () => {
+    const agent = activeSubagents.get(agentId);
+    if (!agent) { watcher.close(); transcriptWatchers.delete(agentId); return; }
+
+    try {
+      const content = await readFile(transcriptPath, 'utf-8');
+      const lines = content.split('\n').filter(l => l.trim());
+      const newLines = lines.slice(agent.linesRead);
+
+      for (const line of newLines) {
+        const summary = summarizeTranscriptLine(line);
+        if (summary) {
+          agent.lastLine = summary;
+          broadcast({
+            type: 'subagent:output',
+            data: { agentId, agentType: agent.agentType, text: summary },
+          });
+        }
+      }
+      agent.linesRead = lines.length;
+    } catch { /* file might be locked */ }
+  });
+
+  transcriptWatchers.set(agentId, watcher);
+}
+
+/** Clean up watcher for a completed subagent */
+function stopTranscriptWatch(agentId: string): void {
+  const watcher = transcriptWatchers.get(agentId);
+  if (watcher) { watcher.close(); transcriptWatchers.delete(agentId); }
+}
+
+router.post('/subagents', (req, res) => {
+  const { event, agentId, agentType, sessionId, cwd, transcriptPath, lastMessage } = req.body;
+
+  if (event === 'SubagentStart') {
+    activeSubagents.set(agentId, {
+      agentId, agentType, sessionId, cwd,
+      transcriptPath: transcriptPath || '',
+      startedAt: Date.now(),
+      lastLine: '',
+      linesRead: 0,
+    });
+
+    broadcast({
+      type: 'subagent:start',
+      data: { agentId, agentType, sessionId, cwd, startedAt: Date.now() },
+    });
+
+    // Start watching the transcript file for streaming output
+    if (transcriptPath) {
+      // Small delay — file may not exist yet when SubagentStart fires
+      setTimeout(() => startTranscriptWatch(agentId, transcriptPath), 500);
+    }
+  }
+
+  if (event === 'SubagentStop') {
+    const agent = activeSubagents.get(agentId);
+    const duration = agent ? Date.now() - agent.startedAt : 0;
+
+    stopTranscriptWatch(agentId);
+    activeSubagents.delete(agentId);
+
+    broadcast({
+      type: 'subagent:stop',
+      data: {
+        agentId, agentType, sessionId,
+        duration,
+        lastMessage: lastMessage || agent?.lastLine || '',
+      },
+    });
+  }
+
+  res.json({ ok: true });
+});
+
+router.get('/subagents', (_req, res) => {
+  const agents = [...activeSubagents.values()].map(a => ({
+    agentId: a.agentId,
+    agentType: a.agentType,
+    startedAt: a.startedAt,
+    lastLine: a.lastLine,
+    elapsed: Date.now() - a.startedAt,
+  }));
+  res.json({ agents });
+});
+
 export default router;

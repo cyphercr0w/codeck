@@ -6,6 +6,7 @@ import { wsSend, setTerminalHandlers, attachSession, setOnSessionReattached, set
 import { IconPlus, IconX, IconShell, IconTerminal, IconRefresh } from './Icons';
 import { MobileTerminalToolbar } from './MobileTerminalToolbar';
 import { UploadOverlay } from './UploadOverlay';
+import { SubagentPanel } from './SubagentPanel';
 
 const IMAGE_MIME_TYPES = new Set(['image/png', 'image/jpeg', 'image/gif', 'image/webp']);
 
@@ -604,6 +605,7 @@ export function ClaudeSection({ onNewSession, onNewShell }: ClaudeSectionProps) 
         )}
       </div>
       <UploadOverlay file={pendingFile} onDone={() => setPendingFile(null)} />
+      <SubagentPanel />
       {activeId && !mobile && <TerminalStatusBar />}
     </div>
   );

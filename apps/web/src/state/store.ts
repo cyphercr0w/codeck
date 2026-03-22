@@ -349,6 +349,40 @@ export function setContextData(data: ContextData): void {
   contextData.value = data;
 }
 
+// ── Sub-agent tracking (real-time panel) ──
+
+export interface SubagentInfo {
+  agentId: string;
+  agentType: string;
+  startedAt: number;
+  lastLine: string;
+  duration?: number;
+  lastMessage?: string;
+}
+
+export const activeSubagents = signal<SubagentInfo[]>([]);
+
+export function addSubagent(data: { agentId: string; agentType: string; startedAt: number }): void {
+  activeSubagents.value = [...activeSubagents.value, { ...data, lastLine: '' }];
+}
+
+export function updateSubagentOutput(agentId: string, text: string): void {
+  activeSubagents.value = activeSubagents.value.map(a =>
+    a.agentId === agentId ? { ...a, lastLine: text } : a
+  );
+}
+
+export function removeSubagent(agentId: string, duration?: number, lastMessage?: string): void {
+  // Keep completed agents briefly so UI can show the result
+  activeSubagents.value = activeSubagents.value.map(a =>
+    a.agentId === agentId ? { ...a, duration, lastMessage: lastMessage || a.lastLine } : a
+  );
+  // Remove after 5s
+  setTimeout(() => {
+    activeSubagents.value = activeSubagents.value.filter(a => a.agentId !== agentId);
+  }, 5000);
+}
+
 let usagePollTimer: ReturnType<typeof setInterval> | null = null;
 
 export function startUsagePolling(fetchFn: (url: string, opts?: RequestInit) => Promise<Response>): void {

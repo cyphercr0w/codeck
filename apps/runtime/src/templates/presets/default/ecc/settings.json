@@ -465,6 +465,30 @@
 				],
 				"description": "Track failed MCP tool calls, mark unhealthy servers, and attempt reconnect"
 			}
+		],
+		"SubagentStart": [
+			{
+				"matcher": "",
+				"hooks": [
+					{
+						"type": "command",
+						"command": "node /workspace/.codeck/scripts/subagent-tracker.mjs"
+					}
+				],
+				"description": "Track subagent lifecycle for real-time UI panel"
+			}
+		],
+		"SubagentStop": [
+			{
+				"matcher": "",
+				"hooks": [
+					{
+						"type": "command",
+						"command": "node /workspace/.codeck/scripts/subagent-tracker.mjs"
+					}
+				],
+				"description": "Track subagent completion for real-time UI panel"
+			}
 		]
 	}
 }

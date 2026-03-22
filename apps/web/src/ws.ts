@@ -1,4 +1,4 @@
-import { setWsConnected, updateStateFromServer, addLog, sessions, activeSessionId, addSession, setActiveSessionId, setActivePorts, setActiveSection, setRestoringPending, type LogEntry, removeSession, updateProactiveAgent, appendAgentOutput, setAgentRunning, claudeAuthenticated, setContextData } from './state/store';
+import { setWsConnected, updateStateFromServer, addLog, sessions, activeSessionId, addSession, setActiveSessionId, setActivePorts, setActiveSection, setRestoringPending, type LogEntry, removeSession, updateProactiveAgent, appendAgentOutput, setAgentRunning, claudeAuthenticated, setContextData, addSubagent, updateSubagentOutput, removeSubagent } from './state/store';
 import { getAuthToken } from './api';
 
 // Known WebSocket message types — reject anything not in this set
@@ -8,6 +8,7 @@ const KNOWN_MSG_TYPES = new Set([
   'console:context_loaded', 'context',
   'agent:update', 'agent:output', 'agent:execution:start', 'agent:execution:complete',
   'auth:expiring', 'auth:expired',
+  'subagent:start', 'subagent:output', 'subagent:stop',
 ]);
 
 /** Runtime validation for incoming WebSocket messages */
@@ -271,6 +272,12 @@ function openWs(wsUrl: string): void {
         if (typeof msg.data === 'object' && msg.data !== null) {
           setContextData(msg.data as any);
         }
+      } else if (msg.type === 'subagent:start' && msg.data) {
+        addSubagent(msg.data as any);
+      } else if (msg.type === 'subagent:output' && msg.data) {
+        updateSubagentOutput((msg.data as any).agentId, (msg.data as any).text);
+      } else if (msg.type === 'subagent:stop' && msg.data) {
+        removeSubagent((msg.data as any).agentId, (msg.data as any).duration, (msg.data as any).lastMessage);
       }
     } catch (err) {
       console.warn('[WS] Failed to parse message:', err);

@@ -65,22 +65,6 @@ export function EnvironmentTab() {
           Variables are injected into every new terminal session. Changes apply on next session start.
         </div>
 
-        {vars.length > 0 && (
-          <div class="ac-list">
-            {vars.map(v => (
-              <div key={v.key} class="ac-list-item">
-                <div class="ac-list-item-info">
-                  <code class="ac-list-item-name" style="font-family: var(--font-mono)">{v.key}</code>
-                  <span class="ac-list-item-meta">{v.hasValue ? '••••••••' : '(empty)'}</span>
-                </div>
-                <button class="btn btn-xs btn-ghost" onClick={() => handleDelete(v.key)} title="Delete">
-                  <IconX size={11} />
-                </button>
-              </div>
-            ))}
-          </div>
-        )}
-
         <div class="ac-add-form" style="flex-direction: row; align-items: center; gap: 8px; padding: 8px 12px">
           <input
             class="ac-input"
@@ -103,6 +87,22 @@ export function EnvironmentTab() {
             {saving ? <span class="spinner-sm" /> : <IconPlus size={11} />}
           </button>
         </div>
+
+        {vars.length > 0 && (
+          <div class="ac-list">
+            {vars.map(v => (
+              <div key={v.key} class="ac-list-item">
+                <div class="ac-list-item-info">
+                  <code class="ac-list-item-name" style="font-family: var(--font-mono)">{v.key}</code>
+                  <span class="ac-list-item-meta">{v.hasValue ? '••••••••' : '(empty)'}</span>
+                </div>
+                <button class="btn btn-xs btn-ghost" onClick={() => handleDelete(v.key)} title="Delete">
+                  <IconX size={11} />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );

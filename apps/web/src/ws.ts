@@ -140,8 +140,8 @@ export function attachSession(sessionId: string): void {
   }
 }
 
-function openWs(wsUrl: string): void {
-  ws = new WebSocket(wsUrl);
+function openWs(wsUrl: string, protocols?: string[]): void {
+  ws = protocols ? new WebSocket(wsUrl, protocols) : new WebSocket(wsUrl);
 
   ws.onopen = () => {
     setWsConnected(true);
@@ -327,15 +327,16 @@ export async function connectWebSocket(): Promise<void> {
   const token = getAuthToken();
   const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
 
+  // Send auth token via WebSocket subprotocol header instead of URL query param.
+  // This keeps the token out of server logs, browser history, and proxy access logs.
+  // Format: "auth.<base64url-encoded-token>" as a subprotocol name.
+  const wsUrl = `${protocol}//${location.host}`;
   if (!token) {
-    openWs(`${protocol}//${location.host}`);
+    openWs(wsUrl);
     return;
   }
-
-  // Connect directly with token — skip the ticket roundtrip (saves 250ms).
-  // Tickets were designed to avoid token-in-URL, but the token is session-based
-  // (not a password), WS is same-origin only, and the 250ms RTT cost is too high.
-  openWs(`${protocol}//${location.host}?token=${encodeURIComponent(token)}`);
+  const encodedToken = btoa(token).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  openWs(wsUrl, [`auth.${encodedToken}`]);
 }
 
 export function disconnectWebSocket(): void {

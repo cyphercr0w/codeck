@@ -393,7 +393,7 @@ function MobileLimitsBar() {
       <div class="mobile-limits-status">
         <span class={`tsb-dot tsb-dot-${status}`} />
         <span class="mobile-limits-status-text">{status === 'waiting' ? 'Waiting' : status}</span>
-        <span class="mobile-limits-uptime">{formatUptime(uptime)}</span>
+        {ctx?.model && <span class="mobile-limits-model">{ctx.model}</span>}
       </div>
     </div>
   );

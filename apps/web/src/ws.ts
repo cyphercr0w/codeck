@@ -129,15 +129,13 @@ export function attachSession(sessionId: string): void {
   attachedSessions.add(sessionId);
   wsSend({ type: 'console:attach', sessionId });
 
-  // Flush pending inputs after a brief delay so the server can process
-  // the attach and register this client in sessionClients first.
+  // Flush pending inputs immediately after attach — the server processes
+  // console:attach synchronously and registers the client before reading
+  // the next frame, so no artificial delay is needed.
   const pending = pendingInputs.get(sessionId);
   if (pending && pending.length > 0) {
     pendingInputs.delete(sessionId);
-    addLog({ type: 'info', message: `[WS] Flushing ${pending.length} buffered input(s) for session ${sessionId.slice(0, 8)}`, timestamp: Date.now() });
-    setTimeout(() => {
-      for (const msg of pending) wsSend(msg);
-    }, 100);
+    for (const msg of pending) wsSend(msg);
   }
 }
 

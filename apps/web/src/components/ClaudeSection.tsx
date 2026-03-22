@@ -729,7 +729,13 @@ function TerminalStatusBar() {
         <span class={`tsb-dot tsb-dot-${status}`} />
         <span class="tsb-label">{status === 'waiting' ? 'Waiting' : status}</span>
         <span class="tsb-sep">|</span>
-        <span class="tsb-uptime">Session: {formatUptime(uptime)}</span>
+        <span class="tsb-uptime">{formatUptime(uptime)}</span>
+        {ctx?.model && (
+          <>
+            <span class="tsb-sep">|</span>
+            <span class="tsb-model">{ctx.model}</span>
+          </>
+        )}
       </div>
     </div>
   );

@@ -92,7 +92,16 @@ function startAuthRecoveryPoller(): void {
 }
 
 export function setupWebSocket(): void {
-  wss = new WebSocketServer({ noServer: true, maxPayload: 64 * 1024 });
+  wss = new WebSocketServer({
+    noServer: true,
+    maxPayload: 64 * 1024,
+    perMessageDeflate: {
+      // Enable compression — terminal output is highly compressible (text + ANSI).
+      // On 250ms latency links, smaller frames matter more than CPU cost.
+      zlibDeflateOptions: { level: 1 }, // fastest compression
+      threshold: 128,  // only compress frames >128 bytes (skip tiny control messages)
+    },
+  });
 
   // --- Server-side ping/pong keepalive ---
   const pingInterval = setInterval(() => {
@@ -137,6 +146,12 @@ export function setupWebSocket(): void {
   const INTERNAL_SECRET = process.env.CODECK_INTERNAL_SECRET || '';
 
   wss.on('connection', (ws, req) => {
+    // Disable Nagle's algorithm for low-latency terminal I/O.
+    // Without this, small packets (single keystrokes) may be delayed up to 40ms
+    // waiting for more data to coalesce. On 250ms links this adds perceptible lag.
+    const socket = (req as any).socket;
+    if (socket?.setNoDelay) socket.setNoDelay(true);
+
     // Auth validation for WebSocket
     if (isPasswordConfigured()) {
       const url = new URL(req.url || '', `http://${req.headers.host}`);

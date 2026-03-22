@@ -1537,6 +1537,18 @@
   color: var(--text-muted);
 }
 
+.tsb-model {
+  font-size: 10px;
+  color: var(--text-muted);
+  opacity: 0.7;
+}
+
+.mobile-limits-model {
+  font-size: 9px;
+  color: var(--text-muted);
+  opacity: 0.7;
+}
+
 .tsb-right {
   display: flex;
   align-items: center;

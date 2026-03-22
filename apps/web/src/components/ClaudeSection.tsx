@@ -615,19 +615,25 @@ function TerminalStatusBar() {
   const status = sessionStatus.value[activeSessionId.value || ''] || 'idle';
   const activeSession = sessions.value.find(s => s.id === activeSessionId.value);
   const uptime = activeSession ? Math.floor((Date.now() - activeSession.createdAt) / 60000) : 0;
+  const [refreshing, setRefreshing] = useState(false);
 
-  function handleRefresh() {
+  async function handleRefresh() {
+    if (refreshing) return;
+    setRefreshing(true);
     const sid = activeSessionId.value;
     if (sid) {
       fitTerminal(sid);
       repaintTerminal(sid);
     }
-    // Also trigger usage poll
-    apiFetch('/api/dashboard').then(r => r.json()).then(data => {
+    try {
+      const res = await apiFetch('/api/dashboard');
+      const data = await res.json();
       if (data.claude) {
-        import('../state/store').then(m => m.setClaudeUsage(data.claude));
+        const { setClaudeUsage } = await import('../state/store');
+        setClaudeUsage(data.claude);
       }
-    }).catch(() => {});
+    } catch { /* ignore */ }
+    setTimeout(() => setRefreshing(false), 1000);
   }
 
   function formatUptime(mins: number): string {
@@ -698,9 +704,11 @@ function TerminalStatusBar() {
             )}
           </>
         )}
-        <button class="tsb-refresh" onClick={handleRefresh} title="Refresh usage + resize terminal">
-          <IconRefresh size={12} />
-        </button>
+        {usage?.available && (
+          <button class={`tsb-refresh${refreshing ? ' spinning' : ''}`} onClick={handleRefresh} disabled={refreshing} title="Refresh usage + resize terminal">
+            <IconRefresh size={12} />
+          </button>
+        )}
       </div>
       <div class="tsb-right">
         <span class={`tsb-dot tsb-dot-${status}`} />

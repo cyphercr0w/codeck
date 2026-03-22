@@ -1604,11 +1604,17 @@
   cursor: pointer;
   padding: 0;
   flex-shrink: 0;
-  transition: all 0.15s;
+  transition: color 0.15s, background 0.15s;
   margin-left: 4px;
 }
-.tsb-refresh:hover { background: var(--bg-hover); color: var(--text-primary); }
-.tsb-refresh:active { transform: rotate(180deg); }
+.tsb-refresh:hover:not(:disabled) { background: var(--bg-hover); color: var(--text-primary); }
+.tsb-refresh:disabled { cursor: default; opacity: 0.5; }
+.tsb-refresh.spinning svg { animation: tsb-spin 0.8s linear infinite; }
+
+@keyframes tsb-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
 
 /* Context Loaded banner — appears briefly when memory is injected */
 .context-loaded-banner {

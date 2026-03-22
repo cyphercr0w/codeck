@@ -3,7 +3,7 @@ import { sessions, activeSessionId, setActiveSessionId, addLocalLog, addSession,
 import { apiFetch } from '../api';
 import { createTerminal, destroyTerminal, fitTerminal, repaintTerminal, focusTerminal, writeToTerminal, scrollToBottom, getTerminal, markSessionAttaching, clearSessionAttaching, onTerminalWrite, ensureTerminalVisible, setOnFilePaste, getTerminalBuffer } from '../terminal';
 import { wsSend, setTerminalHandlers, attachSession, setOnSessionReattached, setOnBeforeSessionsRestored, setOnContextLoaded, type ContextLoadedData } from '../ws';
-import { IconPlus, IconX, IconShell, IconTerminal } from './Icons';
+import { IconPlus, IconX, IconShell, IconTerminal, IconRefresh } from './Icons';
 import { MobileTerminalToolbar } from './MobileTerminalToolbar';
 import { UploadOverlay } from './UploadOverlay';
 
@@ -616,6 +616,20 @@ function TerminalStatusBar() {
   const activeSession = sessions.value.find(s => s.id === activeSessionId.value);
   const uptime = activeSession ? Math.floor((Date.now() - activeSession.createdAt) / 60000) : 0;
 
+  function handleRefresh() {
+    const sid = activeSessionId.value;
+    if (sid) {
+      fitTerminal(sid);
+      repaintTerminal(sid);
+    }
+    // Also trigger usage poll
+    apiFetch('/api/dashboard').then(r => r.json()).then(data => {
+      if (data.claude) {
+        import('../state/store').then(m => m.setClaudeUsage(data.claude));
+      }
+    }).catch(() => {});
+  }
+
   function formatUptime(mins: number): string {
     if (mins < 60) return `${mins}m`;
     const h = Math.floor(mins / 60);
@@ -684,6 +698,9 @@ function TerminalStatusBar() {
             )}
           </>
         )}
+        <button class="tsb-refresh" onClick={handleRefresh} title="Refresh usage + resize terminal">
+          <IconRefresh size={12} />
+        </button>
       </div>
       <div class="tsb-right">
         <span class={`tsb-dot tsb-dot-${status}`} />

@@ -1591,6 +1591,25 @@
   opacity: 0.6;
 }
 
+.tsb-refresh {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 4px;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 0;
+  flex-shrink: 0;
+  transition: all 0.15s;
+  margin-left: 4px;
+}
+.tsb-refresh:hover { background: var(--bg-hover); color: var(--text-primary); }
+.tsb-refresh:active { transform: rotate(180deg); }
+
 /* Context Loaded banner — appears briefly when memory is injected */
 .context-loaded-banner {
   position: absolute;

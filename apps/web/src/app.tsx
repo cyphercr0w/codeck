@@ -22,7 +22,7 @@ import { FilesSection } from './components/FilesSection';
 import { ClaudeSection, mountTerminalForSession, restoreSessions } from './components/ClaudeSection';
 import { LoginModal } from './components/LoginModal';
 import { NewProjectModal } from './components/NewProjectModal';
-import { LogsDrawer } from './components/LogsDrawer';
+// LogsDrawer removed — logs now inline in SettingsSection
 import { PresetWizard } from './components/PresetWizard';
 import { IntegrationsSection } from './components/IntegrationsSection';
 import { AgentConfigSection } from './components/AgentConfigSection';
@@ -544,7 +544,7 @@ export function App() {
           </ErrorBoundary>
           <SubagentPanel />
         </main>
-        {!mobileKeyboardOpen.value && section === 'settings' && <LogsDrawer />}
+        {/* LogsDrawer removed — logs now inline in SettingsSection */}
       </div>
       <LoginModal visible={loginModalOpen} onClose={handleLoginClose} onSuccess={handleLoginSuccess} />
       <NewProjectModal visible={newProjectOpen} onCancel={() => setNewProjectOpen(false)} onConfirm={handleProjectConfirm} />

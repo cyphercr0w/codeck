@@ -368,12 +368,15 @@ function TokenIntegrationDetail({ integ, onBack }: { integ: IntegrationDef; onBa
               <div style="display: flex; gap: 8px; margin-top: 8px">
                 <input
                   class="input"
-                  type="password"
+                  type="text"
                   placeholder={`Paste your ${integ.name} token`}
                   value={token}
                   onInput={e => setToken((e.target as HTMLInputElement).value)}
                   onKeyDown={e => e.key === 'Enter' && handleConnect()}
-                  style="flex: 1"
+                  style="flex: 1; -webkit-text-security: disc"
+                  autocomplete="off"
+                  data-1p-ignore
+                  data-lpignore="true"
                 />
                 <button class="btn btn-sm btn-primary" onClick={handleConnect} disabled={saving || !token.trim()}>
                   {saving ? <span class="spinner-sm" /> : 'Connect'}

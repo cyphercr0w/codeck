@@ -25,7 +25,7 @@ if (!userMessage || userMessage.length < 5) process.exit(0);
 
 // Detect task type from keywords
 const signals = {
-  implementation: /implement|build|create|add feature|write code|develop|make|construct|genera/,
+  implementation: /implement|build|create|add feature|write code|develop|make|construct|generate/,
   debugging: /bug|fix|error|crash|broken|not working|fail|issue|debug|wrong/,
   testing: /test|coverage|spec|tdd|unit test|e2e|integration test/,
   review: /review|audit|check|inspect|quality|security/,

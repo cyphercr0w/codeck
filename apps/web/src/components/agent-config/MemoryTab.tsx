@@ -34,7 +34,7 @@ function formatTimeAgo(ts: number | null): string {
 }
 
 interface MemoryTabProps {
-  onNavigate?: (tab: string) => void;
+  onNavigate?: (tab: 'memory' | 'skills' | 'mcp' | 'rules' | 'hooks' | 'permissions' | 'env') => void;
 }
 
 export function MemoryTab({ onNavigate }: MemoryTabProps) {

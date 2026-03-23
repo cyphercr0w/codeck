@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { existsSync, readdirSync, statSync, readFileSync } from 'fs';
-import { join, basename, resolve } from 'path';
+import { join, basename, resolve, sep } from 'path';
 import { isClaudeAuthenticated } from '../services/auth-anthropic.js';
 import {
   createConsoleSession,
@@ -36,7 +36,7 @@ router.post('/create', (req, res) => {
   if (cwd && typeof cwd === 'string') {
     const WORKSPACE = process.env.WORKSPACE || '/workspace';
     const resolved = resolve(cwd);
-    if (!resolved.startsWith(WORKSPACE)) {
+    if (!resolved.startsWith(WORKSPACE + sep) && resolved !== WORKSPACE) {
       res.status(403).json({ error: 'Access denied: cwd outside workspace' });
       return;
     }
@@ -68,7 +68,7 @@ router.post('/create-shell', (req, res) => {
   if (cwd && typeof cwd === 'string') {
     const WORKSPACE = process.env.WORKSPACE || '/workspace';
     const resolved = resolve(cwd);
-    if (!resolved.startsWith(WORKSPACE)) {
+    if (!resolved.startsWith(WORKSPACE + sep) && resolved !== WORKSPACE) {
       res.status(403).json({ error: 'Access denied: cwd outside workspace' });
       return;
     }
@@ -112,6 +112,13 @@ router.get('/has-conversations', async (req, res) => {
   const cwd = req.query.cwd as string;
   if (!cwd) {
     res.status(400).json({ error: 'cwd query param required' });
+    return;
+  }
+  // Validate cwd stays within workspace
+  const WORKSPACE = process.env.WORKSPACE || '/workspace';
+  const resolved = resolve(cwd);
+  if (!resolved.startsWith(WORKSPACE + sep) && resolved !== WORKSPACE) {
+    res.status(403).json({ error: 'Access denied: cwd outside workspace' });
     return;
   }
   res.json({ hasConversations: await hasResumableConversations(cwd) });

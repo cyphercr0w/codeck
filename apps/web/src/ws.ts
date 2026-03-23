@@ -1,6 +1,5 @@
 import { setWsConnected, updateStateFromServer, addLog, sessions, activeSessionId, addSession, setActiveSessionId, setActivePorts, setActiveSection, setRestoringPending, type LogEntry, removeSession, updateProactiveAgent, appendAgentOutput, setAgentRunning, claudeAuthenticated, setContextData, addSubagent, updateSubagentOutput, removeSubagent, syncSubagentsFromServer, fetchRecentConversations } from './state/store';
-import { apiFetch } from './api';
-import { getAuthToken } from './api';
+import { apiFetch, getAuthToken } from './api';
 
 // Known WebSocket message types — reject anything not in this set
 const KNOWN_MSG_TYPES = new Set([

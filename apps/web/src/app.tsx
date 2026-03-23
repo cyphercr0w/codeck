@@ -4,7 +4,7 @@ import {
   view, activeSection, claudeAuthenticated, presetConfigured, isMobile, mobileKeyboardOpen,
   accountEmail, accountOrg, wsConnected,
   updateStateFromServer, setView, setActiveSection, setAuthMode, setActiveSessionId,
-  setPresetConfigured, setAccountInfo, startUsagePolling,
+  setPresetConfigured, setAccountInfo, startUsagePolling, stopUsagePolling,
   sessions, activeSessionId, addSession, removeSession, replaceSession,
   addLocalLog,
   sessionStatus,
@@ -337,6 +337,7 @@ export function App() {
     try {
       await apiFetch('/api/claude/logout', { method: 'POST' });
     } catch { /* ignore */ }
+    stopUsagePolling();
     // Reset client-side auth state and show Claude login (setup) view
     claudeAuthenticated.value = false;
     accountEmail.value = null;

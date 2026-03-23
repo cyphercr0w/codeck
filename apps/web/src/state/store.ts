@@ -414,9 +414,11 @@ export function syncSubagentsFromServer(serverAgents: Array<{ agentId: string; a
   }
 }
 
+const MAX_SUBAGENT_LINES = 200;
+
 export function updateSubagentOutput(agentId: string, text: string): void {
   activeSubagents.value = activeSubagents.value.map(a =>
-    a.agentId === agentId ? { ...a, lastLine: text, lines: [...a.lines, text] } : a
+    a.agentId === agentId ? { ...a, lastLine: text, lines: [...a.lines, text].slice(-MAX_SUBAGENT_LINES) } : a
   );
 }
 
@@ -501,4 +503,11 @@ export function startUsagePolling(fetchFn: (url: string, opts?: RequestInit) => 
 
   poll(); // immediate first fetch
   usagePollTimer = setInterval(poll, 60_000);
+}
+
+export function stopUsagePolling(): void {
+  if (usagePollTimer) {
+    clearInterval(usagePollTimer);
+    usagePollTimer = null;
+  }
 }

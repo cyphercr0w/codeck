@@ -222,7 +222,14 @@ export function ClaudeSection({ onNewSession, onNewShell }: ClaudeSectionProps) 
       // Small delay to let display:contents take effect before measuring.
       // Read activeSessionId inside the callback to avoid stale captures.
       setTimeout(() => {
-        const id = activeSessionId.value;
+        let id = activeSessionId.value;
+
+        // If no active session, auto-select the last one (prevents black screen
+        // when user navigated away while on New Tab or after session was removed)
+        if (!id && sessions.value.length > 0) {
+          id = sessions.value[sessions.value.length - 1].id;
+          setActiveSessionId(id);
+        }
         if (!id) return;
 
         // Re-apply 'active' class — the useEffect([activeId]) maintains this,

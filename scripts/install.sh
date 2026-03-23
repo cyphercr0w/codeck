@@ -1,160 +1,283 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Codeck Self-Hosted Installer
+# ═══════════════════════════════════════════════════════════════════════
+# Codeck Installer & Updater
 #
-# One command to install Codeck on any Linux VPS or macOS machine.
-# Pulls a pre-built Docker image — no compilation, no Node.js required.
+# Handles fresh install, updates, and resource changes.
+# Config is stored as Docker container labels — no host-side state files.
 #
 # Usage:
-#   curl -fsSL https://codeck.xyz/install | bash
+#   curl -fsSL https://codeck.xyz/install | bash          # interactive
+#   CODECK_PORT=3000 curl -fsSL https://codeck.xyz/install | bash  # non-interactive
+#
+# Environment overrides (skip prompts):
+#   CODECK_PORT     — host port (default: 8080)
+#   CODECK_MEMORY   — memory limit, e.g. "4g" (default: unlimited)
+#   CODECK_CPUS     — CPU limit, e.g. "2" (default: unlimited)
+#   CODECK_IMAGE    — Docker image (default: ghcr.io/cyphercr0w/codeck:latest)
+#   CODECK_NAME     — container name (default: codeck)
+# ═══════════════════════════════════════════════════════════════════════
 
-CODECK_IMAGE="${CODECK_IMAGE:-ghcr.io/cyphercr0w/codeck:latest}"
-CODECK_PORT="${CODECK_PORT:-8080}"
-CONTAINER_NAME="codeck"
+VERSION="1.0.0"
+DEFAULT_IMAGE="ghcr.io/cyphercr0w/codeck:latest"
+DEFAULT_PORT="8080"
+DEFAULT_NAME="codeck"
 
 # Colors
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-CYAN='\033[0;36m'
-NC='\033[0m'
-BOLD='\033[1m'
+RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'
+CYAN='\033[0;36m'; NC='\033[0m'; BOLD='\033[1m'; DIM='\033[2m'
 
-log()  { echo -e "${GREEN}[+]${NC} $*"; }
-warn() { echo -e "${YELLOW}[!]${NC} $*"; }
-err()  { echo -e "${RED}[x]${NC} $*" >&2; }
+log()  { echo -e "${GREEN}  ✓${NC} $*"; }
+info() { echo -e "${CYAN}  ›${NC} $*"; }
+warn() { echo -e "${YELLOW}  !${NC} $*"; }
+err()  { echo -e "${RED}  ✗${NC} $*" >&2; }
 die()  { err "$*"; exit 1; }
 
-# ─── Auto-elevate with sudo if needed ─────────────────────────────────
+# Prompt with default (skip if env var set)
+ask() {
+  local var="$1" prompt="$2" default="$3"
+  local current="${!var:-}"
+  if [[ -n "$current" ]]; then
+    echo -e "${DIM}  ${prompt} [${current}]${NC}"
+    return
+  fi
+  if [[ -t 0 ]]; then
+    read -rp "  ${prompt} [${default}]: " value
+    eval "$var=\"${value:-$default}\""
+  else
+    eval "$var=\"$default\""
+  fi
+}
+
+# Read config from existing container labels
+read_existing_config() {
+  local name="$1"
+  if docker inspect "$name" &>/dev/null 2>&1; then
+    EXISTING_PORT=$(docker inspect --format '{{index .Config.Labels "codeck.port"}}' "$name" 2>/dev/null || echo "")
+    EXISTING_MEMORY=$(docker inspect --format '{{index .Config.Labels "codeck.memory"}}' "$name" 2>/dev/null || echo "")
+    EXISTING_CPUS=$(docker inspect --format '{{index .Config.Labels "codeck.cpus"}}' "$name" 2>/dev/null || echo "")
+    EXISTING_IMAGE=$(docker inspect --format '{{.Config.Image}}' "$name" 2>/dev/null || echo "")
+    return 0
+  fi
+  return 1
+}
+
+# ─── Header ──────────────────────────────────────────────────────────
+
+echo ""
+echo -e "${BOLD}  ╔═══════════════════════════════════╗${NC}"
+echo -e "${BOLD}  ║         ${CYAN}Codeck Installer${NC}${BOLD}          ║${NC}"
+echo -e "${BOLD}  ╚═══════════════════════════════════╝${NC}"
+echo ""
+
+# ─── Auto-elevate ────────────────────────────────────────────────────
 
 if [[ "$EUID" -ne 0 ]]; then
   if command -v sudo &>/dev/null; then
-    exec sudo bash "$0" "$@"
+    exec sudo -E bash "$0" "$@"
   fi
-  # Not root and no sudo — try anyway, Docker might work without root
 fi
 
-# ─── Detect OS ─────────────────────────────────────────────────────────
+# ─── Detect OS ───────────────────────────────────────────────────────
 
 OS="$(uname -s)"
 case "$OS" in
-  Linux)  log "OS: Linux" ;;
-  Darwin) log "OS: macOS" ;;
-  *)      die "Unsupported OS: $OS. Codeck requires Linux or macOS." ;;
+  Linux)  info "OS: Linux $(uname -r)" ;;
+  Darwin) info "OS: macOS $(sw_vers -productVersion 2>/dev/null || echo '')" ;;
+  *)      die "Unsupported OS: $OS" ;;
 esac
 
-# ─── Install Docker if missing ─────────────────────────────────────────
+# ─── Docker ──────────────────────────────────────────────────────────
 
 if ! command -v docker &>/dev/null; then
-  log "Docker not found — installing..."
+  info "Docker not found — installing..."
   if [[ "$OS" == "Linux" ]]; then
     curl -fsSL https://get.docker.com | sh
     systemctl enable docker 2>/dev/null || true
     systemctl start docker 2>/dev/null || true
-  elif [[ "$OS" == "Darwin" ]]; then
-    die "Docker not installed. Install Docker Desktop from https://docker.com/products/docker-desktop and re-run this script."
+  else
+    die "Install Docker Desktop: https://docker.com/products/docker-desktop"
   fi
 fi
 
-# Verify Docker is running
 if ! docker info &>/dev/null 2>&1; then
-  if [[ "$OS" == "Linux" ]]; then
-    systemctl start docker 2>/dev/null || true
-    sleep 2
-  fi
-  docker info &>/dev/null 2>&1 || die "Docker is installed but not running. Start Docker and re-run this script."
+  [[ "$OS" == "Linux" ]] && { systemctl start docker 2>/dev/null || true; sleep 2; }
+  docker info &>/dev/null 2>&1 || die "Docker is not running. Start Docker and retry."
 fi
 
-log "Docker: $(docker --version | head -1)"
+log "Docker $(docker --version | grep -oP '\d+\.\d+\.\d+' | head -1)"
 
-# ─── Stop existing container if running ────────────────────────────────
+# ─── Detect existing installation ────────────────────────────────────
+
+CONTAINER_NAME="${CODECK_NAME:-$DEFAULT_NAME}"
+IS_UPDATE=false
+
+if read_existing_config "$CONTAINER_NAME"; then
+  IS_UPDATE=true
+  echo ""
+  info "Existing Codeck found — this will ${BOLD}update${NC} it."
+  info "Your data (workspace, config, keys) will be preserved."
+  echo ""
+
+  # Use existing config as defaults
+  DEFAULT_PORT="${EXISTING_PORT:-$DEFAULT_PORT}"
+  DEFAULT_IMAGE="${EXISTING_IMAGE:-$DEFAULT_IMAGE}"
+fi
+
+# ─── Configuration ───────────────────────────────────────────────────
+
+CODECK_IMAGE="${CODECK_IMAGE:-$DEFAULT_IMAGE}"
+CODECK_PORT="${CODECK_PORT:-}"
+CODECK_MEMORY="${CODECK_MEMORY:-}"
+CODECK_CPUS="${CODECK_CPUS:-}"
+
+ask CODECK_PORT "Port" "$DEFAULT_PORT"
+ask CODECK_MEMORY "Memory limit (e.g. 4g, or blank for unlimited)" "${EXISTING_MEMORY:-}"
+ask CODECK_CPUS "CPU limit (e.g. 2, or blank for unlimited)" "${EXISTING_CPUS:-}"
+
+echo ""
+
+# ─── Pull image ──────────────────────────────────────────────────────
+
+info "Pulling ${CODECK_IMAGE}..."
+docker pull "$CODECK_IMAGE" || die "Failed to pull image. Check your internet connection."
+log "Image pulled"
+
+# ─── Build docker run args ───────────────────────────────────────────
+
+DOCKER_ARGS=(
+  --name "$CONTAINER_NAME"
+  --restart unless-stopped
+  --init
+  -p "${CODECK_PORT}:80"
+  -v codeck-workspace:/workspace
+  -v codeck-claude:/root/.claude
+  -v codeck-ssh:/root/.ssh
+  -v codeck-gh:/root/.config/gh
+  --cap-drop ALL
+  --cap-add CHOWN
+  --cap-add SETUID
+  --cap-add SETGID
+  --cap-add NET_BIND_SERVICE
+  --cap-add KILL
+  --cap-add DAC_OVERRIDE
+  --security-opt no-new-privileges:true
+  --stop-timeout 30
+  # Store config as labels for future updates
+  --label "codeck.port=${CODECK_PORT}"
+  --label "codeck.image=${CODECK_IMAGE}"
+  --label "codeck.installer=${VERSION}"
+)
+
+# Optional resource limits
+[[ -n "$CODECK_MEMORY" ]] && DOCKER_ARGS+=(--memory "$CODECK_MEMORY")
+[[ -n "$CODECK_CPUS" ]] && DOCKER_ARGS+=(--cpus "$CODECK_CPUS")
+[[ -n "$CODECK_MEMORY" ]] && DOCKER_ARGS+=(--label "codeck.memory=${CODECK_MEMORY}")
+[[ -n "$CODECK_CPUS" ]] && DOCKER_ARGS+=(--label "codeck.cpus=${CODECK_CPUS}")
+
+# ─── Stop existing + rollback safety ────────────────────────────────
 
 if docker ps -a --format '{{.Names}}' | grep -q "^${CONTAINER_NAME}$"; then
-  warn "Existing '${CONTAINER_NAME}' container found — stopping..."
+  # Rename old container for rollback
   docker stop "$CONTAINER_NAME" 2>/dev/null || true
-  docker rm "$CONTAINER_NAME" 2>/dev/null || true
+  docker rename "$CONTAINER_NAME" "${CONTAINER_NAME}-prev" 2>/dev/null || true
+  info "Previous container saved as ${CONTAINER_NAME}-prev (rollback safety)"
 fi
 
-# ─── Pull image ────────────────────────────────────────────────────────
+# ─── Start new container ─────────────────────────────────────────────
 
-log "Pulling Codeck image..."
-docker pull "$CODECK_IMAGE"
+info "Starting Codeck..."
+docker run -d "${DOCKER_ARGS[@]}" "$CODECK_IMAGE" --web || {
+  # Rollback on start failure
+  err "Failed to start new container"
+  if docker ps -a --format '{{.Names}}' | grep -q "^${CONTAINER_NAME}-prev$"; then
+    warn "Rolling back to previous version..."
+    docker rename "${CONTAINER_NAME}-prev" "$CONTAINER_NAME"
+    docker start "$CONTAINER_NAME" 2>/dev/null || true
+    die "Rollback complete. Previous version is running."
+  fi
+  die "No previous version to rollback to."
+}
 
-# ─── Run container ─────────────────────────────────────────────────────
+# ─── Health check with auto-rollback ─────────────────────────────────
 
-log "Starting Codeck..."
-docker run -d \
-  --name "$CONTAINER_NAME" \
-  --restart unless-stopped \
-  --init \
-  -p "${CODECK_PORT}:80" \
-  -v codeck-workspace:/workspace \
-  -v codeck-claude:/root/.claude \
-  -v codeck-ssh:/root/.ssh \
-  -v codeck-gh:/root/.config/gh \
-  --cap-drop ALL \
-  --cap-add CHOWN \
-  --cap-add SETUID \
-  --cap-add SETGID \
-  --cap-add NET_BIND_SERVICE \
-  --cap-add KILL \
-  --cap-add DAC_OVERRIDE \
-  --security-opt no-new-privileges:true \
-  --stop-timeout 30 \
-  "$CODECK_IMAGE" --web
-
-# ─── Wait for healthy ──────────────────────────────────────────────────
-
-log "Waiting for Codeck to start..."
+info "Waiting for health check..."
+HEALTHY=false
 for i in $(seq 1 30); do
-  if docker exec "$CONTAINER_NAME" curl -sf http://localhost:80/api/status &>/dev/null; then
+  if docker exec "$CONTAINER_NAME" curl -sf http://localhost:80/api/auth/status &>/dev/null; then
+    HEALTHY=true
     break
   fi
   sleep 1
 done
 
-if ! docker exec "$CONTAINER_NAME" curl -sf http://localhost:80/api/status &>/dev/null; then
-  warn "Codeck is starting but not healthy yet. Check: docker logs codeck"
+if [[ "$HEALTHY" != "true" ]]; then
+  warn "New version not healthy after 30s"
+  if docker ps -a --format '{{.Names}}' | grep -q "^${CONTAINER_NAME}-prev$"; then
+    warn "Auto-rolling back..."
+    docker stop "$CONTAINER_NAME" 2>/dev/null || true
+    docker rm "$CONTAINER_NAME" 2>/dev/null || true
+    docker rename "${CONTAINER_NAME}-prev" "$CONTAINER_NAME"
+    docker start "$CONTAINER_NAME" 2>/dev/null || true
+    die "Rollback complete. Check: docker logs ${CONTAINER_NAME}"
+  fi
+  warn "No previous version. Check: docker logs ${CONTAINER_NAME}"
 fi
 
-# ─── Firewall ──────────────────────────────────────────────────────────
+# Clean up old container after successful start
+if docker ps -a --format '{{.Names}}' | grep -q "^${CONTAINER_NAME}-prev$"; then
+  docker rm "${CONTAINER_NAME}-prev" 2>/dev/null || true
+fi
+
+log "Health check passed"
+
+# ─── Firewall ────────────────────────────────────────────────────────
 
 if command -v ufw &>/dev/null; then
-  ufw allow "${CODECK_PORT}/tcp" >/dev/null 2>&1 && log "UFW: port ${CODECK_PORT} allowed" || true
+  ufw allow "${CODECK_PORT}/tcp" >/dev/null 2>&1 && log "Firewall: port ${CODECK_PORT} allowed" || true
 elif command -v firewall-cmd &>/dev/null; then
   firewall-cmd --permanent --add-port="${CODECK_PORT}/tcp" >/dev/null 2>&1
   firewall-cmd --reload >/dev/null 2>&1
-  log "firewalld: port ${CODECK_PORT} allowed"
+  log "Firewall: port ${CODECK_PORT} allowed"
 fi
 
-# ─── Done ──────────────────────────────────────────────────────────────
+# ─── Done ────────────────────────────────────────────────────────────
 
 PUBLIC_IP=$(curl -fsSL --max-time 5 https://ifconfig.me 2>/dev/null || hostname -I 2>/dev/null | awk '{print $1}' || echo "localhost")
 
 echo ""
-echo -e "${GREEN}${BOLD}════════════════════════════════════════${NC}"
-echo -e "${GREEN}${BOLD}  Codeck installed successfully!${NC}"
-echo -e "${GREEN}${BOLD}════════════════════════════════════════${NC}"
+if [[ "$IS_UPDATE" == "true" ]]; then
+  echo -e "${GREEN}${BOLD}  ═══════════════════════════════════════${NC}"
+  echo -e "${GREEN}${BOLD}    Codeck updated successfully!${NC}"
+  echo -e "${GREEN}${BOLD}  ═══════════════════════════════════════${NC}"
+else
+  echo -e "${GREEN}${BOLD}  ═══════════════════════════════════════${NC}"
+  echo -e "${GREEN}${BOLD}    Codeck installed successfully!${NC}"
+  echo -e "${GREEN}${BOLD}  ═══════════════════════════════════════${NC}"
+fi
 echo ""
-echo -e "  Open: ${CYAN}http://${PUBLIC_IP}:${CODECK_PORT}${NC}"
+echo -e "  Open: ${CYAN}${BOLD}http://${PUBLIC_IP}:${CODECK_PORT}${NC}"
 echo ""
-echo -e "  ${BOLD}Commands:${NC}"
+echo -e "  ${BOLD}Manage:${NC}"
 echo "    docker logs codeck -f        — view logs"
 echo "    docker restart codeck        — restart"
 echo "    docker stop codeck           — stop"
 echo "    docker start codeck          — start"
 echo ""
 echo -e "  ${BOLD}Update:${NC}"
-echo "    docker pull ${CODECK_IMAGE}"
-echo "    docker stop codeck && docker rm codeck"
-echo "    # Re-run this script"
+echo "    curl -fsSL https://codeck.xyz/install | bash"
 echo ""
-echo -e "  ${BOLD}Data:${NC}"
-echo "    Workspace:  codeck-workspace volume"
-echo "    Claude CLI: codeck-claude volume"
-echo "    SSH keys:   codeck-ssh volume"
+if [[ -n "$CODECK_MEMORY" || -n "$CODECK_CPUS" ]]; then
+  echo -e "  ${BOLD}Resources:${NC}"
+  [[ -n "$CODECK_MEMORY" ]] && echo "    Memory: ${CODECK_MEMORY}"
+  [[ -n "$CODECK_CPUS" ]] && echo "    CPUs: ${CODECK_CPUS}"
+  echo ""
+fi
+echo -e "  ${BOLD}Data (persists across updates):${NC}"
+echo "    Workspace:  codeck-workspace"
+echo "    Claude:     codeck-claude"
+echo "    SSH keys:   codeck-ssh"
 echo ""
-echo -e "  ${BOLD}SSL (optional):${NC}"
-echo "    Put nginx in front with certbot for HTTPS."
+echo -e "  ${DIM}Installer v${VERSION}${NC}"
 echo ""

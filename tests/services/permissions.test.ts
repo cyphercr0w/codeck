@@ -228,10 +228,10 @@ describe('services/permissions.ts - syncToClaudeSettings', () => {
     expect(settings.permissions.allow).toBeDefined();
   });
 
-  it('should include MCP server tool prefixes from .claude.json', () => {
-    // Create .claude.json with MCP servers
-    const claudeJsonPath = join(dirname(SETTINGS_PATH), '.claude.json');
-    writeFileSync(claudeJsonPath, JSON.stringify({
+  it('should include MCP server tool prefixes from mcp.json', () => {
+    // Create mcp.json with MCP servers
+    const mcpJsonPath = join(dirname(SETTINGS_PATH), 'mcp.json');
+    writeFileSync(mcpJsonPath, JSON.stringify({
       mcpServers: {
         'context7': { command: 'npx', args: ['context7'] },
         'eslint': { command: 'npx', args: ['eslint-mcp'] },

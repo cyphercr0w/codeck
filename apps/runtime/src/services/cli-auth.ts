@@ -3,7 +3,10 @@
  * Spawns a CLI login process, captures the device code + URL from stdout,
  * and tracks completion state for the frontend to poll.
  */
-import { spawn, type ChildProcess } from 'child_process';
+import { spawn, execFile, type ChildProcess } from 'child_process';
+import { promisify } from 'util';
+
+const execFileAsync = promisify(execFile);
 
 export interface CLIAuthState {
   inProgress: boolean;
@@ -151,29 +154,36 @@ export function getSupportedCLIAuthServices(): string[] {
   return Object.keys(CONFIGS);
 }
 
-/** Check if a CLI-auth service is currently authenticated (non-blocking) */
+/** Check if a CLI-auth service is currently authenticated (non-blocking, async) */
 export async function isCLIAuthenticated(service: string): Promise<{ authenticated: boolean; username?: string }> {
-  const checks: Record<string, { cmd: string; args: string[]; parse: (out: string) => { authenticated: boolean; username?: string } }> = {
+  const config = CONFIGS[service];
+  if (!config) return { authenticated: false };
+
+  // Auth check commands — must mirror CONFIGS keys
+  const authChecks: Record<string, { args: string[]; parse: (out: string) => { authenticated: boolean; username?: string } }> = {
     vercel: {
-      cmd: 'npx',
       args: ['-y', 'vercel', 'whoami'],
       parse: (out) => {
-        const name = out.trim();
-        return name && !name.includes('Error') && !name.includes('not logged')
-          ? { authenticated: true, username: name }
+        // Use only the first non-empty line (npx may emit warnings on other lines)
+        const firstLine = out.split('\n').map(l => l.trim()).find(l => l.length > 0) || '';
+        return firstLine && !firstLine.includes('Error') && !firstLine.includes('not logged')
+          ? { authenticated: true, username: firstLine }
           : { authenticated: false };
       },
     },
   };
 
-  const check = checks[service];
+  const check = authChecks[service];
   if (!check) return { authenticated: false };
 
   try {
-    const { execFileSync } = await import('child_process');
-    const out = execFileSync(check.cmd, check.args, { encoding: 'utf-8', timeout: 10_000, stdio: ['pipe', 'pipe', 'pipe'] });
-    return check.parse(out);
-  } catch {
+    const { stdout } = await execFileAsync('npx', check.args, { encoding: 'utf-8', timeout: 10_000 });
+    return check.parse(stdout);
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException).code;
+    if (code && code !== 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER') {
+      console.log(`[CLIAuth] ${service} auth check failed: ${code}`);
+    }
     return { authenticated: false };
   }
 }

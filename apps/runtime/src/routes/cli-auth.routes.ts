@@ -40,7 +40,16 @@ router.post('/:service/cancel', (req, res) => {
 });
 
 // GET /:service/authenticated — check if CLI is logged in (vercel whoami, etc.)
+// Rate-limited: max 3 req/min per IP (spawns subprocess, avoid DoS)
+const authCheckTimestamps = new Map<string, number>();
 router.get('/:service/authenticated', async (req, res) => {
+  const key = `${req.ip}:${req.params.service}`;
+  const last = authCheckTimestamps.get(key) || 0;
+  if (Date.now() - last < 20_000) { // 20s cooldown per service per IP
+    res.status(429).json({ error: 'Rate limited — try again in a few seconds' });
+    return;
+  }
+  authCheckTimestamps.set(key, Date.now());
   const result = await isCLIAuthenticated(req.params.service);
   res.json(result);
 });

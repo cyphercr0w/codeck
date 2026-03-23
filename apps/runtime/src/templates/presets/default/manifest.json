@@ -117,6 +117,18 @@
 			"dest": "/workspace/.codeck/scripts/session-reset.mjs"
 		},
 		{
+			"src": "scripts/edit-tracker.mjs",
+			"dest": "/workspace/.codeck/scripts/edit-tracker.mjs"
+		},
+		{
+			"src": "scripts/workflow-checkpoint.mjs",
+			"dest": "/workspace/.codeck/scripts/workflow-checkpoint.mjs"
+		},
+		{
+			"src": "scripts/context-injector.mjs",
+			"dest": "/workspace/.codeck/scripts/context-injector.mjs"
+		},
+		{
 			"src": "scripts/repo-map-generator.mjs",
 			"dest": "/workspace/.codeck/scripts/repo-map-generator.mjs"
 		},

@@ -17,6 +17,7 @@ import {
 	claudeUsage,
 	contextData,
 	setContextData,
+	showToast,
 	activeSection,
 	recentConversations,
 	fetchRecentConversations,
@@ -811,6 +812,86 @@ export function ClaudeSection({
 	);
 }
 
+const MODEL_OPTIONS = [
+	{ id: "haiku", label: "Haiku", desc: "Fast, lightweight" },
+	{ id: "sonnet", label: "Sonnet", desc: "Best for coding" },
+	{ id: "opus", label: "Opus", desc: "Deep reasoning" },
+	{ id: "opus[1m]", label: "Opus 1M", desc: "Opus + extended context" },
+];
+
+function ModelSelector({ currentModel }: { currentModel: string }) {
+	const [open, setOpen] = useState(false);
+	const [switching, setSwitching] = useState(false);
+	const ref = useRef<HTMLDivElement>(null);
+
+	// Close on outside click
+	useEffect(() => {
+		if (!open) return;
+		const handler = (e: MouseEvent) => {
+			if (ref.current && !ref.current.contains(e.target as Node))
+				setOpen(false);
+		};
+		document.addEventListener("mousedown", handler);
+		return () => document.removeEventListener("mousedown", handler);
+	}, [open]);
+
+	async function switchModel(modelId: string) {
+		setSwitching(true);
+		setOpen(false);
+		try {
+			const res = await apiFetch("/api/system/model", {
+				method: "POST",
+				body: JSON.stringify({ model: modelId }),
+			});
+			const data = await res.json();
+			if (data.success) {
+				showToast(`Model → ${modelId}`, "success", 2000);
+			} else {
+				showToast(data.error || "Failed to switch model", "error");
+			}
+		} catch {
+			showToast("Failed to switch model", "error");
+		}
+		setSwitching(false);
+	}
+
+	// Detect which option is active
+	const current =
+		MODEL_OPTIONS.find(
+			(m) =>
+				currentModel.toLowerCase().includes(m.id.replace("[1m]", "")) &&
+				(m.id.includes("[1m]")
+					? currentModel.includes("1m") || currentModel.includes("1M")
+					: !currentModel.includes("1m") && !currentModel.includes("1M")),
+		) || MODEL_OPTIONS.find((m) => currentModel.toLowerCase().includes(m.id));
+
+	return (
+		<div class="tsb-model-selector" ref={ref}>
+			<button
+				class={`tsb-model${switching ? " switching" : ""}`}
+				onClick={() => setOpen(!open)}
+				title="Switch model"
+			>
+				{switching ? <span class="spinner-sm" /> : currentModel}
+			</button>
+			{open && (
+				<div class="tsb-model-dropup">
+					{MODEL_OPTIONS.map((m) => (
+						<button
+							key={m.id}
+							class={`tsb-model-option${current?.id === m.id ? " active" : ""}`}
+							onClick={() => m.id !== current?.id && switchModel(m.id)}
+						>
+							<span class="tsb-model-option-name">{m.label}</span>
+							<span class="tsb-model-option-desc">{m.desc}</span>
+						</button>
+					))}
+				</div>
+			)}
+		</div>
+	);
+}
+
 function TerminalStatusBar() {
 	const usage = claudeUsage.value;
 	const rawCtx = contextData.value;
@@ -931,11 +1012,11 @@ function TerminalStatusBar() {
 						)}
 					</div>
 				)}
-				{/* Model */}
+				{/* Model selector */}
 				{ctx?.model && (
 					<>
 						<span class="tsb-sep">|</span>
-						<span class="tsb-model">{ctx.model}</span>
+						<ModelSelector currentModel={ctx.model} />
 					</>
 				)}
 				{/* Context usage */}

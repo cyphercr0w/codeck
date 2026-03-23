@@ -3265,27 +3265,44 @@
 }
 
 /* ── Memory Preset Info ── */
-.mem-preset-info {
+/* ── Memory Cards (Preset + Migration) ── */
+.mem-card {
+	flex: 1;
+	min-width: 0;
+	padding: 16px;
+	background: var(--bg-card);
+	border: 1px solid var(--border);
+	border-radius: var(--radius-lg);
+}
+.mem-card-header {
+	display: flex;
+	align-items: flex-start;
+	gap: 12px;
+	margin-bottom: 14px;
+}
+.mem-card-header > svg {
+	flex-shrink: 0;
+	color: var(--accent);
+	margin-top: 2px;
+}
+.mem-card-header-info {
 	display: flex;
 	flex-direction: column;
-	gap: 6px;
-	margin-bottom: 12px;
+	gap: 2px;
+	min-width: 0;
 }
-.mem-preset-row {
-	display: flex;
-	justify-content: space-between;
-	align-items: center;
-	font-size: 13px;
+.mem-card-title {
+	font-size: 14px;
+	font-weight: 600;
 }
-.mem-preset-label {
-	color: var(--text-muted);
+.mem-card-meta {
 	font-size: 12px;
+	color: var(--text-muted);
 }
-.mem-preset-actions {
+.mem-card-actions {
 	display: flex;
-	gap: 6px;
+	gap: 8px;
 	align-items: center;
-	flex-wrap: wrap;
 }
 
 /* ── Memory Shortcuts Grid ── */

@@ -1,310 +1,153 @@
 # Deployment Guide
 
-Codeck supports two deployment modes. Both work on Linux, macOS, and Windows.
-
-| Mode | Use case | Architecture |
-|------|----------|-------------|
-| **Isolated** (default) | Local sandbox, development | Single Docker container (runtime + webapp) |
-| **Managed** | VPS, multi-device, dynamic ports | Daemon on host + runtime in isolated container |
+Codeck runs as a single Docker container. No daemon, no CLI tool, no multi-container orchestration.
 
 ---
 
-## CLI Reference
+## Quick Install
 
-All commands are available after `npm run build:cli` and linking globally (`npm link -w @codeck/cli`).
+The fastest way to get started. Pull the pre-built image from GitHub Container Registry:
 
-| Command | Description |
-|---------|-------------|
-| `codeck init` | Interactive setup wizard. Detects OS and Docker, selects mode (isolated/managed), configures port, extra ports, tokens, and builds the base image. |
-| `codeck start` | Start Codeck. In isolated mode: brings up the Docker container. In managed mode: starts the container then runs the daemon in foreground (`Ctrl+C` to stop both). |
-| `codeck stop` | Stop the runtime container (and daemon, if managed mode used `Ctrl+C`). |
-| `codeck restart` | Equivalent to `stop` then `start`. |
-| `codeck status` | Show container status, configured mode, port, and LAN config. |
-| `codeck logs` | Stream runtime container logs (`docker compose logs -f`). |
-| `codeck open` | Open the Codeck webapp in the default browser. |
-| `codeck doctor` | Diagnose common configuration issues (Docker running, base image built, ports available, config valid). |
-| `codeck lan start` | Start the mDNS advertiser for LAN access (`codeck.local`). macOS/Windows only. Requires admin/UAC. |
-| `codeck lan stop` | Stop the advertiser and remove Codeck entries from the hosts file. |
-| `codeck lan status` | Check if the mDNS advertiser is running. |
+```bash
+curl -fsSL https://codeck.xyz/install | bash
+```
 
----
-
-## Pre-built Image
-
-The fastest way to get started. Pull the image from GitHub Container Registry — no cloning, no building.
+Or manually:
 
 ```bash
 docker pull ghcr.io/cyphercr0w/codeck:latest
 docker run -d --name codeck \
-  -p 80:80 \
+  -p 8080:80 \
   -v codeck-workspace:/workspace \
   -v codeck-claude:/root/.claude \
+  -v codeck-ssh:/root/.ssh \
+  -v codeck-gh:/root/.config/gh \
+  -v codeck-data:/data/.codeck \
   --restart unless-stopped \
   ghcr.io/cyphercr0w/codeck:latest --web
 ```
 
-Available tags:
+Available image tags:
 - `latest` — latest push to `main`
 - `<sha>` — pinned to a specific commit (e.g., `ghcr.io/cyphercr0w/codeck:a1b2c3d`)
 - `<version>` — semver release tag (e.g., `ghcr.io/cyphercr0w/codeck:1.0.0`)
 
 ---
 
-## Isolated Mode
+## Docker Compose
 
-Single container running the runtime with the webapp. No daemon, no Docker socket. Simple and secure.
-
-```bash
-# Via CLI:
-codeck init       # Choose "Isolated" mode
-codeck start
-
-# Or directly:
-docker compose -f docker/compose.isolated.yml up --build
-```
-
----
-
-## Managed Mode
-
-The daemon runs natively on the host (serves web UI, handles auth, port exposure) and proxies to a runtime container (runs Claude Code, PTYs, file operations).
-
-### Architecture
-
-```
-┌──────────────────────────────────────────────────┐
-│  Host                                            │
-│                                                  │
-│  codeck daemon (:8080)                           │
-│    ├── Web UI (SPA)                              │
-│    ├── Auth, sessions, rate limiting             │
-│    ├── Port manager (compose operations)         │
-│    └── Proxy → runtime container                 │
-│                                                  │
-│  ┌────────────────────────────────────────────┐  │
-│  │  Docker container (codeck-runtime)         │  │
-│  │    ├── :7777 HTTP (localhost only)         │  │
-│  │    ├── :7778 WebSocket (localhost only)    │  │
-│  │    ├── Claude Code CLI                     │  │
-│  │    ├── PTY sessions                        │  │
-│  │    └── /workspace (volume)                 │  │
-│  └────────────────────────────────────────────┘  │
-└──────────────────────────────────────────────────┘
-```
-
-### Cross-platform setup
+The recommended way to run Codeck with proper resource limits and security hardening:
 
 ```bash
-# Via CLI (Linux, macOS, Windows):
-codeck init       # Choose "Managed" mode
-codeck start      # Starts runtime container + daemon in foreground (Ctrl+C to stop)
-codeck stop       # Stops runtime container (daemon stops via Ctrl+C)
-codeck status     # Container + daemon status
-codeck logs       # Stream runtime container logs
-codeck restart    # Restart container (and daemon if managed)
-codeck doctor     # Diagnose common configuration issues
-```
-
-#### LAN access (macOS / Windows — managed mode)
-
-On macOS and Windows, `codeck start` offers to enable LAN access automatically. You can also manage it manually:
-
-```bash
-codeck lan start   # Start mDNS advertiser (requires admin/UAC on Windows)
-codeck lan stop    # Stop advertiser and remove codeck.local from hosts file
-codeck lan status  # Check if advertiser is running
-```
-
-The mDNS advertiser makes `codeck.local` and `<port>.codeck.local` resolvable from all devices on the local network. On first run it installs npm dependencies from `scripts/`. On Windows, UAC elevation is required to write the hosts file.
-
-On Linux, LAN access is configured at `codeck init` time via host networking — `codeck lan` is not needed.
-
-### Linux VPS — systemd service
-
-For production Linux VPS deployments, the daemon runs as a systemd service:
-
-### Requirements
-
-- Ubuntu 20.04+ (or any systemd-based Linux distro)
-- Root/sudo access
-- 2+ CPU cores, 4GB+ RAM
-- Port 80 (HTTP) open
-
-### Quick Install
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/cyphercr0w/codeck/main/scripts/install.sh | sudo bash
-```
-
-Or manually:
-
-```bash
-sudo bash scripts/install.sh
-```
-
-### What the Installer Does
-
-1. **Pre-flight checks**: Verifies Linux, root, systemd, package manager
-2. **System deps**: `curl`, `git` (no build-essential — daemon has no native modules)
-3. **Node.js 22+**: Installs via NodeSource (apt/dnf/yum)
-4. **Docker**: Installs via get.docker.com, enables service
-5. **User creation**: Creates `codeck` system user, adds to `docker` group
-6. **Directories**: Creates `/home/codeck/{workspace,.codeck,.claude,.ssh,.config/gh}`
-7. **Codeck**: Clones to `/opt/codeck`, `npm ci --ignore-scripts`, `npm run build`
-8. **Docker images**: Builds `codeck-base` and `codeck` images
-9. **Environment**: Creates `.env` with `CODECK_UID`/`CODECK_GID`
-10. **Systemd**: Installs service unit (manages both daemon and container)
-
-### Service Management
-
-A single `systemctl` command manages both the daemon and the runtime container:
-
-```bash
-# Check status
-systemctl status codeck
-
-# View daemon logs
-journalctl -u codeck -f
-
-# View runtime container logs
-docker logs codeck-runtime -f
-
-# Restart (stops container, restarts daemon, starts container)
-systemctl restart codeck
+# Start
+docker compose -f docker/compose.yml up -d
 
 # Stop
-systemctl stop codeck
+docker compose -f docker/compose.yml down
 
-# Disable auto-start
-systemctl disable codeck
+# View logs
+docker compose -f docker/compose.yml logs -f
 ```
 
-### Configuration
-
-The systemd unit file is at `/etc/systemd/system/codeck.service`. Key environment variables:
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `NODE_ENV` | `production` | Node environment |
-| `CODECK_DAEMON_PORT` | `80` | Daemon HTTP port |
-| `CODECK_RUNTIME_URL` | `http://127.0.0.1:7777` | Runtime HTTP URL |
-| `CODECK_RUNTIME_WS_URL` | `http://127.0.0.1:7778` | Runtime WebSocket URL |
-
-To override defaults, create a drop-in:
+Or via npm scripts:
 
 ```bash
-sudo systemctl edit codeck
+npm run docker:up       # start
+npm run docker:down     # stop
+npm run docker:logs     # tail logs
+npm run docker:rebuild  # build + start
 ```
 
-```ini
-[Service]
-Environment="CODECK_DAEMON_PORT=8080"
-```
+### Compose file location
 
-Then reload and restart:
+The single compose file is at `docker/compose.yml`. There are no separate managed or isolated modes.
+
+---
+
+## Building from Source
+
+### Prerequisites
+
+- Docker 20.10+
+- Node.js 22+ (for building, not for running)
+
+### Build the base image (one-time)
 
 ```bash
-sudo systemctl daemon-reload
-sudo systemctl restart codeck
-```
-
-### Resource Limits
-
-- **Daemon** (host): CPU 100% (1 core), Memory 512MB
-- **Runtime** (container): CPU 200% (2 cores), Memory 4GB, PIDs 512
-- **Security**: `NoNewPrivileges=true`, `ProtectSystem=full`
-
-### File Paths
-
-| Path | Purpose |
-|------|---------|
-| `/opt/codeck/` | Application code |
-| `/home/codeck/workspace/` | User workspace (bind-mounted into container) |
-| `/home/codeck/.claude/` | Claude CLI config (bind-mounted) |
-| `/home/codeck/.ssh/` | SSH keys (bind-mounted) |
-| `/home/codeck/.config/gh/` | GitHub CLI config (bind-mounted) |
-| `/etc/systemd/system/codeck.service` | Systemd unit |
-| `/opt/codeck/.env` | UID/GID for container file ownership |
-
-### Updating
-
-```bash
-cd /opt/codeck
-sudo git pull
-npm ci --ignore-scripts
-npm run build
-docker build -t codeck -f docker/Dockerfile .
-sudo systemctl restart codeck
-```
-
-### Troubleshooting
-
-**Service won't start**
-```bash
-# Check daemon logs
-journalctl -u codeck -n 50 --no-pager
-
-# Check runtime container
-docker logs codeck-runtime --tail 50
-
-# Verify Node.js version
-node -v  # Should be 22+
-
-# Verify Docker images exist
-docker images | grep codeck
-```
-
-**Port 80 already in use**
-```bash
-# Find what's using port 80
-ss -tlnp | grep :80
-
-# Use a different port
-sudo systemctl edit codeck
-# Add: Environment="CODECK_DAEMON_PORT=8080"
-sudo systemctl daemon-reload
-sudo systemctl restart codeck
-```
-
-**Runtime container won't start**
-```bash
-# Check container status
-docker ps -a | grep codeck-runtime
-
-# Rebuild images
+npm run docker:build-base
+# or directly:
 docker build -t codeck-base -f docker/Dockerfile.base .
-docker build -t codeck -f docker/Dockerfile .
-sudo systemctl restart codeck
 ```
 
-**Permission denied on workspace**
+### Build the app image
+
 ```bash
-sudo chown -R codeck:codeck /home/codeck/
-sudo systemctl restart codeck
+npm run build                                    # Build frontend + backend
+docker compose -f docker/compose.yml up --build  # Build + start
 ```
 
 ---
 
-## Docker Deployment
+## Resource Allocation
 
-### Isolated mode (default)
+### Container limits (compose.yml)
 
-Single container running the runtime with the SPA:
+| Resource | Default | Description |
+|----------|---------|-------------|
+| Memory limit | 0 (unlimited) | Set via `CODECK_MEMORY_LIMIT` env var (e.g., `4G`) |
+| Memory reservation | 256M | Minimum guaranteed memory |
+| PIDs | 512 | Fork bomb protection |
+| Node.js heap | 2048 MB | Set via `CODECK_NODE_HEAP_MB` env var |
+
+### Recommended minimums
+
+| Use case | CPU | RAM | Disk |
+|----------|-----|-----|------|
+| Personal dev (1 session) | 1 core | 2 GB | 10 GB |
+| Active dev (2-3 sessions) | 2 cores | 4 GB | 20 GB |
+| Heavy use (agents + dev servers) | 4 cores | 8 GB | 40 GB |
+
+### Tuning
+
+To adjust resource limits, set environment variables before running compose:
 
 ```bash
-docker compose -f docker/compose.isolated.yml up --build    # → http://localhost:80
+export CODECK_MEMORY_LIMIT=4G
+export CODECK_NODE_HEAP_MB=3072
+docker compose -f docker/compose.yml up -d
 ```
 
-See the main [README.md](../README.md) for full commands.
+Or add to `.env` in the project root:
 
-**Typical nginx config for managed mode (VPS behind reverse proxy):**
+```env
+CODECK_MEMORY_LIMIT=4G
+CODECK_NODE_HEAP_MB=3072
+```
+
+---
+
+## Reverse Proxy (nginx + SSL)
+
+For production deployments behind a reverse proxy with HTTPS:
+
+### nginx configuration
+
 ```nginx
 server {
     listen 80;
     server_name codeck.example.com;
+    return 301 https://$host$request_uri;
+}
+
+server {
+    listen 443 ssl http2;
+    server_name codeck.example.com;
+
+    ssl_certificate /etc/letsencrypt/live/codeck.example.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/codeck.example.com/privkey.pem;
 
     location / {
-        proxy_pass http://localhost:8080;
+        proxy_pass http://127.0.0.1:8080;
         proxy_http_version 1.1;
         proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection "upgrade";
@@ -312,38 +155,167 @@ server {
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
+
+        # WebSocket timeout (default 60s is too short for terminal sessions)
+        proxy_read_timeout 3600s;
+        proxy_send_timeout 3600s;
     }
 }
 ```
 
-### CLI-managed deployment
-
-The `@codeck/cli` package automates Docker lifecycle:
+### SSL with certbot
 
 ```bash
-npm run build:cli && npm link -w @codeck/cli
-codeck init           # Choose isolated or managed mode
-codeck start          # Starts the correct compose file (+ daemon for managed)
-codeck stop
-codeck status
+sudo apt install certbot python3-certbot-nginx
+sudo certbot --nginx -d codeck.example.com
 ```
-
-See [CONFIGURATION.md](CONFIGURATION.md#codeck-cli) for CLI details.
 
 ---
 
-## Deployment Mode Detection
+## Updating
 
-Codeck auto-detects its deployment mode at startup and logs it:
+Volumes persist across container recreation, so updates are non-destructive:
 
+### Pre-built image
+
+```bash
+docker pull ghcr.io/cyphercr0w/codeck:latest
+docker stop codeck && docker rm codeck
+# Re-run the docker run command (same volumes)
+docker run -d --name codeck \
+  -p 8080:80 \
+  -v codeck-workspace:/workspace \
+  -v codeck-claude:/root/.claude \
+  -v codeck-ssh:/root/.ssh \
+  -v codeck-gh:/root/.config/gh \
+  -v codeck-data:/data/.codeck \
+  --restart unless-stopped \
+  ghcr.io/cyphercr0w/codeck:latest --web
 ```
-[Startup] Starting Codeck in systemd mode
+
+### Docker Compose
+
+```bash
+cd /path/to/codeck
+git pull
+npm run docker:build-base  # only if Dockerfile.base changed
+docker compose -f docker/compose.yml up -d --build
 ```
 
-The detection logic (in `apps/runtime/src/services/environment.ts`):
+### What persists across updates
 
-1. If `SYSTEMD_EXEC_PID` env var exists → `systemd`
-2. If `/.dockerenv` file exists → `docker`
-3. Otherwise → `cli-local`
+| Data | Volume | Survives update? |
+|------|--------|-----------------|
+| Projects and repos | `codeck-workspace` | Yes |
+| Claude credentials | `codeck-claude` | Yes |
+| SSH keys | `codeck-ssh` | Yes |
+| GitHub CLI auth | `codeck-gh` | Yes |
+| Codeck config, memory, agents | `codeck-data` | Yes |
 
-Each mode sets appropriate defaults for workspace path and port.
+**Warning:** `docker compose down -v` deletes all named volumes permanently.
+
+---
+
+## Troubleshooting
+
+### Container won't start
+
+```bash
+# Check container logs
+docker logs codeck --tail 50
+
+# Check health status
+docker inspect codeck --format='{{.State.Health.Status}}'
+
+# Verify images exist
+docker images | grep codeck
+
+# Check port conflicts
+ss -tlnp | grep :8080
+```
+
+### Port 8080 already in use
+
+```bash
+# Find what's using the port
+ss -tlnp | grep :8080
+
+# Use a different host port
+docker run -d --name codeck -p 9090:80 ...
+# or in compose, edit the ports mapping
+```
+
+### Permission denied on workspace
+
+```bash
+# Check volume permissions
+docker exec codeck ls -la /workspace
+
+# Fix ownership (if needed)
+docker exec codeck chown -R root:root /workspace
+```
+
+### WebSocket disconnects behind proxy
+
+Ensure your reverse proxy has:
+- `proxy_read_timeout` set to at least 3600s
+- `proxy_http_version 1.1` with `Upgrade` and `Connection` headers
+- No buffering on WebSocket connections
+
+### Out of memory
+
+```bash
+# Check container memory usage
+docker stats codeck --no-stream
+
+# Increase memory limit
+export CODECK_MEMORY_LIMIT=8G
+docker compose -f docker/compose.yml up -d
+```
+
+### Health check failing
+
+```bash
+# Test the health endpoint manually
+docker exec codeck curl -f http://localhost:80/api/auth/status
+
+# Check if the process is running
+docker exec codeck ps aux | grep node
+```
+
+### Resetting to clean state
+
+```bash
+# Remove container and all data (DESTRUCTIVE)
+docker compose -f docker/compose.yml down -v
+
+# Remove just the container (preserves volumes)
+docker compose -f docker/compose.yml down
+
+# Reset only the Codeck config (preserves workspace)
+docker volume rm codeck-data
+```
+
+---
+
+## LAN Access
+
+### mDNS (codeck.local)
+
+The container has a built-in mDNS responder that advertises `codeck.local`. For LAN access from other devices, the host-side mDNS advertiser script may be needed:
+
+```bash
+cd scripts && npm install
+sudo node scripts/mdns-advertiser.cjs  # macOS
+# or run as Administrator on Windows
+```
+
+### Access URLs
+
+- **Local:** `http://localhost:8080`
+- **LAN:** `http://codeck.local` (requires mDNS)
+- **Direct IP:** `http://<HOST_IP>:8080`
+
+### Security note
+
+mDNS has no authentication. Only enable LAN mode on trusted networks. Do not use on public WiFi or shared networks.

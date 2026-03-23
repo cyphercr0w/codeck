@@ -471,12 +471,17 @@ export function addSubagent(data: {
 	agentId: string;
 	agentType: string;
 	startedAt: number;
+	lastMessage?: string;
 }): void {
 	// Deduplicate — avoid adding the same agent twice (e.g., after a sync + live event)
 	if (activeSubagents.value.some((a) => a.agentId === data.agentId)) return;
 	activeSubagents.value = [
 		...activeSubagents.value,
-		{ ...data, lastLine: "", lines: [] },
+		{
+			...data,
+			lastLine: data.lastMessage || "",
+			lines: data.lastMessage ? [data.lastMessage] : [],
+		},
 	];
 	ensureSubagentGc();
 }

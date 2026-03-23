@@ -27,14 +27,25 @@ function AgentTypeIcon({ type }: { type: string }) {
 	);
 }
 
+const AGENT_INITIAL_STATUS: Record<string, string> = {
+	Explore: "Scanning codebase...",
+	Plan: "Analyzing requirements...",
+	"code-reviewer": "Reviewing changes...",
+	"typescript-reviewer": "Checking TypeScript...",
+	"security-reviewer": "Scanning for vulnerabilities...",
+	"general-purpose": "Processing task...",
+	"rust-reviewer": "Reviewing Rust code...",
+	"java-reviewer": "Reviewing Java code...",
+	"kotlin-reviewer": "Reviewing Kotlin code...",
+};
+
 function statusText(agent: SubagentInfo): string {
 	if (agent.lastMessage) return agent.lastMessage;
 	if (agent.lastLine) return agent.lastLine;
 	if (agent.duration) return "Completed";
-	const elapsed = Date.now() - agent.startedAt;
-	if (elapsed < 2000) return "Starting...";
-	if (elapsed < 5000) return "Initializing tools...";
-	return "Reading files...";
+	return (
+		AGENT_INITIAL_STATUS[agent.agentType] || `Running ${agent.agentType}...`
+	);
 }
 
 function TranscriptView({

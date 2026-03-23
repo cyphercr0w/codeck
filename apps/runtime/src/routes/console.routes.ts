@@ -325,8 +325,11 @@ router.post("/resume", (req, res) => {
 		broadcastStatus();
 		res.json({ sessionId: session.id, cwd: session.cwd, name: session.name });
 	} catch (e) {
-		const detail = e instanceof Error ? e.message : "Failed to resume conversation";
-		console.error(`[Console] Resume failed: ${detail} (conversation: ${conversationId}, cwd: ${cwd})`);
+		const detail =
+			e instanceof Error ? e.message : "Failed to resume conversation";
+		console.error(
+			`[Console] Resume failed: ${detail} (conversation: ${conversationId}, cwd: ${cwd})`,
+		);
 		res.status(400).json({ error: detail });
 	}
 });
@@ -609,7 +612,14 @@ router.post("/subagents", (req, res) => {
 
 		broadcast({
 			type: "subagent:start",
-			data: { agentId, agentType, sessionId, cwd, startedAt: Date.now() },
+			data: {
+				agentId,
+				agentType,
+				sessionId,
+				cwd,
+				startedAt: Date.now(),
+				lastMessage: lastMessage || "",
+			},
 		});
 
 		// Start watching the transcript file for streaming output

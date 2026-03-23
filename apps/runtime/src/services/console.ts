@@ -233,11 +233,17 @@ function _createConsoleSessionInner(
 	// Support legacy string-only cwd argument
 	const opts: CreateSessionOptions =
 		typeof options === "string" ? { cwd: options } : options || {};
-	const workDir = resolve(opts.cwd || process.env.WORKSPACE || "/workspace");
+	let workDir = resolve(opts.cwd || process.env.WORKSPACE || "/workspace");
 
-	// Validate cwd exists to prevent execvp failures
+	// Validate cwd exists — for resume, fall back to /workspace instead of failing
 	if (!existsSync(workDir)) {
-		throw new Error(`Working directory does not exist: ${workDir}`);
+		if (opts.resume) {
+			const fallback = process.env.WORKSPACE || "/workspace";
+			console.warn(`[Console] Resume cwd missing (${workDir}), falling back to ${fallback}`);
+			workDir = fallback;
+		} else {
+			throw new Error(`Working directory does not exist: ${workDir}`);
+		}
 	}
 
 	ensureOnboardingComplete();

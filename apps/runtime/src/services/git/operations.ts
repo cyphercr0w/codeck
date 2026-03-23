@@ -37,30 +37,35 @@ export function isGitInstalled(): boolean {
   return gitInstalled;
 }
 
-// ── Repository queries ───────────────────────────────────────────────
+// ── Repository queries (with TTL cache) ─────────────────────────────
+const REPO_CACHE_TTL = 15_000; // 15 seconds
+let repoCache: { data: RepoInfo[]; fetchedAt: number } | null = null;
+let emptyCache: { data: boolean; fetchedAt: number } | null = null;
+
+/**
+ * Invalidate the repo/workspace caches. Call after clone, delete, or
+ * any operation that changes the workspace directory listing.
+ */
+export function invalidateRepoCache(): void {
+  repoCache = null;
+  emptyCache = null;
+}
+
 /**
  * Check if the workspace has a repository (or multiple)
  */
 export function hasRepository(): boolean {
-  // Check root level
-  if (existsSync(`${WORKSPACE}/.git`)) return true;
-
-  // Check subdirectories
-  try {
-    const dirs = readdirSync(WORKSPACE);
-    return dirs.some(dir => {
-      const gitPath = `${WORKSPACE}/${dir}/.git`;
-      return existsSync(gitPath);
-    });
-  } catch {
-    return false;
-  }
+  return listRepositories().length > 0;
 }
 
 /**
- * List all repositories in the workspace
+ * List all repositories in the workspace (cached, 15s TTL)
  */
 export function listRepositories(): RepoInfo[] {
+  if (repoCache && (Date.now() - repoCache.fetchedAt) < REPO_CACHE_TTL) {
+    return repoCache.data;
+  }
+
   const repos: RepoInfo[] = [];
 
   // Check root level
@@ -85,20 +90,28 @@ export function listRepositories(): RepoInfo[] {
     console.warn('[Git] Error listing repos:', (e as Error).message);
   }
 
+  repoCache = { data: repos, fetchedAt: Date.now() };
   return repos;
 }
 
 /**
- * Check if the workspace is empty (ignores config files)
+ * Check if the workspace is empty (cached, 15s TTL)
  */
 export function isWorkspaceEmpty(): boolean {
+  if (emptyCache && (Date.now() - emptyCache.fetchedAt) < REPO_CACHE_TTL) {
+    return emptyCache.data;
+  }
+
   if (!existsSync(WORKSPACE)) {
+    emptyCache = { data: true, fetchedAt: Date.now() };
     return true;
   }
   const files = readdirSync(WORKSPACE);
   // Ignore config/generated files — only count real project directories
   const realFiles = files.filter(f => f !== ACTIVE_AGENT.instructionFile && f !== '.gitkeep' && !f.startsWith('.'));
-  return realFiles.length === 0;
+  const empty = realFiles.length === 0;
+  emptyCache = { data: empty, fetchedAt: Date.now() };
+  return empty;
 }
 
 // ── URL helpers ──────────────────────────────────────────────────────
@@ -194,6 +207,7 @@ export function cleanWorkspace(): boolean {
       if (file === '.codeck') continue; // Preserve config directory
       removeDirectory(`${WORKSPACE}/${file}`);
     }
+    invalidateRepoCache();
     console.log('[Workspace] Cleaned');
     return true;
   } catch (err) {
@@ -337,6 +351,7 @@ export function cloneRepository(url: string, token?: string | null, useSSH = fal
 
         // Update instruction file with the new project list
         updateClaudeMd();
+        invalidateRepoCache();
 
         resolve({ success: true, path: targetDir, repoName });
       } else {

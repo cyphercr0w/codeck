@@ -214,7 +214,23 @@ export function App() {
       const token = getAuthToken();
 
       if (!token) {
-        // No token — check if password is configured
+        // Consume prefetch if available (inline script started this before bundle loaded)
+        const prefetched = (window as any).__prefetch;
+        if (prefetched) {
+          (window as any).__prefetch = null;
+          const authData = await prefetched;
+          if (authData) {
+            if (authData.configured) {
+              setView('auth');
+              setAuthMode('login');
+            } else {
+              setView('auth');
+              setAuthMode('setup');
+            }
+            return;
+          }
+        }
+        // Fallback: prefetch missed or failed
         const authRes = await fetch('/api/auth/status', { signal });
         if (!authRes.ok) throw new Error(`Auth status check failed: ${authRes.status}`);
         const authData = await authRes.json();
@@ -234,18 +250,30 @@ export function App() {
       // If /api/status returns 401, we close the WS (no harm done).
       connectWebSocket();
 
-      const testRes = await apiFetch('/api/status', { signal });
-      if (testRes.status === 401) {
-        clearAuthToken();
-        disconnectWebSocket();
-        setView('auth');
-        setAuthMode('login');
-        return;
+      // Consume prefetch if available (inline script started this before bundle loaded)
+      let data: any = null;
+      const prefetched = (window as any).__prefetch;
+      if (prefetched) {
+        (window as any).__prefetch = null;
+        data = await prefetched;
       }
-      if (testRes.status >= 500) {
-        throw new Error(`Server returned ${testRes.status} — runtime not ready`);
+
+      if (!data) {
+        // Prefetch missed or failed — fall back to regular fetch
+        const testRes = await apiFetch('/api/status', { signal });
+        if (testRes.status === 401) {
+          clearAuthToken();
+          disconnectWebSocket();
+          setView('auth');
+          setAuthMode('login');
+          return;
+        }
+        if (testRes.status >= 500) {
+          throw new Error(`Server returned ${testRes.status} — runtime not ready`);
+        }
+        data = await testRes.json();
       }
-      const data = await testRes.json();
+
       updateStateFromServer(data);
 
       const hasAccount = !!data.account;

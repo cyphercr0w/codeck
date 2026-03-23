@@ -1,16 +1,16 @@
 #!/bin/bash
 # Codeck statusline — sends context usage to the runtime for the web UI.
 # Claude Code calls this periodically (~300ms) with JSON on stdin.
+# Uses a single Python invocation that reads stdin directly (no shell interpolation).
 
-INPUT=$(cat)
+python3 << 'PYEOF'
+import sys, json, urllib.request, os
 
-# Extract context data and push to runtime
-python3 -c "
-import sys, json, urllib.request
-
+raw = sys.stdin.read()
 try:
-    d = json.loads('''$INPUT''')
+    d = json.loads(raw)
 except:
+    print("CTX ?")
     sys.exit(0)
 
 # Extract context window data
@@ -23,7 +23,6 @@ total_tokens = input_tokens + cache_create + cache_read
 window_size = cw.get('context_window_size', 0)
 used_pct = cw.get('used_percentage', 0)
 
-# Calculate percentage if not provided natively
 if not used_pct and window_size > 0:
     used_pct = round(100 * total_tokens / window_size)
 
@@ -31,43 +30,26 @@ if not used_pct and window_size > 0:
 model = d.get('model', {})
 model_name = model.get('display_name', '') or model.get('id', '')
 
-# Always send to runtime — even 0% is valid (e.g. after compaction)
-if True:
-    import os
-    payload = json.dumps({
-        'contextPercent': used_pct,
-        'contextTokens': total_tokens,
-        'contextWindow': window_size,
-        'model': model_name,
-        'sessionId': os.environ.get('CODECK_SESSION_ID', ''),
-    }).encode()
-    try:
-        req = urllib.request.Request(
-            'http://localhost/api/console/context',
-            data=payload,
-            headers={'Content-Type': 'application/json'},
-            method='POST'
-        )
-        urllib.request.urlopen(req, timeout=1)
-    except:
-        pass
-" 2>/dev/null
-
-# Output status line text (shown in terminal)
-CTX=$(python3 -c "
-import json, sys
+# Send to runtime (non-blocking, fire-and-forget)
+session_id = os.environ.get('CODECK_SESSION_ID', '')
+payload = json.dumps({
+    'contextPercent': used_pct,
+    'contextTokens': total_tokens,
+    'contextWindow': window_size,
+    'model': model_name,
+    'sessionId': session_id,
+}).encode()
 try:
-    d = json.loads('''$INPUT''')
-    cw = d.get('context_window', {})
-    pct = cw.get('used_percentage', 0)
-    if not pct:
-        u = cw.get('current_usage', {})
-        t = u.get('input_tokens',0) + u.get('cache_creation_input_tokens',0) + u.get('cache_read_input_tokens',0)
-        w = cw.get('context_window_size', 0)
-        pct = round(100*t/w) if w else 0
-    print(f'CTX {pct}%')
+    req = urllib.request.Request(
+        'http://localhost/api/console/context',
+        data=payload,
+        headers={'Content-Type': 'application/json'},
+        method='POST'
+    )
+    urllib.request.urlopen(req, timeout=1)
 except:
-    print('CTX ?')
-" 2>/dev/null)
+    pass
 
-echo "$CTX"
+# Output status line text (shown in terminal by Claude Code)
+print(f'CTX {used_pct}%')
+PYEOF

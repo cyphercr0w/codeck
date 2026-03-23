@@ -48,6 +48,7 @@ export {
   hasRepository,
   listRepositories,
   isWorkspaceEmpty,
+  invalidateRepoCache,
   createAskpassScript,
 } from './git/operations.js';
 

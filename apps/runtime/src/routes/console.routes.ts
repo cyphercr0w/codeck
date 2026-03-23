@@ -136,6 +136,11 @@ router.get("/has-conversations", async (req, res) => {
 });
 
 // List recent conversations across all projects (for resume UI)
+// Two-pass approach: stat all files (cheap), sort by mtime, only read top N (expensive).
+// This avoids reading all 1000+ .jsonl files just to find the 5 most recent.
+const RECENT_LIMIT = 5;
+const RECENT_READ_CANDIDATES = 20; // read a few extra in case some lack title/cwd
+
 router.get("/recent-conversations", (_req, res) => {
 	try {
 		const home = process.env.HOME || "/root";
@@ -145,6 +150,52 @@ router.get("/recent-conversations", (_req, res) => {
 			return;
 		}
 
+		// Pass 1: collect file paths + mtimes (no content reads)
+		// Only include project directories whose decoded path exists inside the
+		// container. Conversations from external Claude Code processes (e.g. running
+		// from /home/user/...) use a different project dir encoding and can't be
+		// resumed from inside the container — skip them entirely.
+		const WORKSPACE = process.env.WORKSPACE || "/workspace";
+		const candidates: Array<{ id: string; filePath: string; mtime: number }> =
+			[];
+
+		for (const projectDir of readdirSync(projectsDir)) {
+			const fullDir = join(projectsDir, projectDir);
+			try {
+				if (!statSync(fullDir).isDirectory()) continue;
+			} catch {
+				continue;
+			}
+
+			// Decode project dir name: "-workspace-codeck" → "/workspace/codeck"
+			const decodedPath = "/" + projectDir.replace(/^-/, "").replace(/-/g, "/");
+			if (
+				!decodedPath.startsWith(WORKSPACE + "/") &&
+				decodedPath !== WORKSPACE
+			) {
+				continue; // skip — from external process, can't resume
+			}
+
+			for (const file of readdirSync(fullDir)) {
+				if (!file.endsWith(".jsonl")) continue;
+				const filePath = join(fullDir, file);
+				try {
+					const mtime = statSync(filePath).mtimeMs;
+					candidates.push({
+						id: basename(file, ".jsonl"),
+						filePath,
+						mtime,
+					});
+				} catch {
+					/* stat failed — skip */
+				}
+			}
+		}
+
+		// Sort by mtime descending — most recent first
+		candidates.sort((a, b) => b.mtime - a.mtime);
+
+		// Pass 2: read only the top N candidates to extract title + cwd
 		const convos: Array<{
 			id: string;
 			title: string;
@@ -152,60 +203,71 @@ router.get("/recent-conversations", (_req, res) => {
 			mtime: number;
 		}> = [];
 
-		for (const projectDir of readdirSync(projectsDir)) {
-			const fullDir = join(projectsDir, projectDir);
-			if (!statSync(fullDir).isDirectory()) continue;
+		for (const c of candidates.slice(0, RECENT_READ_CANDIDATES)) {
+			if (convos.length >= RECENT_LIMIT) break;
 
-			for (const file of readdirSync(fullDir)) {
-				if (!file.endsWith(".jsonl")) continue;
-				const convId = basename(file, ".jsonl");
-				const filePath = join(fullDir, file);
-				const mtime = statSync(filePath).mtimeMs;
-
-				let title = "";
-				let cwd = "";
-				try {
-					const content = readFileSync(filePath, "utf-8");
-					for (const line of content.split("\n").slice(0, 30)) {
-						if (!line.trim()) continue;
-						const d = JSON.parse(line);
-						if (d.type === "user" && !title) {
-							cwd = d.cwd || "";
-							const msg = d.message;
-							if (msg && typeof msg === "object") {
-								const c = msg.content;
-								if (Array.isArray(c)) {
-									for (const block of c) {
-										if (block?.type === "text" && block.text) {
-											title = block.text
-												.replace(/<[^>]*>/g, "")
-												.trim()
-												.slice(0, 80);
-											break;
-										}
-									}
-								} else if (typeof c === "string") {
-									title = c
-										.replace(/<[^>]*>/g, "")
-										.trim()
-										.slice(0, 80);
-								}
-							}
-							if (title) break;
-						}
+			let title = "";
+			let cwd = "";
+			let sessionId = "";
+			try {
+				const content = readFileSync(c.filePath, "utf-8");
+				for (const line of content.split("\n").slice(0, 30)) {
+					if (!line.trim()) continue;
+					const d = JSON.parse(line);
+					// Extract sessionId from any entry that has it (needed for --resume)
+					if (!sessionId && d.sessionId) {
+						sessionId = d.sessionId;
 					}
-				} catch {
-					/* non-fatal */
+					if (d.type === "user" && !title) {
+						cwd = d.cwd || "";
+						if (!sessionId && d.sessionId) sessionId = d.sessionId;
+						const msg = d.message;
+						if (msg && typeof msg === "object") {
+							const ct = msg.content;
+							if (Array.isArray(ct)) {
+								for (const block of ct) {
+									if (block?.type === "text" && block.text) {
+										title = block.text
+											.replace(/<[^>]*>/g, "")
+											.trim()
+											.slice(0, 80);
+										break;
+									}
+								}
+							} else if (typeof ct === "string") {
+								title = ct
+									.replace(/<[^>]*>/g, "")
+									.trim()
+									.slice(0, 80);
+							}
+						}
+						if (title && sessionId) break;
+					}
 				}
+			} catch {
+				/* non-fatal */
+			}
 
-				if (title && cwd) {
-					convos.push({ id: convId, title, cwd, mtime });
+			// sessionId is what --resume needs; fall back to file-based id
+			const resumeId = sessionId || c.id;
+			if (title && cwd) {
+				// Remap paths from the host or older container layout to current /workspace
+				let resolvedCwd = cwd;
+				if (!existsSync(resolvedCwd)) {
+					const parts = resolvedCwd.split("/");
+					const projectName = parts[parts.length - 1];
+					const candidate = join(WORKSPACE, projectName);
+					if (projectName && existsSync(candidate)) {
+						resolvedCwd = candidate;
+					} else if (existsSync(WORKSPACE)) {
+						resolvedCwd = WORKSPACE;
+					}
 				}
+				convos.push({ id: resumeId, title, cwd: resolvedCwd, mtime: c.mtime });
 			}
 		}
 
-		convos.sort((a, b) => b.mtime - a.mtime);
-		res.json({ conversations: convos.slice(0, 5) });
+		res.json({ conversations: convos });
 	} catch (e) {
 		console.warn(
 			"[Console] Failed to list recent conversations:",
@@ -241,16 +303,31 @@ router.post("/resume", (req, res) => {
 		return;
 	}
 
+	// Validate cwd stays within /workspace (same check as /create)
+	if (cwd && typeof cwd === "string") {
+		const WORKSPACE = process.env.WORKSPACE || "/workspace";
+		const resolved = resolve(cwd);
+		if (!resolved.startsWith(WORKSPACE + sep) && resolved !== WORKSPACE) {
+			res.status(403).json({ error: "Access denied: cwd outside workspace" });
+			return;
+		}
+	}
+
 	try {
 		const session = createConsoleSession({
 			cwd: cwd || undefined,
 			resume: true,
 			conversationId,
 		});
+		console.log(
+			`[Console] Session resumed: ${session.id} (conversation: ${conversationId}, cwd: ${session.cwd})`,
+		);
 		broadcastStatus();
 		res.json({ sessionId: session.id, cwd: session.cwd, name: session.name });
 	} catch (e) {
-		res.status(400).json({ error: "Failed to resume conversation" });
+		const detail = e instanceof Error ? e.message : "Failed to resume conversation";
+		console.error(`[Console] Resume failed: ${detail} (conversation: ${conversationId}, cwd: ${cwd})`);
+		res.status(400).json({ error: detail });
 	}
 });
 
@@ -292,6 +369,18 @@ router.post("/resize", (req, res) => {
 	res.json({ success: true });
 });
 
+// Context usage — per-session, from statusline.sh
+const contextBySession = new Map<
+	string,
+	{
+		contextPercent: number;
+		contextTokens: number;
+		contextWindow: number;
+		model: string;
+		updatedAt: number;
+	}
+>();
+
 // Destroy console session
 router.post("/destroy", (req, res) => {
 	const { sessionId } = req.body;
@@ -305,18 +394,6 @@ router.post("/destroy", (req, res) => {
 	broadcastStatus();
 	res.json({ success: true });
 });
-
-// Context usage — per-session, from statusline.sh
-const contextBySession = new Map<
-	string,
-	{
-		contextPercent: number;
-		contextTokens: number;
-		contextWindow: number;
-		model: string;
-		updatedAt: number;
-	}
->();
 
 router.post("/context", (req, res) => {
 	const { contextPercent, contextTokens, contextWindow, model, sessionId } =

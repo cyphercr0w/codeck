@@ -20,12 +20,12 @@
 		"test:ui": "vitest --ui",
 		"test:coverage": "vitest --coverage",
 		"docker:build-base": "docker build -t codeck-base -f docker/Dockerfile.base .",
-		"docker:build": "docker compose -f docker/compose.yml build",
-		"docker:up": "docker compose -f docker/compose.yml up -d",
-		"docker:down": "docker compose -f docker/compose.yml down",
-		"docker:logs": "docker compose -f docker/compose.yml logs -f",
-		"docker:restart": "docker compose -f docker/compose.yml down && docker compose -f docker/compose.yml up -d",
-		"docker:rebuild": "docker compose -f docker/compose.yml up -d --build"
+		"docker:build": "docker compose --env-file .env -f docker/compose.yml build",
+		"docker:up": "docker compose --env-file .env -f docker/compose.yml up -d",
+		"docker:down": "docker compose --env-file .env -f docker/compose.yml down",
+		"docker:logs": "docker compose --env-file .env -f docker/compose.yml logs -f",
+		"docker:restart": "docker compose --env-file .env -f docker/compose.yml down && docker compose --env-file .env -f docker/compose.yml up -d",
+		"docker:rebuild": "docker compose --env-file .env -f docker/compose.yml up -d --build"
 	},
 	"devDependencies": {
 		"@types/supertest": "^6.0.3",

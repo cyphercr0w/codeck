@@ -16,6 +16,7 @@ import {
 	clearSessionStatus,
 	claudeUsage,
 	contextData,
+	setContextData,
 	activeSection,
 	recentConversations,
 	fetchRecentConversations,
@@ -841,6 +842,13 @@ function TerminalStatusBar() {
 				const { setClaudeUsage } = await import("../state/store");
 				setClaudeUsage(data.claude);
 			}
+			if (sid) {
+				const ctxRes = await apiFetch(`/api/console/context?sessionId=${sid}`);
+				const ctxData = await ctxRes.json();
+				if (ctxData.model || ctxData.contextPercent) {
+					setContextData({ ...ctxData, sessionId: sid });
+				}
+			}
 		} catch {
 			/* ignore */
 		}
@@ -923,17 +931,6 @@ function TerminalStatusBar() {
 						)}
 					</div>
 				)}
-				{/* Refresh button */}
-				{usage?.available && (
-					<button
-						class={`tsb-refresh${refreshing ? " spinning" : ""}`}
-						onClick={handleRefresh}
-						disabled={refreshing}
-						title="Refresh usage + resize terminal"
-					>
-						<IconRefresh size={12} />
-					</button>
-				)}
 				{/* Model */}
 				{ctx?.model && (
 					<>
@@ -974,6 +971,15 @@ function TerminalStatusBar() {
 						</div>
 					</>
 				)}
+				{/* Refresh — always last in left section */}
+				<button
+					class={`tsb-refresh${refreshing ? " spinning" : ""}`}
+					onClick={handleRefresh}
+					disabled={refreshing}
+					title="Refresh usage, context, and resize terminal"
+				>
+					<IconRefresh size={12} />
+				</button>
 			</div>
 			<div class="tsb-right">
 				<span class={`tsb-dot tsb-dot-${status}`} />

@@ -150,3 +150,30 @@ export function cancelCLIAuth(service: string): void {
 export function getSupportedCLIAuthServices(): string[] {
   return Object.keys(CONFIGS);
 }
+
+/** Check if a CLI-auth service is currently authenticated (non-blocking) */
+export async function isCLIAuthenticated(service: string): Promise<{ authenticated: boolean; username?: string }> {
+  const checks: Record<string, { cmd: string; args: string[]; parse: (out: string) => { authenticated: boolean; username?: string } }> = {
+    vercel: {
+      cmd: 'npx',
+      args: ['-y', 'vercel', 'whoami'],
+      parse: (out) => {
+        const name = out.trim();
+        return name && !name.includes('Error') && !name.includes('not logged')
+          ? { authenticated: true, username: name }
+          : { authenticated: false };
+      },
+    },
+  };
+
+  const check = checks[service];
+  if (!check) return { authenticated: false };
+
+  try {
+    const { execFileSync } = await import('child_process');
+    const out = execFileSync(check.cmd, check.args, { encoding: 'utf-8', timeout: 10_000, stdio: ['pipe', 'pipe', 'pipe'] });
+    return check.parse(out);
+  } catch {
+    return { authenticated: false };
+  }
+}

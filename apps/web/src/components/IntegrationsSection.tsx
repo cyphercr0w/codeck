@@ -674,6 +674,19 @@ export function IntegrationsSection() {
         }
       } catch { /* ignore */ }
 
+      // CLI-auth services (e.g. Vercel via device flow) — check if still authenticated
+      for (const integ of INTEGRATIONS) {
+        if (integ.cliAuth && integ.cliAuthService && !result[integ.id]?.connected) {
+          try {
+            const cliRes = await apiFetch(`/api/cli-auth/${integ.cliAuthService}/authenticated`);
+            const cliData = await cliRes.json();
+            if (cliData.authenticated) {
+              result[integ.id] = { connected: true, username: cliData.username };
+            }
+          } catch { /* ignore */ }
+        }
+      }
+
       setAccounts(result);
       lastChecked.current = Date.now();
       setLoading(false);

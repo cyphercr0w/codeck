@@ -3,7 +3,7 @@
  * Provides start/status/cancel endpoints for device flow auth.
  */
 import { Router } from 'express';
-import { startCLIAuth, getAuthState, cancelCLIAuth, getSupportedCLIAuthServices, isValidService } from '../services/cli-auth.js';
+import { startCLIAuth, getAuthState, cancelCLIAuth, getSupportedCLIAuthServices, isValidService, isCLIAuthenticated } from '../services/cli-auth.js';
 import { broadcastStatus } from '../web/websocket.js';
 
 const router = Router();
@@ -37,6 +37,12 @@ router.get('/:service/status', (req, res) => {
 router.post('/:service/cancel', (req, res) => {
   cancelCLIAuth(req.params.service);
   res.json({ cancelled: true });
+});
+
+// GET /:service/authenticated — check if CLI is logged in (vercel whoami, etc.)
+router.get('/:service/authenticated', async (req, res) => {
+  const result = await isCLIAuthenticated(req.params.service);
+  res.json(result);
 });
 
 export default router;

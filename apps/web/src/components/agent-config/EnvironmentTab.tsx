@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'preact/hooks';
 import { apiFetch } from '../../api';
+import { showToast } from '../../state/store';
 import { IconKey, IconPlus, IconX } from '../Icons';
 
 export function EnvironmentTab() {
@@ -7,7 +8,6 @@ export function EnvironmentTab() {
   const [newKey, setNewKey] = useState('');
   const [newValue, setNewValue] = useState('');
   const [saving, setSaving] = useState(false);
-  const [msg, setMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   useEffect(() => { loadVars(); }, []);
 
@@ -23,7 +23,6 @@ export function EnvironmentTab() {
     const key = newKey.trim().toUpperCase();
     if (!key || !newValue) return;
     setSaving(true);
-    setMsg(null);
     try {
       const res = await apiFetch('/api/codeck/env', {
         method: 'POST',
@@ -31,18 +30,17 @@ export function EnvironmentTab() {
       });
       const data = await res.json();
       if (data.success) {
-        setMsg({ type: 'success', text: `${key} saved` });
+        showToast(`${key} saved`, 'success');
         setNewKey('');
         setNewValue('');
         loadVars();
       } else {
-        setMsg({ type: 'error', text: data.error || 'Failed' });
+        showToast(data.error || 'Failed', 'error');
       }
     } catch {
-      setMsg({ type: 'error', text: 'Connection error' });
+      showToast('Connection error', 'error');
     }
     setSaving(false);
-    setTimeout(() => setMsg(null), 3000);
   }
 
   async function handleDelete(key: string) {
@@ -57,8 +55,6 @@ export function EnvironmentTab() {
 
   return (
     <div class="ac-tab-content">
-      {msg && <div class={`fb-toast fb-toast-${msg.type}`}>{msg.text}</div>}
-
       <div class="ac-section">
         <div class="ac-section-title"><IconKey size={14} /> Environment Variables</div>
         <div class="ac-hint">

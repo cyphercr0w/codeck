@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { apiFetch } from '../../api';
+import { showToast } from '../../state/store';
 import { IconPlus, IconX, IconDownload } from '../Icons';
 import { ConfirmModal } from '../ConfirmModal';
 
@@ -27,7 +28,6 @@ interface RegistryServer {
 export function McpServersTab() {
   const [servers, setServers] = useState<McpServer[]>([]);
   const [loading, setLoading] = useState(true);
-  const [msg, setMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
   const [toggling, setToggling] = useState<string | null>(null);
 
@@ -53,7 +53,7 @@ export function McpServersTab() {
       const data = await res.json();
       setServers(data.servers || []);
     } catch {
-      setMsg({ type: 'error', text: 'Failed to load MCP servers' });
+      showToast('Failed to load MCP servers', 'error');
     }
     setLoading(false);
   }
@@ -88,7 +88,6 @@ export function McpServersTab() {
     }
 
     setInstalling(server.registryName);
-    setMsg(null);
     try {
       // Derive a short name from the registry name
       const shortName = server.title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || server.registryName.split('/').pop() || 'mcp-server';
@@ -115,17 +114,16 @@ export function McpServersTab() {
       });
       const data = await res.json();
       if (data.success) {
-        setMsg({ type: 'success', text: `Installed ${server.title}` });
+        showToast(`Installed ${server.title}`, 'success');
         setEnvForm(null);
         await loadServers();
       } else {
-        setMsg({ type: 'error', text: data.error || 'Install failed' });
+        showToast(data.error || 'Install failed', 'error');
       }
     } catch {
-      setMsg({ type: 'error', text: 'Connection error' });
+      showToast('Connection error', 'error');
     }
     setInstalling(null);
-    setTimeout(() => setMsg(null), 4000);
   }
 
   async function handleToggle(name: string) {
@@ -145,10 +143,10 @@ export function McpServersTab() {
       if (data.success) {
         await loadServers();
       } else {
-        setMsg({ type: 'error', text: data.error || 'Toggle failed' });
+        showToast(data.error || 'Toggle failed', 'error');
       }
     } catch {
-      setMsg({ type: 'error', text: 'Connection error' });
+      showToast('Connection error', 'error');
     }
     setToggling(null);
   }
@@ -170,17 +168,16 @@ export function McpServersTab() {
       const res = await apiFetch(`/api/mcp-servers/${encodeURIComponent(enableTarget.server.name)}/toggle`, { method: 'POST' });
       const data = await res.json();
       if (data.success) {
-        setMsg({ type: 'success', text: `Enabled ${enableTarget.server.name}` });
+        showToast(`Enabled ${enableTarget.server.name}`, 'success');
         await loadServers();
       } else {
-        setMsg({ type: 'error', text: data.error || 'Enable failed' });
+        showToast(data.error || 'Enable failed', 'error');
       }
     } catch {
-      setMsg({ type: 'error', text: 'Connection error' });
+      showToast('Connection error', 'error');
     }
     setEnableTarget(null);
     setEnabling(false);
-    setTimeout(() => setMsg(null), 3000);
   }
 
   async function handleDelete() {
@@ -189,24 +186,21 @@ export function McpServersTab() {
       const res = await apiFetch(`/api/mcp-servers/${encodeURIComponent(deleteTarget)}`, { method: 'DELETE' });
       const data = await res.json();
       if (data.success) {
-        setMsg({ type: 'success', text: `Removed ${deleteTarget}` });
+        showToast(`Removed ${deleteTarget}`, 'success');
         await loadServers();
       } else {
-        setMsg({ type: 'error', text: data.error || 'Delete failed' });
+        showToast(data.error || 'Delete failed', 'error');
       }
     } catch {
-      setMsg({ type: 'error', text: 'Connection error' });
+      showToast('Connection error', 'error');
     }
     setDeleteTarget(null);
-    setTimeout(() => setMsg(null), 3000);
   }
 
   const installedNames = new Set(servers.map(s => s.name));
 
   return (
     <div class="ac-tab-content">
-      {msg && <div class={`fb-toast fb-toast-${msg.type}`}>{msg.text}</div>}
-
       {/* Browse / search registry */}
       <div class="ac-section">
         <div class="ac-section-title">Browse Registry</div>

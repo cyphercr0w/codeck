@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'preact/hooks';
 import { apiFetch } from '../../api';
+import { showToast } from '../../state/store';
 import { IconPlus, IconX } from '../Icons';
 import { ConfirmModal } from '../ConfirmModal';
 
@@ -22,7 +23,6 @@ const EVENT_DESCRIPTIONS: Record<HookEvent, string> = {
 export function HooksTab() {
   const [hooks, setHooks] = useState<Record<string, HookEntry[]>>({});
   const [loading, setLoading] = useState(true);
-  const [msg, setMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [addOpen, setAddOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<{ event: string; index: number } | null>(null);
 
@@ -40,7 +40,7 @@ export function HooksTab() {
       const data = await res.json();
       setHooks(data.hooks || {});
     } catch {
-      setMsg({ type: 'error', text: 'Failed to load hooks' });
+      showToast('Failed to load hooks', 'error');
     }
     setLoading(false);
   }
@@ -59,19 +59,18 @@ export function HooksTab() {
       });
       const data = await res.json();
       if (data.success) {
-        setMsg({ type: 'success', text: 'Hook added' });
+        showToast('Hook added', 'success');
         setNewMatcher('');
         setNewCommand('');
         setAddOpen(false);
         await loadHooks();
       } else {
-        setMsg({ type: 'error', text: data.error || 'Add failed' });
+        showToast(data.error || 'Add failed', 'error');
       }
     } catch {
-      setMsg({ type: 'error', text: 'Connection error' });
+      showToast('Connection error', 'error');
     }
     setAdding(false);
-    setTimeout(() => setMsg(null), 3000);
   }
 
   async function handleDelete() {
@@ -83,16 +82,15 @@ export function HooksTab() {
       });
       const data = await res.json();
       if (data.success) {
-        setMsg({ type: 'success', text: 'Hook removed' });
+        showToast('Hook removed', 'success');
         await loadHooks();
       } else {
-        setMsg({ type: 'error', text: data.error || 'Delete failed' });
+        showToast(data.error || 'Delete failed', 'error');
       }
     } catch {
-      setMsg({ type: 'error', text: 'Connection error' });
+      showToast('Connection error', 'error');
     }
     setDeleteTarget(null);
-    setTimeout(() => setMsg(null), 3000);
   }
 
   // Flatten hooks into displayable rows
@@ -107,8 +105,6 @@ export function HooksTab() {
 
   return (
     <div class="ac-tab-content">
-      {msg && <div class={`fb-toast fb-toast-${msg.type}`}>{msg.text}</div>}
-
       <div class="ac-section">
         <div class="ac-section-header">
           <div class="ac-section-title">Hooks</div>

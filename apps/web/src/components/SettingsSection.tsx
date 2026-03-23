@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'preact/hooks';
 import { apiFetch, setAuthToken } from '../api';
-import { wsConnected } from '../state/store';
+import { wsConnected, showToast } from '../state/store';
 import { IconShield, IconKey, IconList, IconPlug, IconPlus, IconX, IconChevronDown, IconChevronRight } from './Icons';
 import { ConfirmModal } from './ConfirmModal';
 
@@ -619,7 +619,6 @@ function EnvVarsCard() {
   const [newKey, setNewKey] = useState('');
   const [newValue, setNewValue] = useState('');
   const [saving, setSaving] = useState(false);
-  const [msg, setMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   useEffect(() => { loadVars(); }, []);
 
@@ -635,7 +634,6 @@ function EnvVarsCard() {
     const key = newKey.trim().toUpperCase();
     if (!key || !newValue) return;
     setSaving(true);
-    setMsg(null);
     try {
       const res = await apiFetch('/api/codeck/env', {
         method: 'POST',
@@ -643,18 +641,17 @@ function EnvVarsCard() {
       });
       const data = await res.json();
       if (data.success) {
-        setMsg({ type: 'success', text: `${key} saved` });
+        showToast(`${key} saved`, 'success');
         setNewKey('');
         setNewValue('');
         loadVars();
       } else {
-        setMsg({ type: 'error', text: data.error || 'Failed' });
+        showToast(data.error || 'Failed', 'error');
       }
     } catch {
-      setMsg({ type: 'error', text: 'Connection error' });
+      showToast('Connection error', 'error');
     }
     setSaving(false);
-    setTimeout(() => setMsg(null), 3000);
   }
 
   async function handleDelete(key: string) {
@@ -709,7 +706,6 @@ function EnvVarsCard() {
           {saving ? <span class="spinner-sm" /> : <IconPlus size={11} />}
         </button>
       </div>
-      {msg && <div class={`env-msg ${msg.type === 'success' ? 'text-success' : 'text-error'}`}>{msg.text}</div>}
     </div>
   );
 }

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { apiFetch } from '../../api';
+import { showToast } from '../../state/store';
 import { IconPlus, IconFolder, IconX } from '../Icons';
 
 interface RuleFile {
@@ -12,7 +13,6 @@ export function RulesTab() {
   const [rules, setRules] = useState<RuleFile[]>([]);
   const [preferences, setPreferences] = useState('');
   const [loading, setLoading] = useState(true);
-  const [msg, setMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   // Add rule form
   const [addOpen, setAddOpen] = useState(false);
@@ -43,7 +43,7 @@ export function RulesTab() {
         .map((f: any) => ({ name: f.name, path: `rules/user/${f.name}`, source: 'user' as const }));
       setRules([...userFiles, ...baseFiles]);
     } catch {
-      setMsg({ type: 'error', text: 'Failed to load rules' });
+      showToast('Failed to load rules', 'error');
     }
     setLoading(false);
   }
@@ -69,18 +69,17 @@ export function RulesTab() {
       });
       const data = await res.json();
       if (data.success) {
-        setMsg({ type: 'success', text: `Rule saved as ${filename}` });
+        showToast(`Rule saved as ${filename}`, 'success');
         setNewRuleText('');
         setAddOpen(false);
         await loadRules();
       } else {
-        setMsg({ type: 'error', text: data.error || 'Save failed' });
+        showToast(data.error || 'Save failed', 'error');
       }
     } catch {
-      setMsg({ type: 'error', text: 'Connection error' });
+      showToast('Connection error', 'error');
     }
     setSaving(false);
-    setTimeout(() => setMsg(null), 3000);
   }
 
   async function handleAddPreference() {
@@ -95,17 +94,16 @@ export function RulesTab() {
       });
       const data = await res.json();
       if (data.success) {
-        setMsg({ type: 'success', text: 'Preference saved' });
+        showToast('Preference saved', 'success');
         setPrefInput('');
         setPreferences(newContent);
       } else {
-        setMsg({ type: 'error', text: data.error || 'Save failed' });
+        showToast(data.error || 'Save failed', 'error');
       }
     } catch {
-      setMsg({ type: 'error', text: 'Connection error' });
+      showToast('Connection error', 'error');
     }
     setSavingPref(false);
-    setTimeout(() => setMsg(null), 3000);
   }
 
   async function viewRule(rule: RuleFile) {
@@ -120,8 +118,6 @@ export function RulesTab() {
 
   return (
     <div class="ac-tab-content">
-      {msg && <div class={`fb-toast fb-toast-${msg.type}`}>{msg.text}</div>}
-
       {/* Preferences */}
       <div class="ac-section">
         <div class="ac-section-title">Preferences</div>

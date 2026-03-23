@@ -27,6 +27,7 @@ import { PresetWizard } from './components/PresetWizard';
 import { IntegrationsSection } from './components/IntegrationsSection';
 import { AgentConfigSection } from './components/AgentConfigSection';
 import { SubagentPanel } from './components/SubagentPanel';
+import { ToastContainer } from './components/ToastContainer';
 
 import { AgentsSection } from './components/AgentsSection';
 import { SettingsSection } from './components/SettingsSection';
@@ -548,6 +549,7 @@ export function App() {
       <NewProjectModal visible={newProjectOpen} onCancel={() => setNewProjectOpen(false)} onConfirm={handleProjectConfirm} />
       <ReconnectOverlay />
       <PullToRefresh />
+      <ToastContainer />
     </div>
   );
 }

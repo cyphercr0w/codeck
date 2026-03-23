@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { apiFetch } from '../../api';
+import { showToast } from '../../state/store';
 import { IconPlus, IconX } from '../Icons';
 import { ConfirmModal } from '../ConfirmModal';
 
@@ -24,7 +25,6 @@ export function SkillsTab() {
   const [installing, setInstalling] = useState<string | null>(null);
   const [uninstalling, setUninstalling] = useState<string | null>(null);
   const [uninstallTarget, setUninstallTarget] = useState<string | null>(null);
-  const [msg, setMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => { loadInstalled(); }, []);
@@ -57,7 +57,6 @@ export function SkillsTab() {
 
   async function handleInstall(skill: SkillEntry) {
     setInstalling(skill.skillId);
-    setMsg(null);
     try {
       const res = await apiFetch('/api/skills/install', {
         method: 'POST',
@@ -65,21 +64,19 @@ export function SkillsTab() {
       });
       const data = await res.json();
       if (data.success) {
-        setMsg({ type: 'success', text: `Installed ${skill.name}` });
+        showToast(`Installed ${skill.name}`, 'success');
         loadInstalled();
       } else {
-        setMsg({ type: 'error', text: data.error || 'Installation failed' });
+        showToast(data.error || 'Installation failed', 'error');
       }
     } catch {
-      setMsg({ type: 'error', text: 'Connection error' });
+      showToast('Connection error', 'error');
     }
     setInstalling(null);
-    setTimeout(() => setMsg(null), 4000);
   }
 
   async function handleUninstall(name: string) {
     setUninstalling(name);
-    setMsg(null);
     try {
       const res = await apiFetch('/api/skills/uninstall', {
         method: 'DELETE',
@@ -87,16 +84,15 @@ export function SkillsTab() {
       });
       const data = await res.json();
       if (data.success) {
-        setMsg({ type: 'success', text: `Removed ${name}` });
+        showToast(`Removed ${name}`, 'success');
         loadInstalled();
       } else {
-        setMsg({ type: 'error', text: data.error || 'Remove failed' });
+        showToast(data.error || 'Remove failed', 'error');
       }
     } catch {
-      setMsg({ type: 'error', text: 'Connection error' });
+      showToast('Connection error', 'error');
     }
     setUninstalling(null);
-    setTimeout(() => setMsg(null), 4000);
   }
 
   const installedSet = new Set(installed);
@@ -111,7 +107,6 @@ export function SkillsTab() {
           value={query}
           onInput={e => handleInput((e.target as HTMLInputElement).value)}
         />
-        {msg && <div class={`fb-toast fb-toast-${msg.type}`}>{msg.text}</div>}
         <div class="ac-list">
           {loading && results.length === 0 && (
             <div class="ac-empty"><span class="spinner-sm" /> Loading skills...</div>

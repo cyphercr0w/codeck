@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { apiFetch, getAuthToken } from '../../api';
+import { showToast } from '../../state/store';
 import { IconBrain, IconFolder, IconDownload, IconPlus, IconRefresh, IconBookmark, IconPlug, IconList, IconShield, IconSettings, IconKey } from '../Icons';
 import { ConfirmModal } from '../ConfirmModal';
 
@@ -39,7 +40,6 @@ interface MemoryTabProps {
 export function MemoryTab({ onNavigate }: MemoryTabProps) {
   const [memStats, setMemStats] = useState<MemoryStats | null>(null);
   const [presetStatus, setPresetStatus] = useState<PresetStatus | null>(null);
-  const [msg, setMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   // Preset actions
   const [showUpdateModal, setShowUpdateModal] = useState(false);
@@ -80,16 +80,15 @@ export function MemoryTab({ onNavigate }: MemoryTabProps) {
       const res = await apiFetch('/api/presets/update', { method: 'POST' });
       const data = await res.json();
       if (data.success) {
-        setMsg({ type: 'success', text: 'Preset updated' });
+        showToast('Preset updated', 'success');
         loadPresetStatus();
       } else {
-        setMsg({ type: 'error', text: data.error || 'Update failed' });
+        showToast(data.error || 'Update failed', 'error');
       }
     } catch {
-      setMsg({ type: 'error', text: 'Update failed' });
+      showToast('Update failed', 'error');
     }
     setUpdating(false);
-    setTimeout(() => setMsg(null), 4000);
   }
 
   async function handleReset() {
@@ -99,17 +98,16 @@ export function MemoryTab({ onNavigate }: MemoryTabProps) {
       const res = await apiFetch('/api/presets/reset', { method: 'POST' });
       const data = await res.json();
       if (data.success) {
-        setMsg({ type: 'success', text: 'Factory defaults restored' });
+        showToast('Factory defaults restored', 'success');
         loadMemoryStats();
         loadPresetStatus();
       } else {
-        setMsg({ type: 'error', text: data.error || 'Reset failed' });
+        showToast(data.error || 'Reset failed', 'error');
       }
     } catch {
-      setMsg({ type: 'error', text: 'Reset failed' });
+      showToast('Reset failed', 'error');
     }
     setResetting(false);
-    setTimeout(() => setMsg(null), 4000);
   }
 
   function handleExport() {
@@ -130,8 +128,7 @@ export function MemoryTab({ onNavigate }: MemoryTabProps) {
     const file = input.files?.[0];
     if (!file) return;
     if (!file.name.endsWith('.tar.gz') && !file.name.endsWith('.tgz')) {
-      setMsg({ type: 'error', text: 'File must be a .tar.gz archive' });
-      setTimeout(() => setMsg(null), 4000);
+      showToast('File must be a .tar.gz archive', 'error');
       return;
     }
     setImportFile(file);
@@ -143,7 +140,6 @@ export function MemoryTab({ onNavigate }: MemoryTabProps) {
     if (!importFile) return;
     setShowImportConfirm(false);
     setImporting(true);
-    setMsg(null);
 
     try {
       const base64 = await new Promise<string>((resolve, reject) => {
@@ -158,35 +154,32 @@ export function MemoryTab({ onNavigate }: MemoryTabProps) {
         body: JSON.stringify({ data: base64 }),
       });
       if (res.status === 413) {
-        setMsg({ type: 'error', text: 'File too large — if using nginx, add "client_max_body_size 100m;" to your server config and reload nginx.' });
+        showToast('File too large — if using nginx, add "client_max_body_size 100m;" to your server config and reload nginx.', 'error');
       } else {
         const data = await res.json();
         if (data.success) {
-          setMsg({ type: 'success', text: `Memory imported — ${data.imported} items restored` });
+          showToast(`Memory imported — ${data.imported} items restored`, 'success');
           loadMemoryStats();
         } else {
-          setMsg({ type: 'error', text: data.error || 'Import failed' });
+          showToast(data.error || 'Import failed', 'error');
         }
       }
     } catch (err) {
       const errMsg = (err as Error).message || '';
       if (errMsg.includes('NetworkError') || errMsg.includes('Failed to fetch')) {
-        setMsg({ type: 'error', text: 'Upload failed — file may be too large for your reverse proxy.' });
+        showToast('Upload failed — file may be too large for your reverse proxy.', 'error');
       } else {
-        setMsg({ type: 'error', text: 'Import failed: ' + errMsg });
+        showToast('Import failed: ' + errMsg, 'error');
       }
     }
     setImporting(false);
     setImportFile(null);
-    setTimeout(() => setMsg(null), 5000);
   }
 
   const hasUpdate = presetStatus?.updateAvailable ?? false;
 
   return (
     <div class="ac-tab-content">
-      {msg && <div class={`fb-toast fb-toast-${msg.type}`}>{msg.text}</div>}
-
       {/* Memory Stats */}
       <div class="ac-section">
         <div class="ac-section-header">

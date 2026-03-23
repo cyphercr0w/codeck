@@ -431,6 +431,59 @@ export function removeSubagent(agentId: string, duration?: number, lastMessage?:
   }, 5000);
 }
 
+// ── Global Toast System ──
+
+export interface Toast {
+  id: number;
+  type: 'success' | 'error' | 'info';
+  message: string;
+}
+
+export const toasts = signal<Toast[]>([]);
+let toastIdCounter = 0;
+
+export function showToast(message: string, type: Toast['type'] = 'success', duration = 4000): void {
+  const id = ++toastIdCounter;
+  toasts.value = [...toasts.value, { id, type, message }];
+  if (duration > 0) {
+    setTimeout(() => dismissToast(id), duration);
+  }
+}
+
+export function dismissToast(id: number): void {
+  toasts.value = toasts.value.filter(t => t.id !== id);
+}
+
+// ── Recent Conversations Cache ──
+
+export interface RecentConversation {
+  id: string;
+  title: string;
+  cwd: string;
+  mtime: number;
+}
+
+export const recentConversations = signal<RecentConversation[]>([]);
+let recentConvosFetchedAt = 0;
+const RECENT_CONVOS_TTL = 5 * 60 * 1000; // 5 min cache
+
+export async function fetchRecentConversations(fetchFn: (url: string) => Promise<Response>, force = false): Promise<void> {
+  const now = Date.now();
+  if (!force && recentConversations.value.length > 0 && (now - recentConvosFetchedAt) < RECENT_CONVOS_TTL) {
+    return; // cache still valid
+  }
+  try {
+    const res = await fetchFn('/api/console/recent-conversations');
+    const data = await res.json();
+    if (data.conversations) {
+      recentConversations.value = data.conversations;
+      recentConvosFetchedAt = now;
+    }
+  } catch { /* non-fatal */ }
+}
+
+// ── Usage Polling ──
+
 let usagePollTimer: ReturnType<typeof setInterval> | null = null;
 
 export function startUsagePolling(fetchFn: (url: string, opts?: RequestInit) => Promise<Response>): void {

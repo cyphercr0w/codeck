@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { apiFetch } from '../api';
+import { showToast } from '../state/store';
 import { IconKey, IconGithub, IconPackage, IconCopy, IconCheck, IconRefresh, IconX, IconChevronLeft, IconPlug, IconSupabase, IconVercel, IconStripe, IconNotion, IconGoogle, IconCloudflare, IconFigma } from './Icons';
 
 // ── Types ──
@@ -214,7 +215,6 @@ function TokenIntegrationDetail({ integ, onBack }: { integ: IntegrationDef; onBa
   const [token, setToken] = useState('');
   const [connected, setConnected] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [msg, setMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [checking, setChecking] = useState(true);
 
   // Check if already connected (env var exists)
@@ -233,7 +233,6 @@ function TokenIntegrationDetail({ integ, onBack }: { integ: IntegrationDef; onBa
   async function handleConnect() {
     if (!token.trim()) return;
     setSaving(true);
-    setMsg(null);
     try {
       // Save token as env var
       const envRes = await apiFetch('/api/codeck/env', {
@@ -242,7 +241,7 @@ function TokenIntegrationDetail({ integ, onBack }: { integ: IntegrationDef; onBa
       });
       const envData = await envRes.json();
       if (!envData.success) {
-        setMsg({ type: 'error', text: envData.error || 'Failed to save token' });
+        showToast(envData.error || 'Failed to save token', 'error');
         setSaving(false);
         return;
       }
@@ -268,12 +267,11 @@ function TokenIntegrationDetail({ integ, onBack }: { integ: IntegrationDef; onBa
 
       setConnected(true);
       setToken('');
-      setMsg({ type: 'success', text: `${integ.name} connected! MCP server enabled.` });
+      showToast(`${integ.name} connected! MCP server enabled.`, 'success');
     } catch {
-      setMsg({ type: 'error', text: 'Connection error' });
+      showToast('Connection error', 'error');
     }
     setSaving(false);
-    setTimeout(() => setMsg(null), 4000);
   }
 
   async function handleDisconnect() {
@@ -297,11 +295,10 @@ function TokenIntegrationDetail({ integ, onBack }: { integ: IntegrationDef; onBa
       }
 
       setConnected(false);
-      setMsg({ type: 'success', text: `${integ.name} disconnected` });
+      showToast(`${integ.name} disconnected`, 'success');
     } catch {
-      setMsg({ type: 'error', text: 'Failed to disconnect' });
+      showToast('Failed to disconnect', 'error');
     }
-    setTimeout(() => setMsg(null), 3000);
   }
 
   return (
@@ -328,8 +325,6 @@ function TokenIntegrationDetail({ integ, onBack }: { integ: IntegrationDef; onBa
         </span>
       </div>
 
-      {msg && <div class={`fb-toast fb-toast-${msg.type}`}>{msg.text}</div>}
-
       {/* One-click auth via CLI device flow */}
       {integ.cliAuth && integ.cliAuthService && !connected && (
         <div class="integ-section">
@@ -341,7 +336,7 @@ function TokenIntegrationDetail({ integ, onBack }: { integ: IntegrationDef; onBa
             <CLIAuthSection
               service={integ.cliAuthService}
               name={integ.name}
-              onSuccess={() => { setConnected(true); setMsg({ type: 'success', text: `${integ.name} connected!` }); }}
+              onSuccess={() => { setConnected(true); showToast(`${integ.name} connected!`, 'success'); }}
             />
           </div>
         </div>
@@ -404,7 +399,6 @@ function GitHubDetail({ onBack }: { onBack: () => void }) {
   const [testing, setTesting] = useState(false);
   const [ghConnecting, setGhConnecting] = useState(false);
   const [copied, setCopied] = useState(false);
-  const [msg, setMsg] = useState('');
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
@@ -435,7 +429,6 @@ function GitHubDetail({ onBack }: { onBack: () => void }) {
 
   async function handleGenerate(force = false) {
     setGenerating(true);
-    setMsg('');
     try {
       const res = await apiFetch('/api/ssh/generate', {
         method: 'POST',
@@ -443,13 +436,13 @@ function GitHubDetail({ onBack }: { onBack: () => void }) {
       });
       const data = await res.json();
       if (data.success) {
-        setMsg('SSH key generated');
+        showToast('SSH key generated', 'success');
         loadSSH();
       } else {
-        setMsg(data.error || 'Generation failed');
+        showToast(data.error || 'Generation failed', 'error');
       }
     } catch {
-      setMsg('Error generating key');
+      showToast('Error generating key', 'error');
     }
     setGenerating(false);
   }
@@ -461,12 +454,12 @@ function GitHubDetail({ onBack }: { onBack: () => void }) {
       const data = await res.json();
       if (data.authenticated) {
         setSSH(prev => ({ ...prev, authenticated: true }));
-        setMsg('SSH connection successful');
+        showToast('SSH connection successful', 'success');
       } else {
-        setMsg('SSH test failed — add key to GitHub first');
+        showToast('SSH test failed — add key to GitHub first', 'error');
       }
     } catch {
-      setMsg('Test failed');
+      showToast('Test failed', 'error');
     }
     setTesting(false);
   }
@@ -525,8 +518,6 @@ function GitHubDetail({ onBack }: { onBack: () => void }) {
         </div>
         {github.authenticated && <span class="badge badge-success">Connected</span>}
       </div>
-
-      {msg && <div class={`fb-toast fb-toast-${msg.includes('fail') || msg.includes('Error') ? 'error' : 'success'}`}>{msg}</div>}
 
       {/* SSH Section */}
       <div class="integ-section">
@@ -635,8 +626,19 @@ export function IntegrationsSection() {
   const [connectedServices, setConnectedServices] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
 
-  // Check which services are connected
+  // Check which services are connected (cached — only re-fetch on mount or force)
+  const lastChecked = useRef(0);
+  const CACHE_TTL = 3 * 60 * 1000; // 3 min
+
   useEffect(() => {
+    const now = Date.now();
+    // Skip if cache is fresh and we're just navigating back from detail
+    if (selected === null && lastChecked.current > 0 && (now - lastChecked.current) < CACHE_TTL) {
+      return;
+    }
+    // Only fetch on mount (selected=null) or when returning from a connect/disconnect action
+    if (selected !== null) return;
+
     async function checkConnections() {
       setLoading(true);
       const connected = new Set<string>();
@@ -662,11 +664,12 @@ export function IntegrationsSection() {
       } catch { /* ignore */ }
 
       setConnectedServices(connected);
+      lastChecked.current = Date.now();
       setLoading(false);
     }
 
     checkConnections();
-  }, [selected]); // re-check when returning from detail view
+  }, [selected]);
 
   // Render detail view
   const selectedInteg = INTEGRATIONS.find(i => i.id === selected);
@@ -675,7 +678,7 @@ export function IntegrationsSection() {
       return (
         <div class="content-section">
           <div class="integ-content">
-            <GitHubDetail onBack={() => setSelected(null)} />
+            <GitHubDetail onBack={() => { lastChecked.current = 0; setSelected(null); }} />
           </div>
         </div>
       );
@@ -684,7 +687,7 @@ export function IntegrationsSection() {
       return (
         <div class="content-section">
           <div class="integ-content">
-            <TokenIntegrationDetail integ={selectedInteg} onBack={() => setSelected(null)} />
+            <TokenIntegrationDetail integ={selectedInteg} onBack={() => { lastChecked.current = 0; setSelected(null); }} />
           </div>
         </div>
       );

@@ -1,4 +1,4 @@
-import { setWsConnected, updateStateFromServer, addLog, sessions, activeSessionId, addSession, setActiveSessionId, setActivePorts, setActiveSection, setRestoringPending, type LogEntry, removeSession, updateProactiveAgent, appendAgentOutput, setAgentRunning, claudeAuthenticated, setContextData, addSubagent, updateSubagentOutput, removeSubagent, syncSubagentsFromServer } from './state/store';
+import { setWsConnected, updateStateFromServer, addLog, sessions, activeSessionId, addSession, setActiveSessionId, setActivePorts, setActiveSection, setRestoringPending, type LogEntry, removeSession, updateProactiveAgent, appendAgentOutput, setAgentRunning, claudeAuthenticated, setContextData, addSubagent, updateSubagentOutput, removeSubagent, syncSubagentsFromServer, fetchRecentConversations } from './state/store';
 import { apiFetch } from './api';
 import { getAuthToken } from './api';
 
@@ -194,6 +194,8 @@ function openWs(wsUrl: string, protocols?: string[]): void {
             .then(r => r.json())
             .then(data => { if (data.agents) syncSubagentsFromServer(data.agents); })
             .catch(() => { /* non-fatal */ });
+          // Pre-fetch recent conversations so New Tab opens instantly
+          fetchRecentConversations(apiFetch);
         }
         if (!msg.data.pendingRestore) {
           setRestoringPending(false);

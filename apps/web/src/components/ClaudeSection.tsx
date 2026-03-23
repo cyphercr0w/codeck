@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
-import { sessions, activeSessionId, setActiveSessionId, addLocalLog, addSession, removeSession, renameSession, agentName, isMobile, restoringPending, wsConnected, sessionStatus, setSessionStatus, clearSessionStatus, claudeUsage, contextData, activeSection } from '../state/store';
+import { sessions, activeSessionId, setActiveSessionId, addLocalLog, addSession, removeSession, renameSession, agentName, isMobile, restoringPending, wsConnected, sessionStatus, setSessionStatus, clearSessionStatus, claudeUsage, contextData, activeSection, recentConversations, fetchRecentConversations } from '../state/store';
 import { apiFetch } from '../api';
 import { createTerminal, destroyTerminal, fitTerminal, repaintTerminal, focusTerminal, writeToTerminal, scrollToBottom, getTerminal, markSessionAttaching, clearSessionAttaching, onTerminalWrite, ensureTerminalVisible, setOnFilePaste, getTerminalBuffer } from '../terminal';
 import { wsSend, setTerminalHandlers, attachSession, setOnSessionReattached, setOnBeforeSessionsRestored, setOnContextLoaded, type ContextLoadedData } from '../ws';
@@ -71,7 +71,7 @@ export function ClaudeSection({ onNewSession, onNewShell }: ClaudeSectionProps) 
   const [bannerFading, setBannerFading] = useState(false);
   const [showNewSessionMenu, setShowNewSessionMenu] = useState(false);
   const [newTabLoading, setNewTabLoading] = useState(false);
-  const [recentConvos, setRecentConvos] = useState<Array<{ id: string; title: string; cwd: string; mtime: number }>>([]);
+  const recentConvos = recentConversations.value;
   const sessionList = sessions.value;
   const activeId = activeSessionId.value;
 
@@ -251,13 +251,10 @@ export function ClaudeSection({ onNewSession, onNewShell }: ClaudeSectionProps) 
     prevSessionCount.current = sessionList.length;
   }, [sessionList.length]);
 
-  // Fetch recent conversations when empty state or menu is shown
+  // Fetch recent conversations (cached 5 min in store, instant on subsequent views)
   useEffect(() => {
     if (sessionList.length === 0 || showNewSessionMenu) {
-      apiFetch('/api/console/recent-conversations')
-        .then(r => r.json())
-        .then(data => { if (data.conversations) setRecentConvos(data.conversations); })
-        .catch(() => {});
+      fetchRecentConversations(apiFetch);
     }
   }, [sessionList.length, showNewSessionMenu]);
 

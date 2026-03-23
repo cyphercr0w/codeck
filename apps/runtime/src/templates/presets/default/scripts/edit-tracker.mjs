@@ -25,6 +25,11 @@ if (toolName !== 'Edit' && toolName !== 'Write') process.exit(0);
 const filePath = parsed.tool_input?.file_path || '';
 if (!filePath) process.exit(0);
 
+// Only track files in the CURRENT session's working directory
+// This prevents edits in project A from triggering review when working in project B
+const sessionCwd = parsed.cwd || process.cwd();
+if (!filePath.startsWith(sessionCwd)) process.exit(0);
+
 // Skip non-code files (docs, config, memory, state)
 const name = basename(filePath).toLowerCase();
 const skipPatterns = ['.md', '.json', '.yml', '.yaml', '.txt', '.env', '.gitignore'];

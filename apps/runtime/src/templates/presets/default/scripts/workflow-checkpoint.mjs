@@ -44,16 +44,16 @@ if (!edits.count || edits.count === 0) {
   process.exit(0);
 }
 
-// Trivial edits (1-2 files, likely config/docs) → approve
-// Review is for meaningful implementation work, not every tiny change
-if (edits.count <= 2) {
+// Small changes (1-4 files) → approve without review
+// Review is for meaningful implementation work (5+ files), not every small fix
+if (edits.count <= 4) {
   // Clear tracker so next stop doesn't re-check these
   writeFileSync(EDIT_TRACKER, JSON.stringify({ files: [], count: 0, since: 0 }));
   console.log(JSON.stringify({ decision: 'approve' }));
   process.exit(0);
 }
 
-// Significant edits (3+ files) — check if review happened
+// Significant edits (5+ files) — check if review happened
 let reviewRecent = false;
 try {
   if (existsSync(REVIEW_MARKER)) {

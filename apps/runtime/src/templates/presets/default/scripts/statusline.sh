@@ -33,11 +33,13 @@ model_name = model.get('display_name', '') or model.get('id', '')
 
 # Always send to runtime — even 0% is valid (e.g. after compaction)
 if True:
+    import os
     payload = json.dumps({
         'contextPercent': used_pct,
         'contextTokens': total_tokens,
         'contextWindow': window_size,
         'model': model_name,
+        'sessionId': os.environ.get('CODECK_SESSION_ID', ''),
     }).encode()
     try:
         req = urllib.request.Request(

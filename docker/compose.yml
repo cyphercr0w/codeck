@@ -20,6 +20,7 @@ services:
     environment:
       - CODECK_PORT=80
       - CODECK_NETWORK_MODE=bridge
+      - CODECK_DIR=/data/.codeck
       - WORKSPACE=/workspace
       - NODE_OPTIONS=--max-old-space-size=${CODECK_NODE_HEAP_MB:-2048}
     cap_drop:
@@ -61,6 +62,7 @@ services:
       - ${CODECK_CLAUDE_CONFIG:-codeck-claude}:/root/.claude
       - ${CODECK_SSH_DATA:-codeck-ssh}:/root/.ssh
       - ${CODECK_GH_CONFIG:-codeck-gh}:/root/.config/gh
+      - ${CODECK_DATA_DIR:-codeck-data}:/data/.codeck
     entrypoint: ["/usr/local/bin/init-keyring.sh", "env", "NODE_ENV=production", "node", "apps/runtime/dist/index.js"]
     command: ["--web"]
 
@@ -69,3 +71,4 @@ volumes:
   codeck-claude:
   codeck-ssh:
   codeck-gh:
+  codeck-data:

@@ -13,7 +13,6 @@ FROM ${BASE_IMAGE}
 # Copy everything needed for build (source + configs)
 COPY package.json package-lock.json tsconfig.json ./
 COPY apps/runtime/package.json apps/runtime/tsconfig.json apps/runtime/
-COPY apps/daemon/package.json apps/daemon/tsconfig.json apps/daemon/
 COPY apps/web/package.json apps/web/tsconfig.json apps/web/vite.config.ts apps/web/index.html apps/web/
 COPY apps/web/public apps/web/public
 
@@ -23,11 +22,10 @@ RUN npm ci \
 
 # Copy source code
 COPY apps/runtime/src apps/runtime/src
-COPY apps/daemon/src apps/daemon/src
 COPY apps/web/src apps/web/src
 
-# Build inside container — skip CLI (not needed in container)
-RUN npm run build:frontend && npm run build:backend && npm run build:daemon
+# Build inside container
+RUN npm run build
 
 # Remove devDependencies after build
 RUN npm prune --omit=dev \

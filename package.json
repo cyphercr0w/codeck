@@ -5,25 +5,27 @@
   "type": "module",
   "main": "apps/runtime/dist/index.js",
   "workspaces": [
-    "apps/*"
+    "apps/runtime",
+    "apps/web"
   ],
   "scripts": {
     "build:frontend": "npm run build -w @codeck/web",
     "build:backend": "npm run build -w @codeck/runtime",
-    "build:daemon": "npm run build -w @codeck/daemon",
-    "build": "npm run build:frontend && npm run build:backend && npm run build:daemon && npm run build:cli",
+    "build": "npm run build:frontend && npm run build:backend",
     "start": "node apps/runtime/dist/index.js",
     "start:web": "node apps/runtime/dist/index.js --web",
     "dev": "npm run dev -w @codeck/runtime",
-    "clean": "rm -rf dist apps/runtime/dist apps/web/dist apps/daemon/dist apps/cli/dist",
+    "clean": "rm -rf dist apps/runtime/dist apps/web/dist",
     "test": "vitest",
     "test:ui": "vitest --ui",
     "test:coverage": "vitest --coverage",
     "docker:build-base": "docker build -t codeck-base -f docker/Dockerfile.base .",
-    "docker:up": "docker compose -f docker/compose.isolated.yml up -d",
-    "docker:down": "docker compose -f docker/compose.isolated.yml down",
-    "docker:logs": "docker compose -f docker/compose.isolated.yml logs -f",
-    "build:cli": "npm run build -w @codeck/cli"
+    "docker:build": "npm run build && docker build -t codeck -f docker/Dockerfile .",
+    "docker:up": "docker compose -f docker/compose.yml up -d",
+    "docker:down": "docker compose -f docker/compose.yml down",
+    "docker:logs": "docker compose -f docker/compose.yml logs -f",
+    "docker:restart": "docker compose -f docker/compose.yml down && docker compose -f docker/compose.yml up -d",
+    "docker:rebuild": "npm run build && docker compose -f docker/compose.yml up -d --build"
   },
   "devDependencies": {
     "@types/supertest": "^6.0.3",

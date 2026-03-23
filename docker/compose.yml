@@ -1,0 +1,71 @@
+# Codeck — Single container mode (replaces managed + isolated)
+#
+# Usage:
+#   docker compose -f docker/compose.yml up -d
+#
+# Nginx points to 127.0.0.1:8080 — no daemon needed.
+
+services:
+  codeck:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    container_name: codeck
+    restart: unless-stopped
+    init: true
+    stdin_open: true
+    tty: true
+    ports:
+      - "127.0.0.1:8080:80"
+    environment:
+      - CODECK_PORT=80
+      - CODECK_NETWORK_MODE=bridge
+      - WORKSPACE=/workspace
+      - NODE_OPTIONS=--max-old-space-size=${CODECK_NODE_HEAP_MB:-2048}
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - SETUID
+      - SETGID
+      - NET_BIND_SERVICE
+      - KILL
+      - DAC_OVERRIDE
+    security_opt:
+      - no-new-privileges:true
+    deploy:
+      resources:
+        limits:
+          memory: ${CODECK_MEMORY_LIMIT:-0}
+          pids: 512
+        reservations:
+          memory: 256M
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+        compress: "true"
+    stop_grace_period: 30s
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:80/api/auth/status"]
+      interval: 30s
+      timeout: 5s
+      start_period: 10s
+      retries: 3
+    tmpfs:
+      - /tmp:size=512M,mode=1777
+      - /run:size=100M,mode=0755
+    volumes:
+      - ${CODECK_WORKSPACE:-codeck-workspace}:/workspace
+      - ${CODECK_CLAUDE_CONFIG:-codeck-claude}:/root/.claude
+      - ${CODECK_SSH_DATA:-codeck-ssh}:/root/.ssh
+      - ${CODECK_GH_CONFIG:-codeck-gh}:/root/.config/gh
+    entrypoint: ["/usr/local/bin/init-keyring.sh", "env", "NODE_ENV=production", "node", "apps/runtime/dist/index.js"]
+    command: ["--web"]
+
+volumes:
+  codeck-workspace:
+  codeck-claude:
+  codeck-ssh:
+  codeck-gh:

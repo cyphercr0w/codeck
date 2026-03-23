@@ -43,13 +43,18 @@ docker run -d --name codeck -p 8080:80 \
 
 ```bash
 # Build base image (once):
-docker build -t codeck-base -f docker/Dockerfile.base .
+npm run docker:build-base
 
-# Run locally (builds from source):
-docker compose -f docker/compose.isolated.yml up --build
+# Build app + run locally:
+npm run docker:rebuild
 
-# Local build check:
+# Build check (no Docker):
 npm run build
+
+# Start / stop / logs:
+npm run docker:up
+npm run docker:down
+npm run docker:logs
 ```
 
 ## Conventions
@@ -58,15 +63,6 @@ npm run build
 - **Commits**: Conventional Commits (`feat:`, `fix:`, `refactor:`, `chore:`, `docs:`)
 - **Branching**: work directly on `main`
 - **Code style**: follow existing patterns in the codebase (no reformatting unrelated code)
-
-## Self-Deploy (dev instances)
-
-If you are running on a VPS where this repo IS the live Codeck installation:
-
-```bash
-# After editing code:
-npm run build && docker build -t codeck -f docker/Dockerfile . && docker restart codeck
-```
 
 ## Rules
 

@@ -1792,10 +1792,15 @@
 	border: 1px solid var(--border);
 	border-radius: var(--radius);
 	box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.3);
-	min-width: 180px;
+	min-width: 220px;
 	padding: 4px;
 	z-index: 100;
 	animation: dropup-in 0.15s ease-out;
+}
+.tsb-model-chevron {
+	font-size: 8px;
+	opacity: 0.5;
+	margin-left: 2px;
 }
 @keyframes dropup-in {
 	from {

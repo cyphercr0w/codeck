@@ -881,7 +881,14 @@ function ModelSelector({ currentModel }: { currentModel: string }) {
 				onClick={() => setOpen(!open)}
 				title="Switch model"
 			>
-				{switching ? <span class="spinner-sm" /> : currentModel}
+				{switching ? (
+					<span class="spinner-sm" />
+				) : (
+					<>
+						{currentModel}{" "}
+						<span class="tsb-model-chevron">{open ? "▾" : "▴"}</span>
+					</>
+				)}
 			</button>
 			{open && (
 				<div class="tsb-model-dropup">

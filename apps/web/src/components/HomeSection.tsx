@@ -26,7 +26,7 @@ interface HomeSectionProps {
   onLogout: () => void;
 }
 
-const DASHBOARD_REFRESH_MS = 30_000;
+const DASHBOARD_REFRESH_MS = 120_000; // 2 min — dashboard data changes slowly
 
 function formatBytes(bytes: number): string {
   if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(0) + ' KB';

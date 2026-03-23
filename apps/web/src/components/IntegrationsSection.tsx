@@ -621,9 +621,15 @@ function GitHubDetail({ onBack }: { onBack: () => void }) {
 
 // ── Main Component ──
 
+interface ConnectedAccount {
+  connected: boolean;
+  email?: string | null;
+  username?: string | null;
+}
+
 export function IntegrationsSection() {
   const [selected, setSelected] = useState<string | null>(null);
-  const [connectedServices, setConnectedServices] = useState<Set<string>>(new Set());
+  const [accounts, setAccounts] = useState<Record<string, ConnectedAccount>>({});
   const [loading, setLoading] = useState(true);
 
   // Check which services are connected (cached — only re-fetch on mount or force)
@@ -632,38 +638,43 @@ export function IntegrationsSection() {
 
   useEffect(() => {
     const now = Date.now();
-    // Skip if cache is fresh and we're just navigating back from detail
     if (selected === null && lastChecked.current > 0 && (now - lastChecked.current) < CACHE_TTL) {
       return;
     }
-    // Only fetch on mount (selected=null) or when returning from a connect/disconnect action
     if (selected !== null) return;
 
     async function checkConnections() {
       setLoading(true);
-      const connected = new Set<string>();
+      const result: Record<string, ConnectedAccount> = {};
 
-      // GitHub via gh CLI
+      // GitHub — has full account info
       try {
         const ghRes = await apiFetch('/api/github/login-status');
         const ghData = await ghRes.json();
-        if (ghData.authenticated) connected.add('github');
+        result.github = {
+          connected: !!ghData.authenticated,
+          email: ghData.email,
+          username: ghData.username,
+        };
       } catch { /* ignore */ }
 
       // Token-based services via env vars
       try {
         const envRes = await apiFetch('/api/codeck/env');
         const envData = await envRes.json();
-        const vars = new Set((envData.vars || []).filter((v: { hasValue: boolean }) => v.hasValue).map((v: { key: string }) => v.key));
+        const vars = new Map<string, boolean>();
+        for (const v of (envData.vars || [])) {
+          if (v.hasValue) vars.set(v.key, true);
+        }
 
         for (const integ of INTEGRATIONS) {
           if (integ.tokenEnvKey && vars.has(integ.tokenEnvKey)) {
-            connected.add(integ.id);
+            result[integ.id] = { connected: true };
           }
         }
       } catch { /* ignore */ }
 
-      setConnectedServices(connected);
+      setAccounts(result);
       lastChecked.current = Date.now();
       setLoading(false);
     }
@@ -694,6 +705,9 @@ export function IntegrationsSection() {
     }
   }
 
+  const connected = INTEGRATIONS.filter(i => accounts[i.id]?.connected);
+  const available = INTEGRATIONS.filter(i => !accounts[i.id]?.connected);
+
   return (
     <div class="content-section">
       <div class="integ-content">
@@ -711,28 +725,63 @@ export function IntegrationsSection() {
             <span>Checking connections...</span>
           </div>
         ) : (
-          <div class="integ-grid">
-            {[...INTEGRATIONS].sort((a, b) => {
-              const aC = connectedServices.has(a.id) ? 0 : 1;
-              const bC = connectedServices.has(b.id) ? 0 : 1;
-              return aC - bC;
-            }).map(integ => (
-              <button
-                key={integ.id}
-                class={`integ-tile${!integ.available ? ' disabled' : ''}`}
-                onClick={() => integ.available && setSelected(integ.id)}
-                disabled={!integ.available}
-              >
-                <div class="integ-tile-icon">{integ.icon()}</div>
-                <div class="integ-tile-info">
-                  <span class="integ-tile-name">{integ.name}</span>
-                  <span class="integ-tile-desc">{integ.description}</span>
+          <>
+            {/* Connected services — prominent with account info */}
+            {connected.length > 0 && (
+              <div class="integ-section-group">
+                <div class="integ-section-label">Connected</div>
+                <div class="integ-grid">
+                  {connected.map(integ => {
+                    const acct = accounts[integ.id];
+                    return (
+                      <button
+                        key={integ.id}
+                        class="integ-tile integ-tile-connected"
+                        onClick={() => setSelected(integ.id)}
+                      >
+                        <div class="integ-tile-icon integ-tile-icon-active">{integ.icon()}</div>
+                        <div class="integ-tile-info">
+                          <span class="integ-tile-name">{integ.name}</span>
+                          {acct?.username ? (
+                            <span class="integ-tile-account">@{acct.username}{acct.email ? ` · ${acct.email}` : ''}</span>
+                          ) : acct?.email ? (
+                            <span class="integ-tile-account">{acct.email}</span>
+                          ) : (
+                            <span class="integ-tile-account">API token configured</span>
+                          )}
+                        </div>
+                        <span class="integ-tile-status connected" />
+                      </button>
+                    );
+                  })}
                 </div>
-                {!integ.available && <span class="badge badge-muted">Coming soon</span>}
-                {connectedServices.has(integ.id) && <span class="badge badge-success">Connected</span>}
-              </button>
-            ))}
-          </div>
+              </div>
+            )}
+
+            {/* Available services — one-click connect */}
+            {available.length > 0 && (
+              <div class="integ-section-group">
+                {connected.length > 0 && <div class="integ-section-label">Available</div>}
+                <div class="integ-grid">
+                  {available.map(integ => (
+                    <button
+                      key={integ.id}
+                      class={`integ-tile${!integ.available ? ' disabled' : ''}`}
+                      onClick={() => integ.available && setSelected(integ.id)}
+                      disabled={!integ.available}
+                    >
+                      <div class="integ-tile-icon">{integ.icon()}</div>
+                      <div class="integ-tile-info">
+                        <span class="integ-tile-name">{integ.name}</span>
+                        <span class="integ-tile-desc">{integ.description}</span>
+                      </div>
+                      {!integ.available && <span class="badge badge-muted">Soon</span>}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </>
         )}
       </div>
     </div>

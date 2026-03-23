@@ -13,15 +13,15 @@
 
 ## Build
 
-- **Dev:** `vite dev` with proxy to Express at `:8080` (`/api` → HTTP, `/ws` → WebSocket)
-- **Prod:** `vite build` → output to `apps/web/dist/`, served by runtime (local mode) or daemon (gateway mode) static middleware
+- **Dev:** `vite dev` with proxy to Express backend (`/api` → HTTP, `/ws` → WebSocket)
+- **Prod:** `vite build` → output to `apps/web/dist/`, served by Express static middleware
 - **TSConfig:** `jsxImportSource: "preact"`, `moduleResolution: "bundler"`, `strict: true`
 
 ---
 
 ## URL Routing
 
-Lightweight History API routing — no router library. The signal architecture stays as-is; `router.ts` syncs `activeSection` signal with the browser URL.
+Lightweight History API routing — no router library. `router.ts` syncs `activeSection` signal with the browser URL.
 
 | URL | Section |
 |-----|---------|
@@ -31,49 +31,54 @@ Lightweight History API routing — no router library. The signal architecture s
 | `/agents` | agents |
 | `/integrations` | integrations |
 | `/config` | config |
+| `/settings` | settings |
 
-- **Deep linking**: Direct URL access (e.g., `/terminal`) loads the correct section on init
-- **Back/forward**: `popstate` listener updates `activeSection` signal
-- **Signal → URL**: `useEffect` in `app.tsx` calls `pushSection()` on section changes
+- **Deep linking**: Direct URL access loads the correct section
+- **Back/forward**: `popstate` listener updates `activeSection`
+- **Signal → URL**: `useEffect` in `app.tsx` calls `pushSection()` on changes
 - **SPA catch-all**: Express serves `index.html` for all non-API GET routes
 
 ## File Structure
 
 ```
-src/web/
+apps/web/
 ├── index.html              # Vite entry point (loads Inter + JetBrains Mono fonts)
 ├── vite.config.ts          # Build config + dev proxy
 ├── tsconfig.json           # Frontend-only TS config
 └── src/
     ├── main.tsx            # App bootstrap: render(<App />, #app)
     ├── app.tsx             # Root component, view lifecycle manager
-    ├── router.ts           # URL ↔ section sync (History API, no library)
+    ├── router.ts           # URL ↔ section sync (History API)
     ├── api.ts              # Fetch wrapper with auth + 401 handling
     ├── ws.ts               # WebSocket client with auto-reconnect
     ├── terminal.ts         # xterm.js instance manager
     ├── state/
     │   └── store.ts        # All signals + mutation functions
     ├── components/
-    │   ├── Icons.tsx            # Centralized SVG icon library (40+ icons)
-    │   ├── AuthView.tsx        # Password setup/login
-    │   ├── LoadingView.tsx     # Branded loading (bridge icon + pulse)
-    │   ├── SetupView.tsx       # Claude account connection prompt
-    │   ├── PresetWizard.tsx    # Preset selection (post-auth)
-    │   ├── LoginModal.tsx      # OAuth PKCE flow modal
-    │   ├── Sidebar.tsx         # Navigation with SVG icons + version footer + collapse/expand
-    │   ├── HomeSection.tsx     # Dashboard: account, resources, usage
-    │   ├── FilesSection.tsx    # Workspace file browser with edit capability
-    │   ├── ClaudeSection.tsx   # Terminal tabs + xterm.js
-    │   ├── MemorySection.tsx       # Memory system (durable, journal, ADR, projects, search)
-    │   ├── AgentsSection.tsx      # Proactive agents (list, create, edit, detail, dir selector, live streaming output; Run Now button disabled for paused/running agents)
-    │   ├── IntegrationsSection.tsx  # SSH keys + GitHub CLI auth
-    │   ├── ConfigSection.tsx   # .codeck file browser/editor
-    │   ├── LogsDrawer.tsx      # Bottom log panel with colored indicators
-    │   ├── NewProjectModal.tsx # Create/clone/select project
-    │   ├── ReconnectOverlay.tsx # Full-screen overlay when WebSocket disconnected
-    │   ├── MobileTerminalToolbar.tsx # Adaptive mobile terminal toolbar with Y/N detection
-    │   ├── ConfirmModal.tsx    # Reusable confirmation dialog
-    │   └── MobileMenu.tsx      # Mobile navigation overlay
+    │   ├── Icons.tsx                  # Centralized SVG icon library (40+ icons)
+    │   ├── AuthView.tsx              # Password setup/login
+    │   ├── LoadingView.tsx           # Branded loading (bridge icon + pulse)
+    │   ├── SetupView.tsx             # Claude account connection prompt
+    │   ├── PresetWizard.tsx          # Preset selection (post-auth)
+    │   ├── LoginModal.tsx            # OAuth PKCE flow modal
+    │   ├── Sidebar.tsx               # Navigation + collapse/expand
+    │   ├── HomeSection.tsx           # Dashboard: account, resources, usage
+    │   ├── FilesSection.tsx          # Workspace file browser
+    │   ├── ClaudeSection.tsx         # Terminal tabs + xterm.js
+    │   ├── AgentsSection.tsx         # Proactive agents (list, create, edit, detail, live output)
+    │   ├── AgentConfigSection.tsx    # .codeck file browser/editor
+    │   ├── IntegrationsSection.tsx   # SSH keys + GitHub + third-party CLI auth
+    │   ├── SettingsSection.tsx       # Password, sessions, permissions, logs, ports
+    │   ├── ToastContainer.tsx        # Toast notification system
+    │   ├── SubagentPanel.tsx         # Real-time sub-agent tracking panel
+    │   ├── NewProjectModal.tsx       # Create/clone/select project
+    │   ├── ReconnectOverlay.tsx      # Full-screen WS disconnect overlay
+    │   ├── MobileTerminalToolbar.tsx # Adaptive mobile terminal toolbar
+    │   ├── ConfirmModal.tsx          # Reusable confirmation dialog
+    │   ├── MobileMenu.tsx            # Mobile navigation overlay
+    │   ├── ImageUploadOverlay.tsx    # Image upload overlay
+    │   ├── UploadOverlay.tsx         # File upload overlay
+    │   └── PullToRefresh.tsx         # Mobile pull-to-refresh
     └── styles/
         ├── variables.css       # CSS custom properties (design tokens)
         ├── global.css          # Reset, buttons, inputs, badges, modals
@@ -114,41 +119,45 @@ loading → auth → setup → preset → main
 
 ## State Management (Signals)
 
-All state lives in `state/store.ts` as Preact signals.
+All state in `state/store.ts` as Preact signals.
 
-### Signals
+### Key Signals
 
 | Signal | Type | Default | Description |
 |--------|------|---------|-------------|
 | `view` | `View` | `'loading'` | Current view |
-| `activeSection` | `Section` | `'home'` | Active main section (home\|filesystem\|claude\|agents\|integrations\|config) |
+| `activeSection` | `Section` | `'home'` | Active section (home\|filesystem\|claude\|agents\|integrations\|config\|settings) |
 | `authMode` | `AuthMode` | `'login'` | Auth view mode |
 | `claudeAuthenticated` | `boolean` | `false` | Claude account connected |
-| `accountEmail` | `string` | `''` | User email |
-| `accountOrg` | `string` | `''` | Organization name |
-| `accountUuid` | `string` | `''` | Account UUID |
+| `accountEmail` | `string \| null` | `null` | User email |
 | `sessions` | `TerminalSession[]` | `[]` | Active PTY sessions |
-| `activeSessionId` | `string` | `''` | Currently focused session |
+| `activeSessionId` | `string \| null` | `null` | Focused session |
+| `sessionStatus` | `Record<string, SessionStatus>` | `{}` | Per-session status (active/idle/waiting/exited) |
 | `wsConnected` | `boolean` | `false` | WebSocket connected |
-| `logs` | `LogEntry[]` | `[]` | Log entries |
-| `logsExpanded` | `boolean` | `false` | Logs drawer open |
+| `restoringPending` | `boolean` | `false` | Session restore in progress |
+| `logs` | `LogEntry[]` | `[]` | Log entries (max 1000) |
 | `presetConfigured` | `boolean` | `false` | Preset applied |
-| `currentFilesPath` | `string` | `''` | Files section current path |
-| `activePorts` | `PortInfo[]` | `[]` | Listening ports with exposure status (`{port, exposed}`) |
-| `isMobile` | `boolean` | `detectMobile()` | Feature-based mobile detection (pointer: coarse + touch + screen < 1100px) |
+| `activePorts` | `PortInfo[]` | `[]` | Listening ports with exposure status |
+| `isMobile` | `boolean` | `detectMobile()` | Feature-based mobile detection |
+| `mobileKeyboardOpen` | `boolean` | `false` | Mobile keyboard state |
+| `activeSubagents` | `SubagentInfo[]` | `[]` | Active sub-agents |
+| `toasts` | `Toast[]` | `[]` | Toast notification queue |
+
+### Derived signals
+
+- `activeSession` — computed from `sessions` + `activeSessionId`
+- `sessionCount` — computed from `sessions.length`
 
 ### Mutation functions
 
 | Function | Description |
 |----------|-------------|
 | `updateStateFromServer(data)` | Hydrate signals from server status response |
-| `addLog(entry)` | Append log entry |
-| `addLocalLog(type, msg)` | Create and append a log entry |
-| `clearLogs()` | Empty logs array |
-| `addSession(s)` | Add session, set as active |
-| `replaceSession(oldId, newSession)` | Replace placeholder session with real one |
-| `renameSession(id, name)` | Update session name |
-| `removeSession(id)` | Remove session, switch active to last remaining |
+| `addLog(entry)` / `clearLogs()` | Log management |
+| `addSession(s)` / `removeSession(id)` / `renameSession(id, name)` | Session management |
+| `replaceSession(oldId, newSession)` | Replace placeholder with real session |
+| `setSessionStatus(id, status)` / `clearSessionStatus(id)` | Session status tracking |
+| `showToast(message, type)` / `dismissToast(id)` | Toast notifications |
 
 ---
 
@@ -156,160 +165,114 @@ All state lives in `state/store.ts` as Preact signals.
 
 ### `App.tsx` — Root Component
 
-Manages entire app lifecycle. Local state mirrors signals for reliable re-renders.
-
-**Key behaviors:**
-- Calls `initializeApp()` on mount with AbortController (cleanup on unmount prevents memory leaks)
-- Exponential backoff for initialization retries: 1s → 2s → 4s → 8s → 16s (capped at 30s), max 5 retries
-- ErrorBoundary wraps all section content (line 393) — catches errors in declarative code (render, lifecycle) but NOT async/event handlers (sections handle those with try/catch)
-- Handles transitions between views
-- Creates terminal sessions via `handleProjectConfirm()`
-- Uses placeholder sessions (temp ID) while creating, replaced with real ID on API response
-- Session limit: max 5 sessions (SESSION_LIMIT constant), shows warning when limit reached
+Manages entire app lifecycle. Uses AbortController for cleanup.
+- Exponential backoff for init retries: 1s → 30s cap, max 5 retries
+- ErrorBoundary wraps all section content
+- Placeholder sessions (temp ID) while creating, replaced with real ID on API response
+- Session limit: max 5 (SESSION_LIMIT constant)
 
 ### `AuthView.tsx` — Password Auth
 
-Two modes: `setup` (create password + confirm) and `login` (enter password).
-Uses direct `fetch()` (not `apiFetch()`) since user has no token yet.
+Two modes: `setup` (create + confirm) and `login`. Uses direct `fetch()` (no token yet).
 
 ### `SetupView.tsx` — Claude Connection Prompt
 
-Minimal card with "Connect Claude Account" button. Triggers `LoginModal` opening.
+Minimal card with "Connect Claude Account" button → triggers LoginModal.
 
 ### `PresetWizard.tsx` — Preset Selection
 
-Grid of preset cards fetched from `/api/presets`. Each card shows icon, name, description, and "Recommended" badge. Clicking "Configure" applies the preset.
+Grid of preset cards from `/api/presets` with icon, name, description, recommended badge.
 
 ### `LoginModal.tsx` — OAuth PKCE Flow
 
-Step-by-step OAuth flow:
-1. Calls `/api/claude/login` to get OAuth URL
-2. Polls `/api/claude/login-status` every 1.5s (max 120 polls)
-3. User opens URL, authorizes, copies code
-4. User pastes code → `/api/claude/login-code`
-5. `cleanAuthCode()` strips accidental extra text from pasted codes
+Step-by-step: calls login → polls status every 1.5s → user copies code → submits code. `cleanAuthCode()` strips accidental extra text.
 
 ### `Sidebar.tsx` — Navigation
 
-6 nav items: Home, Filesystem, Terminal, Auto Agents, Integrations, Config — each with SVG icons.
-Shows green/red connection status dot. Version footer (v0.1). Responsive: mobile overlay with backdrop.
-Desktop mode supports collapse/expand with chevron buttons (collapsed width: 56px, full width: 260px).
-
-**Memory section note**: The Memory section now displays tabs as Durable, Daily, Decisions, Paths, Search (no longer Journal/Projects).
+7 nav items: Home, Filesystem, Terminal, Auto Agents, Integrations, Config, Settings. SVG icons, green/red status dot, version footer. Desktop: collapse/expand (56px / 260px). Mobile: overlay with backdrop.
 
 ### `HomeSection.tsx` — Dashboard
 
-- Account info cards (email, org, status, sessions)
-- Container resources: CPU, Memory, Disk progress bars (color-coded: green < 60%, yellow < 80%, red >= 80%)
-- Claude usage: 5-hour and 7-day window utilization bars
-- Permissions: "Select All" toggle + 6 individual checkboxes (Read, Edit, Write, Bash, WebFetch, WebSearch), all ON by default. Each toggle POSTs immediately.
-- Port Mapping card (bridge mode only): shows mapped ports, input to add new ports. Calls `POST /api/system/add-port` which auto-restarts the container. Shows status messages (success, restarting, error).
-- Workspace export button (downloads `.tar.gz`)
-- Auto-refreshes dashboard every 30 seconds (permissions and network info loaded once on mount)
-
-### `Icons.tsx` — SVG Icon Library
-
-Centralized icon components replacing all emojis across the app. 40+ inline SVG icons (24x24 viewBox, stroke-based, 1.5px stroke). Includes `getFileIcon(name, size)` helper that maps file extensions to the appropriate icon component. Icons include navigation, file types, status indicators, and actions.
+- Account info cards (email, org, sessions)
+- Container resources: CPU, Memory, Disk bars (color-coded)
+- Claude usage: 5-hour and 7-day utilization bars
+- Model selector (sonnet/opus/haiku)
+- Port mapping card (bridge mode): shows ports, add/remove
+- Workspace export button
 
 ### `FilesSection.tsx` — File Browser
 
-Directory navigation of `/workspace` with breadcrumb path, list view, and built-in file viewer/editor. Click a file to read it, click Edit to modify, Save writes via `PUT /api/files/write`. Uses `currentFilesPath` signal for persistent navigation. Shares file list/row styles with ConfigSection.
+Directory navigation of `/workspace` with breadcrumbs, list view, file viewer/editor. Uses `currentFilesPath` signal for persistent navigation.
 
 ### `ClaudeSection.tsx` — Terminal Manager
 
 Multi-tab terminal interface:
-- Tab bar with session tabs (double-click to rename, X to close)
-- "+" button to add new session (max 5)
-- Terminal containers with xterm.js instances
+- Tab bar with session tabs (double-click rename, X to close)
+- Session status indicators per tab (active/idle/waiting/exited)
+- "+" button for new session (max 5)
+- Terminal containers with xterm.js
 - Browser notifications on session exit (if tab hidden)
+- Stabilization retries (`attachSettleRepaint`) on WS reconnect
 
-**Stabilization retries** (`attachSettleRepaint`): after a WS reconnect settles, `fitTerminal` + `repaintTerminal` are retried at `[500, 1500]` ms as a safety net for cases where the container was hidden or had estimated dimensions during initial settle. `repaintTerminal` is skipped if the mobile hidden input is active (`document.activeElement?.id === 'mobile-hidden-input'`) — the micro-resize+full-refresh causes reflow freeze during typing.
+### `AgentsSection.tsx` — Proactive Agents
 
-**Exported functions** (outside component):
-- `mountTerminalForSession(id, cwd, name)` — creates DOM element, xterm instance, attaches to PTY via WS
-- `restoreSessions()` — fetches existing sessions from API and re-mounts terminals
+Agent list (dash-card grid), create/edit modals with directory selector, agent detail with expand/collapse, live streaming output, run now button, execution history.
 
 ### `IntegrationsSection.tsx` — External Services
 
-Two integration cards:
 - **SSH:** Generate key, copy public key, link to GitHub settings
 - **GitHub CLI:** Device flow login with code display and polling
+- **Third-party CLI auth:** Vercel and other services via device flow
 
-### `MemorySection.tsx` — Memory Management
+### `SettingsSection.tsx` — Settings
 
-Tabbed interface for the memory system with 5 tabs:
-- **Durable** — Read/edit MEMORY.md (rendered pre + edit mode), path-scoped memory support
-- **Daily** — Date-based list + today's content + "Add entry" form (with tags), supports path-scoped entries
-- **Decisions** — ADR list + click to expand + "New ADR" form, uses filename-based navigation (not numeric IDs), displays `ADR-YYYYMMDD-<slug>.md` format
-- **Paths** — Path-scoped memory: list registered paths, view/edit path labels, navigate to path-scoped durable/daily/decisions
-- **Search** — FTS5 full-text search with debounced input, scope filter pills (durable/daily/decision/session), path filtering, highlighted snippets, type badges
+Replaces the old separate ConfigSection concerns. Contains multiple cards:
+- **Change Password:** Current + new + confirm form
+- **Active Sessions:** Grouped by IP, revoke individual or per-IP
+- **Permissions:** Tool permissions (Read/Edit/Write/Bash/WebFetch/WebSearch) + MCP server permissions
+- **Logs:** Inline log viewer with colored indicators and clear button
+- **Port Mapping:** Port list with add/remove (bridge mode)
 
-### Key changes from legacy:
-- **Journal → Daily**: Tab renamed, endpoints updated to use `/daily` instead of `/journal`
-- **Projects → Paths**: Tab renamed to reflect path-scoped memory (SHA-256 hash-based pathId)
-- **ADR naming**: Decisions use `ADR-YYYYMMDD-<slug>.md` format instead of `NNN-title.md`
-- **Promote interface**: Richer promote dialog with sourceRef, targetScope, target (durable|adr), section, tags
-- **Path scoping**: UI supports filtering memory by pathId throughout all tabs
+### `AgentConfigSection.tsx` — Config Editor
 
-### `ConfigSection.tsx` — Config Editor
+File browser for `.codeck/` directory with breadcrumbs, read/edit mode, save, reset to defaults with confirmation.
 
-File browser for `.codeck/` directory:
-- Breadcrumb navigation
-- File icons by type
-- Read-only view with toggle to edit mode
-- Save button for edited content
-- "Reset to defaults" with confirmation dialog
+### `ToastContainer.tsx` — Toast Notifications
 
-### `LogsDrawer.tsx` — Log Panel
+Fixed-position toast container. Renders from `toasts` signal. Auto-dismiss timer. Types: success, error, info.
 
-Collapsible bottom drawer:
-- Shows log count badge
-- Auto-scrolls to latest entry
-- Colored dot indicators by log type (info/error)
-- Chevron toggle icons
-- Clear button
-- Content rendered via `dangerouslySetInnerHTML` (relies on backend sanitization from services/logger.ts and proactive-agents/index.ts)
+### `SubagentPanel.tsx` — Sub-Agent Tracking
 
-### `MobileTerminalToolbar.tsx` — Mobile Terminal Controls
-
-Adaptive toolbar for mobile terminal interaction:
-- **Default mode**: Navigation keys (arrows, Enter, Tab, Esc) + shortcuts (^C, ^U, ^D, ^L, ^A, ^E, ^R, ^W, ^V)
-- **Y/N mode**: Large Y/N buttons when terminal buffer contains prompt patterns like `(y/n)`, `[Y/n]`, `[y/N]`
-- Event-driven Y/N detection via `onTerminalWrite` subscription (real-time, not polling)
-- Unified Pointer Events API for touch/mouse/stylus input
-- Hidden input field captures native keyboard with sentinel character (`\u200B`) that keeps the backspace event firing even on empty input
-- Collapsible with localStorage persistence
-- Visual feedback popup for key actions
-- **Debounced `fitTerminal`**: a module-level `debouncedFitTerminal` (350ms) ensures all overlapping `recalcLayout` calls collapse into a single `fitAddon.fit()` call after layout settles — prevents reflow thrashing during keyboard animation
-- `onFocus` does NOT schedule `recalcLayout` timers; `visualViewport.resize` handles keyboard-open layout with its own debounce, making the `onFocus` timers redundant and a source of main-thread stall during typing
-
-### `ConfirmModal.tsx` — Confirmation Dialog
-
-Reusable modal for user confirmations:
-- Props: `visible`, `title`, `message`, `confirmLabel`, `cancelLabel`, `onConfirm`, `onCancel`
-- Used for destructive actions (e.g., config reset, agent deletion)
-- Consistent styling with global modal overlay and buttons
-
-### `MobileMenu.tsx` — Mobile Navigation
-
-Slide-down navigation menu for mobile:
-- Backdrop overlay with close-on-click
-- 6 nav items: Home, Filesystem, Terminal, Auto Agents, Integrations, Config (no Memory item)
-- Connection status indicator at bottom
-- Automatically closes on section selection
+Real-time panel showing active Claude Code sub-agents:
+- Agent type icons (Explore, Plan, code-reviewer, etc.)
+- Elapsed time display
+- Status text from last message or line
+- Collapse/expand
 
 ### `NewProjectModal.tsx` — Project Creation
 
-Three-tab modal:
-1. **Existing folder** — select from workspace directories, check for resumable conversations
-2. **New folder** — name input with path preview
-3. **Clone** — URL input, optional name/branch, SSH URL warning
-
-Launch options: "Resume previous conversation" checkbox (existing tab only).
+Three-tab modal: existing folder, new folder, clone repo. Resume conversation checkbox.
 
 ### `ReconnectOverlay.tsx` — Reconnection UI
 
-Full-screen overlay shown when the WebSocket connection is lost. Uses `wsConnected` signal. Displays a spinner and "Reconnecting..." text with backdrop blur. Auto-dismisses when connection is re-established.
+Full-screen overlay on WS disconnect. Spinner + "Reconnecting..." with backdrop blur. Also shown during session restore (`restoringPending` signal).
+
+### `MobileTerminalToolbar.tsx` — Mobile Controls
+
+Adaptive toolbar:
+- **Default mode**: Navigation keys + shortcuts (Ctrl+C, Ctrl+U, etc.)
+- **Y/N mode**: Large buttons when terminal shows `(y/n)` patterns
+- Event-driven detection via `onTerminalWrite` subscription
+- Hidden input with sentinel character for native keyboard capture
+- Collapsible with localStorage persistence
+
+### `ConfirmModal.tsx` — Confirmation Dialog
+
+Reusable modal for destructive actions.
+
+### `MobileMenu.tsx` — Mobile Navigation
+
+Slide-down overlay with 7 nav items and connection status.
 
 ---
 
@@ -332,58 +295,25 @@ Manages xterm.js instances in a `Map<string, TerminalInstance>`.
 
 ### Mobile detection
 
-User-agent based detection adjusts:
+Feature-based (pointer: coarse + touch + screen < 1100px):
 - Font size: 14px → 12px
 - Resize debounce: 50ms → 200ms
 - Disables autocomplete/autocorrect on xterm textarea
 
 ### Instance lifecycle
 
-1. `createTerminal(sessionId, container)` — creates Terminal + FitAddon, attaches to DOM
+1. `createTerminal(sessionId, container)` — creates Terminal + FitAddon
 2. ResizeObserver triggers `fitAddon.fit()` + sends `console:resize` via WS
-3. `onData` handler sends keystrokes via `wsSend({type: 'console:input'})`
+3. `onData` sends keystrokes via `wsSend({type: 'console:input'})`
 4. `destroyTerminal(sessionId)` — disposes terminal + observer
 
-**ResizeObserver cleanup**: The observer is disconnected when `destroyTerminal()` is called (on explicit session close or exit). For component lifecycle cleanup, ensure terminals are destroyed when ClaudeSection unmounts.
+### Mobile scroll lock
 
-### Mobile scroll lock mechanism
-
-On mobile, when a user scrolls up to read terminal history, xterm.js's built-in auto-scroll would normally yank them back to the bottom on new output. The scroll lock system prevents this:
-
-1. Viewport scroll listener detects when user is not at bottom (`scrollTop + clientHeight < scrollHeight - 10px`)
-2. Sets `scrollLocked` flag for that sessionId
-3. When locked, `writeToTerminal()` saves `viewport.scrollTop` before `term.write()`, then restores it in the callback
-4. User scrolling to bottom clears the lock (via `scrollToBottom()`)
-
-This defeats xterm's internal auto-scroll while preserving normal behavior when user is at bottom.
-
-### Mobile toolbar adaptive mode
-
-The mobile toolbar automatically adapts to terminal prompts:
-- **Default mode**: Shows shortcuts (^C, ^U, ^D, ^L, ^A, ^E, ^R, ^W, ^V)
-- **Y/N mode**: When terminal buffer contains patterns like `(y/n)`, `[Y/n]`, `[y/N]`, shows large Y/N buttons
-- Detection is **event-driven** via `onTerminalWrite` subscription — incoming data chunks are tested directly; on newlines, the full buffer is re-checked at a 300ms throttle to avoid main-thread pressure during heavy streaming output
-- Mode switches as soon as a matching chunk arrives (fast path) or within 300ms of the newline that produces the prompt (slow path)
-
-### Mobile terminal known limitations
-
-The mobile terminal has known limitations inherited from xterm.js:
-
-- **Predictive text**: Android GBoard and iOS predictive keyboards surround enter/backspace with composition events, causing text duplication or unexpected behavior. Workaround: use the custom toolbar virtual keys for reliable input.
-- **Copy/paste**: Touch-based text selection works but clipboard access is unreliable across browsers and devices. iPad trackpad + Cmd+C may fail silently.
-- **Touch events**: xterm.js has no dedicated touch gesture support; relies on mouse event emulation, which can cause inconsistent behavior on mobile browsers.
-- **Custom toolbar mitigation**: The fixed-bottom toolbar with virtual keys (ESC, Tab, Ctrl+C, arrow keys, shortcuts) provides reliable input for common operations that would otherwise be unreliable via the on-screen keyboard.
-- **Safe-area insets**: The toolbar uses `env(safe-area-inset-bottom)` for iPhone notch/home indicator support.
-
-**Fixed (2026-02-21)**: Input freeze during typing. Multiple overlapping `recalcLayout` timers (from `onFocus` and `visualViewport.resize`) were scheduling concurrent `fitAddon.fit()` calls, causing DOM reflow thrashing that stalled the main thread for 1–10s. Fixed by: (1) module-level debounced `fitTerminal` collapsing all calls into one, (2) removing redundant `onFocus` timers, (3) reducing stabilization retry delays from `[500,1500,4000,10000]` to `[500,1500]`, (4) skipping `repaintTerminal` while mobile input is focused.
-
-For upstream tracking, see: [xterm.js #2403](https://github.com/xtermjs/xterm.js/issues/2403), [#5377](https://github.com/xtermjs/xterm.js/issues/5377), [#1101](https://github.com/xtermjs/xterm.js/issues/1101).
-
-### Security considerations
-
-**ANSI escape sequences**: The terminal outputs data from backend PTY without additional sanitization. While xterm.js has internal protections against known exploits (e.g., DCS vulnerability), the security model assumes trusted backend. For untrusted or multi-tenant environments, implement application-level ANSI filtering to strip dangerous sequences (OSC, DCS, PM, APC).
-
-**Terminal output trust boundary**: All data flowing through `writeToTerminal()` originates from backend PTY processes. Compromise of backend → arbitrary terminal output → potential browser exploit via crafted ANSI sequences. Defense-in-depth: validate/sanitize at backend PTY spawn and/or frontend write layer.
+Prevents xterm's auto-scroll from yanking user back to bottom while reading history:
+1. Viewport scroll listener detects user not at bottom
+2. Sets `scrollLocked` for that session
+3. When locked, saves/restores scrollTop around `term.write()`
+4. Lock clears when user scrolls to bottom
 
 ---
 
@@ -391,7 +321,7 @@ For upstream tracking, see: [xterm.js #2403](https://github.com/xtermjs/xterm.js
 
 ```typescript
 apiFetch(url, options)
-  → Adds 'Authorization: Bearer <token>' header
+  → Adds 'Authorization: Bearer <token>'
   → Adds 'Content-Type: application/json'
   → On 401: clearAuthToken(), view='auth', throw error
 ```
@@ -402,37 +332,19 @@ Token stored in `localStorage` key `codeck_auth_token`.
 
 ## WebSocket Client (`ws.ts`)
 
-### Connection & Authentication
+### Connection
 
-- Connects to `ws://host?token=<token>` (or `wss://` for HTTPS)
-- **Authentication method**: Token passed as URL query parameter
-  - **Security tradeoff**: URLs get logged by web servers, reverse proxies, and observability tools
-  - **Mitigation**: TLS prevents MITM, browsers don't cache WebSocket URLs
-  - **Best practice alternative**: First-message authentication (send token in initial WS message after handshake) or ephemeral single-use tokens
-- Token retrieved from `getAuthToken()` which reads from `localStorage` key `codeck_auth_token`
-- **Origin validation**: Performed server-side during WebSocket upgrade (client-side origin validation is not possible)
-
-### Connection Management
-
-- Auto-reconnect with exponential backoff (1s → 2s → 4s → ... → 30s cap, resets on success)
-- Max 15 reconnect attempts before giving up
-- Jitter applied to backoff (50-100% of delay) to spread out reconnection attempts
+- `ws://host?token=<token>` (or `wss://` for HTTPS)
+- Auto-reconnect: exponential backoff 1s → 30s, 50-100% jitter, max 15 attempts
 - Stale connection detector: checks every 10s, force-closes if no data for 45s
-- Buffered resize: If disconnected, buffers the latest `console:resize` message to send after reconnect
+- Buffered resize: buffers latest resize during disconnect, sends on reconnect
 
 ### Message Handling
 
-- **Message validation**: All incoming messages validated against known type set (`KNOWN_MSG_TYPES`) before processing
-- On `status` message: syncs session list from server, then re-attaches to all current sessions (prevents stale session ghosts after container restart)
-- Message handlers: `status`, `log`, `logs`, `ports`, `sessions:restored`, `console:error`, `console:output`, `console:exit`, `agent:update`, `agent:output`, `agent:execution:start`, `agent:execution:complete`
-- `console:error` with `sessionId` removes ghost sessions from the frontend (session no longer exists on server)
-- `wsSend(msg)` — JSON-serializes and sends if connected; queues resize messages if disconnected
-
-### Terminal Handlers
-
-- `setTerminalHandlers(onOutput, onExit)` — registers callbacks for terminal I/O
-- `onOutput(sessionId, data)` — called on `console:output` messages, writes to xterm.js
-- `onExit(sessionId)` — called on `console:exit`, destroys terminal and shows notification if tab hidden
+- All messages validated against known type set
+- `status` message syncs session list and re-attaches all sessions
+- `console:error` removes ghost sessions
+- Handlers: status, log, logs, ports, sessions:restored, console:output, console:exit, agent:*, subagent:*
 
 ---
 
@@ -441,56 +353,42 @@ Token stored in `localStorage` key `codeck_auth_token`.
 ### Design tokens (`variables.css`)
 
 Dark-only theme with indigo accent:
-- Backgrounds: `#0a0a0b` → `#2a2a30` (6 levels: primary, secondary, tertiary, card, hover, active)
-- Text: `#fafafa` → `#606068` (3 levels: primary, secondary, muted)
+- Backgrounds: `#0a0a0b` → `#2a2a30` (6 levels)
+- Text: `#fafafa` → `#606068` (3 levels)
 - Accent: `#6366f1` (indigo)
-- Status: green/yellow/red with 12% alpha subtle variants
+- Status: green/yellow/red with subtle variants
 - Fonts: `--font-sans` (Inter), `--font-mono` (JetBrains Mono)
-- Transitions: `--transition: 150ms ease`
-- Info color: `--info: #3b82f6` with subtle variant
 - Layout: `--sidebar-width: 260px`, `--sidebar-collapsed-width: 56px`
 
 ### Organization
 
-- `global.css` — Reset, buttons (`.btn-*`), inputs, badges, modals, large spinner
+- `global.css` — Reset, buttons, inputs, badges, modals
 - `app.css` — All component styles with section comments
-- All icons are inline SVGs from `Icons.tsx` (no emoji anywhere)
-- Backdrop blur on modals (`backdrop-filter: blur(4px)`)
-- Modal entrance animation (scale 0.95 → 1 + fade)
-- Responsive breakpoints at 1100px, 700px, and 600px (preset wizard cards)
-- Mobile (below 700px): hamburger button on LEFT, logo+title on RIGHT; slide-down menu overlay
+- All icons are inline SVGs from `Icons.tsx`
+- Responsive breakpoints at 1100px, 700px, 600px
+- Mobile (below 700px): hamburger on LEFT, logo+title on RIGHT
 
 ### Font loading
 
-Fonts loaded from Google Fonts CDN:
-- **Inter** (400, 500, 600, 700) — UI text via `--font-sans`
-- **JetBrains Mono** (400, 500, 700) — Terminal and code via `--font-mono`
-- Preconnect hints for `fonts.googleapis.com` and `fonts.gstatic.com`
-- Preload hint for the Google Fonts CSS stylesheet
-- `font-display: swap` — shows fallback text immediately, swaps when font loads (avoids FOIT)
+Google Fonts CDN: Inter (400-700) and JetBrains Mono (400-700). Preconnect hints, preload, `font-display: swap`.
 
-### Future enhancements
-
-- **Container queries**: For modular component responsiveness (93% browser support). Candidates: `.preset-cards`, `.agents-grid`, `.dash-grid`.
-- **Critical CSS extraction**: Inline LoadingView + AuthView styles in `index.html` for faster FCP.
-- **Mobile-first refactor**: Convert `max-width` media queries to `min-width` (mobile-first) for progressive enhancement.
-- **Self-hosted fonts**: Eliminate third-party CDN dependency for GDPR compliance and offline support.
+---
 
 ## Accessibility
 
-Codeck targets WCAG 2.1 Level AA compliance for keyboard and screen reader users.
+Codeck targets WCAG 2.1 Level AA:
 
-### Implemented patterns
+### Implemented
 
-- **ARIA dialog pattern**: All modals (`ConfirmModal`, `LoginModal`, `NewProjectModal`) use `role="dialog"`/`role="alertdialog"`, `aria-modal="true"`, `aria-labelledby`, focus trap (Tab cycling), and Escape key handler.
-- **Semantic landmarks**: `<header>` for mobile header, `<main>` for content area, `<aside>` for sidebar navigation and logs drawer, `<nav>` for section navigation.
-- **Focus indicators**: All interactive elements (buttons, inputs, tabs, sidebar items) have visible `:focus-visible` outlines (2px solid accent, WCAG 2.4.7).
-- **ARIA labels**: Icon-only buttons use `aria-label`. Sidebar items use `aria-current="page"` for active state. Decorative icons use `aria-hidden="true"`.
-- **Live regions**: Logs container uses `role="log"` with `aria-live="polite"`. Auth status messages use `role="alert"`/`role="status"`.
-- **Reduced motion**: `@media (prefers-reduced-motion: reduce)` disables animations and transitions.
+- ARIA dialog pattern on all modals
+- Semantic landmarks (`<header>`, `<main>`, `<aside>`, `<nav>`)
+- Focus indicators on all interactive elements
+- ARIA labels on icon-only buttons, `aria-current="page"` on nav
+- Live regions: `role="log"`, `role="alert"`, `role="status"`
+- `@media (prefers-reduced-motion: reduce)` disables animations
 
 ### Known limitations
 
-- XTerm terminal emulator has limited screen reader support (inherent to terminal UIs).
-- Full heading hierarchy (`<h1>`–`<h6>`) not yet implemented across all sections.
-- Color contrast not yet validated with automated tooling — manual spot-checks done.
+- xterm.js has limited screen reader support
+- Full heading hierarchy not yet implemented
+- Color contrast not validated with automated tooling

@@ -141,6 +141,30 @@
 			"dest": "/workspace/.codeck/scripts/credential-persist.mjs"
 		},
 		{
+			"src": "integrations/vercel.md",
+			"dest": "/workspace/.codeck/integrations/vercel.md"
+		},
+		{
+			"src": "integrations/github.md",
+			"dest": "/workspace/.codeck/integrations/github.md"
+		},
+		{
+			"src": "integrations/supabase.md",
+			"dest": "/workspace/.codeck/integrations/supabase.md"
+		},
+		{
+			"src": "integrations/stripe.md",
+			"dest": "/workspace/.codeck/integrations/stripe.md"
+		},
+		{
+			"src": "integrations/notion.md",
+			"dest": "/workspace/.codeck/integrations/notion.md"
+		},
+		{
+			"src": "integrations/cloudflare.md",
+			"dest": "/workspace/.codeck/integrations/cloudflare.md"
+		},
+		{
 			"src": "scripts/repo-map-generator.mjs",
 			"dest": "/workspace/.codeck/scripts/repo-map-generator.mjs"
 		},

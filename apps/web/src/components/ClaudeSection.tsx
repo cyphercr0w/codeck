@@ -813,9 +813,10 @@ export function ClaudeSection({
 function TerminalStatusBar() {
 	const usage = claudeUsage.value;
 	const rawCtx = contextData.value;
-	// Ignore stale context data (>30s old) — statusline pushes every ~300ms,
-	// so if updatedAt is old the session likely ended or compacted.
-	const ctx = rawCtx && Date.now() - rawCtx.updatedAt < 30_000 ? rawCtx : null;
+	// Show context data for up to 10 min after last update — covers idle periods
+	// between user messages. Only hide if truly stale (session ended/compacted).
+	const ctx =
+		rawCtx && Date.now() - rawCtx.updatedAt < 10 * 60_000 ? rawCtx : null;
 	const status = sessionStatus.value[activeSessionId.value || ""] || "idle";
 	const activeSession = sessions.value.find(
 		(s) => s.id === activeSessionId.value,

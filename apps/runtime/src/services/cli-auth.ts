@@ -33,9 +33,9 @@ interface CLIAuthConfig {
 
 const CONFIGS: Record<string, CLIAuthConfig> = {
   vercel: {
-    command: 'npx',
-    args: ['-y', 'vercel', 'login', '--non-interactive'],
-    urlPattern: /https:\/\/vercel\.com\/oauth\/device\S*/,
+    command: 'vercel',
+    args: ['login', '--oob'],
+    urlPattern: /https:\/\/vercel\.com\/\S*/,
     codePattern: /user_code=([A-Z0-9-]+)/,
     successPattern: /Congratulations|Success|Authenticated|logged in/i,
     timeout: 120_000,
@@ -162,9 +162,8 @@ export async function isCLIAuthenticated(service: string): Promise<{ authenticat
   // Auth check commands — must mirror CONFIGS keys
   const authChecks: Record<string, { args: string[]; parse: (out: string) => { authenticated: boolean; username?: string } }> = {
     vercel: {
-      args: ['-y', 'vercel', 'whoami'],
+      args: ['whoami'],
       parse: (out) => {
-        // Use only the first non-empty line (npx may emit warnings on other lines)
         const firstLine = out.split('\n').map(l => l.trim()).find(l => l.length > 0) || '';
         return firstLine && !firstLine.includes('Error') && !firstLine.includes('not logged')
           ? { authenticated: true, username: firstLine }
@@ -177,7 +176,8 @@ export async function isCLIAuthenticated(service: string): Promise<{ authenticat
   if (!check) return { authenticated: false };
 
   try {
-    const { stdout } = await execFileAsync('npx', check.args, { encoding: 'utf-8', timeout: 10_000 });
+    const cmd = CONFIGS[service]?.command || 'npx';
+    const { stdout } = await execFileAsync(cmd, check.args, { encoding: 'utf-8', timeout: 10_000 });
     return check.parse(stdout);
   } catch (err) {
     const code = (err as NodeJS.ErrnoException).code;

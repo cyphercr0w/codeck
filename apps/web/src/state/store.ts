@@ -305,6 +305,12 @@ export function renameSession(id: string, name: string): void {
 
 export function removeSession(id: string): void {
 	sessions.value = sessions.value.filter((s) => s.id !== id);
+	// Clean up per-session context data
+	if (contextPerSession.value[id]) {
+		const copy = { ...contextPerSession.value };
+		delete copy[id];
+		contextPerSession.value = copy;
+	}
 	if (activeSessionId.value === id) {
 		const remaining = sessions.value;
 		activeSessionId.value =
@@ -417,8 +423,8 @@ export const contextData = computed(() => {
 export function setContextData(
 	data: ContextData & { sessionId?: string },
 ): void {
-	const sid = data.sessionId || activeSessionId.value;
-	if (!sid) return;
+	const sid = data.sessionId;
+	if (!sid) return; // Ignore context without explicit sessionId (prevents cross-contamination)
 	contextPerSession.value = { ...contextPerSession.value, [sid]: data };
 }
 

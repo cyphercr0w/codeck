@@ -300,6 +300,7 @@ router.post("/destroy", (req, res) => {
 		return;
 	}
 	destroySession(sessionId);
+	contextBySession.delete(sessionId);
 	console.log(`[Console] Session destroyed: ${sessionId}`);
 	broadcastStatus();
 	res.json({ success: true });
@@ -327,8 +328,11 @@ router.post("/context", (req, res) => {
 		model: model || "",
 		updatedAt: Date.now(),
 	};
-	if (sessionId) contextBySession.set(sessionId, data);
-	broadcast({ type: "context", data: { ...data, sessionId: sessionId || "" } });
+	if (sessionId) {
+		contextBySession.set(sessionId, data);
+		broadcast({ type: "context", data: { ...data, sessionId } });
+	}
+	// Silently ignore context without sessionId (e.g., shell sessions)
 	res.json({ ok: true });
 });
 

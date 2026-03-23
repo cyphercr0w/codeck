@@ -289,7 +289,7 @@ function _createConsoleSessionInner(
 		...userEnv,
 		...oauthEnv,
 		TERM: "xterm-256color",
-		CODECK_SESSION_ID: id,
+		CODECK_SESSION_ID: id, // Must be LAST — prevents oauthEnv from overwriting
 	};
 
 	// Build CLI args from launch options

@@ -137,6 +137,10 @@
 			"dest": "/workspace/.codeck/scripts/skill-index-generator.mjs"
 		},
 		{
+			"src": "scripts/credential-persist.mjs",
+			"dest": "/workspace/.codeck/scripts/credential-persist.mjs"
+		},
+		{
 			"src": "scripts/repo-map-generator.mjs",
 			"dest": "/workspace/.codeck/scripts/repo-map-generator.mjs"
 		},

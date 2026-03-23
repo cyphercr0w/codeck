@@ -520,6 +520,17 @@
 				"hooks": [
 					{
 						"type": "command",
+						"command": "node /workspace/.codeck/scripts/credential-persist.mjs",
+						"timeout": 5
+					}
+				],
+				"description": "Restore integration credentials (symlinks) after container rebuild"
+			},
+			{
+				"matcher": "*",
+				"hooks": [
+					{
+						"type": "command",
 						"command": "node \"/workspace/.codeck/scripts/ecc/run-with-flags.js\" \"session:start\" \"scripts/ecc/session-start.js\" \"minimal,standard,strict\""
 					}
 				],

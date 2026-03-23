@@ -72,6 +72,8 @@ const INTEGRATIONS: IntegrationDef[] = [
     tokenUrl: 'https://vercel.com/account/tokens',
     tokenHint: 'Generate a token at vercel.com → Account → Tokens',
     mcpServerName: 'vercel',
+    cliAuth: true,
+    cliAuthService: 'vercel',
   },
   {
     id: 'stripe',

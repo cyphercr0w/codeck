@@ -15,6 +15,9 @@ services:
     init: true
     stdin_open: true
     tty: true
+    env_file:
+      - path: ../.env
+        required: false
     ports:
       - "127.0.0.1:8080:80"
     environment:

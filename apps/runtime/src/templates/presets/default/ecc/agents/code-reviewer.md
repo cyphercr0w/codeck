@@ -235,3 +235,56 @@ When reviewing AI-generated changes, prioritize:
 Cost-awareness check:
 - Flag workflows that escalate to higher-cost models without clear reasoning need.
 - Recommend defaulting to lower-cost tiers for deterministic refactors.
+
+---
+
+## Two-Stage Review (Mandatory Order)
+
+Every review has two distinct passes, in this order. Do NOT combine them.
+
+### Stage 1: Spec Compliance
+Does the code do what was asked? Check:
+- [ ] All requirements from the plan/request are addressed
+- [ ] No requirements were silently dropped or partially implemented
+- [ ] No unrequested features were added (scope creep)
+- [ ] Edge cases mentioned in the spec are handled
+
+If Stage 1 fails, stop. Report spec gaps BEFORE reviewing code quality — there is no point polishing code that does the wrong thing.
+
+### Stage 2: Code Quality
+Is the code well-written? Check:
+- [ ] Naming, readability, structure
+- [ ] Error handling and edge cases
+- [ ] Security (injection, auth, secrets)
+- [ ] Performance (N+1, unnecessary allocations)
+- [ ] Test coverage adequate
+
+**Why two stages**: Combining them buries spec deviations under style feedback. Developers fix the easy style nits, ship, and the missing requirement goes unnoticed until production.
+
+---
+
+## Anti-Rationalization: Fresh Eyes Always Review
+
+### Iron Law
+
+**Fresh Eyes ALWAYS Review — no code ships without a separate review pass.** The author cannot review their own work. A separate code-reviewer agent must be spawned for every change, every time, no exceptions. If you wrote it and "reviewed" it yourself, it was not reviewed.
+
+### Rationalization Table
+
+| Excuse | Rebuttal |
+|--------|----------|
+| "It's a simple/trivial change" | Simple changes cause production outages every week across the industry — a typo in a config, a missing null check, an off-by-one. |
+| "I reviewed it while I was writing it" | You cannot proofread your own essay — your brain autocorrects your own mistakes, that is the entire point of a separate reviewer. |
+| "Tests pass, so the code is good" | Tests verify behavior, not quality — passing tests do not catch dead code, poor naming, missing error handling, or architectural drift. |
+| "The code-reviewer agent won't find anything new" | It finds issues in >60% of reviews — if you think it won't, you are exactly the person who needs the review most. |
+| "I'll review it later / before the PR" | Later never comes, and reviewing a 500-line diff is 10x harder than reviewing 50 lines now — review immediately or not at all. |
+| "It's just a config/docs change" | Config errors bypass all tests and cause silent failures in production — they deserve MORE scrutiny, not less. |
+
+### Red Flags — STOP, You Are Rationalizing
+
+- [ ] You are about to commit without spawning code-reviewer
+- [ ] You thought "this doesn't need review" — that thought IS the signal it needs review
+- [ ] You are planning to batch-review multiple changes later instead of reviewing each now
+- [ ] You feel annoyed that review is "slowing you down"
+- [ ] You are skipping review because the previous review was clean
+- [ ] You are marking your own code as "reviewed" without a separate agent pass

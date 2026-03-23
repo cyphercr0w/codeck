@@ -9,7 +9,7 @@
  * This file contains the orchestration layer: login flow, auth checks,
  * logout, and the public API surface that the rest of the codebase imports.
  */
-import { execSync } from 'child_process';
+import { execFileSync } from 'child_process';
 import { existsSync, readFileSync, unlinkSync } from 'fs';
 import { randomBytes, createHash } from 'crypto';
 import { join } from 'path';
@@ -95,7 +95,7 @@ let claudeInstalled: boolean | null = null;
 export function isClaudeInstalled(): boolean {
   if (claudeInstalled !== null) return claudeInstalled;
   try {
-    execSync(`${ACTIVE_AGENT.command} ${ACTIVE_AGENT.flags.version}`, { stdio: 'pipe' });
+    execFileSync(ACTIVE_AGENT.command, [ACTIVE_AGENT.flags.version], { stdio: 'pipe' });
     claudeInstalled = true;
   } catch {
     claudeInstalled = false;

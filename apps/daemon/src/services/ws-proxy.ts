@@ -61,10 +61,21 @@ function sendPingFrame(socket: Socket): void {
 
 /** Check if a buffer contains a WebSocket pong frame (opcode 0xA). */
 function containsPongFrame(data: Buffer): boolean {
-  // Masked pong: 0x8A followed by mask bit set (0x80+)
-  // Unmasked pong: 0x8A 0x00
+  // WebSocket frame format: first byte = FIN (1 bit) + RSV (3 bits) + opcode (4 bits)
+  // Pong opcode = 0xA, so first byte with FIN=1 is 0x8A
+  // Client-to-server frames are always masked (RFC 6455 §5.1): second byte has bit 7 set (0x80+)
+  // Server-to-client frames are unmasked: second byte is 0x00 for empty pong
   for (let i = 0; i < data.length - 1; i++) {
-    if (data[i] === 0x8a) return true;
+    if (data[i] === 0x8a) {
+      const second = data[i + 1];
+      // Accept both masked (client→server: 0x80) and unmasked (server→client: 0x00) pong
+      const payloadLen = second & 0x7f; // lower 7 bits = payload length
+      if (payloadLen === 0) return true; // empty pong frame (most common)
+      // Non-empty pong: skip past the frame (masked = +4 mask bytes + payload, unmasked = +payload)
+      const masked = (second & 0x80) !== 0;
+      const frameSize = 2 + (masked ? 4 : 0) + payloadLen;
+      if (i + frameSize <= data.length) return true;
+    }
   }
   return false;
 }
@@ -82,11 +93,31 @@ export function handleWsUpgrade(
 ): void {
   const url = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`);
 
-  // Auth: validate daemon token from query param (skip if no password configured).
-  // Frontend sends ?ticket= (preferred, from /api/auth/ws-ticket) or ?token= (fallback).
-  // Both carry the same daemon session token value.
+  // Auth: validate daemon token from subprotocol header or query param.
+  // Frontend now sends token via Sec-WebSocket-Protocol: "auth.<base64url-encoded-token>"
+  // (preferred — keeps token out of URL/logs). Falls back to ?ticket= / ?token= for
+  // backward compat with internal tools.
   if (isPasswordConfigured()) {
-    const token = url.searchParams.get('ticket') || url.searchParams.get('token');
+    let token: string | null = null;
+
+    // Check subprotocol first
+    const protocols = req.headers['sec-websocket-protocol'];
+    if (protocols) {
+      const authProto = (Array.isArray(protocols) ? protocols.join(',') : protocols)
+        .split(',').map(p => p.trim()).find(p => p.startsWith('auth.'));
+      if (authProto) {
+        const encoded = authProto.slice(5); // remove "auth." prefix
+        try {
+          token = Buffer.from(encoded, 'base64url').toString('utf-8');
+        } catch { /* invalid base64 */ }
+      }
+    }
+
+    // Fall back to query params
+    if (!token) {
+      token = url.searchParams.get('ticket') || url.searchParams.get('token');
+    }
+
     if (!token || !validateSession(token)) {
       clientSocket.write(
         'HTTP/1.1 401 Unauthorized\r\n' +

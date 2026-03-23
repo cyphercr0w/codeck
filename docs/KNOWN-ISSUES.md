@@ -1,6 +1,7 @@
 # Known Issues & Technical Debt — Codeck
 
-Last updated: 2026-02-19.
+Last updated: 2026-03-23.
+Full audit report: [`AUDIT-2026-03-23.md`](AUDIT-2026-03-23.md)
 
 ---
 
@@ -20,11 +21,11 @@ Both have `POST /clone` with different behavior. `project.routes.ts` lacks timeo
 
 `FileItem` interface and `formatSize()` helper are copy-pasted. Extract to shared `types.ts`/`utils.ts`.
 
-### 3. `git.ts` is a god-module
+### 3. `git.ts` god-module (partially fixed)
 
-**File:** `apps/runtime/src/services/git.ts` (500+ lines)
+**File:** `apps/runtime/src/services/git.ts` (100 lines — facade)
 
-Handles git, GitHub CLI auth, SSH keys, workspace CLAUDE.md, credentials, and repo listing. Split into `git.ts`, `ssh.ts`, `github.ts`, `workspace.ts`.
+Split into `git/operations.ts`, `git/github-auth.ts`, `git/ssh.ts`, `git/workspace.ts`. Facade file re-exports. `getGitStatus()` in facade lacks per-function error handling — if any sub-function throws, whole call fails.
 
 ### 4. CSS duplication
 
@@ -94,6 +95,118 @@ In **managed mode**, port exposure is handled by the daemon — the runtime's po
 
 Workspace export (`GET /api/workspace/export`) creates `.tar.gz` but has no checksum, no restore testing, no schema migration.
 
+### 16. Shell injection in CLI init
+
+**File:** `apps/cli/src/commands/init.ts:35-40`
+
+`execSync()` with string interpolation of `volumeName` derived from user-controlled `projectPath`. Use `execFileSync` with array args.
+
+**Severity:** Critical (RCE)
+
+### 17. `execSync` in auth-anthropic version check
+
+**File:** `apps/runtime/src/services/auth-anthropic.ts:98`
+
+String interpolation for agent binary + version flag. Use `execFileSync(binary, [flag])` instead.
+
+**Severity:** Critical (RCE if agent config contaminated)
+
+### 18. SQL injection in memory-indexer embedding dimension
+
+**File:** `apps/runtime/src/services/memory-indexer.ts:90-94`
+
+`db.exec()` uses template literal with `${dim}` for `CREATE VIRTUAL TABLE`. Validate `getEmbeddingDim()` is numeric and bounded.
+
+**Severity:** Critical (if dim is attacker-controlled)
+
+### 19. WS pong detection broken in daemon
+
+**File:** `apps/daemon/src/services/ws-proxy.ts:63-70`
+
+Checks for unmasked pong opcode (0x8a) but client-to-server frames are always masked per RFC 6455. Pong is never detected, all WS connections eventually timeout.
+
+**Severity:** High (WebSocket terminal reliability)
+
+### 20. CWD not validated in console create
+
+**File:** `apps/runtime/src/routes/console.routes.ts:33`
+
+`req.body.cwd` passed directly to `createConsoleSession` without `safePath()` validation. Path traversal possible.
+
+**Severity:** High (path traversal)
+
+### 21. Token array injection in daemon auth
+
+**File:** `apps/daemon/src/server.ts:164`
+
+`req.query.token` can be array (`?token=a&token=b`). TypeScript treats as `string | string[]`, but `validateSession()` expects string. Add type guard.
+
+**Severity:** High (auth bypass)
+
+### 22. Iterator invalidation in WebSocket cleanup
+
+**File:** `apps/runtime/src/web/websocket.ts:270-271`
+
+Deleting from `sessionActiveClient` Map while iterating it. Can skip entries or cause unexpected behavior. Collect keys first, then delete.
+
+**Severity:** Medium (stale state)
+
+### 23. Session creation boolean lock race
+
+**File:** `apps/runtime/src/services/console.ts:161-175`
+
+Boolean flag `sessionCreationLocked` not reset if exception thrown before `finally`. Use try/finally pattern.
+
+**Severity:** Medium (blocks new sessions permanently)
+
+### 24. ANSI sanitizer missing C1 control codes
+
+**File:** `apps/web/src/ansi-sanitizer.ts:16-28`
+
+Does not strip 8-bit C1 control codes (0x80-0x9F). Missing protection against OSC 52 clipboard injection.
+
+**Severity:** Medium (terminal injection)
+
+### 25. No flow control in internal-pty.ts
+
+**File:** `apps/runtime/src/web/internal-pty.ts:136-148`
+
+No HIGH_WATER/LOW_WATER backpressure handling. Slow client causes output buffer accumulation in managed mode.
+
+**Severity:** Medium (memory exhaustion)
+
+### 26. Env var values unbounded in codeck routes
+
+**File:** `apps/runtime/src/routes/codeck.routes.ts:210-211`
+
+No length limit on env var values — could cause OOM or config bloat.
+
+**Severity:** Medium (DoS)
+
+### 27. Memory search not rate-limited
+
+**File:** `apps/runtime/src/routes/memory.routes.ts`
+
+FTS5 search endpoint has no rate limiting. Expensive queries exploitable for DoS.
+
+**Severity:** Medium
+
+### 28. Frontend file import OOM risk
+
+**File:** `apps/web/src/components/HomeSection.tsx:329`
+
+FileReader base64 encoding loads entire file into memory. No size validation before read. >50MB file crashes browser.
+
+**Severity:** Medium (browser DoS)
+
+### 29. Sudoers too broad in dev-setup.sh
+
+**File:** `scripts/dev-setup.sh:121-127`
+
+`codeck ALL=(ALL) NOPASSWD: /usr/bin/chown *` grants unrestricted chown. Scope to specific paths.
+
+**Severity:** Medium (privilege escalation on VPS)
+
 ---
 
 ## Performance
@@ -148,9 +261,9 @@ Agent `cwd` is just the starting directory. Agents can access all of `/workspace
 
 Session tokens in localStorage are accessible to XSS. Acceptable for single-user sandbox. CSP + DOMPurify + input validation provide defense layers.
 
-### WebSocket token in URL (planned fix)
+### WebSocket token in URL (partially fixed)
 
-Token in `ws://...?token=` URL visible in DevTools. Migrate to WebSocket subprotocol header.
+Primary auth now via WebSocket subprotocol header (`auth.<base64url>`). Query param `?token=` fallback still exists for backward compat. Ticket-based auth (`?ticket=`) also implemented. Consider deprecating `?token=` entirely.
 
 ### mDNS has no authentication
 
@@ -195,14 +308,40 @@ Multi-step file operations without locking. Concurrent preset application can in
 
 ---
 
+## Test Coverage Gaps (from audit 2026-03-23)
+
+### Coverage enforcement disabled
+
+`vitest.config.ts` has all coverage thresholds set to 0. Per project rules, 80% is non-negotiable. Enable before beta.
+
+### 12 routes with no tests
+
+cli-auth, codeck, dashboard, git, github, hooks, mcp, preset, project, skills, ssh, workspace — all completely untested.
+
+### 20+ services with no tests
+
+All memory services (7 files), all agent services, git operations, preset system, port management, session tracking, embeddings — no tests exist.
+
+### Frontend: 0% test coverage
+
+No component tests, no snapshot tests, no E2E tests for 15,757 LOC frontend.
+
+### Flaky timing test
+
+`auth.test.ts` timing-attack test fails on slow containers (scrypt dominates timing, container GC adds noise). Relax threshold or use statistical methods.
+
+---
+
 ## Accessibility (WCAG 2.1 AA gaps)
 
 Personal dev tool, not public SaaS. Main gaps:
 
-- **Modals** — Missing `role="dialog"`, `aria-modal`, focus trap, Escape handler
-- **Semantic HTML** — No `<main>`, `<nav>`, `<header>` landmarks, all `<div>`
+- **Modals** — LoginModal focus not returned to trigger button on close
+- **Tab rename** — `ClaudeSection.tsx:504` span with onDblClick not keyboard-accessible (needs `role="button"`)
+- **Spinners** — SubagentPanel spinners lack `aria-hidden="true"`
+- **HTML lang** — No `lang="en"` attribute on root HTML element
+- **Terminal font** — Font size not user-configurable (hardcoded 12/14px)
 - **Focus indicators** — Several elements set `outline: none` without replacement
-- **ARIA labels** — Sidebar items, terminal tabs, file browser buttons lack labels
 - **Heading hierarchy** — Jumps levels, no `<h1>` in app
 
 ---

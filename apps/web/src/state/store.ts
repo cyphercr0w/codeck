@@ -364,19 +364,59 @@ export interface SubagentInfo {
   agentType: string;
   startedAt: number;
   lastLine: string;
+  lines: string[];
   duration?: number;
   lastMessage?: string;
 }
 
 export const activeSubagents = signal<SubagentInfo[]>([]);
 
+const SUBAGENT_EXPIRE_MS = 10 * 60 * 1000; // 10 min auto-expire
+let subagentGcTimer: ReturnType<typeof setInterval> | null = null;
+
+function ensureSubagentGc(): void {
+  if (subagentGcTimer) return;
+  subagentGcTimer = setInterval(() => {
+    const now = Date.now();
+    const alive = activeSubagents.value.filter(a => {
+      if (a.duration) return false; // already done, will be cleaned by removeSubagent
+      return now - a.startedAt < SUBAGENT_EXPIRE_MS;
+    });
+    if (alive.length !== activeSubagents.value.filter(a => !a.duration).length) {
+      activeSubagents.value = alive.concat(activeSubagents.value.filter(a => !!a.duration));
+    }
+    if (activeSubagents.value.length === 0) {
+      clearInterval(subagentGcTimer!);
+      subagentGcTimer = null;
+    }
+  }, 15000);
+}
+
 export function addSubagent(data: { agentId: string; agentType: string; startedAt: number }): void {
-  activeSubagents.value = [...activeSubagents.value, { ...data, lastLine: '' }];
+  // Deduplicate — avoid adding the same agent twice (e.g., after a sync + live event)
+  if (activeSubagents.value.some(a => a.agentId === data.agentId)) return;
+  activeSubagents.value = [...activeSubagents.value, { ...data, lastLine: '', lines: [] }];
+  ensureSubagentGc();
+}
+
+/** Sync active subagents from the server — called on WS reconnect to restore state */
+export function syncSubagentsFromServer(serverAgents: Array<{ agentId: string; agentType: string; startedAt: number; lastLine: string }>): void {
+  const serverIds = new Set(serverAgents.map(a => a.agentId));
+  // Keep completed agents (with duration) that aren't on the server + add/update running agents from server
+  const existing = activeSubagents.value.filter(a => a.duration || serverIds.has(a.agentId));
+  const existingIds = new Set(existing.map(a => a.agentId));
+  const newAgents = serverAgents
+    .filter(a => !existingIds.has(a.agentId))
+    .map(a => ({ ...a, lines: a.lastLine ? [a.lastLine] : [], lastLine: a.lastLine || '' }));
+  if (newAgents.length > 0 || existing.length !== activeSubagents.value.length) {
+    activeSubagents.value = [...existing, ...newAgents];
+    if (activeSubagents.value.length > 0) ensureSubagentGc();
+  }
 }
 
 export function updateSubagentOutput(agentId: string, text: string): void {
   activeSubagents.value = activeSubagents.value.map(a =>
-    a.agentId === agentId ? { ...a, lastLine: text } : a
+    a.agentId === agentId ? { ...a, lastLine: text, lines: [...a.lines, text] } : a
   );
 }
 

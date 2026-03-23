@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { apiFetch, getAuthToken } from '../../api';
-import { IconBrain, IconFolder, IconDownload, IconPlus, IconRefresh } from '../Icons';
+import { IconBrain, IconFolder, IconDownload, IconPlus, IconRefresh, IconBookmark, IconPlug, IconList, IconShield, IconSettings, IconKey } from '../Icons';
 import { ConfirmModal } from '../ConfirmModal';
 
 interface PresetStatus {
@@ -32,7 +32,11 @@ function formatTimeAgo(ts: number | null): string {
   return `${Math.floor(hours / 24)}d ago`;
 }
 
-export function MemoryTab() {
+interface MemoryTabProps {
+  onNavigate?: (tab: string) => void;
+}
+
+export function MemoryTab({ onNavigate }: MemoryTabProps) {
   const [memStats, setMemStats] = useState<MemoryStats | null>(null);
   const [presetStatus, setPresetStatus] = useState<PresetStatus | null>(null);
   const [msg, setMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
@@ -284,6 +288,57 @@ export function MemoryTab() {
         </div>
       </div>
       </div>{/* close ac-row */}
+
+      {/* Quick Access Shortcuts */}
+      {onNavigate && (
+        <div class="ac-section">
+          <div class="ac-section-title">Configuration</div>
+          <div class="mem-shortcuts">
+            <button class="mem-shortcut" onClick={() => onNavigate('skills')}>
+              <IconBookmark size={16} />
+              <div>
+                <div class="mem-shortcut-title">Skills</div>
+                <div class="mem-shortcut-desc">Manage agent capabilities</div>
+              </div>
+            </button>
+            <button class="mem-shortcut" onClick={() => onNavigate('mcp')}>
+              <IconPlug size={16} />
+              <div>
+                <div class="mem-shortcut-title">MCP Servers</div>
+                <div class="mem-shortcut-desc">External tool integrations</div>
+              </div>
+            </button>
+            <button class="mem-shortcut" onClick={() => onNavigate('rules')}>
+              <IconList size={16} />
+              <div>
+                <div class="mem-shortcut-title">Rules</div>
+                <div class="mem-shortcut-desc">Coding standards & guidelines</div>
+              </div>
+            </button>
+            <button class="mem-shortcut" onClick={() => onNavigate('hooks')}>
+              <IconSettings size={16} />
+              <div>
+                <div class="mem-shortcut-title">Hooks</div>
+                <div class="mem-shortcut-desc">Automation scripts</div>
+              </div>
+            </button>
+            <button class="mem-shortcut" onClick={() => onNavigate('permissions')}>
+              <IconShield size={16} />
+              <div>
+                <div class="mem-shortcut-title">Permissions</div>
+                <div class="mem-shortcut-desc">Tool access controls</div>
+              </div>
+            </button>
+            <button class="mem-shortcut" onClick={() => onNavigate('env')}>
+              <IconKey size={16} />
+              <div>
+                <div class="mem-shortcut-title">Environment</div>
+                <div class="mem-shortcut-desc">Variables & secrets</div>
+              </div>
+            </button>
+          </div>
+        </div>
+      )}
 
       <ConfirmModal
         visible={showImportConfirm}

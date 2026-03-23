@@ -14,6 +14,7 @@ import {
 import { listSessionFiles, readSessionTranscript, getSessionSummary } from '../services/session-writer.js';
 import { search, isSearchAvailable, hybridSearch } from '../services/memory-search.js';
 import { indexAll, getIndexStats, isIndexerAvailable, isVecAvailable } from '../services/memory-indexer.js';
+import { runConsolidation, getConsolidationStatus, queryArchive } from '../services/memory-consolidation.js';
 
 const router = Router();
 
@@ -448,6 +449,30 @@ router.post('/search/reindex', (_req, res) => {
     return;
   }
   res.json({ success: true, stats: getIndexStats() });
+});
+
+// ── Consolidation ──
+
+router.post('/consolidate', asyncHandler(async (_req, res) => {
+  const result = await runConsolidation();
+  const status = result.success ? 200 : 500;
+  res.status(status).json(result);
+}));
+
+router.get('/consolidation/status', (_req, res) => {
+  res.json(getConsolidationStatus());
+});
+
+router.get('/archive', (req, res) => {
+  const tier = req.query.tier as string | undefined;
+  const limit = req.query.limit ? Math.min(Math.max(parseInt(req.query.limit as string, 10) || 20, 1), 100) : 20;
+  const offset = req.query.offset ? Math.max(parseInt(req.query.offset as string, 10) || 0, 0) : 0;
+  const result = queryArchive(tier, limit, offset);
+  if ('error' in result) {
+    res.status(400).json(result);
+    return;
+  }
+  res.json(result);
 });
 
 // ── Context assembly ──

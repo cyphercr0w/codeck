@@ -12,6 +12,7 @@
 		{ "src": "../../CLAUDE.md", "dest": "/workspace/CLAUDE.md" },
 		{ "src": "mcp.json", "dest": "/root/.claude/mcp.json" },
 		{ "src": "AGENTS.md", "dest": "/workspace/.codeck/AGENTS.md" },
+		{ "src": "constitution.md", "dest": "/workspace/.codeck/constitution.md" },
 		{ "src": "preferences.md", "dest": "/workspace/.codeck/preferences.md" },
 		{
 			"src": "rules/coding.md",
@@ -110,6 +111,10 @@
 		{
 			"src": "scripts/subagent-tracker.mjs",
 			"dest": "/workspace/.codeck/scripts/subagent-tracker.mjs"
+		},
+		{
+			"src": "scripts/session-reset.mjs",
+			"dest": "/workspace/.codeck/scripts/session-reset.mjs"
 		},
 		{
 			"src": "scripts/repo-map-generator.mjs",

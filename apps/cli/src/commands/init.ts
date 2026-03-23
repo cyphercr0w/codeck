@@ -4,7 +4,7 @@ import * as p from '@clack/prompts';
 import { existsSync, mkdirSync, unlinkSync } from 'node:fs';
 import { resolve, join, basename } from 'node:path';
 import { createHash } from 'node:crypto';
-import { execSync } from 'node:child_process';
+import { execSync, execFileSync } from 'node:child_process';
 import { getConfig, setConfig, isInitialized, clearWorkspacePath, type CodeckMode } from '../lib/config.js';
 import { detectOS, isDockerInstalled, isDockerRunning, isPortAvailable, isBaseImageBuilt } from '../lib/detect.js';
 import { generateOverrideYaml, generateEnvFile, writeOverrideFile, writeEnvFile, readEnvFile } from '../lib/compose.js';
@@ -32,9 +32,10 @@ function composeProjectName(projectPath: string): string {
 function checkNamedVolumeHasData(projectPath: string): boolean {
   const volumeName = `${composeProjectName(projectPath)}_workspace`;
   try {
-    execSync(`docker volume inspect ${volumeName}`, { stdio: 'pipe' });
-    const result = execSync(
-      `docker run --rm -v ${volumeName}:/check alpine sh -c "[ -n \\"$(ls -A /check)\\" ] && echo yes || echo no"`,
+    execFileSync('docker', ['volume', 'inspect', volumeName], { stdio: 'pipe' });
+    const result = execFileSync(
+      'docker',
+      ['run', '--rm', '-v', `${volumeName}:/check`, 'alpine', 'sh', '-c', '[ -n "$(ls -A /check)" ] && echo yes || echo no'],
       { encoding: 'utf8', stdio: 'pipe' }
     );
     return result.trim() === 'yes';
@@ -60,8 +61,9 @@ async function migrateNamedVolumeToBindMount(targetPath: string, projectPath: st
   mkdirSync(targetPath, { recursive: true });
 
   const volumeName = `${composeProjectName(projectPath)}_workspace`;
-  execSync(
-    `docker run --rm -v ${volumeName}:/src:ro -v "${targetPath}:/dst" alpine sh -c "cp -a /src/. /dst/"`,
+  execFileSync(
+    'docker',
+    ['run', '--rm', '-v', `${volumeName}:/src:ro`, '-v', `${targetPath}:/dst`, 'alpine', 'sh', '-c', 'cp -a /src/. /dst/'],
     { stdio: 'inherit' }
   );
 

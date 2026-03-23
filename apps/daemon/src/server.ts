@@ -161,7 +161,8 @@ export async function startDaemon(): Promise<void> {
   app.use('/api', (req, res, next) => {
     if (!isPasswordConfigured()) return next();
 
-    const token = req.headers.authorization?.replace('Bearer ', '') || (req.query.token as string | undefined);
+    const rawToken = req.headers.authorization?.replace('Bearer ', '') || req.query.token;
+    const token = typeof rawToken === 'string' ? rawToken : undefined;
     if (!token || !validateSession(token)) {
       res.status(401).json({ error: 'Unauthorized', needsAuth: true });
       return;

@@ -17,6 +17,7 @@ import { destroyAllSessions, hasSavedSessions, restoreSavedSessions, saveSession
 import { getPresetStatus } from '../services/preset.js';
 import agentRoutes from '../routes/agent.routes.js';
 import githubRoutes from '../routes/github.routes.js';
+import cliAuthRoutes from '../routes/cli-auth.routes.js';
 import gitRoutes from '../routes/git.routes.js';
 import sshRoutes from '../routes/ssh.routes.js';
 import filesRoutes from '../routes/files.routes.js';
@@ -40,6 +41,7 @@ import skillsRoutes from '../routes/skills.routes.js';
 import mcpRoutes from '../routes/mcp.routes.js';
 import hooksRoutes from '../routes/hooks.routes.js';
 import { initProactiveAgents, shutdownProactiveAgents } from '../services/proactive-agents.js';
+import { initConsolidationCron, shutdownConsolidationCron } from '../services/memory-consolidation.js';
 import { initializeEmbeddings, shutdownEmbeddings } from '../services/embeddings.js';
 import { cleanupOldSessions } from '../services/session-summarizer.js';
 
@@ -423,6 +425,7 @@ export async function startWebServer(): Promise<void> {
   // Routes (all protected by auth middleware above)
   app.use('/api/claude', agentRoutes);
   app.use('/api/github', githubRoutes);
+  app.use('/api/cli-auth', cliAuthRoutes);
   app.use('/api/git', gitRoutes);
   app.use('/api/ssh', sshRoutes);
   app.use('/api/files', filesRoutes);
@@ -492,6 +495,7 @@ export async function startWebServer(): Promise<void> {
     saveSessionState('shutdown');
     stopTokenRefreshMonitor();
     shutdownProactiveAgents();
+    shutdownConsolidationCron();
     shutdownEmbeddings();
     shutdownSearch();
     shutdownIndexer();
@@ -548,6 +552,7 @@ export async function startWebServer(): Promise<void> {
     startMdns();
     initProactiveAgents(broadcast);
     startTokenRefreshMonitor(broadcast);
+    initConsolidationCron();
 
     // Daily session transcript cleanup (remove >30 day old JSONL files)
     // Run once at startup and then every 24 hours

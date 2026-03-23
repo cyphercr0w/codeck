@@ -1,4 +1,5 @@
-import { setWsConnected, updateStateFromServer, addLog, sessions, activeSessionId, addSession, setActiveSessionId, setActivePorts, setActiveSection, setRestoringPending, type LogEntry, removeSession, updateProactiveAgent, appendAgentOutput, setAgentRunning, claudeAuthenticated, setContextData, addSubagent, updateSubagentOutput, removeSubagent } from './state/store';
+import { setWsConnected, updateStateFromServer, addLog, sessions, activeSessionId, addSession, setActiveSessionId, setActivePorts, setActiveSection, setRestoringPending, type LogEntry, removeSession, updateProactiveAgent, appendAgentOutput, setAgentRunning, claudeAuthenticated, setContextData, addSubagent, updateSubagentOutput, removeSubagent, syncSubagentsFromServer } from './state/store';
+import { apiFetch } from './api';
 import { getAuthToken } from './api';
 
 // Known WebSocket message types — reject anything not in this set
@@ -188,6 +189,11 @@ function openWs(wsUrl: string, protocols?: string[]): void {
           sessions.value.forEach(s => {
             onSessionReattached?.(s.id);
           });
+          // Restore active subagents from server (may have been lost during disconnect)
+          apiFetch('/api/console/subagents')
+            .then(r => r.json())
+            .then(data => { if (data.agents) syncSubagentsFromServer(data.agents); })
+            .catch(() => { /* non-fatal */ });
         }
         if (!msg.data.pendingRestore) {
           setRestoringPending(false);

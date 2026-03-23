@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { existsSync, readdirSync, statSync, readFileSync } from 'fs';
-import { join, basename } from 'path';
+import { join, basename, resolve } from 'path';
 import { isClaudeAuthenticated } from '../services/auth-anthropic.js';
 import {
   createConsoleSession,
@@ -31,6 +31,17 @@ router.post('/create', (req, res) => {
   }
 
   const { cwd, resume } = req.body || {};
+
+  // Validate cwd stays within /workspace to prevent path traversal
+  if (cwd && typeof cwd === 'string') {
+    const WORKSPACE = process.env.WORKSPACE || '/workspace';
+    const resolved = resolve(cwd);
+    if (!resolved.startsWith(WORKSPACE)) {
+      res.status(403).json({ error: 'Access denied: cwd outside workspace' });
+      return;
+    }
+  }
+
   try {
     const session = createConsoleSession({ cwd: cwd || undefined, resume });
     console.log(`[Console] Session created: ${session.id} (cwd: ${session.cwd}, resume: ${!!resume})`);
@@ -52,6 +63,16 @@ router.post('/create-shell', (req, res) => {
   }
 
   const { cwd } = req.body || {};
+
+  // Validate cwd stays within /workspace to prevent path traversal
+  if (cwd && typeof cwd === 'string') {
+    const WORKSPACE = process.env.WORKSPACE || '/workspace';
+    const resolved = resolve(cwd);
+    if (!resolved.startsWith(WORKSPACE)) {
+      res.status(403).json({ error: 'Access denied: cwd outside workspace' });
+      return;
+    }
+  }
 
   // Guard: respond within 10s no matter what — prevents daemon proxy 504 timeout.
   let responded = false;
@@ -277,34 +298,67 @@ interface ActiveSubagent {
 const activeSubagents = new Map<string, ActiveSubagent>();
 const transcriptWatchers = new Map<string, FSWatcher>();
 
+// Auto-expire stale subagents (hook may fail to deliver SubagentStop)
+const SUBAGENT_MAX_AGE_MS = 10 * 60 * 1000; // 10 min
+setInterval(() => {
+  const now = Date.now();
+  for (const [id, agent] of activeSubagents) {
+    if (now - agent.startedAt > SUBAGENT_MAX_AGE_MS) {
+      stopTranscriptWatch(id);
+      activeSubagents.delete(id);
+      broadcast({ type: 'subagent:stop', data: { agentId: id, agentType: agent.agentType, sessionId: agent.sessionId, duration: now - agent.startedAt, lastMessage: 'Expired (no stop event)' } });
+    }
+  }
+}, 30000);
+
 /** Parse a JSONL transcript line and extract a human-readable summary */
 function summarizeTranscriptLine(line: string): string | null {
   try {
     const entry = JSON.parse(line);
-    // Assistant text content
-    if (entry.type === 'assistant' && entry.message?.content) {
-      for (const block of entry.message.content) {
-        if (block.type === 'text' && block.text) {
-          return block.text.slice(0, 200);
+    if (entry.type === 'progress') return null; // skip hook progress noise
+
+    const content = entry.message?.content;
+    if (!content) return null;
+
+    // Handle array content (assistant messages)
+    if (Array.isArray(content)) {
+      for (const block of content) {
+        if (block.type === 'tool_use' && block.name) {
+          // Show tool name + brief input
+          const inp = block.input || {};
+          const summary = typeof inp === 'string'
+            ? inp.slice(0, 120)
+            : (inp.command || inp.pattern || inp.file_path || inp.url || inp.query || inp.prompt || inp.description || '').slice(0, 120);
+          return `${block.name}: ${summary || '...'}`;
         }
-        if (block.type === 'tool_use') {
-          const input = typeof block.input === 'string' ? block.input.slice(0, 100) : JSON.stringify(block.input).slice(0, 100);
-          return `[${block.name}] ${input}`;
+        if (block.type === 'text' && block.text?.trim()) {
+          // Skip very short text (usually just transitional)
+          const text = block.text.trim();
+          if (text.length > 10) return text.slice(0, 200);
+        }
+        // Tool results (inside user messages)
+        if (block.type === 'tool_result' && typeof block.content === 'string') {
+          return `Result: ${block.content.slice(0, 150)}`;
         }
       }
     }
-    // Tool result
-    if (entry.type === 'tool_result') {
-      return `[result] ${String(entry.content || '').slice(0, 150)}`;
-    }
+    // String content (user messages — skip these)
   } catch { /* not valid JSON line */ }
   return null;
 }
 
 /** Start watching a subagent's transcript file for real-time output */
-function startTranscriptWatch(agentId: string, transcriptPath: string): void {
-  if (!transcriptPath || !existsSync(transcriptPath)) return;
+function startTranscriptWatch(agentId: string, transcriptPath: string, retries = 0): void {
+  if (!transcriptPath) return;
   if (transcriptWatchers.has(agentId)) return;
+
+  // Transcript file may not exist yet — retry up to 10 times (every 1s)
+  if (!existsSync(transcriptPath)) {
+    if (retries < 10 && activeSubagents.has(agentId)) {
+      setTimeout(() => startTranscriptWatch(agentId, transcriptPath, retries + 1), 1000);
+    }
+    return;
+  }
 
   let lastSize = 0;
   try { lastSize = statSync(transcriptPath).size; } catch { /* new file */ }

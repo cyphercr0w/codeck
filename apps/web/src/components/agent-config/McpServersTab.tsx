@@ -59,9 +59,9 @@ export function McpServersTab() {
   }
 
   function searchRegistry(q: string) {
-    if (!q.trim()) { setResults([]); setSearching(false); return; }
+    const searchTerm = q.trim() || 'popular';
     setSearching(true);
-    apiFetch(`/api/mcp-servers/search?q=${encodeURIComponent(q)}`)
+    apiFetch(`/api/mcp-servers/search?q=${encodeURIComponent(searchTerm)}`)
       .then(r => r.json())
       .then(data => setResults(data.servers || []))
       .catch(() => setResults([]))
@@ -73,6 +73,9 @@ export function McpServersTab() {
     if (debounceRef.current) clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(() => searchRegistry(q), 350);
   }
+
+  // Load featured servers on mount
+  useEffect(() => { searchRegistry(''); }, []);
 
   async function handleInstall(server: RegistryServer) {
     // If server needs env vars, show the env form first
@@ -255,7 +258,7 @@ export function McpServersTab() {
             <div class="ac-empty">No servers found for "{query}"</div>
           )}
           {!searching && results.length === 0 && !query && (
-            <div class="ac-empty">Type to search the MCP server registry</div>
+            <div class="ac-empty">No servers available</div>
           )}
           {results.map(s => {
             const alreadyInstalled = installedNames.has(
@@ -289,7 +292,7 @@ export function McpServersTab() {
 
       {/* Installed servers */}
       {!loading && servers.length > 0 && (
-        <div class="ac-section">
+        <div class="ac-section" style="border-top: 1px solid var(--border); padding-top: 16px; margin-top: 8px">
           <div class="ac-section-title">Installed ({servers.length})</div>
           <div class="ac-list">
             {servers.map(s => (

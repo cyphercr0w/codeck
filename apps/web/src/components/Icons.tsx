@@ -140,6 +140,79 @@ export function IconPackage({ size = 18, ...props }: IconProps) {
   );
 }
 
+// ── Brand Icons (filled, for integrations) ──
+
+export function IconSupabase({ size = 18, ...props }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 109 113" fill="none" {...props}>
+      <path d="M63.7076 110.284C60.8481 113.885 55.0502 111.912 54.9813 107.314L53.9738 40.0627H99.1935C108.384 40.0627 113.394 51.01 107.461 57.7508L63.7076 110.284Z" fill="url(#sb-a)"/>
+      <path d="M63.7076 110.284C60.8481 113.885 55.0502 111.912 54.9813 107.314L53.9738 40.0627H99.1935C108.384 40.0627 113.394 51.01 107.461 57.7508L63.7076 110.284Z" fill="url(#sb-b)" fill-opacity="0.2"/>
+      <path d="M45.317 2.07103C48.1765 -1.53037 53.9745 0.442937 54.0434 5.041L54.4849 72.2922H9.83113C0.640828 72.2922 -4.36938 61.3449 1.56336 54.6042L45.317 2.07103Z" fill="#3ECF8E"/>
+      <defs>
+        <linearGradient id="sb-a" x1="53.9738" y1="54.974" x2="94.1635" y2="71.8295" gradientUnits="userSpaceOnUse"><stop stop-color="#249361"/><stop offset="1" stop-color="#3ECF8E"/></linearGradient>
+        <linearGradient id="sb-b" x1="36.1558" y1="30.578" x2="54.4844" y2="65.0806" gradientUnits="userSpaceOnUse"><stop/><stop offset="1" stop-opacity="0"/></linearGradient>
+      </defs>
+    </svg>
+  );
+}
+
+export function IconVercel({ size = 18, ...props }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" {...props}>
+      <path d="M12 1L24 22H0L12 1Z"/>
+    </svg>
+  );
+}
+
+export function IconStripe({ size = 18, ...props }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" {...props}>
+      <rect width="24" height="24" rx="4" fill="#635BFF"/>
+      <path d="M11.1 9.67c0-.66.54-1.01 1.44-1.01.97 0 2.19.29 3.16.82V6.59a8.47 8.47 0 00-3.16-.59c-2.59 0-4.31 1.35-4.31 3.61 0 3.52 4.85 2.96 4.85 4.48 0 .78-.68 1.03-1.63 1.03-1.41 0-2.73-.58-3.63-1.23v2.93A9.2 9.2 0 0011.45 18c2.65 0 4.47-1.31 4.47-3.6-.01-3.8-4.81-3.13-4.81-4.73z" fill="white"/>
+    </svg>
+  );
+}
+
+export function IconNotion({ size = 18, ...props }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" {...props}>
+      <path d="M4.459 4.208c.746.606 1.026.56 2.428.466l13.215-.793c.28 0 .047-.28-.046-.326L18.4 2.293c-.42-.326-.98-.7-2.055-.607L3.39 2.78c-.467.047-.56.28-.374.466l1.443.962zm.793 2.89v13.872c0 .747.373 1.027 1.214.98l14.523-.84c.841-.046.934-.56.934-1.166V6.052c0-.607-.234-.933-.747-.887l-15.177.887c-.56.047-.747.327-.747.886zm14.337.745c.093.42 0 .84-.42.888l-.7.14v10.264c-.608.327-1.168.514-1.635.514-.747 0-.934-.234-1.495-.933l-4.577-7.186v6.952l1.448.327s0 .84-1.168.84l-3.222.187c-.093-.187 0-.653.327-.747l.84-.234V8.82L7.92 8.68c-.094-.42.14-1.026.793-1.073l3.456-.234 4.764 7.28V8.306l-1.214-.14c-.094-.514.28-.887.747-.933l3.222-.187h-.093z"/>
+    </svg>
+  );
+}
+
+export function IconGoogle({ size = 18, ...props }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" {...props}>
+      <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 01-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z" fill="#4285F4"/>
+      <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
+      <path d="M5.84 14.09A6.97 6.97 0 015.47 12c0-.72.13-1.43.37-2.09V7.07H2.18A11.96 11.96 0 001 12c0 1.94.46 3.77 1.18 5.27l3.66-3.18z" fill="#FBBC05"/>
+      <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/>
+    </svg>
+  );
+}
+
+export function IconCloudflare({ size = 18, ...props }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" {...props}>
+      <path d="M16.51 15.86l.46-1.56c.13-.44.08-.85-.14-1.15-.2-.28-.53-.44-.93-.47l-8.59-.11c-.06 0-.11-.03-.14-.08a.17.17 0 01-.02-.16.19.19 0 01.17-.13l8.68-.11c.93-.05 1.94-.8 2.36-1.77l.53-1.23a.3.3 0 00.02-.2 5.77 5.77 0 00-11.1-1.1 3.33 3.33 0 00-5.22 2.35A4.47 4.47 0 001 15.36a.38.38 0 00.37.5h14.78c.16 0 .3-.11.36-.27v.27z" fill="#F6821F"/>
+      <path d="M19.35 9.88l-.24.01a.16.16 0 00-.14.11l-.36 1.24c-.13.44-.08.85.14 1.15.2.28.53.44.93.47l1.85.11c.06 0 .11.04.14.08.03.05.03.11.02.16a.19.19 0 01-.17.13l-1.93.11c-.94.05-1.95.8-2.37 1.77l-.15.34a.09.09 0 00.08.13h5.88a.37.37 0 00.36-.28 4.64 4.64 0 00-4.04-5.42z" fill="#FBAD41"/>
+    </svg>
+  );
+}
+
+export function IconFigma({ size = 18, ...props }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" {...props}>
+      <path d="M8.5 2h3v6.5h-3a3.25 3.25 0 010-6.5z" fill="#F24E1E"/>
+      <path d="M11.5 2h3a3.25 3.25 0 010 6.5h-3V2z" fill="#FF7262"/>
+      <path d="M11.5 8.5H14.75a3.25 3.25 0 110 6.5H11.5V8.5z" fill="#A259FF"/>
+      <path d="M8.5 8.5h3V15h-3a3.25 3.25 0 010-6.5z" fill="#1ABCFE"/>
+      <path d="M8.5 15h3v3.25a3.25 3.25 0 01-3-3.25z" fill="#0ACF83"/>
+    </svg>
+  );
+}
+
 export function IconLock({ size = 18, ...props }: IconProps) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" {...props}>

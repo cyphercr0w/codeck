@@ -37,9 +37,9 @@ export function SkillsTab() {
   }
 
   function searchSkills(q: string) {
-    if (!q.trim()) { setResults([]); setLoading(false); return; }
+    const searchTerm = q.trim() || 'claude';
     setLoading(true);
-    apiFetch(`/api/skills/catalog?q=${encodeURIComponent(q)}`)
+    apiFetch(`/api/skills/catalog?q=${encodeURIComponent(searchTerm)}`)
       .then(r => r.json())
       .then(data => setResults(data.skills || []))
       .catch(() => setResults([]))
@@ -51,6 +51,9 @@ export function SkillsTab() {
     if (debounceRef.current) clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(() => searchSkills(q), 300);
   }
+
+  // Load popular skills on mount
+  useEffect(() => { searchSkills(''); }, []);
 
   async function handleInstall(skill: SkillEntry) {
     setInstalling(skill.skillId);
@@ -117,7 +120,7 @@ export function SkillsTab() {
             <div class="ac-empty">No skills found for "{query}"</div>
           )}
           {!loading && results.length === 0 && !query && (
-            <div class="ac-empty">Type to search the skills catalog</div>
+            <div class="ac-empty">No skills available</div>
           )}
           {results.map(skill => (
             <div key={`${skill.source}/${skill.skillId}`} class="ac-list-item">
@@ -142,7 +145,7 @@ export function SkillsTab() {
       </div>
 
       {installed.length > 0 && (
-        <div class="ac-section">
+        <div class="ac-section" style="border-top: 1px solid var(--border); padding-top: 16px; margin-top: 8px">
           <div class="ac-section-title">Installed ({installed.length})</div>
           <div class="ac-list">
             {installed.map(name => (

@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { readdir, stat, readFile, writeFile, mkdir, unlink, rmdir, rm, rename } from 'fs/promises';
+import { readdir, stat, readFile, writeFile, mkdir, unlink, rmdir, rm, rename, realpath } from 'fs/promises';
 import { existsSync } from 'fs';
 import { join, resolve, sep, extname } from 'path';
 import { broadcastStatus } from '../web/websocket.js';
@@ -80,6 +80,13 @@ const router = Router();
 async function safePath(base: string, relativePath: string): Promise<string | null> {
   const resolved = resolve(base, relativePath);
   if (!resolved.startsWith(base + sep) && resolved !== base) return null;
+  // Resolve symlinks to prevent symlink-based path traversal (e.g., symlink → /etc/passwd)
+  try {
+    const real = await realpath(resolved);
+    if (!real.startsWith(base + sep) && real !== base) return null;
+  } catch {
+    // Path doesn't exist yet (e.g., new file write) — resolve-based check is sufficient
+  }
   return resolved;
 }
 

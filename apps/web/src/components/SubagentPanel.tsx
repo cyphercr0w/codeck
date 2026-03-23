@@ -1,6 +1,6 @@
 import { activeSubagents, type SubagentInfo } from '../state/store';
 import { IconBot, IconChevronDown, IconChevronUp } from './Icons';
-import { useState } from 'preact/hooks';
+import { useState, useEffect, useRef } from 'preact/hooks';
 
 function formatElapsed(startedAt: number, duration?: number): string {
   const ms = duration || (Date.now() - startedAt);
@@ -23,17 +23,57 @@ function AgentTypeIcon({ type }: { type: string }) {
   );
 }
 
-function SubagentRow({ agent }: { agent: SubagentInfo }) {
+function statusText(agent: SubagentInfo): string {
+  if (agent.lastMessage) return agent.lastMessage;
+  if (agent.lastLine) return agent.lastLine;
+  if (agent.duration) return 'Completed';
+  const elapsed = Date.now() - agent.startedAt;
+  return elapsed < 3000 ? 'Starting...' : 'Working...';
+}
+
+function TranscriptView({ lines, isRunning }: { lines: string[]; isRunning: boolean }) {
+  const scrollRef = useRef<HTMLDivElement>(null);
+
+  // Auto-scroll to bottom on new lines
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [lines.length]);
+
+  if (lines.length === 0) {
+    return (
+      <div class="sa-transcript">
+        <div class="sa-transcript-empty">
+          {isRunning ? 'Waiting for output...' : 'No output recorded'}
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div class="sa-transcript" ref={scrollRef}>
+      {lines.map((line, i) => (
+        <div key={i} class="sa-transcript-line">{line}</div>
+      ))}
+      {isRunning && <div class="sa-transcript-cursor" />}
+    </div>
+  );
+}
+
+function SubagentRow({ agent, expanded, onToggle }: { agent: SubagentInfo; expanded: boolean; onToggle: () => void }) {
   const isDone = !!agent.duration;
   return (
-    <div class={`sa-row${isDone ? ' sa-done' : ''}`}>
-      <AgentTypeIcon type={agent.agentType} />
-      <div class="sa-row-info">
-        <span class="sa-row-type">{agent.agentType}</span>
-        <span class="sa-row-line">{agent.lastMessage || agent.lastLine || 'Starting...'}</span>
-      </div>
-      <span class="sa-row-time">{formatElapsed(agent.startedAt, agent.duration)}</span>
-      {!isDone && <span class="spinner-sm" />}
+    <div class={`sa-row-wrap${expanded ? ' sa-expanded' : ''}`}>
+      <button class={`sa-row${isDone ? ' sa-done' : ''}`} onClick={onToggle}>
+        <AgentTypeIcon type={agent.agentType} />
+        <div class="sa-row-info">
+          <span class="sa-row-type">{agent.agentType}</span>
+          <span class="sa-row-line">{statusText(agent)}</span>
+        </div>
+        <span class="sa-row-time">{formatElapsed(agent.startedAt, agent.duration)}</span>
+        {!isDone && <span class="spinner-sm" />}
+      </button>
+      {expanded && <TranscriptView lines={agent.lines} isRunning={!isDone} />}
     </div>
   );
 }
@@ -41,6 +81,7 @@ function SubagentRow({ agent }: { agent: SubagentInfo }) {
 export function SubagentPanel() {
   const agents = activeSubagents.value;
   const [collapsed, setCollapsed] = useState(false);
+  const [expandedId, setExpandedId] = useState<string | null>(null);
 
   if (agents.length === 0) return null;
 
@@ -48,7 +89,7 @@ export function SubagentPanel() {
   const done = agents.filter(a => !!a.duration).length;
 
   return (
-    <div class="sa-panel">
+    <div class={`sa-panel${expandedId ? ' sa-panel-expanded' : ''}`}>
       <button class="sa-header" onClick={() => setCollapsed(c => !c)}>
         <IconBot size={13} />
         <span class="sa-header-text">
@@ -58,7 +99,14 @@ export function SubagentPanel() {
       </button>
       {!collapsed && (
         <div class="sa-list">
-          {agents.map(a => <SubagentRow key={a.agentId} agent={a} />)}
+          {agents.map(a => (
+            <SubagentRow
+              key={a.agentId}
+              agent={a}
+              expanded={expandedId === a.agentId}
+              onToggle={() => setExpandedId(expandedId === a.agentId ? null : a.agentId)}
+            />
+          ))}
         </div>
       )}
     </div>

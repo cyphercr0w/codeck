@@ -43,6 +43,7 @@ import consoleRouter from '../../apps/runtime/src/routes/console.routes.js';
 
 describe('POST /api/console/create', () => {
   let app: Express;
+  const TEST_WORKSPACE = process.env.WORKSPACE || '/workspace';
 
   beforeEach(() => {
     // Create test Express app
@@ -67,7 +68,7 @@ describe('POST /api/console/create', () => {
     // Arrange
     const mockSession = {
       id: 'session-123',
-      cwd: '/workspace',
+      cwd: TEST_WORKSPACE,
       name: 'Claude Session 1',
       type: 'claude' as const,
       pid: 12345,
@@ -77,17 +78,17 @@ describe('POST /api/console/create', () => {
     // Act
     const response = await request(app)
       .post('/api/console/create')
-      .send({ cwd: '/workspace' });
+      .send({ cwd: TEST_WORKSPACE });
 
     // Assert
     expect(response.status).toBe(200);
     expect(response.body).toEqual({
       sessionId: 'session-123',
-      cwd: '/workspace',
+      cwd: TEST_WORKSPACE,
       name: 'Claude Session 1',
     });
     expect(mockCreateConsoleSession).toHaveBeenCalledWith({
-      cwd: '/workspace',
+      cwd: TEST_WORKSPACE,
       resume: undefined,
     });
     expect(mockBroadcastStatus).toHaveBeenCalledOnce();
@@ -100,7 +101,7 @@ describe('POST /api/console/create', () => {
     // Act
     const response = await request(app)
       .post('/api/console/create')
-      .send({ cwd: '/workspace' });
+      .send({ cwd: TEST_WORKSPACE });
 
     // Assert
     expect(response.status).toBe(400);
@@ -118,7 +119,7 @@ describe('POST /api/console/create', () => {
     // Act
     const response = await request(app)
       .post('/api/console/create')
-      .send({ cwd: '/workspace' });
+      .send({ cwd: TEST_WORKSPACE });
 
     // Assert
     expect(response.status).toBe(400);
@@ -133,7 +134,7 @@ describe('POST /api/console/create', () => {
     // Arrange
     const mockSession = {
       id: 'session-456',
-      cwd: '/workspace',
+      cwd: TEST_WORKSPACE,
       name: 'Claude Session 1',
       type: 'claude' as const,
       pid: 12345,
@@ -157,7 +158,7 @@ describe('POST /api/console/create', () => {
     // Arrange
     const mockSession = {
       id: 'session-789',
-      cwd: '/workspace/project',
+      cwd: `${TEST_WORKSPACE}/project`,
       name: 'Claude Session (resumed)',
       type: 'claude' as const,
       pid: 67890,
@@ -167,13 +168,13 @@ describe('POST /api/console/create', () => {
     // Act
     const response = await request(app)
       .post('/api/console/create')
-      .send({ cwd: '/workspace/project', resume: true });
+      .send({ cwd: `${TEST_WORKSPACE}/project`, resume: true });
 
     // Assert
     expect(response.status).toBe(200);
     expect(response.body.sessionId).toBe('session-789');
     expect(mockCreateConsoleSession).toHaveBeenCalledWith({
-      cwd: '/workspace/project',
+      cwd: `${TEST_WORKSPACE}/project`,
       resume: true,
     });
   });
@@ -181,13 +182,13 @@ describe('POST /api/console/create', () => {
   it('should handle session creation failure gracefully', async () => {
     // Arrange
     mockCreateConsoleSession.mockImplementation(() => {
-      throw new Error('Invalid cwd: /nonexistent');
+      throw new Error('Failed to spawn process');
     });
 
     // Act
     const response = await request(app)
       .post('/api/console/create')
-      .send({ cwd: '/nonexistent' });
+      .send({ cwd: `${TEST_WORKSPACE}/nonexistent` });
 
     // Assert
     expect(response.status).toBe(400);
@@ -206,7 +207,7 @@ describe('POST /api/console/create', () => {
     // Act
     const response = await request(app)
       .post('/api/console/create')
-      .send({ cwd: '/workspace' });
+      .send({ cwd: TEST_WORKSPACE });
 
     // Assert
     expect(response.status).toBe(400);
@@ -220,7 +221,7 @@ describe('POST /api/console/create', () => {
     mockGetSessionCount.mockReturnValue(4); // 4 existing sessions
     const mockSession = {
       id: 'session-last',
-      cwd: '/workspace',
+      cwd: TEST_WORKSPACE,
       name: 'Claude Session 5',
       type: 'claude' as const,
       pid: 99999,
@@ -230,7 +231,7 @@ describe('POST /api/console/create', () => {
     // Act
     const response = await request(app)
       .post('/api/console/create')
-      .send({ cwd: '/workspace' });
+      .send({ cwd: TEST_WORKSPACE });
 
     // Assert - should succeed with 4 existing (5th is allowed)
     expect(response.status).toBe(200);
@@ -245,7 +246,7 @@ describe('POST /api/console/create', () => {
     // Act
     const response = await request(app)
       .post('/api/console/create')
-      .send({ cwd: '/workspace' });
+      .send({ cwd: TEST_WORKSPACE });
 
     // Assert - should fail on auth, not proceed to session count
     expect(response.status).toBe(400);

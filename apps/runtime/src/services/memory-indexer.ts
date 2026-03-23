@@ -87,6 +87,10 @@ export async function initializeIndexer(): Promise<boolean> {
       const sqliteVec = await (Function('return import("sqlite-vec")')() as Promise<any>);
       sqliteVec.load(db);
       const dim = getEmbeddingDim();
+      // Defense-in-depth: validate dim is a safe integer before interpolating into SQL
+      if (!Number.isInteger(dim) || dim < 1 || dim > 10000) {
+        throw new Error(`Invalid embedding dimension: ${dim}`);
+      }
       db.exec(`
         CREATE VIRTUAL TABLE IF NOT EXISTS chunks_vec USING vec0(
           chunk_id INTEGER PRIMARY KEY,

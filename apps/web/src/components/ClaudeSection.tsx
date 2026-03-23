@@ -1,12 +1,11 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
-import { sessions, activeSessionId, setActiveSessionId, addLocalLog, addSession, removeSession, renameSession, agentName, isMobile, restoringPending, wsConnected, sessionStatus, setSessionStatus, clearSessionStatus, claudeUsage, contextData } from '../state/store';
+import { sessions, activeSessionId, setActiveSessionId, addLocalLog, addSession, removeSession, renameSession, agentName, isMobile, restoringPending, wsConnected, sessionStatus, setSessionStatus, clearSessionStatus, claudeUsage, contextData, activeSection } from '../state/store';
 import { apiFetch } from '../api';
 import { createTerminal, destroyTerminal, fitTerminal, repaintTerminal, focusTerminal, writeToTerminal, scrollToBottom, getTerminal, markSessionAttaching, clearSessionAttaching, onTerminalWrite, ensureTerminalVisible, setOnFilePaste, getTerminalBuffer } from '../terminal';
 import { wsSend, setTerminalHandlers, attachSession, setOnSessionReattached, setOnBeforeSessionsRestored, setOnContextLoaded, type ContextLoadedData } from '../ws';
 import { IconPlus, IconX, IconShell, IconTerminal, IconRefresh } from './Icons';
 import { MobileTerminalToolbar } from './MobileTerminalToolbar';
 import { UploadOverlay } from './UploadOverlay';
-import { SubagentPanel } from './SubagentPanel';
 
 const IMAGE_MIME_TYPES = new Set(['image/png', 'image/jpeg', 'image/gif', 'image/webp']);
 
@@ -210,6 +209,36 @@ export function ClaudeSection({ onNewSession, onNewShell }: ClaudeSectionProps) 
       document.removeEventListener('visibilitychange', onVisible);
       window.removeEventListener('focus', onVisible);
     };
+  }, []);
+
+  // Fit + repaint when the Claude section becomes visible (user navigates back from
+  // another section). The terminal container was display:none so xterm has stale
+  // dimensions — need to re-fit once visible again.
+  // Uses signal.subscribe so it fires even though ClaudeSection doesn't re-render on section change.
+  useEffect(() => {
+    return activeSection.subscribe(s => {
+      if (s !== 'claude') return;
+
+      // Small delay to let display:contents take effect before measuring.
+      // Read activeSessionId inside the callback to avoid stale captures.
+      setTimeout(() => {
+        const id = activeSessionId.value;
+        if (!id) return;
+
+        // Re-apply 'active' class — the useEffect([activeId]) maintains this,
+        // but it doesn't re-fire on section change (activeId didn't change).
+        const container = instancesRef.current;
+        if (container) {
+          container.querySelectorAll('.terminal-instance').forEach(el => el.classList.remove('active'));
+          const el = document.getElementById('term-' + id);
+          if (el) el.classList.add('active');
+        }
+
+        if (!getTerminal(id)) return;
+        ensureTerminalVisible(id);
+        focusTerminal(id);
+      }, 50);
+    });
   }, []);
 
   // Close new-tab menu when a session is added (e.g. after user picks a project)
@@ -628,7 +657,6 @@ export function ClaudeSection({ onNewSession, onNewShell }: ClaudeSectionProps) 
         )}
       </div>
       <UploadOverlay file={pendingFile} onDone={() => setPendingFile(null)} />
-      <SubagentPanel />
       {activeId && !mobile && <TerminalStatusBar />}
     </div>
   );

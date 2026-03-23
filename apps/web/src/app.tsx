@@ -26,6 +26,7 @@ import { LogsDrawer } from './components/LogsDrawer';
 import { PresetWizard } from './components/PresetWizard';
 import { IntegrationsSection } from './components/IntegrationsSection';
 import { AgentConfigSection } from './components/AgentConfigSection';
+import { SubagentPanel } from './components/SubagentPanel';
 
 import { AgentsSection } from './components/AgentsSection';
 import { SettingsSection } from './components/SettingsSection';
@@ -539,6 +540,7 @@ export function App() {
             {section === 'config' && <AgentConfigSection />}
             {section === 'settings' && <SettingsSection />}
           </ErrorBoundary>
+          <SubagentPanel />
         </main>
         {!mobileKeyboardOpen.value && section === 'settings' && <LogsDrawer />}
       </div>

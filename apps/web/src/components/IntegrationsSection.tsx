@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { apiFetch } from '../api';
-import { IconKey, IconGithub, IconPackage, IconCopy, IconCheck, IconRefresh, IconX, IconChevronLeft, IconPlug } from './Icons';
+import { IconKey, IconGithub, IconPackage, IconCopy, IconCheck, IconRefresh, IconX, IconChevronLeft, IconPlug, IconSupabase, IconVercel, IconStripe, IconNotion, IconGoogle, IconCloudflare, IconFigma } from './Icons';
 
 // ── Types ──
 
@@ -34,6 +34,9 @@ interface IntegrationDef {
   tokenUrl?: string;
   tokenHint?: string;
   mcpServerName?: string;
+  // For CLI-based OAuth (device flow)
+  cliAuth?: boolean;
+  cliAuthService?: string;
 }
 
 const INTEGRATIONS: IntegrationDef[] = [
@@ -49,7 +52,7 @@ const INTEGRATIONS: IntegrationDef[] = [
     id: 'supabase',
     name: 'Supabase',
     description: 'Database, auth, storage, and edge functions',
-    icon: () => <IconPackage size={22} />,
+    icon: () => <IconSupabase size={22} />,
     available: true,
     tokenBased: true,
     tokenEnvKey: 'SUPABASE_ACCESS_TOKEN',
@@ -61,19 +64,21 @@ const INTEGRATIONS: IntegrationDef[] = [
     id: 'vercel',
     name: 'Vercel',
     description: 'Deployments, projects, and domains',
-    icon: () => <IconPackage size={22} />,
+    icon: () => <IconVercel size={22} />,
     available: true,
     tokenBased: true,
     tokenEnvKey: 'VERCEL_TOKEN',
     tokenUrl: 'https://vercel.com/account/tokens',
     tokenHint: 'Generate a token at vercel.com → Account → Tokens',
     mcpServerName: 'vercel',
+    cliAuth: true,
+    cliAuthService: 'vercel',
   },
   {
     id: 'stripe',
     name: 'Stripe',
     description: 'Payments, subscriptions, and invoices',
-    icon: () => <IconPackage size={22} />,
+    icon: () => <IconStripe size={22} />,
     available: true,
     tokenBased: true,
     tokenEnvKey: 'STRIPE_SECRET_KEY',
@@ -85,7 +90,7 @@ const INTEGRATIONS: IntegrationDef[] = [
     id: 'notion',
     name: 'Notion',
     description: 'Pages, databases, and workspaces',
-    icon: () => <IconPackage size={22} />,
+    icon: () => <IconNotion size={22} />,
     available: true,
     tokenBased: true,
     tokenEnvKey: 'NOTION_API_KEY',
@@ -97,7 +102,7 @@ const INTEGRATIONS: IntegrationDef[] = [
     id: 'google',
     name: 'Google (Gmail, Drive, Sheets)',
     description: 'Email, documents, spreadsheets, and calendar',
-    icon: () => <IconPackage size={22} />,
+    icon: () => <IconGoogle size={22} />,
     available: true,
     tokenBased: true,
     tokenEnvKey: 'GOOGLE_API_KEY',
@@ -109,7 +114,7 @@ const INTEGRATIONS: IntegrationDef[] = [
     id: 'cloudflare',
     name: 'Cloudflare',
     description: 'DNS, Workers, Pages, and CDN',
-    icon: () => <IconPackage size={22} />,
+    icon: () => <IconCloudflare size={22} />,
     available: true,
     tokenBased: true,
     tokenEnvKey: 'CLOUDFLARE_API_TOKEN',
@@ -121,7 +126,7 @@ const INTEGRATIONS: IntegrationDef[] = [
     id: 'figma',
     name: 'Figma',
     description: 'Design files, components, and styles',
-    icon: () => <IconPackage size={22} />,
+    icon: () => <IconFigma size={22} />,
     available: true,
     tokenBased: true,
     tokenEnvKey: 'FIGMA_ACCESS_TOKEN',
@@ -132,6 +137,78 @@ const INTEGRATIONS: IntegrationDef[] = [
 ];
 
 // ── Token-Based Integration Detail ──
+
+function CLIAuthSection({ service, name, onSuccess }: { service: string; name: string; onSuccess: () => void }) {
+  const [authState, setAuthState] = useState<{ inProgress: boolean; code: string | null; url: string | null; success: boolean; error: string | null }>({ inProgress: false, code: null, url: null, success: false, error: null });
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  useEffect(() => {
+    return () => { if (pollRef.current) clearInterval(pollRef.current); };
+  }, []);
+
+  async function startLogin() {
+    // Clear any existing poll before starting a new one
+    if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
+
+    try {
+      const res = await apiFetch(`/api/cli-auth/${service}/login`, { method: 'POST' });
+      const data = await res.json();
+      setAuthState(data);
+
+      if (data.inProgress) {
+        pollRef.current = setInterval(async () => {
+          try {
+            const r = await apiFetch(`/api/cli-auth/${service}/status`);
+            const d = await r.json();
+            setAuthState(d);
+            if (d.success) {
+              if (pollRef.current) clearInterval(pollRef.current);
+              pollRef.current = null;
+              onSuccess();
+            }
+            if (!d.inProgress && !d.success) {
+              if (pollRef.current) clearInterval(pollRef.current);
+              pollRef.current = null;
+            }
+          } catch { /* transient — retry next interval */ }
+        }, 2000);
+      }
+    } catch {
+      setAuthState(prev => ({ ...prev, inProgress: false, error: 'Failed to start login' }));
+    }
+  }
+
+  if (authState.success) {
+    return <div class="integ-section-info" style="color: var(--success)">Authenticated with {name}!</div>;
+  }
+
+  if (authState.inProgress && authState.url) {
+    return (
+      <div class="integ-cli-auth">
+        <p class="integ-section-info">
+          Visit the link below and authorize access:
+        </p>
+        <a href={authState.url} target="_blank" rel="noopener noreferrer" class="btn btn-sm btn-primary" style="display: inline-flex; margin: 8px 0">
+          Open {name} Authorization →
+        </a>
+        {authState.code && (
+          <p class="integ-section-info" style="font-family: var(--font-mono); font-size: 18px; letter-spacing: 2px; margin-top: 4px">
+            Code: <strong>{authState.code}</strong>
+          </p>
+        )}
+        <p class="integ-section-info" style="color: var(--text-muted)">
+          <span class="spinner-sm" style="margin-right: 6px" /> Waiting for authorization...
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <button class="btn btn-sm btn-primary" onClick={startLogin} disabled={authState.inProgress} style="width: 100%">
+      {authState.inProgress ? <span class="spinner-sm" /> : `Sign in with ${name}`}
+    </button>
+  );
+}
 
 function TokenIntegrationDetail({ integ, onBack }: { integ: IntegrationDef; onBack: () => void }) {
   const [token, setToken] = useState('');
@@ -253,10 +330,27 @@ function TokenIntegrationDetail({ integ, onBack }: { integ: IntegrationDef; onBa
 
       {msg && <div class={`fb-toast fb-toast-${msg.type}`}>{msg.text}</div>}
 
+      {/* One-click auth via CLI device flow */}
+      {integ.cliAuth && integ.cliAuthService && !connected && (
+        <div class="integ-section">
+          <div class="integ-section-header">
+            <IconPlug size={14} />
+            <span>Sign In</span>
+          </div>
+          <div class="integ-section-body">
+            <CLIAuthSection
+              service={integ.cliAuthService}
+              name={integ.name}
+              onSuccess={() => { setConnected(true); setMsg({ type: 'success', text: `${integ.name} connected!` }); }}
+            />
+          </div>
+        </div>
+      )}
+
       <div class="integ-section">
         <div class="integ-section-header">
           <IconKey size={14} />
-          <span>API Token</span>
+          <span>{integ.cliAuth && !connected ? 'Or use API Token' : 'API Token'}</span>
         </div>
 
         <div class="integ-section-body">
@@ -539,10 +633,12 @@ function GitHubDetail({ onBack }: { onBack: () => void }) {
 export function IntegrationsSection() {
   const [selected, setSelected] = useState<string | null>(null);
   const [connectedServices, setConnectedServices] = useState<Set<string>>(new Set());
+  const [loading, setLoading] = useState(true);
 
   // Check which services are connected
   useEffect(() => {
     async function checkConnections() {
+      setLoading(true);
       const connected = new Set<string>();
 
       // GitHub via gh CLI
@@ -566,6 +662,7 @@ export function IntegrationsSection() {
       } catch { /* ignore */ }
 
       setConnectedServices(connected);
+      setLoading(false);
     }
 
     checkConnections();
@@ -605,28 +702,35 @@ export function IntegrationsSection() {
           <p class="integ-subtitle">Connect external services to your workspace</p>
         </div>
 
-        <div class="integ-grid">
-          {[...INTEGRATIONS].sort((a, b) => {
-            const aC = connectedServices.has(a.id) ? 0 : 1;
-            const bC = connectedServices.has(b.id) ? 0 : 1;
-            return aC - bC;
-          }).map(integ => (
-            <button
-              key={integ.id}
-              class={`integ-tile${!integ.available ? ' disabled' : ''}`}
-              onClick={() => integ.available && setSelected(integ.id)}
-              disabled={!integ.available}
-            >
-              <div class="integ-tile-icon">{integ.icon()}</div>
-              <div class="integ-tile-info">
-                <span class="integ-tile-name">{integ.name}</span>
-                <span class="integ-tile-desc">{integ.description}</span>
-              </div>
-              {!integ.available && <span class="badge badge-muted">Coming soon</span>}
-              {connectedServices.has(integ.id) && <span class="badge badge-success">Connected</span>}
-            </button>
-          ))}
-        </div>
+        {loading ? (
+          <div class="integ-loading">
+            <span class="spinner-sm" />
+            <span>Checking connections...</span>
+          </div>
+        ) : (
+          <div class="integ-grid">
+            {[...INTEGRATIONS].sort((a, b) => {
+              const aC = connectedServices.has(a.id) ? 0 : 1;
+              const bC = connectedServices.has(b.id) ? 0 : 1;
+              return aC - bC;
+            }).map(integ => (
+              <button
+                key={integ.id}
+                class={`integ-tile${!integ.available ? ' disabled' : ''}`}
+                onClick={() => integ.available && setSelected(integ.id)}
+                disabled={!integ.available}
+              >
+                <div class="integ-tile-icon">{integ.icon()}</div>
+                <div class="integ-tile-info">
+                  <span class="integ-tile-name">{integ.name}</span>
+                  <span class="integ-tile-desc">{integ.description}</span>
+                </div>
+                {!integ.available && <span class="badge badge-muted">Coming soon</span>}
+                {connectedServices.has(integ.id) && <span class="badge badge-success">Connected</span>}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );

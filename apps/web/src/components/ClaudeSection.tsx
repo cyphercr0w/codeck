@@ -148,10 +148,19 @@ export function ClaudeSection({
 		setOnSessionReattached((sessionId) => {
 			if (!getTerminal(sessionId)) return;
 
-			// Call attachSession synchronously to minimize the input buffering window
 			markSessionAttaching(sessionId);
 			attachSession(sessionId);
 			attachSettleRepaint(sessionId);
+
+			// Load last known context data (model + CTX%) so status bar shows instantly
+			apiFetch(`/api/console/context?sessionId=${sessionId}`)
+				.then((r) => r.json())
+				.then((data) => {
+					if (data.model || data.contextPercent) {
+						setContextData({ ...data, sessionId });
+					}
+				})
+				.catch(() => {});
 
 			requestAnimationFrame(() => {
 				fitTerminal(sessionId);

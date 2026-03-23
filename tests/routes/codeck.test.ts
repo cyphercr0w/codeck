@@ -15,6 +15,7 @@ import { join } from 'path';
 const TEST_WORKSPACE = process.env.WORKSPACE!;
 const AGENT_DATA_DIR = join(TEST_WORKSPACE, '.codeck');
 const ENV_FILE = join(AGENT_DATA_DIR, '.env');
+const ENV_ENCRYPTED_FILE = join(AGENT_DATA_DIR, '.env.encrypted');
 
 // Mock syncEnvToMcpServers — it reads .claude.json which we don't want in tests.
 // The route file imports fs directly (readFileSync/writeFileSync), and we need
@@ -285,13 +286,23 @@ describe('Codeck API', () => {
 
       expect(res.body.success).toBe(true);
 
-      // Verify file was written
-      const content = readFileSync(ENV_FILE, 'utf-8');
-      expect(content).toContain('MY_API_KEY=secret-value-123');
+      // Verify encrypted file was written (not plaintext)
+      expect(existsSync(ENV_ENCRYPTED_FILE)).toBe(true);
+      const store = JSON.parse(readFileSync(ENV_ENCRYPTED_FILE, 'utf-8'));
+      expect(store.version).toBe(1);
+      expect(store.vars).toHaveLength(1);
+      expect(store.vars[0].key).toBe('MY_API_KEY');
+      // Value should be encrypted (has iv and tag fields)
+      expect(store.vars[0].value).toHaveProperty('encrypted');
+      expect(store.vars[0].value).toHaveProperty('iv');
+      expect(store.vars[0].value).toHaveProperty('tag');
     });
 
     it('should update an existing env var', async () => {
-      writeFileSync(ENV_FILE, 'MY_API_KEY=old-value\n', { mode: 0o600 });
+      // Write initial var via API (encrypted)
+      await request(app)
+        .post('/api/codeck/env')
+        .send({ key: 'MY_API_KEY', value: 'old-value' });
 
       const res = await request(app)
         .post('/api/codeck/env')
@@ -300,10 +311,10 @@ describe('Codeck API', () => {
 
       expect(res.body.success).toBe(true);
 
-      const content = readFileSync(ENV_FILE, 'utf-8');
-      expect(content).toContain('MY_API_KEY=new-value');
-      // Should not contain old value
-      expect(content).not.toContain('old-value');
+      // Verify only one var in encrypted store
+      const store = JSON.parse(readFileSync(ENV_ENCRYPTED_FILE, 'utf-8'));
+      expect(store.vars).toHaveLength(1);
+      expect(store.vars[0].key).toBe('MY_API_KEY');
     });
 
     it('should return 400 for invalid key format (lowercase)', async () => {
@@ -387,7 +398,9 @@ describe('Codeck API', () => {
 
   describe('DELETE /api/codeck/env', () => {
     it('should delete an env var', async () => {
-      writeFileSync(ENV_FILE, 'KEY_A=val1\nKEY_B=val2\n', { mode: 0o600 });
+      // Set up two vars via API
+      await request(app).post('/api/codeck/env').send({ key: 'KEY_A', value: 'val1' });
+      await request(app).post('/api/codeck/env').send({ key: 'KEY_B', value: 'val2' });
 
       const res = await request(app)
         .delete('/api/codeck/env')
@@ -396,9 +409,10 @@ describe('Codeck API', () => {
 
       expect(res.body.success).toBe(true);
 
-      const content = readFileSync(ENV_FILE, 'utf-8');
-      expect(content).not.toContain('KEY_A');
-      expect(content).toContain('KEY_B');
+      const store = JSON.parse(readFileSync(ENV_ENCRYPTED_FILE, 'utf-8'));
+      const keys = store.vars.map((v: { key: string }) => v.key);
+      expect(keys).not.toContain('KEY_A');
+      expect(keys).toContain('KEY_B');
     });
 
     it('should return 400 for missing key', async () => {
@@ -411,7 +425,8 @@ describe('Codeck API', () => {
     });
 
     it('should handle deleting nonexistent key gracefully', async () => {
-      writeFileSync(ENV_FILE, 'EXISTING=value\n', { mode: 0o600 });
+      // Set up a var via API
+      await request(app).post('/api/codeck/env').send({ key: 'EXISTING', value: 'value' });
 
       const res = await request(app)
         .delete('/api/codeck/env')
@@ -421,8 +436,8 @@ describe('Codeck API', () => {
       expect(res.body.success).toBe(true);
 
       // Original key should still be there
-      const content = readFileSync(ENV_FILE, 'utf-8');
-      expect(content).toContain('EXISTING=value');
+      const store = JSON.parse(readFileSync(ENV_ENCRYPTED_FILE, 'utf-8'));
+      expect(store.vars.some((v: { key: string }) => v.key === 'EXISTING')).toBe(true);
     });
   });
 

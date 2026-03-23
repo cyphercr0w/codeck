@@ -9,6 +9,7 @@ import { ACTIVE_AGENT } from './agent.js';
 import { syncToClaudeSettings } from './permissions.js';
 import { startSessionCapture, captureInput, captureOutput, endSessionCapture } from './session-writer.js';
 import { atomicWriteFileSync } from './memory.js';
+import { decryptValue } from './auth-anthropic/encryption.js';
 import { summarizeSession } from './session-summarizer.js';
 import { broadcast } from '../web/logger.js';
 import { injectContextIntoCLAUDEMd, type ContextInjectionStats } from './memory-context.js';
@@ -192,10 +193,23 @@ function _createConsoleSessionInner(options?: string | CreateSessionOptions): Co
 
   const oauthEnv = getOAuthEnv();
 
-  // Load user .env file (API keys, tokens saved by the agent)
+  // Load user env vars (API keys, tokens saved by the agent)
+  // Priority: encrypted .env.encrypted > plaintext .env (legacy)
   const userEnv: Record<string, string> = {};
-  const dotenvPath = join(process.env.WORKSPACE || '/workspace', '.codeck', '.env');
-  if (existsSync(dotenvPath)) {
+  const wsDir = join(process.env.WORKSPACE || '/workspace', '.codeck');
+  const encryptedEnvPath = join(wsDir, '.env.encrypted');
+  const dotenvPath = join(wsDir, '.env');
+
+  if (existsSync(encryptedEnvPath)) {
+    try {
+      const store = JSON.parse(readFileSync(encryptedEnvPath, 'utf-8'));
+      for (const v of (store.vars || [])) {
+        if (v.key && v.value) userEnv[v.key] = decryptValue(v.value);
+      }
+    } catch { /* fall through to plaintext */ }
+  }
+
+  if (Object.keys(userEnv).length === 0 && existsSync(dotenvPath)) {
     try {
       const content = readFileSync(dotenvPath, 'utf-8');
       for (const line of content.split('\n')) {

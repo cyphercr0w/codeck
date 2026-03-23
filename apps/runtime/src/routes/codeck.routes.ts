@@ -183,11 +183,32 @@ router.put('/files/write', async (req, res) => {
   }
 });
 
-// ── Environment Variables (.codeck/.env) ──
+// ── Environment Variables (.codeck/.env — encrypted at rest) ──
+
+import { encryptValue, decryptValue, type EncryptedValue } from '../services/auth-anthropic/encryption.js';
 
 const ENV_FILE = join(AGENT_DATA_DIR, '.env');
+const ENV_ENCRYPTED_FILE = join(AGENT_DATA_DIR, '.env.encrypted');
 
+interface EncryptedEnvStore {
+  version: 1;
+  vars: Array<{ key: string; value: EncryptedValue }>;
+}
+
+/** Read and decrypt env vars. Handles migration from plaintext .env */
 function parseEnvFile(): Array<{ key: string; value: string }> {
+  // Prefer encrypted file
+  if (existsSync(ENV_ENCRYPTED_FILE)) {
+    try {
+      const store: EncryptedEnvStore = JSON.parse(readFileSync(ENV_ENCRYPTED_FILE, 'utf-8'));
+      return store.vars.map(v => ({ key: v.key, value: decryptValue(v.value) }));
+    } catch (e) {
+      console.warn('[Env] Failed to decrypt .env.encrypted:', (e as Error).message);
+      // Fall through to plaintext
+    }
+  }
+
+  // Fallback: plaintext .env (legacy or first run)
   if (!existsSync(ENV_FILE)) return [];
   try {
     const content = readFileSync(ENV_FILE, 'utf-8');
@@ -202,13 +223,24 @@ function parseEnvFile(): Array<{ key: string; value: string }> {
         if (key) vars.push({ key, value: val });
       }
     }
+
+    // Auto-migrate: encrypt and delete plaintext
+    if (vars.length > 0) {
+      writeEnvFile(vars);
+      try { writeFileSync(ENV_FILE, '# Migrated to .env.encrypted\n', { mode: 0o600 }); } catch {}
+      console.log(`[Env] Migrated ${vars.length} vars from plaintext .env to encrypted storage`);
+    }
     return vars;
   } catch { return []; }
 }
 
+/** Encrypt and write env vars */
 function writeEnvFile(vars: Array<{ key: string; value: string }>) {
-  const content = vars.map(v => `${v.key}=${v.value}`).join('\n') + '\n';
-  writeFileSync(ENV_FILE, content, { mode: 0o600 });
+  const store: EncryptedEnvStore = {
+    version: 1,
+    vars: vars.map(v => ({ key: v.key, value: encryptValue(v.value) })),
+  };
+  writeFileSync(ENV_ENCRYPTED_FILE, JSON.stringify(store, null, 2), { mode: 0o600 });
 }
 
 router.get('/env', (_req, res) => {

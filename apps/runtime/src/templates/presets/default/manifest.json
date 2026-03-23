@@ -129,6 +129,14 @@
 			"dest": "/workspace/.codeck/scripts/context-injector.mjs"
 		},
 		{
+			"src": "scripts/session-context-hook.mjs",
+			"dest": "/workspace/.codeck/scripts/session-context-hook.mjs"
+		},
+		{
+			"src": "scripts/skill-index-generator.mjs",
+			"dest": "/workspace/.codeck/scripts/skill-index-generator.mjs"
+		},
+		{
 			"src": "scripts/repo-map-generator.mjs",
 			"dest": "/workspace/.codeck/scripts/repo-map-generator.mjs"
 		},

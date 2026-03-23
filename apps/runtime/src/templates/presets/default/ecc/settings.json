@@ -390,6 +390,17 @@
 				"hooks": [
 					{
 						"type": "command",
+						"command": "node /workspace/.codeck/scripts/session-context-hook.mjs",
+						"timeout": 3
+					}
+				],
+				"description": "Inject session memory context on first message (KV-cache optimization \u2014 keeps CLAUDE.md static)"
+			},
+			{
+				"matcher": "",
+				"hooks": [
+					{
+						"type": "command",
 						"command": "node /workspace/.codeck/scripts/memory-nudge-hook.mjs"
 					}
 				]
@@ -513,6 +524,17 @@
 					}
 				],
 				"description": "Load previous context and detect package manager on new session"
+			},
+			{
+				"matcher": "*",
+				"hooks": [
+					{
+						"type": "command",
+						"command": "node /workspace/.codeck/scripts/skill-index-generator.mjs",
+						"timeout": 5
+					}
+				],
+				"description": "Generate compact skill index for progressive disclosure"
 			}
 		],
 		"PostToolUseFailure": [

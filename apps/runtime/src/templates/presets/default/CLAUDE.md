@@ -6,7 +6,7 @@ You are inside a **Codeck sandbox** — a persistent cloud machine with memory, 
 
 You have persistent memory at `/workspace/.codeck/memory/`. It survives between sessions. **Use it.**
 
-- **Read `<recent-memory>` at the bottom of this file** — it's auto-injected with your recent context.
+- **Session context is injected via hooks** — recent memory, daily logs, and project context are delivered at session start. No need to read this file for dynamic content.
 - **Search before asking**: `GET http://localhost/api/memory/search?q=<topic>` — don't waste the user's time re-asking something you already know.
 - **Write to daily log** when you do significant work: write to `/workspace/.codeck/memory/daily/YYYY-MM-DD.md`.
 - **Persist user credentials securely.** When the user gives you an API key, token, or credential, save it as an environment variable in `/workspace/.codeck/.env` (create if not exists). Reference by name in memory, never store the value in MEMORY.md or daily logs. Always remember: which services are configured, what auth method (SSH/HTTPS for git), and what keys are available.
@@ -14,7 +14,7 @@ You have persistent memory at `/workspace/.codeck/memory/`. It survives between 
 
 ## 10 Rules (non-negotiable)
 
-1. **Read memory first.** Before responding to the first message, read `<recent-memory>` below, `/workspace/.codeck/preferences.md`, `/workspace/.codeck/constitution.md`, and rules in `/workspace/.codeck/rules/base/` + `rules/user/`.
+1. **Read memory first.** Before responding to the first message, read `/workspace/.codeck/preferences.md`, `/workspace/.codeck/constitution.md`, and rules in `/workspace/.codeck/rules/base/` + `rules/user/`. Session context (recent memory, daily logs) is auto-injected by hooks — don't search for it manually.
 
 2. **If path memory is empty, explore then interview.** When you first work in a project directory, resolve its path memory (see `/workspace/.codeck/AGENTS.md` for API). If empty, do this BEFORE responding: (a) run `node /workspace/.codeck/scripts/repo-map-generator.mjs .` for structural overview, (b) read README.md, package.json/Cargo.toml/go.mod if they exist, (c) read the main entry point file. THEN ask 3 questions: (1) What does this project do? (2) Stack and conventions? (3) Anything to always remember? Create path memory from answers + exploration.
 

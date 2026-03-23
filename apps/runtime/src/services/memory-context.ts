@@ -221,48 +221,47 @@ export function buildSessionContext(cwd: string): {
 }
 
 /**
- * Inject memory context into /workspace/CLAUDE.md.
- * Uses marker comments to replace only the memory section.
+ * Inject memory context into a SEPARATE file, not CLAUDE.md.
+ *
+ * KV-Cache optimization: CLAUDE.md must remain 100% static so the inference
+ * engine can reuse cached key-value tensors across sessions. Dynamic content
+ * (daily logs, path memory, search results) goes to a sidecar file that hooks
+ * inject via UserPromptSubmit additionalContext — never touching CLAUDE.md.
+ *
+ * Migration: if CLAUDE.md has old markers, strip them once.
  */
+const CONTEXT_SIDECAR = join(PATHS.WORKSPACE, ".codeck/state/session-context.md");
+
 export function injectContextIntoCLAUDEMd(
 	cwd: string,
 ): ContextInjectionStats | null {
-	if (!existsSync(WORKSPACE_CLAUDE_MD)) {
-		console.log(
-			"[MemoryContext] No workspace CLAUDE.md found, skipping injection",
-		);
-		return null;
-	}
-
 	const { context, stats } = buildSessionContext(cwd);
-	if (!context) {
-		removeContextSection();
-		return null;
+
+	// Write context to sidecar file (read by UserPromptSubmit hook)
+	const dir = join(PATHS.WORKSPACE, ".codeck/state");
+	if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
+	writeFileSync(CONTEXT_SIDECAR, context || "");
+
+	// Strip old markers from CLAUDE.md if they exist (one-time migration)
+	if (existsSync(WORKSPACE_CLAUDE_MD)) {
+		const content = readFileSync(WORKSPACE_CLAUDE_MD, "utf-8");
+		if (content.includes(MARKER_START)) {
+			removeContextSection();
+			console.log("[MemoryContext] Migrated: removed dynamic content from CLAUDE.md (now uses sidecar)");
+		}
 	}
 
-	const contextBlock = `\n${MARKER_START}\n<recent-memory>\n${context}\n</recent-memory>\n${MARKER_END}\n`;
+	if (!context) return null;
 
-	let content = readFileSync(WORKSPACE_CLAUDE_MD, "utf-8");
-
-	const startIdx = content.indexOf(MARKER_START);
-	const endIdx = content.indexOf(MARKER_END);
-
-	if (startIdx !== -1 && endIdx !== -1) {
-		const headerIdx = content.lastIndexOf("\n## Recent Memory\n", startIdx);
-		const replaceStart = headerIdx !== -1 ? headerIdx : startIdx;
-		content =
-			content.slice(0, replaceStart) +
-			contextBlock +
-			content.slice(endIdx + MARKER_END.length);
-	} else {
-		content = content.trimEnd() + "\n" + contextBlock;
-	}
-
-	writeFileSync(WORKSPACE_CLAUDE_MD, content);
 	console.log(
-		`[MemoryContext] Injected ${stats.charsInjected} chars of context into CLAUDE.md (sources: ${stats.sources.join(", ")})`,
+		`[MemoryContext] Wrote ${stats.charsInjected} chars to session-context.md (sources: ${stats.sources.join(", ")})`,
 	);
 	return stats;
+}
+
+/** Get the path to the session context sidecar file */
+export function getContextSidecarPath(): string {
+	return CONTEXT_SIDECAR;
 }
 
 /**

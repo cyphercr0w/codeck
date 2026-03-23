@@ -783,16 +783,6 @@
 }
 
 /* Toast */
-/* Legacy inline toast (kept for backward compat, prefer global ToastContainer) */
-.fb-toast {
-  padding: 6px 12px;
-  font-size: 12px;
-  text-align: center;
-  border-bottom: 1px solid var(--border);
-}
-.fb-toast-success { background: var(--success-subtle, rgba(34,197,94,0.1)); color: var(--success); }
-.fb-toast-error { background: var(--error-subtle); color: var(--error); }
-
 /* ── Global Toast System ── */
 .toast-container {
   position: fixed;
@@ -855,8 +845,8 @@
 }
 .toast-close:hover { color: var(--text-primary); background: var(--bg-hover); }
 @keyframes toast-in {
-  from { opacity: 0; transform: translateX(20px); }
-  to { opacity: 1; transform: translateX(0); }
+  from { opacity: 0; transform: translateY(-10px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
 /* Create inline row */

@@ -10,7 +10,7 @@ export function ToastContainer() {
       {items.map(t => (
         <div key={t.id} class={`toast toast-${t.type}`}>
           <span class="toast-icon">
-            {t.type === 'error' ? '!' : <IconCheck size={14} />}
+            {t.type === 'error' ? '!' : t.type === 'info' ? 'ⓘ' : <IconCheck size={14} />}
           </span>
           <span class="toast-msg">{t.message}</span>
           <button class="toast-close" onClick={() => dismissToast(t.id)} aria-label="Dismiss">

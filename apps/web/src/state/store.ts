@@ -469,7 +469,7 @@ const RECENT_CONVOS_TTL = 5 * 60 * 1000; // 5 min cache
 
 export async function fetchRecentConversations(fetchFn: (url: string) => Promise<Response>, force = false): Promise<void> {
   const now = Date.now();
-  if (!force && recentConversations.value.length > 0 && (now - recentConvosFetchedAt) < RECENT_CONVOS_TTL) {
+  if (!force && recentConvosFetchedAt > 0 && (now - recentConvosFetchedAt) < RECENT_CONVOS_TTL) {
     return; // cache still valid
   }
   try {

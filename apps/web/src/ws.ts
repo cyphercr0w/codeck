@@ -194,8 +194,8 @@ function openWs(wsUrl: string, protocols?: string[]): void {
             .then(r => r.json())
             .then(data => { if (data.agents) syncSubagentsFromServer(data.agents); })
             .catch(() => { /* non-fatal */ });
-          // Pre-fetch recent conversations so New Tab opens instantly
-          fetchRecentConversations(apiFetch);
+          // Pre-fetch recent conversations so New Tab opens instantly (force — server state may have changed)
+          fetchRecentConversations(apiFetch, true);
         }
         if (!msg.data.pendingRestore) {
           setRestoringPending(false);

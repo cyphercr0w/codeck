@@ -207,11 +207,13 @@ function runAgent(
 		};
 
 		// Build spawn arguments — use stream-json for real-time output
+		// --verbose is required for stream-json to work with --print
 		const spawnArgs: string[] = [
 			"-p",
 			prompt,
 			"--output-format",
 			"stream-json",
+			"--verbose",
 			"--no-session-persistence",
 		];
 

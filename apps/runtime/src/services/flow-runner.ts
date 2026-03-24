@@ -218,6 +218,11 @@ function runAgent(
 			...cleanEnv,
 			...oauthEnv,
 			TERM: "dumb",
+			// --bare requires ANTHROPIC_API_KEY (ignores OAuth/keychain)
+			// The OAuth token works as an API key for the Anthropic Messages API
+			...(oauthEnv.CLAUDE_CODE_OAUTH_TOKEN
+				? { ANTHROPIC_API_KEY: oauthEnv.CLAUDE_CODE_OAUTH_TOKEN }
+				: {}),
 		};
 
 		// Build spawn arguments — use stream-json for real-time output

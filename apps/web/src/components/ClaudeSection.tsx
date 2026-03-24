@@ -332,6 +332,13 @@ export function ClaudeSection({
 		prevSessionCount.current = sessionList.length;
 	}, [sessionList.length]);
 
+	// Auto-select first session when returning to terminal view with no active selection
+	useEffect(() => {
+		if (!activeId && sessionList.length > 0) {
+			setActiveSessionId(sessionList[0].id);
+		}
+	}, [activeId, sessionList.length]);
+
 	// Fetch recent conversations (cached 5 min in store, instant on subsequent views)
 	useEffect(() => {
 		if (sessionList.length === 0 || showNewSessionMenu) {

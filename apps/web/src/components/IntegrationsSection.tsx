@@ -291,20 +291,32 @@ function TokenIntegrationDetail({
 	const [connected, setConnected] = useState(false);
 	const [saving, setSaving] = useState(false);
 	const [checking, setChecking] = useState(true);
+	const [accountInfo, setAccountInfo] = useState<{
+		username?: string;
+		email?: string;
+		team?: string;
+	} | null>(null);
 
-	// Check if already connected (env var exists)
+	// Check if already connected (env var exists) and fetch account info
 	useEffect(() => {
 		setChecking(true);
 		apiFetch("/api/codeck/env")
 			.then((r) => r.json())
 			.then((data) => {
 				const vars = data.vars || [];
-				setConnected(
-					vars.some(
-						(v: { key: string; hasValue: boolean }) =>
-							v.key === integ.tokenEnvKey && v.hasValue,
-					),
+				const isConnected = vars.some(
+					(v: { key: string; hasValue: boolean }) =>
+						v.key === integ.tokenEnvKey && v.hasValue,
 				);
+				setConnected(isConnected);
+				if (isConnected && integ.tokenEnvKey) {
+					apiFetch(`/api/codeck/integration/${integ.tokenEnvKey}/account`)
+						.then((r) => r.json())
+						.then((info) => {
+							if (info.connected) setAccountInfo(info);
+						})
+						.catch(() => {});
+				}
 			})
 			.catch(() => {})
 			.finally(() => setChecking(false));
@@ -357,7 +369,20 @@ function TokenIntegrationDetail({
 
 			setConnected(true);
 			setToken("");
-			showToast(`${integ.name} connected! MCP server enabled.`, "success");
+			showToast(
+				`${integ.name} connected! Open a new terminal to use it.`,
+				"success",
+				5000,
+			);
+			// Fetch account info
+			if (integ.tokenEnvKey) {
+				apiFetch(`/api/codeck/integration/${integ.tokenEnvKey}/account`)
+					.then((r) => r.json())
+					.then((info) => {
+						if (info.connected) setAccountInfo(info);
+					})
+					.catch(() => {});
+			}
 		} catch {
 			showToast("Connection error", "error");
 		}
@@ -457,10 +482,38 @@ function TokenIntegrationDetail({
 				<div class="integ-section-body">
 					{connected ? (
 						<div class="integ-connected-info">
-							<p class="integ-section-info">
-								{integ.name} is connected. The MCP server is active and ready to
-								use.
-							</p>
+							{accountInfo ? (
+								<div class="integ-account-details">
+									{accountInfo.username && (
+										<div class="integ-account-row">
+											<span class="integ-account-label">Account</span>
+											<span class="integ-account-value">
+												{accountInfo.username}
+											</span>
+										</div>
+									)}
+									{accountInfo.email && (
+										<div class="integ-account-row">
+											<span class="integ-account-label">Email</span>
+											<span class="integ-account-value">
+												{accountInfo.email}
+											</span>
+										</div>
+									)}
+									{accountInfo.team && (
+										<div class="integ-account-row">
+											<span class="integ-account-label">Name</span>
+											<span class="integ-account-value">
+												{accountInfo.team}
+											</span>
+										</div>
+									)}
+								</div>
+							) : (
+								<p class="integ-section-info">
+									{integ.name} is connected and ready to use.
+								</p>
+							)}
 						</div>
 					) : (
 						<>

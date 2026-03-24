@@ -1,15 +1,24 @@
-import { Router } from 'express';
-import { readdir, stat, readFile, writeFile, realpath, access, mkdir, rm } from 'fs/promises';
-import { join, resolve, sep } from 'path';
-import { execFile, spawn } from 'child_process';
-import { promisify } from 'util';
-import { existsSync, createReadStream, readFileSync, writeFileSync } from 'fs';
+import { Router } from "express";
+import {
+	readdir,
+	stat,
+	readFile,
+	writeFile,
+	realpath,
+	access,
+	mkdir,
+	rm,
+} from "fs/promises";
+import { join, resolve, sep } from "path";
+import { execFile, spawn } from "child_process";
+import { promisify } from "util";
+import { existsSync, createReadStream, readFileSync, writeFileSync } from "fs";
 
 const execFileAsync = promisify(execFile);
 
-const WORKSPACE = resolve(process.env.WORKSPACE || '/workspace');
-const AGENT_DATA_DIR = join(WORKSPACE, '.codeck');
-const CLAUDE_JSON_PATH = join(process.env.HOME || '/root', '.claude.json');
+const WORKSPACE = resolve(process.env.WORKSPACE || "/workspace");
+const AGENT_DATA_DIR = join(WORKSPACE, ".codeck");
+const CLAUDE_JSON_PATH = join(process.env.HOME || "/root", ".claude.json");
 const router = Router();
 
 /**
@@ -19,26 +28,30 @@ const router = Router();
  * Claude Code can pass it to the MCP subprocess on start.
  */
 function syncEnvToMcpServers(key: string, value: string | null): void {
-  try {
-    const raw = readFileSync(CLAUDE_JSON_PATH, 'utf-8');
-    const config = JSON.parse(raw);
-    let changed = false;
+	try {
+		const raw = readFileSync(CLAUDE_JSON_PATH, "utf-8");
+		const config = JSON.parse(raw);
+		let changed = false;
 
-    for (const section of ['mcpServers', '_disabledMcpServers']) {
-      const servers = config[section];
-      if (!servers || typeof servers !== 'object') continue;
-      for (const serverConfig of Object.values(servers) as Array<{ env?: Record<string, string> }>) {
-        if (serverConfig.env && key in serverConfig.env) {
-          serverConfig.env[key] = value ?? '';
-          changed = true;
-        }
-      }
-    }
+		for (const section of ["mcpServers", "_disabledMcpServers"]) {
+			const servers = config[section];
+			if (!servers || typeof servers !== "object") continue;
+			for (const serverConfig of Object.values(servers) as Array<{
+				env?: Record<string, string>;
+			}>) {
+				if (serverConfig.env && key in serverConfig.env) {
+					serverConfig.env[key] = value ?? "";
+					changed = true;
+				}
+			}
+		}
 
-    if (changed) {
-      writeFileSync(CLAUDE_JSON_PATH, JSON.stringify(config, null, 2));
-    }
-  } catch { /* non-fatal — .claude.json may not exist yet */ }
+		if (changed) {
+			writeFileSync(CLAUDE_JSON_PATH, JSON.stringify(config, null, 2));
+		}
+	} catch {
+		/* non-fatal — .claude.json may not exist yet */
+	}
 }
 
 /**
@@ -46,375 +59,525 @@ function syncEnvToMcpServers(key: string, value: string | null): void {
  * and resolve symlinks to prevent symlink-based path traversal bypasses.
  * Returns the validated path, or null if access is denied.
  */
-async function safePath(base: string, relativePath: string): Promise<string | null> {
-  const resolved = resolve(base, relativePath);
-  if (!resolved.startsWith(base + sep) && resolved !== base) return null;
-  try {
-    const real = await realpath(resolved);
-    if (!real.startsWith(base + sep) && real !== base) return null;
-    return real;
-  } catch {
-    // Path doesn't exist — resolved path is acceptable
-    return resolved;
-  }
+async function safePath(
+	base: string,
+	relativePath: string,
+): Promise<string | null> {
+	const resolved = resolve(base, relativePath);
+	if (!resolved.startsWith(base + sep) && resolved !== base) return null;
+	try {
+		const real = await realpath(resolved);
+		if (!real.startsWith(base + sep) && real !== base) return null;
+		return real;
+	} catch {
+		// Path doesn't exist — resolved path is acceptable
+		return resolved;
+	}
 }
 
 // List directory contents
-router.get('/files', async (req, res) => {
-  const relativePath = (req.query.path || '') as string;
-  const typeFilter = req.query.type as string | undefined;
-  const fullPath = await safePath(AGENT_DATA_DIR, relativePath);
+router.get("/files", async (req, res) => {
+	const relativePath = (req.query.path || "") as string;
+	const typeFilter = req.query.type as string | undefined;
+	const fullPath = await safePath(AGENT_DATA_DIR, relativePath);
 
-  if (!fullPath) {
-    res.status(403).json({ error: 'Access denied' });
-    return;
-  }
+	if (!fullPath) {
+		res.status(403).json({ error: "Access denied" });
+		return;
+	}
 
-  try {
-    const entries = await readdir(fullPath, { withFileTypes: true });
+	try {
+		const entries = await readdir(fullPath, { withFileTypes: true });
 
-    let items;
-    if (typeFilter === 'dir') {
-      // Fast path: only directories, no stat() calls needed
-      items = entries
-        .filter(e => e.isDirectory())
-        .map(e => ({ name: e.name, isDirectory: true as const }));
-    } else {
-      // Full listing with stat for size/modified
-      items = await Promise.all(
-        entries.map(async e => {
-          if (e.isDirectory()) {
-            return { name: e.name, isDirectory: true as const, size: 0 };
-          }
-          const itemPath = join(fullPath, e.name);
-          try {
-            const s = await stat(itemPath);
-            return { name: e.name, isDirectory: false as const, size: s.size, modified: s.mtime };
-          } catch {
-            return { name: e.name, isDirectory: false as const, size: 0 };
-          }
-        })
-      );
-    }
+		let items;
+		if (typeFilter === "dir") {
+			// Fast path: only directories, no stat() calls needed
+			items = entries
+				.filter((e) => e.isDirectory())
+				.map((e) => ({ name: e.name, isDirectory: true as const }));
+		} else {
+			// Full listing with stat for size/modified
+			items = await Promise.all(
+				entries.map(async (e) => {
+					if (e.isDirectory()) {
+						return { name: e.name, isDirectory: true as const, size: 0 };
+					}
+					const itemPath = join(fullPath, e.name);
+					try {
+						const s = await stat(itemPath);
+						return {
+							name: e.name,
+							isDirectory: false as const,
+							size: s.size,
+							modified: s.mtime,
+						};
+					} catch {
+						return { name: e.name, isDirectory: false as const, size: 0 };
+					}
+				}),
+			);
+		}
 
-    // Sort dirs first
-    items.sort((a, b) => {
-      if (a.isDirectory && !b.isDirectory) return -1;
-      if (!a.isDirectory && b.isDirectory) return 1;
-      return a.name.localeCompare(b.name);
-    });
+		// Sort dirs first
+		items.sort((a, b) => {
+			if (a.isDirectory && !b.isDirectory) return -1;
+			if (!a.isDirectory && b.isDirectory) return 1;
+			return a.name.localeCompare(b.name);
+		});
 
-    res.json({ success: true, path: relativePath, items });
-  } catch (err: unknown) {
-    const code = (err as NodeJS.ErrnoException).code;
-    if (code === 'ENOENT' || code === 'ENOTDIR') {
-      res.json({ success: true, path: relativePath, items: [] });
-    } else {
-      res.status(500).json({ error: 'Directory read failed' });
-    }
-  }
+		res.json({ success: true, path: relativePath, items });
+	} catch (err: unknown) {
+		const code = (err as NodeJS.ErrnoException).code;
+		if (code === "ENOENT" || code === "ENOTDIR") {
+			res.json({ success: true, path: relativePath, items: [] });
+		} else {
+			res.status(500).json({ error: "Directory read failed" });
+		}
+	}
 });
 
 // Read file content
-router.get('/files/read', async (req, res) => {
-  const relativePath = req.query.path as string;
-  if (!relativePath) {
-    res.status(400).json({ error: 'path required' });
-    return;
-  }
+router.get("/files/read", async (req, res) => {
+	const relativePath = req.query.path as string;
+	if (!relativePath) {
+		res.status(400).json({ error: "path required" });
+		return;
+	}
 
-  const fullPath = await safePath(AGENT_DATA_DIR, relativePath);
+	const fullPath = await safePath(AGENT_DATA_DIR, relativePath);
 
-  if (!fullPath) {
-    res.status(403).json({ error: 'Access denied' });
-    return;
-  }
+	if (!fullPath) {
+		res.status(403).json({ error: "Access denied" });
+		return;
+	}
 
-  try {
-    const s = await stat(fullPath);
-    if (s.size > 100 * 1024) {
-      res.json({ success: false, error: 'File too large', size: s.size });
-      return;
-    }
-    const content = await readFile(fullPath, 'utf-8');
-    res.json({ success: true, content, size: s.size });
-  } catch {
-    res.status(404).json({ error: 'File not found' });
-  }
+	try {
+		const s = await stat(fullPath);
+		if (s.size > 100 * 1024) {
+			res.json({ success: false, error: "File too large", size: s.size });
+			return;
+		}
+		const content = await readFile(fullPath, "utf-8");
+		res.json({ success: true, content, size: s.size });
+	} catch {
+		res.status(404).json({ error: "File not found" });
+	}
 });
 
 // Write/update file content (for manual edits, especially preferences.md)
-router.put('/files/write', async (req, res) => {
-  const { path: relativePath, content } = req.body;
-  if (!relativePath || typeof content !== 'string') {
-    res.status(400).json({ error: 'path and content required' });
-    return;
-  }
+router.put("/files/write", async (req, res) => {
+	const { path: relativePath, content } = req.body;
+	if (!relativePath || typeof content !== "string") {
+		res.status(400).json({ error: "path and content required" });
+		return;
+	}
 
-  const fullPath = await safePath(AGENT_DATA_DIR, relativePath);
+	const fullPath = await safePath(AGENT_DATA_DIR, relativePath);
 
-  if (!fullPath) {
-    res.status(403).json({ error: 'Access denied' });
-    return;
-  }
+	if (!fullPath) {
+		res.status(403).json({ error: "Access denied" });
+		return;
+	}
 
-  // Allow writing to existing files OR creating new files in existing directories
-  // (needed for adding new rules, preferences, etc.)
-  try {
-    await access(fullPath);
-  } catch {
-    // File doesn't exist — check if parent directory exists (allow creation there)
-    const { dirname: dirFn } = await import('path');
-    const parentDir = dirFn(fullPath);
-    try {
-      await access(parentDir);
-    } catch {
-      // Parent dir doesn't exist — create it (for rules/user/ etc.)
-      const { mkdir: mkdirFn } = await import('fs/promises');
-      await mkdirFn(parentDir, { recursive: true });
-    }
-  }
+	// Allow writing to existing files OR creating new files in existing directories
+	// (needed for adding new rules, preferences, etc.)
+	try {
+		await access(fullPath);
+	} catch {
+		// File doesn't exist — check if parent directory exists (allow creation there)
+		const { dirname: dirFn } = await import("path");
+		const parentDir = dirFn(fullPath);
+		try {
+			await access(parentDir);
+		} catch {
+			// Parent dir doesn't exist — create it (for rules/user/ etc.)
+			const { mkdir: mkdirFn } = await import("fs/promises");
+			await mkdirFn(parentDir, { recursive: true });
+		}
+	}
 
-  try {
-    await writeFile(fullPath, content);
-    res.json({ success: true });
-  } catch {
-    res.status(500).json({ error: 'Write failed' });
-  }
+	try {
+		await writeFile(fullPath, content);
+		res.json({ success: true });
+	} catch {
+		res.status(500).json({ error: "Write failed" });
+	}
 });
 
 // ── Environment Variables (.codeck/.env — encrypted at rest) ──
 
-import { encryptValue, decryptValue, type EncryptedValue } from '../services/auth-anthropic/encryption.js';
+import {
+	encryptValue,
+	decryptValue,
+	type EncryptedValue,
+} from "../services/auth-anthropic/encryption.js";
 
-const ENV_FILE = join(AGENT_DATA_DIR, '.env');
-const ENV_ENCRYPTED_FILE = join(AGENT_DATA_DIR, '.env.encrypted');
+const ENV_FILE = join(AGENT_DATA_DIR, ".env");
+const ENV_ENCRYPTED_FILE = join(AGENT_DATA_DIR, ".env.encrypted");
 
 interface EncryptedEnvStore {
-  version: 1;
-  vars: Array<{ key: string; value: EncryptedValue }>;
+	version: 1;
+	vars: Array<{ key: string; value: EncryptedValue }>;
 }
 
 /** Read and decrypt env vars. Handles migration from plaintext .env */
 function parseEnvFile(): Array<{ key: string; value: string }> {
-  // Prefer encrypted file
-  if (existsSync(ENV_ENCRYPTED_FILE)) {
-    try {
-      const store: EncryptedEnvStore = JSON.parse(readFileSync(ENV_ENCRYPTED_FILE, 'utf-8'));
-      return store.vars.map(v => ({ key: v.key, value: decryptValue(v.value) }));
-    } catch (e) {
-      console.warn('[Env] Failed to decrypt .env.encrypted:', (e as Error).message);
-      // Fall through to plaintext
-    }
-  }
+	// Prefer encrypted file
+	if (existsSync(ENV_ENCRYPTED_FILE)) {
+		try {
+			const store: EncryptedEnvStore = JSON.parse(
+				readFileSync(ENV_ENCRYPTED_FILE, "utf-8"),
+			);
+			return store.vars.map((v) => ({
+				key: v.key,
+				value: decryptValue(v.value),
+			}));
+		} catch (e) {
+			console.warn(
+				"[Env] Failed to decrypt .env.encrypted:",
+				(e as Error).message,
+			);
+			// Fall through to plaintext
+		}
+	}
 
-  // Fallback: plaintext .env (legacy or first run)
-  if (!existsSync(ENV_FILE)) return [];
-  try {
-    const content = readFileSync(ENV_FILE, 'utf-8');
-    const vars: Array<{ key: string; value: string }> = [];
-    for (const line of content.split('\n')) {
-      const trimmed = line.trim();
-      if (!trimmed || trimmed.startsWith('#')) continue;
-      const eqIdx = trimmed.indexOf('=');
-      if (eqIdx > 0) {
-        const key = trimmed.slice(0, eqIdx).trim();
-        const val = trimmed.slice(eqIdx + 1).trim().replace(/^["']|["']$/g, '');
-        if (key) vars.push({ key, value: val });
-      }
-    }
+	// Fallback: plaintext .env (legacy or first run)
+	if (!existsSync(ENV_FILE)) return [];
+	try {
+		const content = readFileSync(ENV_FILE, "utf-8");
+		const vars: Array<{ key: string; value: string }> = [];
+		for (const line of content.split("\n")) {
+			const trimmed = line.trim();
+			if (!trimmed || trimmed.startsWith("#")) continue;
+			const eqIdx = trimmed.indexOf("=");
+			if (eqIdx > 0) {
+				const key = trimmed.slice(0, eqIdx).trim();
+				const val = trimmed
+					.slice(eqIdx + 1)
+					.trim()
+					.replace(/^["']|["']$/g, "");
+				if (key) vars.push({ key, value: val });
+			}
+		}
 
-    // Auto-migrate: encrypt and delete plaintext
-    if (vars.length > 0) {
-      writeEnvFile(vars);
-      try { writeFileSync(ENV_FILE, '# Migrated to .env.encrypted\n', { mode: 0o600 }); } catch {}
-      console.log(`[Env] Migrated ${vars.length} vars from plaintext .env to encrypted storage`);
-    }
-    return vars;
-  } catch { return []; }
+		// Auto-migrate: encrypt and delete plaintext
+		if (vars.length > 0) {
+			writeEnvFile(vars);
+			try {
+				writeFileSync(ENV_FILE, "# Migrated to .env.encrypted\n", {
+					mode: 0o600,
+				});
+			} catch {}
+			console.log(
+				`[Env] Migrated ${vars.length} vars from plaintext .env to encrypted storage`,
+			);
+		}
+		return vars;
+	} catch {
+		return [];
+	}
 }
 
 /** Encrypt and write env vars */
 function writeEnvFile(vars: Array<{ key: string; value: string }>) {
-  const store: EncryptedEnvStore = {
-    version: 1,
-    vars: vars.map(v => ({ key: v.key, value: encryptValue(v.value) })),
-  };
-  writeFileSync(ENV_ENCRYPTED_FILE, JSON.stringify(store, null, 2), { mode: 0o600 });
+	const store: EncryptedEnvStore = {
+		version: 1,
+		vars: vars.map((v) => ({ key: v.key, value: encryptValue(v.value) })),
+	};
+	writeFileSync(ENV_ENCRYPTED_FILE, JSON.stringify(store, null, 2), {
+		mode: 0o600,
+	});
 }
 
-router.get('/env', (_req, res) => {
-  // Return keys only — never expose values via API
-  const vars = parseEnvFile();
-  res.json({ vars: vars.map(v => ({ key: v.key, hasValue: v.value.length > 0 })) });
+router.get("/env", (_req, res) => {
+	// Return keys only — never expose values via API
+	const vars = parseEnvFile();
+	res.json({
+		vars: vars.map((v) => ({ key: v.key, hasValue: v.value.length > 0 })),
+	});
 });
 
-router.post('/env', (req, res) => {
-  const { key, value } = req.body;
-  if (!key || typeof key !== 'string' || !/^[A-Z_][A-Z0-9_]*$/i.test(key)) {
-    res.status(400).json({ error: 'Invalid key (use UPPER_SNAKE_CASE)' });
-    return;
-  }
-  if (typeof value !== 'string') {
-    res.status(400).json({ error: 'Value required' });
-    return;
-  }
-  const vars = parseEnvFile();
-  const existing = vars.findIndex(v => v.key === key);
-  if (existing >= 0) {
-    vars[existing].value = value;
-  } else {
-    vars.push({ key, value });
-  }
-  writeEnvFile(vars);
-  // Sync to MCP server configs so Claude Code picks up the new value
-  syncEnvToMcpServers(key, value);
-  res.json({ success: true });
+router.post("/env", (req, res) => {
+	const { key, value } = req.body;
+	if (!key || typeof key !== "string" || !/^[A-Z_][A-Z0-9_]*$/i.test(key)) {
+		res.status(400).json({ error: "Invalid key (use UPPER_SNAKE_CASE)" });
+		return;
+	}
+	if (typeof value !== "string") {
+		res.status(400).json({ error: "Value required" });
+		return;
+	}
+	const vars = parseEnvFile();
+	const existing = vars.findIndex((v) => v.key === key);
+	if (existing >= 0) {
+		vars[existing].value = value;
+	} else {
+		vars.push({ key, value });
+	}
+	writeEnvFile(vars);
+	// Sync to MCP server configs so Claude Code picks up the new value
+	syncEnvToMcpServers(key, value);
+	res.json({ success: true });
 });
 
-router.delete('/env', (req, res) => {
-  const { key } = req.body;
-  if (!key) { res.status(400).json({ error: 'Key required' }); return; }
-  const vars = parseEnvFile().filter(v => v.key !== key);
-  writeEnvFile(vars);
-  // Clear the value in MCP configs (set to empty, don't remove the key)
-  syncEnvToMcpServers(key, '');
-  res.json({ success: true });
+router.delete("/env", (req, res) => {
+	const { key } = req.body;
+	if (!key) {
+		res.status(400).json({ error: "Key required" });
+		return;
+	}
+	const vars = parseEnvFile().filter((v) => v.key !== key);
+	writeEnvFile(vars);
+	// Clear the value in MCP configs (set to empty, don't remove the key)
+	syncEnvToMcpServers(key, "");
+	res.json({ success: true });
 });
 
 // ── Memory Export (tar.gz of .codeck/) ──
 
-router.get('/export', async (_req, res) => {
-  try {
-    if (!existsSync(AGENT_DATA_DIR)) {
-      res.status(404).json({ error: 'No memory data to export' });
-      return;
-    }
+router.get("/export", async (_req, res) => {
+	try {
+		if (!existsSync(AGENT_DATA_DIR)) {
+			res.status(404).json({ error: "No memory data to export" });
+			return;
+		}
 
-    const timestamp = new Date().toISOString().slice(0, 10);
-    const filename = `codeck-memory-${timestamp}.tar.gz`;
+		const timestamp = new Date().toISOString().slice(0, 10);
+		const filename = `codeck-memory-${timestamp}.tar.gz`;
 
-    res.setHeader('Content-Type', 'application/gzip');
-    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+		res.setHeader("Content-Type", "application/gzip");
+		res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
 
-    // Use spawn for proper streaming (execFile buffers stdout which breaks pipes)
-    const tar = spawn('tar', [
-      'czf', '-',
-      '--no-same-owner',
-      '--exclude=./sessions',
-      '--exclude=./sessions.json',
-      '--exclude=./index',
-      '--exclude=./uploads',
-      '--exclude=./auth.json',
-      '--exclude=./config.json',
-      '--exclude=./daemon-sessions.json',
-      '--exclude=./.codeck-oauth-token',
-      '--exclude=./backups',
-      '--exclude=./agents/*/executions',
-      '--exclude=./.import-tmp-*',
-      '--exclude=./.env',
-      '-C', AGENT_DATA_DIR,
-      '.',
-    ], { stdio: ['ignore', 'pipe', 'pipe'] });
+		// Use spawn for proper streaming (execFile buffers stdout which breaks pipes)
+		const tar = spawn(
+			"tar",
+			[
+				"czf",
+				"-",
+				"--no-same-owner",
+				"--exclude=./sessions",
+				"--exclude=./sessions.json",
+				"--exclude=./index",
+				"--exclude=./uploads",
+				"--exclude=./auth.json",
+				"--exclude=./config.json",
+				"--exclude=./daemon-sessions.json",
+				"--exclude=./.codeck-oauth-token",
+				"--exclude=./backups",
+				"--exclude=./agents/*/executions",
+				"--exclude=./.import-tmp-*",
+				"--exclude=./.env",
+				"-C",
+				AGENT_DATA_DIR,
+				".",
+			],
+			{ stdio: ["ignore", "pipe", "pipe"] },
+		);
 
-    tar.stdout.pipe(res);
-    tar.stderr.on('data', (d: Buffer) => console.warn('[Export]', d.toString().trim()));
-    tar.on('error', (err) => {
-      console.error('[Export] spawn error:', err.message);
-      if (!res.headersSent) res.status(500).json({ error: 'Export failed' });
-    });
-    tar.on('close', (code) => {
-      if (code !== 0 && !res.headersSent) {
-        res.status(500).json({ error: `Export failed (tar exit ${code})` });
-      }
-    });
-  } catch (err) {
-    console.error('[Export] error:', (err as Error).message);
-    res.status(500).json({ error: 'Export failed' });
-  }
+		tar.stdout.pipe(res);
+		tar.stderr.on("data", (d: Buffer) =>
+			console.warn("[Export]", d.toString().trim()),
+		);
+		tar.on("error", (err) => {
+			console.error("[Export] spawn error:", err.message);
+			if (!res.headersSent) res.status(500).json({ error: "Export failed" });
+		});
+		tar.on("close", (code) => {
+			if (code !== 0 && !res.headersSent) {
+				res.status(500).json({ error: `Export failed (tar exit ${code})` });
+			}
+		});
+	} catch (err) {
+		console.error("[Export] error:", (err as Error).message);
+		res.status(500).json({ error: "Export failed" });
+	}
 });
 
 // ── Memory Import (tar.gz upload → replace .codeck/) ──
 
 // Increase body limit for this endpoint (max 50MB)
-router.post('/import', async (req, res) => {
-  const { data } = req.body;
-  if (!data || typeof data !== 'string') {
-    res.status(400).json({ error: 'Base64-encoded tar.gz data required' });
-    return;
-  }
+router.post("/import", async (req, res) => {
+	const { data } = req.body;
+	if (!data || typeof data !== "string") {
+		res.status(400).json({ error: "Base64-encoded tar.gz data required" });
+		return;
+	}
 
-  const buffer = Buffer.from(data, 'base64');
-  const MAX_IMPORT_SIZE = 50 * 1024 * 1024; // 50 MB
-  if (buffer.length > MAX_IMPORT_SIZE) {
-    res.status(400).json({ error: `Import too large (max ${MAX_IMPORT_SIZE / 1024 / 1024} MB)` });
-    return;
-  }
+	const buffer = Buffer.from(data, "base64");
+	const MAX_IMPORT_SIZE = 50 * 1024 * 1024; // 50 MB
+	if (buffer.length > MAX_IMPORT_SIZE) {
+		res
+			.status(400)
+			.json({
+				error: `Import too large (max ${MAX_IMPORT_SIZE / 1024 / 1024} MB)`,
+			});
+		return;
+	}
 
-  if (buffer.length === 0) {
-    res.status(400).json({ error: 'Empty data' });
-    return;
-  }
+	if (buffer.length === 0) {
+		res.status(400).json({ error: "Empty data" });
+		return;
+	}
 
-  // Extract to a temp directory first, then merge into .codeck/
-  const tmpDir = join(AGENT_DATA_DIR, '.import-tmp-' + Date.now());
-  try {
-    await mkdir(tmpDir, { recursive: true });
+	// Extract to a temp directory first, then merge into .codeck/
+	const tmpDir = join(AGENT_DATA_DIR, ".import-tmp-" + Date.now());
+	try {
+		await mkdir(tmpDir, { recursive: true });
 
-    // Write buffer to temp file and extract
-    const tmpFile = join(tmpDir, 'import.tar.gz');
-    await writeFile(tmpFile, buffer);
+		// Write buffer to temp file and extract
+		const tmpFile = join(tmpDir, "import.tar.gz");
+		await writeFile(tmpFile, buffer);
 
-    // Extract with tar — use spawn to handle non-zero exit from permission warnings
-    await new Promise<void>((resolve, reject) => {
-      const extract = spawn('tar', [
-        'xzf', tmpFile, '-C', tmpDir,
-        '--no-same-owner',
-        '--no-same-permissions',
-        '--warning=no-timestamp',
-      ], { stdio: ['ignore', 'pipe', 'pipe'] });
-      let stderr = '';
-      extract.stderr.on('data', (d: Buffer) => { stderr += d.toString(); });
-      extract.on('error', reject);
-      extract.on('close', () => {
-        // Always resolve — permission warnings cause exit 2 but files ARE extracted
-        if (stderr) console.warn('[Import] tar output:', stderr.slice(0, 500));
-        resolve();
-      });
-    });
+		// Extract with tar — use spawn to handle non-zero exit from permission warnings
+		await new Promise<void>((resolve, reject) => {
+			const extract = spawn(
+				"tar",
+				[
+					"xzf",
+					tmpFile,
+					"-C",
+					tmpDir,
+					"--no-same-owner",
+					"--no-same-permissions",
+					"--warning=no-timestamp",
+				],
+				{ stdio: ["ignore", "pipe", "pipe"] },
+			);
+			let stderr = "";
+			extract.stderr.on("data", (d: Buffer) => {
+				stderr += d.toString();
+			});
+			extract.on("error", reject);
+			extract.on("close", () => {
+				// Always resolve — permission warnings cause exit 2 but files ARE extracted
+				if (stderr) console.warn("[Import] tar output:", stderr.slice(0, 500));
+				resolve();
+			});
+		});
 
-    // Remove the temp tar file
-    await rm(tmpFile);
+		// Remove the temp tar file
+		await rm(tmpFile);
 
-    // Strict allowlist — only import known safe directories/files.
-    // Never import auth.json, config.json, sessions, .env, or unknown entries.
-    const IMPORT_ALLOWLIST = new Set(['memory', 'rules', 'skills', 'preferences.md', 'ecc', 'agents', 'daily']);
+		// Strict allowlist — only import known safe directories/files.
+		// Never import auth.json, config.json, sessions, .env, or unknown entries.
+		const IMPORT_ALLOWLIST = new Set([
+			"memory",
+			"rules",
+			"skills",
+			"preferences.md",
+			"ecc",
+			"agents",
+			"daily",
+		]);
 
-    let imported = 0;
-    for (const entry of await readdir(tmpDir)) {
-      if (!IMPORT_ALLOWLIST.has(entry)) continue; // skip anything not in allowlist
+		let imported = 0;
+		for (const entry of await readdir(tmpDir)) {
+			if (!IMPORT_ALLOWLIST.has(entry)) continue; // skip anything not in allowlist
 
-      const src = join(tmpDir, entry);
-      const dest = join(AGENT_DATA_DIR, entry);
+			const src = join(tmpDir, entry);
+			const dest = join(AGENT_DATA_DIR, entry);
 
-      // Remove existing and replace
-      if (existsSync(dest)) {
-        await rm(dest, { recursive: true, force: true });
-      }
-      await execFileAsync('cp', ['-a', src, dest], { timeout: 10_000 });
-      imported++;
-    }
+			// Remove existing and replace
+			if (existsSync(dest)) {
+				await rm(dest, { recursive: true, force: true });
+			}
+			await execFileAsync("cp", ["-a", src, dest], { timeout: 10_000 });
+			imported++;
+		}
 
-    // Cleanup temp dir
-    await rm(tmpDir, { recursive: true, force: true });
+		// Cleanup temp dir
+		await rm(tmpDir, { recursive: true, force: true });
 
-    res.json({ success: true, imported, message: `Imported ${imported} items` });
-  } catch (err) {
-    // Cleanup on error
-    try { await rm(tmpDir, { recursive: true, force: true }); } catch { /* ignore */ }
-    console.error('[Import] Failed:', (err as Error).message);
-    res.status(500).json({ error: 'Import failed: ' + (err as Error).message });
-  }
+		res.json({
+			success: true,
+			imported,
+			message: `Imported ${imported} items`,
+		});
+	} catch (err) {
+		// Cleanup on error
+		try {
+			await rm(tmpDir, { recursive: true, force: true });
+		} catch {
+			/* ignore */
+		}
+		console.error("[Import] Failed:", (err as Error).message);
+		res.status(500).json({ error: "Import failed: " + (err as Error).message });
+	}
+});
+
+// ── Integration Account Info ──
+// Verifies a token and returns account details for display in the UI.
+
+const ACCOUNT_CHECKERS: Record<
+	string,
+	(
+		token: string,
+	) => Promise<{ username?: string; email?: string; team?: string }>
+> = {
+	VERCEL_TOKEN: async (token) => {
+		const res = await fetch("https://api.vercel.com/v2/user", {
+			headers: { Authorization: `Bearer ${token}` },
+			signal: AbortSignal.timeout(8000),
+		});
+		if (!res.ok) return {};
+		const data = (await res.json()) as {
+			user?: { username?: string; email?: string; name?: string };
+		};
+		return {
+			username: data.user?.username,
+			email: data.user?.email,
+			team: data.user?.name,
+		};
+	},
+	SUPABASE_ACCESS_TOKEN: async (token) => {
+		const res = await fetch("https://api.supabase.com/v1/projects", {
+			headers: { Authorization: `Bearer ${token}` },
+			signal: AbortSignal.timeout(8000),
+		});
+		if (!res.ok) return {};
+		const projects = (await res.json()) as Array<{ name: string }>;
+		return {
+			username: `${projects.length} project${projects.length !== 1 ? "s" : ""}`,
+		};
+	},
+	STRIPE_API_KEY: async (token) => {
+		const res = await fetch("https://api.stripe.com/v1/account", {
+			headers: { Authorization: `Bearer ${token}` },
+			signal: AbortSignal.timeout(8000),
+		});
+		if (!res.ok) return {};
+		const data = (await res.json()) as {
+			settings?: { dashboard?: { display_name?: string } };
+			email?: string;
+		};
+		return {
+			username: data.settings?.dashboard?.display_name,
+			email: data.email,
+		};
+	},
+};
+
+router.get("/integration/:envKey/account", (req, res) => {
+	const { envKey } = req.params;
+	const checker = ACCOUNT_CHECKERS[envKey];
+	if (!checker) {
+		res.json({
+			connected: false,
+			error: "No account checker for this service",
+		});
+		return;
+	}
+	const vars = parseEnvFile();
+	const token = vars.find((v) => v.key === envKey)?.value;
+	if (!token) {
+		res.json({ connected: false });
+		return;
+	}
+	checker(token)
+		.then((info) => res.json({ connected: true, ...info }))
+		.catch(() =>
+			res.json({ connected: false, error: "Failed to verify token" }),
+		);
 });
 
 export default router;

@@ -66,8 +66,8 @@
 		},
 		"vercel": {
 			"command": "npx",
-			"args": ["-y", "vercel-mcp-server"],
-			"env": { "VERCEL_TOKEN": "" },
+			"args": ["-y", "vercel-mcp@latest"],
+			"env": { "VERCEL_API_KEY": "" },
 			"description": "Vercel deployments and projects"
 		},
 		"railway": {
@@ -91,7 +91,11 @@
 		"confluence": {
 			"command": "npx",
 			"args": ["-y", "confluence-mcp-server"],
-			"env": { "CONFLUENCE_BASE_URL": "", "CONFLUENCE_EMAIL": "", "CONFLUENCE_API_TOKEN": "" },
+			"env": {
+				"CONFLUENCE_BASE_URL": "",
+				"CONFLUENCE_EMAIL": "",
+				"CONFLUENCE_API_TOKEN": ""
+			},
 			"description": "Confluence Cloud integration"
 		},
 		"stripe": {

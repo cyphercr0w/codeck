@@ -85,7 +85,7 @@ const INTEGRATIONS: IntegrationDef[] = [
 		icon: () => <IconVercel size={22} />,
 		available: true,
 		tokenBased: true,
-		tokenEnvKey: "VERCEL_TOKEN",
+		tokenEnvKey: "VERCEL_API_KEY",
 		tokenUrl: "https://vercel.com/account/tokens",
 		tokenHint: "Generate a token at vercel.com → Account → Tokens",
 		mcpServerName: "vercel",

@@ -27,7 +27,7 @@ if (!userMessage || userMessage.length < 5) process.exit(0);
 // ── Connected Integrations ──
 // Check which integration tokens are in the environment and inject their instructions
 const INTEGRATION_ENV_MAP = {
-  vercel: { env: 'VERCEL_TOKEN', keywords: /vercel|deploy|domain|preview/ },
+  vercel: { env: 'VERCEL_API_KEY', keywords: /vercel|deploy|domain|preview/ },
   github: { env: 'GH_TOKEN', keywords: /github|repo|pr|pull request|issue|clone/ },
   supabase: { env: 'SUPABASE_ACCESS_TOKEN', keywords: /supabase|database|db|migration|edge function|storage/ },
   stripe: { env: 'STRIPE_SECRET_KEY', keywords: /stripe|payment|subscription|invoice|charge/ },

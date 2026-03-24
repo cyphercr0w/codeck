@@ -856,13 +856,26 @@ export function readSavedSessions(): Array<{
 		`[Console] Found ${state.sessions.length} saved sessions (deferred — waiting for user action)`,
 	);
 
-	return state.sessions.map((s) => ({
+	const result = state.sessions.map((s) => ({
 		id: s.id,
 		type: s.type || "agent",
 		cwd: s.cwd,
 		name: s.name || s.cwd.split("/").pop() || "session",
 		conversationId: s.conversationId,
 	}));
+
+	// Rename to .bak so it doesn't re-trigger on next restart
+	try {
+		renameSync(SESSIONS_STATE_PATH, SESSIONS_STATE_PATH + ".bak");
+	} catch {
+		try {
+			unlinkSync(SESSIONS_STATE_PATH);
+		} catch {
+			/* ignore */
+		}
+	}
+
+	return result;
 }
 
 /**

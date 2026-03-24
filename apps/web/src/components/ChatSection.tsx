@@ -47,11 +47,13 @@ function ConversationSidebar({
 			}).catch(() => {});
 		}
 		clearChat();
+		onToggle(); // collapse sidebar after action
 	}
 
 	function handleSelect(id: string) {
 		if (id === activeId) return;
 		loadConversation(id, apiFetch);
+		onToggle(); // collapse sidebar after selecting
 	}
 
 	function handleDoubleClick(id: string, currentName: string) {
@@ -176,7 +178,16 @@ function ConversationSidebar({
 							onClick={(e) => handleDelete(e, c.id)}
 							title="Delete conversation"
 						>
-							✕
+							<svg
+								width="12"
+								height="12"
+								viewBox="0 0 24 24"
+								fill="none"
+								stroke="currentColor"
+								stroke-width="2"
+							>
+								<path d="M3 6h18M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2m3 0v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6h14" />
+							</svg>
 						</button>
 					</div>
 				))}

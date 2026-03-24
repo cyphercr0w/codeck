@@ -230,6 +230,20 @@ export function updateStateFromServer(data: Record<string, any>): void {
 	if (data.pendingRestore === true) {
 		restoringPending.value = true;
 	}
+	// If savedSessions included in status (deferred restore), populate pending list directly
+	if (Array.isArray(data.savedSessions) && data.savedSessions.length > 0) {
+		pendingRestoredSessions.value = data.savedSessions
+			.filter(
+				(s: any) => typeof s.cwd === "string" && typeof s.name === "string",
+			)
+			.map((s: any) => ({
+				id: s.id || crypto.randomUUID(),
+				type: (s.type as "agent" | "shell") || "agent",
+				cwd: s.cwd,
+				name: s.name,
+			}));
+		restoringPending.value = false;
+	}
 	if (data.sessions) {
 		setSessions(
 			data.sessions.map((s: any) => ({

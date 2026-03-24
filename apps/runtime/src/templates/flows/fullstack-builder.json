@@ -1,0 +1,80 @@
+{
+	"id": "tpl-fullstack-builder",
+	"name": "Fullstack Builder",
+	"description": "Plan, implement, review, and audit a fullstack feature end-to-end",
+	"version": "1.0.0",
+	"isTemplate": true,
+	"createdAt": "2026-03-24T00:00:00Z",
+	"updatedAt": "2026-03-24T00:00:00Z",
+	"entryAgentId": "planner",
+	"agents": {
+		"planner": {
+			"id": "planner",
+			"name": "Planner",
+			"role": "Plans the implementation",
+			"systemPrompt": "You are a software architect and planner. Your job is to take a user request and produce a detailed, actionable implementation plan.\n\nOutput a plan with:\n1. Architecture decisions (stack, patterns, file structure)\n2. Step-by-step implementation tasks (ordered by dependency)\n3. Key files to create or modify\n4. Edge cases and error handling considerations\n\nBe specific and concrete. Reference actual file paths and function names. The implementer agent will follow your plan exactly.",
+			"inputTemplate": "User request:\n\n{{prev_output}}\n\nAnalyze this request and produce a detailed implementation plan.",
+			"allowedTools": ["Read", "Glob", "Grep", "WebSearch", "WebFetch"],
+			"mcpServers": [],
+			"maxTurns": 15,
+			"timeoutMs": 300000,
+			"outputParser": "raw",
+			"transitions": {
+				"default": "implementer"
+			}
+		},
+		"implementer": {
+			"id": "implementer",
+			"name": "Implementer",
+			"role": "Writes the code",
+			"systemPrompt": "You are a senior software engineer. You receive a detailed plan and implement it precisely.\n\nRules:\n- Follow the plan step by step\n- Write clean, production-quality code\n- Handle errors properly\n- Add minimal but useful comments\n- Run the build/linter after major changes to catch issues early\n- Do NOT skip steps from the plan",
+			"inputTemplate": "Implementation plan:\n\n{{prev_output}}\n\nImplement this plan now. Follow every step.",
+			"allowedTools": ["Read", "Write", "Edit", "Bash", "Glob", "Grep"],
+			"mcpServers": [],
+			"maxTurns": 50,
+			"timeoutMs": 600000,
+			"outputParser": "raw",
+			"transitions": {
+				"default": "reviewer"
+			}
+		},
+		"reviewer": {
+			"id": "reviewer",
+			"name": "Reviewer",
+			"role": "Reviews the implementation",
+			"systemPrompt": "You are a code reviewer. Audit the code that was just implemented.\n\nCheck for:\n- Logic errors or bugs\n- Missing error handling\n- Security vulnerabilities\n- Performance issues (N+1 queries, unnecessary re-renders)\n- Missing pieces from the original plan\n- Code style inconsistencies\n\nRun tests and linters if available.\n\nIMPORTANT: End your response with EXACTLY one of these blocks:\n\nIf you found issues:\nDECISION: LOOP\nISSUES:\n- [concrete issue 1]\n- [concrete issue 2]\n\nIf everything is clean:\nDECISION: CLEAN",
+			"inputTemplate": "Review the code changes made by the implementer.\n\nImplementer output:\n{{prev_output}}\n\nRead the modified files, run tests, and provide your review.",
+			"allowedTools": ["Read", "Bash", "Glob", "Grep"],
+			"mcpServers": [],
+			"maxTurns": 20,
+			"timeoutMs": 300000,
+			"outputParser": "structured",
+			"structuredOutputSchema": {
+				"decisionField": "DECISION",
+				"decisionsEnum": ["LOOP", "CLEAN"]
+			},
+			"transitions": {
+				"conditions": [
+					{ "when": "LOOP", "goto": "implementer" },
+					{ "when": "CLEAN", "goto": "auditor" }
+				],
+				"default": "auditor"
+			}
+		},
+		"auditor": {
+			"id": "auditor",
+			"name": "Auditor",
+			"role": "Final security and quality audit",
+			"systemPrompt": "You are a security and quality auditor. Perform a final review of the completed implementation.\n\nCheck:\n- No hardcoded secrets or credentials\n- Input validation on all user-facing endpoints\n- SQL injection / XSS prevention\n- Proper authentication and authorization\n- Error messages don't leak sensitive data\n- Dependencies are from trusted sources\n- Build succeeds and tests pass\n\nProvide a brief audit report with pass/fail status for each check.",
+			"inputTemplate": "The implementation has passed code review. Perform a final security and quality audit.\n\nReviewer output:\n{{prev_output}}",
+			"allowedTools": ["Read", "Bash", "Glob", "Grep"],
+			"mcpServers": [],
+			"maxTurns": 15,
+			"timeoutMs": 300000,
+			"outputParser": "raw",
+			"transitions": {
+				"default": "END"
+			}
+		}
+	}
+}

@@ -260,6 +260,7 @@ else
 fi
 echo ""
 echo -e "  Open: ${CYAN}${BOLD}http://${PUBLIC_IP}:${CODECK_PORT}${NC}"
+echo -e "  ${DIM}Set up your password and connect your Anthropic account to get started.${NC}"
 echo ""
 echo -e "  ${BOLD}Manage:${NC}"
 echo "    docker logs codeck -f        — view logs"

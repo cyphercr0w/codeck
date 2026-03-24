@@ -1,6 +1,4 @@
 #!/usr/bin/env bash
-set -euo pipefail
-
 # ═══════════════════════════════════════════════════════════════════════
 # Codeck Installer & Updater
 #
@@ -8,8 +6,8 @@ set -euo pipefail
 # Config is stored as Docker container labels — no host-side state files.
 #
 # Usage:
-#   curl -fsSL https://codeck.xyz/install -o /tmp/codeck.sh && bash /tmp/codeck.sh
-#   CODECK_PORT=3000 bash /tmp/codeck.sh   # non-interactive via env vars
+#   curl -fsSL https://codeck.xyz/install | bash
+#   CODECK_PORT=3000 curl -fsSL https://codeck.xyz/install | bash  # non-interactive
 #
 # Environment overrides (skip prompts):
 #   CODECK_PORT     — host port (default: 8080)
@@ -18,6 +16,11 @@ set -euo pipefail
 #   CODECK_IMAGE    — Docker image (default: ghcr.io/cyphercr0w/codeck:latest)
 #   CODECK_NAME     — container name (default: codeck)
 # ═══════════════════════════════════════════════════════════════════════
+
+# Wrapped in main() so `curl | bash` downloads the entire script before executing.
+# Without this, bash reads line-by-line from the pipe and can fail on slow connections.
+main() {
+set -euo pipefail
 
 VERSION="1.0.0"
 DEFAULT_IMAGE="ghcr.io/cyphercr0w/codeck:latest"
@@ -290,3 +293,5 @@ echo "    GitHub:     codeck-gh"
 echo ""
 echo -e "  ${DIM}Installer v${VERSION}${NC}"
 echo ""
+}
+main "$@"

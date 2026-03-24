@@ -250,8 +250,12 @@ function runAgent(
 		const child = spawn(binary, spawnArgs, {
 			cwd,
 			env: finalEnv,
-			stdio: ["ignore", "pipe", "pipe"],
+			stdio: ["pipe", "pipe", "pipe"],
 		});
+
+		// Close stdin immediately — stream-json needs stdin open briefly then closed
+		// to avoid the "no stdin data" warning that blocks output
+		child.stdin?.end();
 
 		// Register running process for cancellation
 		runningProcesses.set(executionId, child);

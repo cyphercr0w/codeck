@@ -87,7 +87,17 @@ function ConversationSidebar({
 					onClick={onToggle}
 					title="Show conversations"
 				>
-					☰
+					<svg
+						width="16"
+						height="16"
+						viewBox="0 0 24 24"
+						fill="none"
+						stroke="currentColor"
+						stroke-width="2"
+					>
+						<rect x="3" y="3" width="18" height="18" rx="2" />
+						<line x1="9" y1="3" x2="9" y2="21" />
+					</svg>
 				</button>
 			</div>
 		);
@@ -104,7 +114,17 @@ function ConversationSidebar({
 					onClick={onToggle}
 					title="Hide conversations"
 				>
-					✕
+					<svg
+						width="16"
+						height="16"
+						viewBox="0 0 24 24"
+						fill="none"
+						stroke="currentColor"
+						stroke-width="2"
+					>
+						<rect x="3" y="3" width="18" height="18" rx="2" />
+						<line x1="9" y1="3" x2="9" y2="21" />
+					</svg>
 				</button>
 			</div>
 			<div class="chat-sidebar-list">
@@ -159,9 +179,9 @@ export function ChatSection() {
 	useEffect(() => {
 		fetchConversations(apiFetch);
 		// If we had an active conversation but messages are gone (navigated away and back),
-		// reload from server
+		// reload from server — but NOT if actively streaming (messages live in memory)
 		const convId = activeConversationId.value;
-		if (convId && chatMessages.value.length === 0) {
+		if (convId && chatMessages.value.length === 0 && !chatStreaming.value) {
 			loadConversation(convId, apiFetch);
 		}
 	}, []);
@@ -193,8 +213,12 @@ export function ChatSection() {
 			if (data.chatId) {
 				addAssistantMessage(data.chatId);
 			}
+			// Set the active conversation ID so subsequent messages go to the same conversation
+			if (data.conversationId) {
+				activeConversationId.value = data.conversationId;
+			}
 			// After first message in a new conversation, refresh the list
-			if (isNewConversation) {
+			if (isNewConversation && data.conversationId) {
 				fetchConversations(apiFetch);
 			}
 		} catch {

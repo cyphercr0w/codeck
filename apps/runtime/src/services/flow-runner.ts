@@ -237,7 +237,8 @@ function runAgent(
 
 		// Build spawn arguments — use stream-json for real-time output
 		// --verbose is required for stream-json to work with --print
-		// --permission-mode bypassPermissions avoids interactive prompts
+		// --verbose is required for stream-json to work with --print
+		// acceptEdits auto-approves file edits (bypassPermissions blocked under root)
 		const spawnArgs: string[] = [
 			"-p",
 			prompt,
@@ -246,7 +247,7 @@ function runAgent(
 			"--verbose",
 			"--no-session-persistence",
 			"--permission-mode",
-			"bypassPermissions",
+			"acceptEdits",
 		];
 
 		// Pass allowed tools if configured

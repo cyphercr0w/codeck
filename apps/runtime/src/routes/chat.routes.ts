@@ -28,10 +28,16 @@ router.post("/message", (req, res) => {
 		return;
 	}
 
+	// Validate context if provided
+	const safeContext =
+		typeof context === "string" && context.length <= 50000 ? context : "";
+
 	const chatId = randomUUID();
 
 	// Build prompt — include context if provided
-	const prompt = context ? `${context}\n\nUser message: ${message}` : message;
+	const prompt = safeContext
+		? `${safeContext}\n\nUser message: ${message}`
+		: message;
 
 	const binary = getValidAgentBinary();
 	const env = { ...buildCleanEnv(), ...getOAuthEnv(), TERM: "dumb" };

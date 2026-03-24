@@ -49,10 +49,18 @@ export function appendToAssistant(chatId: string, chunk: string): void {
 	);
 }
 
-export function completeAssistant(chatId: string): void {
-	chatMessages.value = chatMessages.value.map((m) =>
-		m.chatId === chatId ? { ...m, streaming: false } : m,
-	);
+export function completeAssistant(chatId: string, exitCode = 0): void {
+	chatMessages.value = chatMessages.value.map((m) => {
+		if (m.chatId !== chatId) return m;
+		if (exitCode !== 0 && !m.content) {
+			return {
+				...m,
+				content: "Something went wrong. Please try again.",
+				streaming: false,
+			};
+		}
+		return { ...m, streaming: false };
+	});
 	chatStreaming.value = false;
 	activeChatId.value = null;
 }

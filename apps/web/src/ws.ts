@@ -19,6 +19,7 @@ import {
 	fetchRecentConversations,
 	pendingRestoredSessions,
 } from "./state/store";
+import { appendToAssistant, completeAssistant } from "./state/chat-store";
 import { apiFetch, getAuthToken } from "./api";
 
 // Known WebSocket message types — reject anything not in this set
@@ -396,17 +397,16 @@ function openWs(wsUrl: string, protocols?: string[]): void {
 					}
 				}
 			} else if (msg.type === "chat:response:chunk" && msg.data) {
-				const { chatId, chunk } = msg.data as { chatId: string; chunk: string };
-				if (chatId && chunk) {
-					import("./state/chat-store").then(({ appendToAssistant }) =>
-						appendToAssistant(chatId, chunk),
-					);
+				const d = msg.data as Record<string, unknown>;
+				if (typeof d.chatId === "string" && typeof d.chunk === "string") {
+					appendToAssistant(d.chatId, d.chunk);
 				}
 			} else if (msg.type === "chat:response:complete" && msg.data) {
-				const { chatId } = msg.data as { chatId: string };
-				if (chatId) {
-					import("./state/chat-store").then(({ completeAssistant }) =>
-						completeAssistant(chatId),
+				const d = msg.data as Record<string, unknown>;
+				if (typeof d.chatId === "string") {
+					completeAssistant(
+						d.chatId,
+						typeof d.exitCode === "number" ? d.exitCode : 0,
 					);
 				}
 			}

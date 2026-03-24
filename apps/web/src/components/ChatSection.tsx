@@ -2,12 +2,12 @@ import { useState, useRef, useEffect } from "preact/hooks";
 import {
 	chatMessages,
 	chatStreaming,
+	activeChatId,
 	addUserMessage,
 	addAssistantMessage,
-	appendToAssistant,
-	completeAssistant,
 	clearChat,
 } from "../state/chat-store";
+import { showToast } from "../state/store";
 import { apiFetch } from "../api";
 
 export function ChatSection() {
@@ -43,7 +43,7 @@ export function ChatSection() {
 				addAssistantMessage(data.chatId);
 			}
 		} catch {
-			// Error handled by toast system
+			showToast("Failed to send message. Please try again.", "error");
 		}
 	}
 
@@ -125,7 +125,18 @@ export function ChatSection() {
 		<div class="chat-section">
 			<div class="chat-header">
 				<span class="chat-header-title">Chat</span>
-				<button class="chat-new-btn" onClick={clearChat}>
+				<button
+					class="chat-new-btn"
+					onClick={() => {
+						if (activeChatId.value) {
+							apiFetch("/api/chat/cancel", {
+								method: "POST",
+								body: JSON.stringify({ chatId: activeChatId.value }),
+							}).catch(() => {});
+						}
+						clearChat();
+					}}
+				>
 					+ New Chat
 				</button>
 			</div>

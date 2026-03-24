@@ -573,7 +573,31 @@ function ExecutionViewer({
 						);
 					})}
 					{src && src.loopCount > 0 && (
-						<span class="exec-loop-badge">Loop {src.loopCount}</span>
+						<div class="exec-loop-indicator">
+							<svg
+								class="exec-loop-arrow"
+								viewBox="0 0 120 28"
+								width="120"
+								height="28"
+							>
+								<path
+									d="M100 2 C110 2, 115 10, 115 14 C115 18, 110 26, 100 26 L20 26 C10 26, 5 18, 5 14 L5 14"
+									stroke="var(--warning, #f59e0b)"
+									stroke-width="1.5"
+									fill="none"
+									stroke-dasharray="4 3"
+								/>
+								<path
+									d="M2 10 L5 14 L8 10"
+									stroke="var(--warning, #f59e0b)"
+									stroke-width="1.5"
+									fill="none"
+								/>
+							</svg>
+							<span class="exec-loop-badge">
+								{"\u21BB"} Loop {src.loopCount}
+							</span>
+						</div>
 					)}
 				</div>
 				{!isRunning && !isComplete && (

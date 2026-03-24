@@ -188,12 +188,11 @@ router.post("/message", (req, res) => {
 	// Chat mode uses Haiku 4.5 (fast, available via OAuth token)
 	const chatModel = "claude-haiku-4-5-20251001";
 
-	// ── API Direct mode (no tools, fast) ──
+	// ── API Direct mode (with web search tool) ──
 	if (!useTools) {
 		// Build messages array for the API
-		const apiMessages = conversation.messages
-			.slice(-11) // last 10 + current
-			.map((m: ChatMessage) => ({
+		const apiMessages: Array<{ role: string; content: any }> =
+			conversation.messages.slice(-11).map((m: ChatMessage) => ({
 				role: m.role as "user" | "assistant",
 				content: m.content,
 			}));
@@ -210,81 +209,233 @@ router.post("/message", (req, res) => {
 			status: "streaming",
 		});
 
-		// Stream via SSE from Anthropic API
-		(async () => {
-			try {
-				const apiRes = await fetch("https://api.anthropic.com/v1/messages", {
-					method: "POST",
-					headers: {
-						"Content-Type": "application/json",
-						"x-api-key": oauthToken,
-						"anthropic-version": "2023-06-01",
-					},
-					body: JSON.stringify({
-						model: chatModel,
-						max_tokens: 4096,
-						stream: true,
-						system:
-							"You are a helpful assistant inside Codeck, a cloud sandbox for coding. In this mode you can only answer questions and have conversations — you CANNOT read, create, edit, or delete files, run commands, or access the filesystem. If the user asks you to modify files, write code to disk, run tests, deploy, or perform any action that requires filesystem or terminal access, politely tell them: \"I can't modify files in chat mode. Toggle the 'Use tools' option in the input bar to enable file access.\" Be concise and helpful.",
-						messages: apiMessages,
-					}),
-					signal: AbortSignal.timeout(120000),
-				});
-
-				if (!apiRes.ok || !apiRes.body) {
-					let errDetail = `HTTP ${apiRes.status}`;
-					try {
-						const errBody = await apiRes.text();
-						const errJson = JSON.parse(errBody);
-						errDetail = errJson?.error?.message || errBody.slice(0, 200);
-					} catch {
-						/* use status code */
-					}
-					console.error(`[Chat] API error for ${chatId}: ${errDetail}`);
-					broadcast({
-						type: "chat:response:complete",
-						data: {
-							chatId,
-							fullResponse: "",
-							exitCode: 1,
-							error: errDetail,
-							conversationId: conversation.id,
+		// Tools available in chat mode
+		const chatTools = [
+			{
+				name: "web_search",
+				description:
+					"Search the web for current information. Use when the user asks about recent events, needs facts you're unsure about, or asks you to look something up.",
+				input_schema: {
+					type: "object" as const,
+					properties: {
+						query: {
+							type: "string",
+							description: "The search query",
 						},
+					},
+					required: ["query"],
+				},
+			},
+		];
+
+		const systemPrompt =
+			"You are a helpful assistant inside Codeck, a cloud sandbox for coding. You can search the web to answer questions with current information. If the user asks you to modify files, write code to disk, run tests, deploy, or perform any action that requires filesystem or terminal access, politely tell them: \"Toggle the 'Agent' mode in the input bar to enable file access.\" Be concise and helpful.";
+
+		// Agentic loop: call API, handle tool_use, send results back
+		(async () => {
+			let fullResponse = "";
+			let loopMessages = [...apiMessages];
+			const MAX_TOOL_ROUNDS = 3;
+
+			try {
+				for (let round = 0; round <= MAX_TOOL_ROUNDS; round++) {
+					const useStream = true;
+					const apiRes = await fetch("https://api.anthropic.com/v1/messages", {
+						method: "POST",
+						headers: {
+							"Content-Type": "application/json",
+							"x-api-key": oauthToken,
+							"anthropic-version": "2023-06-01",
+						},
+						body: JSON.stringify({
+							model: chatModel,
+							max_tokens: 4096,
+							stream: useStream,
+							system: systemPrompt,
+							tools: chatTools,
+							messages: loopMessages,
+						}),
+						signal: AbortSignal.timeout(120000),
 					});
-					return;
-				}
 
-				let fullResponse = "";
-				const reader = apiRes.body.getReader();
-				const decoder = new TextDecoder();
-				let buffer = "";
-
-				while (true) {
-					const { done, value } = await reader.read();
-					if (done) break;
-
-					buffer += decoder.decode(value, { stream: true });
-					const lines = buffer.split("\n");
-					buffer = lines.pop() || "";
-
-					for (const line of lines) {
-						if (!line.startsWith("data: ")) continue;
-						const data = line.slice(6);
-						if (data === "[DONE]") continue;
-
+					if (!apiRes.ok || !apiRes.body) {
+						let errDetail = `HTTP ${apiRes.status}`;
 						try {
-							const event = JSON.parse(data);
-							if (event.type === "content_block_delta" && event.delta?.text) {
-								fullResponse += event.delta.text;
-								broadcast({
-									type: "chat:response:chunk",
-									data: { chatId, chunk: event.delta.text },
-								});
-							}
+							const errBody = await apiRes.text();
+							const errJson = JSON.parse(errBody);
+							errDetail = errJson?.error?.message || errBody.slice(0, 200);
 						} catch {
-							/* skip unparseable */
+							/* use status code */
+						}
+						console.error(`[Chat] API error for ${chatId}: ${errDetail}`);
+						broadcast({
+							type: "chat:response:complete",
+							data: {
+								chatId,
+								fullResponse: "",
+								exitCode: 1,
+								error: errDetail,
+								conversationId: conversation.id,
+							},
+						});
+						return;
+					}
+
+					// Parse SSE stream — collect text and tool_use blocks
+					const reader = apiRes.body.getReader();
+					const decoder = new TextDecoder();
+					let sseBuffer = "";
+					let roundText = "";
+					const toolUseBlocks: Array<{
+						id: string;
+						name: string;
+						input: any;
+					}> = [];
+					let currentToolId = "";
+					let currentToolName = "";
+					let currentToolInput = "";
+
+					while (true) {
+						const { done, value } = await reader.read();
+						if (done) break;
+
+						sseBuffer += decoder.decode(value, { stream: true });
+						const lines = sseBuffer.split("\n");
+						sseBuffer = lines.pop() || "";
+
+						for (const line of lines) {
+							if (!line.startsWith("data: ")) continue;
+							const jsonStr = line.slice(6);
+							if (jsonStr === "[DONE]") continue;
+
+							try {
+								const event = JSON.parse(jsonStr);
+								if (
+									event.type === "content_block_delta" &&
+									event.delta?.type === "text_delta" &&
+									event.delta?.text
+								) {
+									roundText += event.delta.text;
+									fullResponse += event.delta.text;
+									broadcast({
+										type: "chat:response:chunk",
+										data: {
+											chatId,
+											chunk: event.delta.text,
+										},
+									});
+								} else if (
+									event.type === "content_block_start" &&
+									event.content_block?.type === "tool_use"
+								) {
+									currentToolId = event.content_block.id || "";
+									currentToolName = event.content_block.name || "";
+									currentToolInput = "";
+								} else if (
+									event.type === "content_block_delta" &&
+									event.delta?.type === "input_json_delta" &&
+									event.delta?.partial_json
+								) {
+									currentToolInput += event.delta.partial_json;
+								} else if (
+									event.type === "content_block_stop" &&
+									currentToolId
+								) {
+									let parsedInput = {};
+									try {
+										parsedInput = JSON.parse(currentToolInput);
+									} catch {
+										/* best effort */
+									}
+									toolUseBlocks.push({
+										id: currentToolId,
+										name: currentToolName,
+										input: parsedInput,
+									});
+									currentToolId = "";
+									currentToolName = "";
+									currentToolInput = "";
+								}
+							} catch {
+								/* skip unparseable */
+							}
 						}
 					}
+
+					// If no tool_use, we're done
+					if (toolUseBlocks.length === 0) break;
+
+					// Execute tools and prepare tool_result messages
+					const assistantContent: any[] = [];
+					if (roundText)
+						assistantContent.push({
+							type: "text",
+							text: roundText,
+						});
+					for (const tu of toolUseBlocks) {
+						assistantContent.push({
+							type: "tool_use",
+							id: tu.id,
+							name: tu.name,
+							input: tu.input,
+						});
+					}
+
+					loopMessages.push({
+						role: "assistant",
+						content: assistantContent,
+					});
+
+					const toolResults: any[] = [];
+					for (const tu of toolUseBlocks) {
+						let result = "";
+						if (tu.name === "web_search" && tu.input?.query) {
+							// Execute web search via Brave API or fallback
+							try {
+								broadcast({
+									type: "chat:response:chunk",
+									data: {
+										chatId,
+										chunk: `\n\n🔍 Searching: ${tu.input.query}...\n\n`,
+									},
+								});
+								fullResponse += `\n\n🔍 Searching: ${tu.input.query}...\n\n`;
+								const searchRes = await fetch(
+									`https://html.duckduckgo.com/html/?q=${encodeURIComponent(tu.input.query)}`,
+									{
+										headers: {
+											"User-Agent": "Codeck/1.0",
+										},
+										signal: AbortSignal.timeout(10000),
+									},
+								);
+								const html = await searchRes.text();
+								// Extract text snippets from DDG HTML results
+								const snippets = html
+									.match(/<a class="result__snippet"[^>]*>(.*?)<\/a>/gs)
+									?.map((s) => s.replace(/<[^>]*>/g, "").trim())
+									.slice(0, 5)
+									.join("\n\n");
+								result = snippets || "No results found for this query.";
+							} catch (e) {
+								result = `Search failed: ${(e as Error).message}`;
+							}
+						} else {
+							result = `Tool ${tu.name} is not available.`;
+						}
+						toolResults.push({
+							type: "tool_result",
+							tool_use_id: tu.id,
+							content: result,
+						});
+					}
+
+					loopMessages.push({
+						role: "user",
+						content: toolResults,
+					});
+
+					// Continue the loop — next round will process tool results
 				}
 
 				// Save to conversation

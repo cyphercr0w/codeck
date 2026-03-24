@@ -76,7 +76,9 @@ function ConversationSidebar({
 
 	function handleDelete(e: Event, id: string) {
 		e.stopPropagation();
-		deleteConversation(id, apiFetch);
+		if (confirm("Delete this conversation? This cannot be undone.")) {
+			deleteConversation(id, apiFetch);
+		}
 	}
 
 	if (collapsed) {
@@ -420,10 +422,15 @@ export function ChatSection() {
 
 // ── Helper: live elapsed timer ──
 function ElapsedTimer({ startedAt }: { startedAt?: number }) {
-	const [elapsed, setElapsed] = useState(0);
+	// Initialize with real elapsed time (not 0) to avoid flash on re-mount
+	const [elapsed, setElapsed] = useState(() =>
+		startedAt ? Math.floor((Date.now() - startedAt) / 1000) : 0,
+	);
 
 	useEffect(() => {
 		if (!startedAt) return;
+		// Set immediately to avoid 1s delay
+		setElapsed(Math.floor((Date.now() - startedAt) / 1000));
 		const interval = setInterval(() => {
 			setElapsed(Math.floor((Date.now() - startedAt) / 1000));
 		}, 1000);

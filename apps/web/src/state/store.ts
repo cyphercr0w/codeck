@@ -47,6 +47,7 @@ if (typeof window !== "undefined") {
 export type View = "loading" | "auth" | "setup" | "preset" | "main";
 export type Section =
 	| "home"
+	| "chat"
 	| "filesystem"
 	| "claude"
 	| "agents"

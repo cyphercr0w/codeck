@@ -57,6 +57,7 @@ import { AgentConfigSection } from "./components/AgentConfigSection";
 import { ToastContainer } from "./components/ToastContainer";
 
 import { AgentsSection } from "./components/AgentsSection";
+import { ChatSection } from "./components/ChatSection";
 import { SettingsSection } from "./components/SettingsSection";
 import { MobileMenu } from "./components/MobileMenu";
 import { IconBridge } from "./components/Icons";
@@ -712,6 +713,7 @@ export function App() {
 						{section === "home" && (
 							<HomeSection onRelogin={startLogin} onLogout={handleLogout} />
 						)}
+						{section === "chat" && <ChatSection />}
 						{section === "filesystem" && <FilesSection />}
 						{/* ClaudeSection is always mounted — never unmount it.
                 Unmounting destroys xterm instances (expensive WebGL teardown + init on remount,

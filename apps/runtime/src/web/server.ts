@@ -76,6 +76,7 @@ import skillsRoutes from "../routes/skills.routes.js";
 import mcpRoutes from "../routes/mcp.routes.js";
 import hooksRoutes from "../routes/hooks.routes.js";
 import flowsRoutes from "../routes/flows.routes.js";
+import chatRoutes from "../routes/chat.routes.js";
 import {
 	initProactiveAgents,
 	shutdownProactiveAgents,
@@ -570,6 +571,7 @@ export async function startWebServer(): Promise<void> {
 	app.use("/api/mcp-servers", mcpRoutes);
 	app.use("/api/hooks", hooksRoutes);
 	app.use("/api/flows", flowsRoutes);
+	app.use("/api/chat", chatRoutes);
 
 	// Account endpoint
 	app.get("/api/account", (_req, res) => {

@@ -1,0 +1,80 @@
+{
+	"id": "tpl-interviewer-to-build",
+	"name": "Prompt to Production",
+	"description": "Entrevista al usuario, planifica, implementa, revisa y audita — de idea a proyecto funcionando",
+	"version": "1.0.0",
+	"isTemplate": true,
+	"createdAt": "2026-03-24T00:00:00Z",
+	"updatedAt": "2026-03-24T00:00:00Z",
+	"entryAgentId": "planner",
+	"agents": {
+		"planner": {
+			"id": "planner",
+			"name": "Planner",
+			"role": "Creates the implementation plan from user requirements",
+			"systemPrompt": "You are a senior software architect. You receive a detailed project specification from a user interview.\n\nYour job:\n1. Analyze the requirements thoroughly\n2. Choose the right stack and architecture\n3. Design the file structure\n4. Break the implementation into ordered tasks\n5. Identify dependencies between tasks\n6. Note edge cases and potential issues\n\nOutput a structured plan in markdown with:\n- Stack decision (with justification)\n- File structure\n- Implementation steps (numbered, ordered by dependency)\n- Key design decisions\n- Testing strategy\n\nBe specific: name files, functions, routes. The implementer will follow your plan exactly.",
+			"inputTemplate": "Project specification from user interview:\n\n{{prev_output}}\n\nCreate a detailed implementation plan for this project.",
+			"allowedTools": ["Read", "Glob", "Grep", "WebSearch", "WebFetch"],
+			"mcpServers": [],
+			"maxTurns": 20,
+			"timeoutMs": 300000,
+			"outputParser": "raw",
+			"transitions": {
+				"default": "implementer"
+			}
+		},
+		"implementer": {
+			"id": "implementer",
+			"name": "Implementer",
+			"role": "Builds the project following the plan",
+			"systemPrompt": "You are a senior full-stack engineer. You receive an implementation plan and build the project.\n\nRules:\n- Follow the plan step by step — do NOT skip or reorder\n- Write clean, production-quality code\n- Handle errors properly at every level\n- Use the project's chosen stack and conventions\n- Run build/lint after major changes\n- Create all files specified in the plan\n- Install dependencies as needed\n- Do NOT add features not in the plan\n\nWhen done, summarize what you built and any deviations from the plan.",
+			"inputTemplate": "Implementation plan:\n\n{{prev_output}}\n\nBuild this project now. Follow every step in order.",
+			"allowedTools": ["Read", "Write", "Edit", "Bash", "Glob", "Grep"],
+			"mcpServers": [],
+			"maxTurns": 80,
+			"timeoutMs": 900000,
+			"outputParser": "raw",
+			"transitions": {
+				"default": "reviewer"
+			}
+		},
+		"reviewer": {
+			"id": "reviewer",
+			"name": "Reviewer",
+			"role": "Reviews implementation quality",
+			"systemPrompt": "You are a code reviewer. Audit the code that was just implemented.\n\nReview checklist:\n- Does the code match the original plan?\n- Are there logic errors or bugs?\n- Is error handling adequate?\n- Are there security vulnerabilities?\n- Do tests exist and pass?\n- Does the build succeed?\n- Are there performance issues?\n\nRun tests and linters. Read the actual files.\n\nIMPORTANT: End your response with EXACTLY one of these blocks:\n\nIf you found issues that MUST be fixed:\nDECISION: LOOP\nISSUES:\n- [concrete description of each issue]\n\nIf the code is production-ready:\nDECISION: CLEAN",
+			"inputTemplate": "Review the implementation:\n\n{{prev_output}}\n\nRead the project files, run tests, and provide your review.",
+			"allowedTools": ["Read", "Bash", "Glob", "Grep"],
+			"mcpServers": [],
+			"maxTurns": 25,
+			"timeoutMs": 300000,
+			"outputParser": "structured",
+			"structuredOutputSchema": {
+				"decisionField": "DECISION",
+				"decisionsEnum": ["LOOP", "CLEAN"]
+			},
+			"transitions": {
+				"conditions": [
+					{ "when": "LOOP", "goto": "implementer" },
+					{ "when": "CLEAN", "goto": "auditor" }
+				],
+				"default": "auditor"
+			}
+		},
+		"auditor": {
+			"id": "auditor",
+			"name": "Auditor",
+			"role": "Final security and quality gate",
+			"systemPrompt": "You are a security auditor. Perform the final review before the project ships.\n\nAudit checklist:\n- [ ] No hardcoded secrets or API keys\n- [ ] Input validation on all endpoints\n- [ ] SQL/NoSQL injection prevention\n- [ ] XSS prevention\n- [ ] Authentication/authorization implemented\n- [ ] Error messages don't leak internals\n- [ ] Dependencies are trusted and up-to-date\n- [ ] Build succeeds cleanly\n- [ ] Tests pass\n- [ ] README exists with setup instructions\n\nProvide a pass/fail report for each item.\nEnd with an overall verdict: PASS or FAIL.",
+			"inputTemplate": "The project has passed code review. Perform the final security and quality audit.\n\nReviewer output:\n{{prev_output}}",
+			"allowedTools": ["Read", "Bash", "Glob", "Grep"],
+			"mcpServers": [],
+			"maxTurns": 15,
+			"timeoutMs": 300000,
+			"outputParser": "raw",
+			"transitions": {
+				"default": "END"
+			}
+		}
+	}
+}

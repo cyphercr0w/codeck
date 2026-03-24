@@ -45,6 +45,8 @@ const KNOWN_MSG_TYPES = new Set([
 	"subagent:output",
 	"subagent:stop",
 	"session:conversationId",
+	"chat:response:chunk",
+	"chat:response:complete",
 ]);
 
 /** Runtime validation for incoming WebSocket messages */
@@ -392,6 +394,20 @@ function openWs(wsUrl: string, protocols?: string[]): void {
 						updated[idx] = { ...updated[idx], conversationId: convId };
 						sessions.value = updated;
 					}
+				}
+			} else if (msg.type === "chat:response:chunk" && msg.data) {
+				const { chatId, chunk } = msg.data as { chatId: string; chunk: string };
+				if (chatId && chunk) {
+					import("./state/chat-store").then(({ appendToAssistant }) =>
+						appendToAssistant(chatId, chunk),
+					);
+				}
+			} else if (msg.type === "chat:response:complete" && msg.data) {
+				const { chatId } = msg.data as { chatId: string };
+				if (chatId) {
+					import("./state/chat-store").then(({ completeAssistant }) =>
+						completeAssistant(chatId),
+					);
 				}
 			}
 		} catch (err) {

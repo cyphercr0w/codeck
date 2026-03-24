@@ -14,6 +14,7 @@ import {
 	renameConversation,
 	deleteConversation,
 	chatModel,
+	chatUseTools,
 } from "../state/chat-store";
 import { showToast } from "../state/store";
 import { apiFetch } from "../api";
@@ -228,6 +229,7 @@ export function ChatSection() {
 					message: text,
 					conversationId: activeConversationId.value,
 					model: chatModel.value,
+					useTools: chatUseTools.value,
 				}),
 			});
 			const data = await res.json();
@@ -292,6 +294,7 @@ export function ChatSection() {
 								onKeyDown={handleKeyDown}
 								rows={1}
 							/>
+							<ToolsToggle />
 							<ChatModelSelector />
 							<button
 								class="chat-send"
@@ -418,6 +421,7 @@ export function ChatSection() {
 						rows={1}
 						disabled={streaming}
 					/>
+					<ToolsToggle />
 					<ChatModelSelector />
 					<button
 						class="chat-send"
@@ -505,5 +509,35 @@ function ChatModelSelector() {
 				</div>
 			)}
 		</div>
+	);
+}
+
+// ── Helper: tools toggle ──
+function ToolsToggle() {
+	const active = chatUseTools.value;
+	return (
+		<button
+			class={`chat-tools-toggle${active ? " active" : ""}`}
+			onClick={() => {
+				chatUseTools.value = !chatUseTools.value;
+			}}
+			title={
+				active
+					? "Tools enabled — can modify files"
+					: "Chat only — toggle to enable file access"
+			}
+		>
+			<svg
+				width="14"
+				height="14"
+				viewBox="0 0 24 24"
+				fill="none"
+				stroke="currentColor"
+				stroke-width="2"
+			>
+				<path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z" />
+			</svg>
+			{active ? "Tools" : "Chat"}
+		</button>
 	);
 }

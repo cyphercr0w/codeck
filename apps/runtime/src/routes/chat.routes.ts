@@ -115,7 +115,7 @@ const activeChatProcesses = new Map<string, ChildProcess>();
 //   chat:response:complete { chatId, fullResponse }
 // Accepts optional conversationId to append to an existing conversation
 router.post("/message", (req, res) => {
-	const { message, context, conversationId, model } = req.body;
+	const { message, context, conversationId, model, useTools } = req.body;
 	if (!message || typeof message !== "string") {
 		res.status(400).json({ error: "message (string) is required" });
 		return;
@@ -179,16 +179,149 @@ router.post("/message", (req, res) => {
 	}
 	prompt += `User: ${message}`;
 
+	// Validate model (default to haiku for fast chat)
+	const MODEL_MAP: Record<string, string> = {
+		haiku: "claude-haiku-4-5-20251001",
+		sonnet: "claude-sonnet-4-6-20250514",
+		opus: "claude-opus-4-6-20250514",
+	};
+	const chatModel = MODEL_MAP[model] || MODEL_MAP.haiku;
+
+	// ── API Direct mode (no tools, fast) ──
+	if (!useTools) {
+		// Build messages array for the API
+		const apiMessages = conversation.messages
+			.slice(-11) // last 10 + current
+			.map((m: ChatMessage) => ({
+				role: m.role as "user" | "assistant",
+				content: m.content,
+			}));
+
+		const oauthToken = getOAuthEnv().CLAUDE_CODE_OAUTH_TOKEN;
+		if (!oauthToken) {
+			res.status(401).json({ error: "Not authenticated" });
+			return;
+		}
+
+		res.status(202).json({
+			chatId,
+			conversationId: conversation.id,
+			status: "streaming",
+		});
+
+		// Stream via SSE from Anthropic API
+		(async () => {
+			try {
+				const apiRes = await fetch("https://api.anthropic.com/v1/messages", {
+					method: "POST",
+					headers: {
+						"Content-Type": "application/json",
+						"x-api-key": oauthToken,
+						"anthropic-version": "2023-06-01",
+					},
+					body: JSON.stringify({
+						model: chatModel,
+						max_tokens: 4096,
+						stream: true,
+						system:
+							"You are a helpful assistant inside Codeck, a cloud sandbox for coding. In this mode you can only answer questions and have conversations — you CANNOT read, create, edit, or delete files, run commands, or access the filesystem. If the user asks you to modify files, write code to disk, run tests, deploy, or perform any action that requires filesystem or terminal access, politely tell them: \"I can't modify files in chat mode. Toggle the 'Use tools' option in the input bar to enable file access.\" Be concise and helpful.",
+						messages: apiMessages,
+					}),
+					signal: AbortSignal.timeout(120000),
+				});
+
+				if (!apiRes.ok || !apiRes.body) {
+					broadcast({
+						type: "chat:response:complete",
+						data: {
+							chatId,
+							fullResponse: "",
+							exitCode: 1,
+							conversationId: conversation.id,
+						},
+					});
+					return;
+				}
+
+				let fullResponse = "";
+				const reader = apiRes.body.getReader();
+				const decoder = new TextDecoder();
+				let buffer = "";
+
+				while (true) {
+					const { done, value } = await reader.read();
+					if (done) break;
+
+					buffer += decoder.decode(value, { stream: true });
+					const lines = buffer.split("\n");
+					buffer = lines.pop() || "";
+
+					for (const line of lines) {
+						if (!line.startsWith("data: ")) continue;
+						const data = line.slice(6);
+						if (data === "[DONE]") continue;
+
+						try {
+							const event = JSON.parse(data);
+							if (event.type === "content_block_delta" && event.delta?.text) {
+								fullResponse += event.delta.text;
+								broadcast({
+									type: "chat:response:chunk",
+									data: { chatId, chunk: event.delta.text },
+								});
+							}
+						} catch {
+							/* skip unparseable */
+						}
+					}
+				}
+
+				// Save to conversation
+				const freshConv = readConversation(conversation.id);
+				if (freshConv && fullResponse.trim()) {
+					freshConv.messages.push({
+						id: randomUUID(),
+						role: "assistant",
+						content: fullResponse,
+						timestamp: Date.now(),
+					});
+					freshConv.updatedAt = new Date().toISOString();
+					writeConversation(freshConv);
+				}
+
+				broadcast({
+					type: "chat:response:complete",
+					data: {
+						chatId,
+						fullResponse,
+						exitCode: 0,
+						conversationId: conversation.id,
+					},
+				});
+			} catch (err) {
+				console.error(
+					`[Chat] API error for ${chatId}:`,
+					(err as Error).message,
+				);
+				broadcast({
+					type: "chat:response:complete",
+					data: {
+						chatId,
+						fullResponse: "",
+						exitCode: 1,
+						conversationId: conversation.id,
+					},
+				});
+			}
+		})();
+
+		return;
+	}
+
+	// ── Agent mode (with tools, spawn CLI) ──
+	const cliModel = model || "haiku"; // CLI uses short names
 	const binary = getValidAgentBinary();
 	const env = { ...buildCleanEnv(), ...getOAuthEnv(), TERM: "dumb" };
-
-	// Validate model if provided (default to haiku for fast chat)
-	const VALID_CHAT_MODELS: Record<string, string> = {
-		haiku: "haiku",
-		sonnet: "sonnet",
-		opus: "opus",
-	};
-	const chatModel = VALID_CHAT_MODELS[model] || "haiku";
 
 	const child = spawn(
 		binary,
@@ -199,9 +332,9 @@ router.post("/message", (req, res) => {
 			"text",
 			"--no-session-persistence",
 			"--model",
-			chatModel,
+			cliModel,
 			"--allowedTools",
-			"Read,Glob,Grep,WebSearch,WebFetch",
+			"Read,Write,Edit,Bash,Glob,Grep,WebSearch,WebFetch",
 			"--max-turns",
 			"3",
 		],

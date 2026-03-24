@@ -6400,3 +6400,28 @@
 	font-size: 10px;
 	color: var(--text-muted);
 }
+
+/* ── Chat Tools Toggle ── */
+.chat-tools-toggle {
+	display: flex;
+	align-items: center;
+	gap: 4px;
+	background: none;
+	border: 1px solid var(--border);
+	color: var(--text-muted);
+	font-size: 11px;
+	cursor: pointer;
+	padding: 3px 8px;
+	border-radius: 12px;
+	flex-shrink: 0;
+	transition: all 0.15s;
+}
+.chat-tools-toggle:hover {
+	border-color: var(--text-muted);
+	color: var(--text-primary);
+}
+.chat-tools-toggle.active {
+	background: color-mix(in srgb, var(--accent) 15%, transparent);
+	border-color: var(--accent);
+	color: var(--accent);
+}

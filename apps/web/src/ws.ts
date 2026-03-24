@@ -1,27 +1,71 @@
-import { setWsConnected, updateStateFromServer, addLog, sessions, activeSessionId, addSession, setActiveSessionId, setActivePorts, setActiveSection, setRestoringPending, type LogEntry, removeSession, updateProactiveAgent, appendAgentOutput, setAgentRunning, claudeAuthenticated, setContextData, addSubagent, updateSubagentOutput, removeSubagent, syncSubagentsFromServer, fetchRecentConversations } from './state/store';
-import { apiFetch, getAuthToken } from './api';
+import {
+	setWsConnected,
+	updateStateFromServer,
+	addLog,
+	sessions,
+	setActivePorts,
+	setRestoringPending,
+	type LogEntry,
+	removeSession,
+	updateProactiveAgent,
+	appendAgentOutput,
+	setAgentRunning,
+	claudeAuthenticated,
+	setContextData,
+	addSubagent,
+	updateSubagentOutput,
+	removeSubagent,
+	syncSubagentsFromServer,
+	fetchRecentConversations,
+	pendingRestoredSessions,
+} from "./state/store";
+import { apiFetch, getAuthToken } from "./api";
 
 // Known WebSocket message types — reject anything not in this set
 const KNOWN_MSG_TYPES = new Set([
-  'heartbeat', 'status', 'log', 'logs', 'ports', 'sessions:restored',
-  'console:error', 'console:output', 'console:exit', 'console:freeze',
-  'console:context_loaded', 'context',
-  'agent:update', 'agent:output', 'agent:execution:start', 'agent:execution:complete',
-  'auth:expiring', 'auth:expired',
-  'subagent:start', 'subagent:output', 'subagent:stop',
+	"heartbeat",
+	"status",
+	"log",
+	"logs",
+	"ports",
+	"sessions:restored",
+	"console:error",
+	"console:output",
+	"console:exit",
+	"console:freeze",
+	"console:context_loaded",
+	"context",
+	"agent:update",
+	"agent:output",
+	"agent:execution:start",
+	"agent:execution:complete",
+	"auth:expiring",
+	"auth:expired",
+	"subagent:start",
+	"subagent:output",
+	"subagent:stop",
 ]);
 
 /** Runtime validation for incoming WebSocket messages */
-function isValidWsMessage(msg: unknown): msg is { type: string; [k: string]: unknown } {
-  return typeof msg === 'object' && msg !== null && typeof (msg as any).type === 'string'
-    && KNOWN_MSG_TYPES.has((msg as any).type);
+function isValidWsMessage(
+	msg: unknown,
+): msg is { type: string; [k: string]: unknown } {
+	return (
+		typeof msg === "object" &&
+		msg !== null &&
+		typeof (msg as any).type === "string" &&
+		KNOWN_MSG_TYPES.has((msg as any).type)
+	);
 }
 
 function isLogEntry(data: unknown): data is LogEntry {
-  return typeof data === 'object' && data !== null
-    && typeof (data as any).type === 'string'
-    && typeof (data as any).message === 'string'
-    && typeof (data as any).timestamp === 'number';
+	return (
+		typeof data === "object" &&
+		data !== null &&
+		typeof (data as any).type === "string" &&
+		typeof (data as any).message === "string" &&
+		typeof (data as any).timestamp === "number"
+	);
 }
 
 let ws: WebSocket | null = null;
@@ -56,26 +100,32 @@ const pendingInputs = new Map<string, object[]>();
 // Called after each session is re-attached on reconnect, so the
 // terminal layer can resync PTY dimensions for that session.
 let onSessionReattached: ((sessionId: string) => void) | null = null;
-export function setOnSessionReattached(handler: (sessionId: string) => void): void {
-  onSessionReattached = handler;
+export function setOnSessionReattached(
+	handler: (sessionId: string) => void,
+): void {
+	onSessionReattached = handler;
 }
 
 // Called before sessions:restored adds new sessions, so the terminal layer
 // can destroy stale terminals from a previous container lifecycle.
 let onBeforeSessionsRestored: (() => void) | null = null;
 export function setOnBeforeSessionsRestored(handler: () => void): void {
-  onBeforeSessionsRestored = handler;
+	onBeforeSessionsRestored = handler;
 }
 
 // Called when the server broadcasts context injection stats for a session
 export interface ContextLoadedData {
-  charsInjected: number;
-  projectName: string;
-  sources: string[];
+	charsInjected: number;
+	projectName: string;
+	sources: string[];
 }
-let onContextLoaded: ((sessionId: string, data: ContextLoadedData) => void) | null = null;
-export function setOnContextLoaded(handler: (sessionId: string, data: ContextLoadedData) => void): void {
-  onContextLoaded = handler;
+let onContextLoaded:
+	| ((sessionId: string, data: ContextLoadedData) => void)
+	| null = null;
+export function setOnContextLoaded(
+	handler: (sessionId: string, data: ContextLoadedData) => void,
+): void {
+	onContextLoaded = handler;
 }
 
 type OutputHandler = (sessionId: string, data: string) => void;
@@ -84,277 +134,339 @@ type ExitHandler = (sessionId: string) => void;
 let onOutput: OutputHandler | null = null;
 let onExit: ExitHandler | null = null;
 
-export function setTerminalHandlers(output: OutputHandler, exit: ExitHandler): void {
-  onOutput = output;
-  onExit = exit;
+export function setTerminalHandlers(
+	output: OutputHandler,
+	exit: ExitHandler,
+): void {
+	onOutput = output;
+	onExit = exit;
 }
 
 export function wsSend(msg: object): void {
-  const msgType = (msg as any).type;
-  if (ws && ws.readyState === WebSocket.OPEN) {
-    // Buffer console:input if this session hasn't been re-attached yet.
-    // Covers the pendingReattach window and the status→rAF gap (~16ms).
-    if (msgType === 'console:input') {
-      const sid = (msg as any).sessionId;
-      if (typeof sid === 'string' && !attachedSessions.has(sid)) {
-        const arr = pendingInputs.get(sid) ?? [];
-        if (!pendingInputs.has(sid)) pendingInputs.set(sid, arr);
-        if (arr.length < MAX_PENDING_INPUTS) arr.push(msg);
-        return;
-      }
-    }
-    ws.send(JSON.stringify(msg));
-  } else if (msgType === 'console:resize') {
-    // Buffer resize per session — replaces any previous buffered resize
-    const sessionId = (msg as any).sessionId;
-    if (typeof sessionId === 'string') {
-      pendingResizes.set(sessionId, msg);
-    }
-  } else if (msgType === 'console:input') {
-    // Buffer input so keystrokes typed during a brief disconnect aren't lost
-    const sid = (msg as any).sessionId;
-    if (typeof sid === 'string') {
-      const arr = pendingInputs.get(sid) ?? [];
-      if (arr.length < MAX_PENDING_INPUTS) {
-        if (!pendingInputs.has(sid)) pendingInputs.set(sid, arr);
-        arr.push(msg);
-      }
-    }
-  }
+	const msgType = (msg as any).type;
+	if (ws && ws.readyState === WebSocket.OPEN) {
+		// Buffer console:input if this session hasn't been re-attached yet.
+		// Covers the pendingReattach window and the status→rAF gap (~16ms).
+		if (msgType === "console:input") {
+			const sid = (msg as any).sessionId;
+			if (typeof sid === "string" && !attachedSessions.has(sid)) {
+				const arr = pendingInputs.get(sid) ?? [];
+				if (!pendingInputs.has(sid)) pendingInputs.set(sid, arr);
+				if (arr.length < MAX_PENDING_INPUTS) arr.push(msg);
+				return;
+			}
+		}
+		ws.send(JSON.stringify(msg));
+	} else if (msgType === "console:resize") {
+		// Buffer resize per session — replaces any previous buffered resize
+		const sessionId = (msg as any).sessionId;
+		if (typeof sessionId === "string") {
+			pendingResizes.set(sessionId, msg);
+		}
+	} else if (msgType === "console:input") {
+		// Buffer input so keystrokes typed during a brief disconnect aren't lost
+		const sid = (msg as any).sessionId;
+		if (typeof sid === "string") {
+			const arr = pendingInputs.get(sid) ?? [];
+			if (arr.length < MAX_PENDING_INPUTS) {
+				if (!pendingInputs.has(sid)) pendingInputs.set(sid, arr);
+				arr.push(msg);
+			}
+		}
+	}
 }
 
 /** Send console:attach only once per session per WS connection.
  *  After attaching, flushes any inputs buffered while the WS was down. */
 export function attachSession(sessionId: string): void {
-  if (attachedSessions.has(sessionId)) return;
-  attachedSessions.add(sessionId);
-  wsSend({ type: 'console:attach', sessionId });
+	if (attachedSessions.has(sessionId)) return;
+	attachedSessions.add(sessionId);
+	wsSend({ type: "console:attach", sessionId });
 
-  // Flush pending inputs immediately after attach — the server processes
-  // console:attach synchronously and registers the client before reading
-  // the next frame, so no artificial delay is needed.
-  const pending = pendingInputs.get(sessionId);
-  if (pending && pending.length > 0) {
-    pendingInputs.delete(sessionId);
-    for (const msg of pending) wsSend(msg);
-  }
+	// Flush pending inputs immediately after attach — the server processes
+	// console:attach synchronously and registers the client before reading
+	// the next frame, so no artificial delay is needed.
+	const pending = pendingInputs.get(sessionId);
+	if (pending && pending.length > 0) {
+		pendingInputs.delete(sessionId);
+		for (const msg of pending) wsSend(msg);
+	}
 }
 
 function openWs(wsUrl: string, protocols?: string[]): void {
-  ws = protocols ? new WebSocket(wsUrl, protocols) : new WebSocket(wsUrl);
+	ws = protocols ? new WebSocket(wsUrl, protocols) : new WebSocket(wsUrl);
 
-  ws.onopen = () => {
-    setWsConnected(true);
-    lastMessageAt = Date.now();
-    reconnectBackoff = 500;
-    reconnectAttempts = 0;
-    attachedSessions.clear();
-    pendingReattach = true;
-    addLog({ type: 'info', message: 'Connected to server', timestamp: Date.now() });
+	ws.onopen = () => {
+		setWsConnected(true);
+		lastMessageAt = Date.now();
+		reconnectBackoff = 500;
+		reconnectAttempts = 0;
+		attachedSessions.clear();
+		pendingReattach = true;
+		addLog({
+			type: "info",
+			message: "Connected to server",
+			timestamp: Date.now(),
+		});
 
-    // Flush all buffered resize messages
-    for (const msg of pendingResizes.values()) {
-      ws!.send(JSON.stringify(msg));
-    }
-    pendingResizes.clear();
-    // pendingInputs are flushed per-session inside attachSession()
+		// Flush all buffered resize messages
+		for (const msg of pendingResizes.values()) {
+			ws!.send(JSON.stringify(msg));
+		}
+		pendingResizes.clear();
+		// pendingInputs are flushed per-session inside attachSession()
 
-    // Stale connection detector
-    if (staleCheckTimer) clearInterval(staleCheckTimer);
-    staleCheckTimer = setInterval(() => {
-      if (ws && ws.readyState === WebSocket.OPEN && Date.now() - lastMessageAt > 45000) {
-        console.warn('[WS] Connection stale (no data in 45s), reconnecting');
-        ws.close();
-      }
-    }, 10000);
-  };
+		// Stale connection detector
+		if (staleCheckTimer) clearInterval(staleCheckTimer);
+		staleCheckTimer = setInterval(() => {
+			if (
+				ws &&
+				ws.readyState === WebSocket.OPEN &&
+				Date.now() - lastMessageAt > 45000
+			) {
+				console.warn("[WS] Connection stale (no data in 45s), reconnecting");
+				ws.close();
+			}
+		}, 10000);
+	};
 
-  ws.onmessage = (e) => {
-    lastMessageAt = Date.now();
-    try {
-      const raw = JSON.parse(e.data);
-      if (!isValidWsMessage(raw)) {
-        console.warn('[WS] Unknown or malformed message type:', raw?.type);
-        return;
-      }
-      const msg = raw as { type: string; data?: any; sessionId?: string };
-      if (msg.type === 'heartbeat') return;
-      if (msg.type === 'status') {
-        if (typeof msg.data !== 'object' || msg.data === null) return;
-        updateStateFromServer(msg.data);
-        // Only reattach terminals on the first status after a real WS reconnect
-        if (pendingReattach) {
-          pendingReattach = false;
-          sessions.value.forEach(s => {
-            onSessionReattached?.(s.id);
-          });
-          // Restore active subagents from server (may have been lost during disconnect)
-          apiFetch('/api/console/subagents')
-            .then(r => r.json())
-            .then(data => { if (data.agents) syncSubagentsFromServer(data.agents); })
-            .catch(() => { /* non-fatal */ });
-          // Pre-fetch recent conversations so New Tab opens instantly (force — server state may have changed)
-          fetchRecentConversations(apiFetch, true);
-        }
-        if (!msg.data.pendingRestore) {
-          setRestoringPending(false);
-        }
-      } else if (msg.type === 'log') {
-        if (!isLogEntry(msg.data)) return;
-        addLog(msg.data);
-      } else if (msg.type === 'logs') {
-        if (!Array.isArray(msg.data)) return;
-        msg.data.filter(isLogEntry).forEach(entry => addLog(entry));
-      } else if (msg.type === 'ports') {
-        if (!Array.isArray(msg.data)) return;
-        setActivePorts(msg.data);
-      } else if (msg.type === 'sessions:restored') {
-        if (!Array.isArray(msg.data)) return;
-        const restored = msg.data.filter(
-          (s: any) => typeof s.id === 'string' && typeof s.cwd === 'string' && typeof s.name === 'string'
-        );
-        // Clean up stale sessions from a previous container lifecycle.
-        // Without this, old terminal DOM elements cover the new ones → black screen.
-        onBeforeSessionsRestored?.();
-        const staleIds = sessions.value.map(s => s.id);
-        for (const id of staleIds) removeSession(id);
-        for (const s of restored) {
-          addSession({ id: s.id, type: s.type as 'agent' | 'shell', cwd: s.cwd, name: s.name, createdAt: Date.now() });
-        }
-        if (restored.length > 0) {
-          // Always set activeSessionId — after a container restart, the old
-          // activeSessionId points to a dead session. Force-update to the
-          // first restored session so the terminal gets properly mounted.
-          setActiveSessionId(restored[0].id);
-          setActiveSection('claude');
-        }
-        setRestoringPending(false);
-      } else if (msg.type === 'console:error') {
-        if (typeof msg.sessionId === 'string') {
-          removeSession(msg.sessionId);
-        }
-      } else if (msg.type === 'console:output') {
-        if (typeof msg.sessionId === 'string' && typeof msg.data === 'string') {
-          onOutput?.(msg.sessionId, msg.data);
-        }
-      } else if (msg.type === 'console:context_loaded') {
-        if (typeof msg.sessionId === 'string' && typeof msg.data === 'object' && msg.data !== null) {
-          onContextLoaded?.(msg.sessionId, msg.data as ContextLoadedData);
-        }
-      } else if (msg.type === 'console:freeze') {
-        // Server detected PTY freeze — log diagnostic info
-        if (typeof msg.sessionId === 'string') {
-          const raw = msg as Record<string, unknown>;
-          const dur = typeof raw.durationMs === 'number' ? Math.round(raw.durationMs / 1000) : '?';
-          const alive = raw.ptyAlive ? 'alive' : 'DEAD';
-          const lag = typeof raw.eventLoopLagMs === 'number' ? raw.eventLoopLagMs : '?';
-          addLog({ type: 'warn', message: `Terminal freeze: ${dur}s (PTY: ${alive}, event loop lag: ${lag}ms)`, timestamp: Date.now() });
-        }
-      } else if (msg.type === 'console:exit') {
-        if (typeof msg.sessionId === 'string') {
-          onExit?.(msg.sessionId);
-        }
-      } else if (msg.type === 'agent:update') {
-        if (typeof msg.data === 'object' && msg.data !== null && typeof msg.data.id === 'string') {
-          updateProactiveAgent(msg.data);
-        }
-      } else if (msg.type === 'agent:output') {
-        if (typeof msg.data?.agentId === 'string' && typeof msg.data?.text === 'string') {
-          appendAgentOutput(msg.data.agentId, msg.data.text);
-        }
-      } else if (msg.type === 'agent:execution:start') {
-        if (typeof msg.data?.agentId === 'string') {
-          setAgentRunning(msg.data.agentId, true);
-        }
-      } else if (msg.type === 'agent:execution:complete') {
-        if (typeof msg.data?.agentId === 'string') {
-          setAgentRunning(msg.data.agentId, false);
-        }
-      } else if (msg.type === 'auth:expiring') {
-        const minutes = typeof msg.data?.minutesLeft === 'number' ? msg.data.minutesLeft : '?';
-        addLog({ type: 'warn', message: `Claude session expires in ${minutes} minutes. Please re-login to avoid interruptions.`, timestamp: Date.now() });
-      } else if (msg.type === 'auth:expired') {
-        claudeAuthenticated.value = false;
-      } else if (msg.type === 'context') {
-        if (typeof msg.data === 'object' && msg.data !== null) {
-          setContextData(msg.data as any);
-        }
-      } else if (msg.type === 'subagent:start' && msg.data) {
-        addSubagent(msg.data as any);
-      } else if (msg.type === 'subagent:output' && msg.data) {
-        updateSubagentOutput((msg.data as any).agentId, (msg.data as any).text);
-      } else if (msg.type === 'subagent:stop' && msg.data) {
-        removeSubagent((msg.data as any).agentId, (msg.data as any).duration, (msg.data as any).lastMessage);
-      }
-    } catch (err) {
-      console.warn('[WS] Failed to parse message:', err);
-    }
-  };
+	ws.onmessage = (e) => {
+		lastMessageAt = Date.now();
+		try {
+			const raw = JSON.parse(e.data);
+			if (!isValidWsMessage(raw)) {
+				console.warn("[WS] Unknown or malformed message type:", raw?.type);
+				return;
+			}
+			const msg = raw as { type: string; data?: any; sessionId?: string };
+			if (msg.type === "heartbeat") return;
+			if (msg.type === "status") {
+				if (typeof msg.data !== "object" || msg.data === null) return;
+				updateStateFromServer(msg.data);
+				// Only reattach terminals on the first status after a real WS reconnect
+				if (pendingReattach) {
+					pendingReattach = false;
+					sessions.value.forEach((s) => {
+						onSessionReattached?.(s.id);
+					});
+					// Restore active subagents from server (may have been lost during disconnect)
+					apiFetch("/api/console/subagents")
+						.then((r) => r.json())
+						.then((data) => {
+							if (data.agents) syncSubagentsFromServer(data.agents);
+						})
+						.catch(() => {
+							/* non-fatal */
+						});
+					// Pre-fetch recent conversations so New Tab opens instantly (force — server state may have changed)
+					fetchRecentConversations(apiFetch, true);
+				}
+				if (!msg.data.pendingRestore) {
+					setRestoringPending(false);
+				}
+			} else if (msg.type === "log") {
+				if (!isLogEntry(msg.data)) return;
+				addLog(msg.data);
+			} else if (msg.type === "logs") {
+				if (!Array.isArray(msg.data)) return;
+				msg.data.filter(isLogEntry).forEach((entry) => addLog(entry));
+			} else if (msg.type === "ports") {
+				if (!Array.isArray(msg.data)) return;
+				setActivePorts(msg.data);
+			} else if (msg.type === "sessions:restored") {
+				if (!Array.isArray(msg.data)) return;
+				const restored = msg.data.filter(
+					(s: any) =>
+						typeof s.id === "string" &&
+						typeof s.cwd === "string" &&
+						typeof s.name === "string",
+				);
+				// Don't auto-mount — let user choose Resume or Discard
+				if (restored.length > 0) {
+					onBeforeSessionsRestored?.();
+					const staleIds = sessions.value.map((s) => s.id);
+					for (const id of staleIds) removeSession(id);
+					pendingRestoredSessions.value = restored.map((s: any) => ({
+						id: s.id,
+						type: (s.type as "agent" | "shell") || "agent",
+						cwd: s.cwd,
+						name: s.name,
+					}));
+				}
+				setRestoringPending(false);
+			} else if (msg.type === "console:error") {
+				if (typeof msg.sessionId === "string") {
+					removeSession(msg.sessionId);
+				}
+			} else if (msg.type === "console:output") {
+				if (typeof msg.sessionId === "string" && typeof msg.data === "string") {
+					onOutput?.(msg.sessionId, msg.data);
+				}
+			} else if (msg.type === "console:context_loaded") {
+				if (
+					typeof msg.sessionId === "string" &&
+					typeof msg.data === "object" &&
+					msg.data !== null
+				) {
+					onContextLoaded?.(msg.sessionId, msg.data as ContextLoadedData);
+				}
+			} else if (msg.type === "console:freeze") {
+				// Server detected PTY freeze — log diagnostic info
+				if (typeof msg.sessionId === "string") {
+					const raw = msg as Record<string, unknown>;
+					const dur =
+						typeof raw.durationMs === "number"
+							? Math.round(raw.durationMs / 1000)
+							: "?";
+					const alive = raw.ptyAlive ? "alive" : "DEAD";
+					const lag =
+						typeof raw.eventLoopLagMs === "number" ? raw.eventLoopLagMs : "?";
+					addLog({
+						type: "warn",
+						message: `Terminal freeze: ${dur}s (PTY: ${alive}, event loop lag: ${lag}ms)`,
+						timestamp: Date.now(),
+					});
+				}
+			} else if (msg.type === "console:exit") {
+				if (typeof msg.sessionId === "string") {
+					onExit?.(msg.sessionId);
+				}
+			} else if (msg.type === "agent:update") {
+				if (
+					typeof msg.data === "object" &&
+					msg.data !== null &&
+					typeof msg.data.id === "string"
+				) {
+					updateProactiveAgent(msg.data);
+				}
+			} else if (msg.type === "agent:output") {
+				if (
+					typeof msg.data?.agentId === "string" &&
+					typeof msg.data?.text === "string"
+				) {
+					appendAgentOutput(msg.data.agentId, msg.data.text);
+				}
+			} else if (msg.type === "agent:execution:start") {
+				if (typeof msg.data?.agentId === "string") {
+					setAgentRunning(msg.data.agentId, true);
+				}
+			} else if (msg.type === "agent:execution:complete") {
+				if (typeof msg.data?.agentId === "string") {
+					setAgentRunning(msg.data.agentId, false);
+				}
+			} else if (msg.type === "auth:expiring") {
+				const minutes =
+					typeof msg.data?.minutesLeft === "number"
+						? msg.data.minutesLeft
+						: "?";
+				addLog({
+					type: "warn",
+					message: `Claude session expires in ${minutes} minutes. Please re-login to avoid interruptions.`,
+					timestamp: Date.now(),
+				});
+			} else if (msg.type === "auth:expired") {
+				claudeAuthenticated.value = false;
+			} else if (msg.type === "context") {
+				if (typeof msg.data === "object" && msg.data !== null) {
+					setContextData(msg.data as any);
+				}
+			} else if (msg.type === "subagent:start" && msg.data) {
+				addSubagent(msg.data as any);
+			} else if (msg.type === "subagent:output" && msg.data) {
+				updateSubagentOutput((msg.data as any).agentId, (msg.data as any).text);
+			} else if (msg.type === "subagent:stop" && msg.data) {
+				removeSubagent(
+					(msg.data as any).agentId,
+					(msg.data as any).duration,
+					(msg.data as any).lastMessage,
+				);
+			}
+		} catch (err) {
+			console.warn("[WS] Failed to parse message:", err);
+		}
+	};
 
-  ws.onclose = () => {
-    setWsConnected(false);
-    ws = null;
-    if (staleCheckTimer) { clearInterval(staleCheckTimer); staleCheckTimer = null; }
+	ws.onclose = () => {
+		setWsConnected(false);
+		ws = null;
+		if (staleCheckTimer) {
+			clearInterval(staleCheckTimer);
+			staleCheckTimer = null;
+		}
 
-    const delay = reconnectAttempts === 0 ? 50 : reconnectBackoff * (0.5 + Math.random() * 0.5);
-    reconnectAttempts++;
-    reconnectTimer = setTimeout(connectWebSocket, delay);
-    reconnectBackoff = Math.min(reconnectBackoff * 2, 15000);
-  };
+		const delay =
+			reconnectAttempts === 0
+				? 50
+				: reconnectBackoff * (0.5 + Math.random() * 0.5);
+		reconnectAttempts++;
+		reconnectTimer = setTimeout(connectWebSocket, delay);
+		reconnectBackoff = Math.min(reconnectBackoff * 2, 15000);
+	};
 
-  ws.onerror = () => ws?.close();
+	ws.onerror = () => ws?.close();
 }
 
 export async function connectWebSocket(): Promise<void> {
-  // Clear any pending reconnect timer to prevent overlapping attempts
-  if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
-  if (ws && ws.readyState !== WebSocket.CLOSED) return;
+	// Clear any pending reconnect timer to prevent overlapping attempts
+	if (reconnectTimer) {
+		clearTimeout(reconnectTimer);
+		reconnectTimer = null;
+	}
+	if (ws && ws.readyState !== WebSocket.CLOSED) return;
 
-  // Pre-flight: check if runtime is ready before attempting WS upgrade.
-  // Skip on first connection (page just loaded — server is obviously up).
-  if (!isFirstConnection) {
-    try {
-      const healthRes = await fetch('/api/runtime/health', { cache: 'no-store' });
-      const health = await healthRes.json();
-      if (!health.ready) {
-        const delay = reconnectBackoff * (0.5 + Math.random() * 0.5);
-        reconnectTimer = setTimeout(connectWebSocket, delay);
-        reconnectBackoff = Math.min(reconnectBackoff * 2, 15000);
-        return;
-      }
-    } catch {
-      const delay = reconnectBackoff * (0.5 + Math.random() * 0.5);
-      reconnectTimer = setTimeout(connectWebSocket, delay);
-      reconnectBackoff = Math.min(reconnectBackoff * 2, 15000);
-      return;
-    }
-  }
-  isFirstConnection = false;
+	// Pre-flight: check if runtime is ready before attempting WS upgrade.
+	// Skip on first connection (page just loaded — server is obviously up).
+	if (!isFirstConnection) {
+		try {
+			const healthRes = await fetch("/api/runtime/health", {
+				cache: "no-store",
+			});
+			const health = await healthRes.json();
+			if (!health.ready) {
+				const delay = reconnectBackoff * (0.5 + Math.random() * 0.5);
+				reconnectTimer = setTimeout(connectWebSocket, delay);
+				reconnectBackoff = Math.min(reconnectBackoff * 2, 15000);
+				return;
+			}
+		} catch {
+			const delay = reconnectBackoff * (0.5 + Math.random() * 0.5);
+			reconnectTimer = setTimeout(connectWebSocket, delay);
+			reconnectBackoff = Math.min(reconnectBackoff * 2, 15000);
+			return;
+		}
+	}
+	isFirstConnection = false;
 
-  const token = getAuthToken();
-  const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+	const token = getAuthToken();
+	const protocol = location.protocol === "https:" ? "wss:" : "ws:";
 
-  // Send auth token via WebSocket subprotocol header instead of URL query param.
-  // This keeps the token out of server logs, browser history, and proxy access logs.
-  // Format: "auth.<base64url-encoded-token>" as a subprotocol name.
-  const wsUrl = `${protocol}//${location.host}`;
-  if (!token) {
-    openWs(wsUrl);
-    return;
-  }
-  const encodedToken = btoa(token).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
-  openWs(wsUrl, [`auth.${encodedToken}`]);
+	// Send auth token via WebSocket subprotocol header instead of URL query param.
+	// This keeps the token out of server logs, browser history, and proxy access logs.
+	// Format: "auth.<base64url-encoded-token>" as a subprotocol name.
+	const wsUrl = `${protocol}//${location.host}`;
+	if (!token) {
+		openWs(wsUrl);
+		return;
+	}
+	const encodedToken = btoa(token)
+		.replace(/\+/g, "-")
+		.replace(/\//g, "_")
+		.replace(/=+$/, "");
+	openWs(wsUrl, [`auth.${encodedToken}`]);
 }
 
 export function disconnectWebSocket(): void {
-  if (reconnectTimer) clearTimeout(reconnectTimer);
-  reconnectTimer = null;
-  if (staleCheckTimer) { clearInterval(staleCheckTimer); staleCheckTimer = null; }
-  ws?.close();
-  ws = null;
+	if (reconnectTimer) clearTimeout(reconnectTimer);
+	reconnectTimer = null;
+	if (staleCheckTimer) {
+		clearInterval(staleCheckTimer);
+		staleCheckTimer = null;
+	}
+	ws?.close();
+	ws = null;
 }
 
 // Clean up timers before page unload to prevent ghost reconnection loops
-if (typeof window !== 'undefined') {
-  window.addEventListener('beforeunload', () => disconnectWebSocket());
+if (typeof window !== "undefined") {
+	window.addEventListener("beforeunload", () => disconnectWebSocket());
 }

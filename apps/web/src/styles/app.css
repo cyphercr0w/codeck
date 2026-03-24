@@ -2275,6 +2275,31 @@
 	line-height: 1.5;
 }
 
+.claude-pending-list {
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+	margin: 12px 0 4px;
+	max-width: 400px;
+	width: 100%;
+}
+.claude-pending-item {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	padding: 8px 12px;
+	background: var(--bg-secondary);
+	border: 1px solid var(--border);
+	border-radius: var(--radius);
+	font-size: 13px;
+}
+.claude-pending-cwd {
+	margin-left: auto;
+	font-size: 11px;
+	color: var(--text-muted);
+	font-family: var(--font-mono);
+}
+
 .claude-empty-actions {
 	display: flex;
 	gap: 10px;

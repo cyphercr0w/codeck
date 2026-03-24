@@ -21,6 +21,8 @@ import {
 	activeSection,
 	recentConversations,
 	fetchRecentConversations,
+	pendingRestoredSessions,
+	type PendingSession,
 } from "../state/store";
 import { apiFetch } from "../api";
 import {
@@ -801,12 +803,77 @@ export function ClaudeSection({
 								<div class="terminal-loading-text">Starting session...</div>
 							</div>
 						)}
-					{restoringPending.value && (
-						<div class="terminal-loading-overlay">
-							<div class="spinner" />
-							<div class="terminal-loading-text">Restoring sessions...</div>
-						</div>
-					)}
+					{/* Pending sessions prompt — user chooses Resume or Discard */}
+					{pendingRestoredSessions.value.length > 0 &&
+						sessionList.length === 0 && (
+							<div class="claude-empty">
+								<div class="claude-empty-icon">
+									<IconRefresh size={48} />
+								</div>
+								<div class="claude-empty-title">Sessions found</div>
+								<div class="claude-empty-desc">
+									You had {pendingRestoredSessions.value.length} terminal
+									{pendingRestoredSessions.value.length > 1 ? "s" : ""} running
+									before the restart.
+								</div>
+								<div class="claude-pending-list">
+									{pendingRestoredSessions.value.map((s: PendingSession) => (
+										<div key={s.id} class="claude-pending-item">
+											<span
+												class={`tab-shell-badge${s.type === "shell" ? "" : " agent"}`}
+											>
+												{s.type === "shell" ? (
+													<IconShell size={12} />
+												) : (
+													<IconTerminal size={12} />
+												)}
+											</span>
+											<span>{s.name}</span>
+											<span class="claude-pending-cwd">{s.cwd}</span>
+										</div>
+									))}
+								</div>
+								<div class="claude-empty-actions">
+									<button
+										class="claude-empty-btn primary"
+										onClick={() => {
+											const pending = pendingRestoredSessions.value;
+											pendingRestoredSessions.value = [];
+											for (const s of pending) {
+												addSession({
+													id: s.id,
+													type: s.type,
+													cwd: s.cwd,
+													name: s.name,
+													createdAt: Date.now(),
+												});
+											}
+											if (pending.length > 0) setActiveSessionId(pending[0].id);
+										}}
+									>
+										Resume{" "}
+										{pendingRestoredSessions.value.length > 1
+											? "all"
+											: "session"}
+									</button>
+									<button
+										class="claude-empty-btn secondary"
+										onClick={() => {
+											// Discard — tell server to destroy the pending sessions
+											for (const s of pendingRestoredSessions.value) {
+												apiFetch("/api/console/destroy", {
+													method: "POST",
+													body: JSON.stringify({ sessionId: s.id }),
+												}).catch(() => {});
+											}
+											pendingRestoredSessions.value = [];
+										}}
+									>
+										Discard
+									</button>
+								</div>
+							</div>
+						)}
 				</div>
 				{mobile && activeId && <MobileTerminalToolbar />}
 				{dragOver && (

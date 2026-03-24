@@ -117,8 +117,16 @@ export const sessionCount = computed(() => sessions.value.length);
 // Connection
 export const wsConnected = signal(false);
 // True while waiting for session restore to complete after a service restart.
-// Keeps the ReconnectOverlay visible until terminals are fully mounted.
 export const restoringPending = signal(false);
+
+// Sessions found after restart — held here until user chooses Resume or Discard
+export interface PendingSession {
+	id: string;
+	type: "agent" | "shell";
+	cwd: string;
+	name: string;
+}
+export const pendingRestoredSessions = signal<PendingSession[]>([]);
 
 // Logs
 export const logs = signal<LogEntry[]>([]);

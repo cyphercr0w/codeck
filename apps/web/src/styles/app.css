@@ -1769,9 +1769,13 @@
 }
 
 .mobile-limits-model {
-	font-size: 9px;
+	font-size: 8px;
 	color: var(--text-muted);
 	opacity: 0.7;
+	max-width: 60px;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
 }
 
 .tsb-right {
@@ -4616,28 +4620,29 @@
 .mobile-limits-items {
 	display: flex;
 	align-items: center;
-	gap: 10px;
+	gap: 6px;
 	flex: 1;
 	min-width: 0;
-	overflow-x: auto;
 }
 
 .mobile-limits-item {
 	display: flex;
 	align-items: center;
-	gap: 4px;
-	flex-shrink: 0;
+	gap: 3px;
+	flex: 1;
+	min-width: 0;
 }
 
 .mobile-limits-label {
-	font-size: 10px;
+	font-size: 9px;
 	font-weight: 600;
 	color: var(--text-muted);
-	min-width: 18px;
+	flex-shrink: 0;
 }
 
 .mobile-limits-bar-track {
-	width: 40px;
+	flex: 1;
+	min-width: 20px;
 	height: 4px;
 	background: var(--bg-tertiary, #333);
 	border-radius: 2px;
@@ -4651,31 +4656,30 @@
 }
 
 .mobile-limits-pct {
-	font-size: 10px;
+	font-size: 9px;
 	color: var(--text-secondary);
-	min-width: 24px;
+	flex-shrink: 0;
 }
 
 .mobile-limits-reset {
-	font-size: 9px;
-	color: var(--text-muted);
+	display: none;
 }
 
 .mobile-limits-sep {
 	color: var(--border);
-	font-size: 12px;
+	font-size: 10px;
 	flex-shrink: 0;
 }
 
 .mobile-limits-status {
 	display: flex;
 	align-items: center;
-	gap: 5px;
+	gap: 4px;
 	flex-shrink: 0;
 }
 
 .mobile-limits-status-text {
-	font-size: 10px;
+	font-size: 9px;
 	color: var(--text-secondary);
 	text-transform: capitalize;
 }
@@ -4711,11 +4715,12 @@
 
 /* Mobile: compact */
 .mobile-limits-item .ctx-segments {
-	gap: 1.5px;
+	gap: 1px;
+	flex-shrink: 0;
 }
 .mobile-limits-item .ctx-seg {
-	width: 7px;
-	height: 5px;
+	width: 6px;
+	height: 4px;
 }
 
 /* --- Mobile terminal layout adjustments --- */

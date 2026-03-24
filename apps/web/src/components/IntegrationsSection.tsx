@@ -320,7 +320,7 @@ function TokenIntegrationDetail({
 			})
 			.catch(() => {})
 			.finally(() => setChecking(false));
-	}, []);
+	}, [integ.tokenEnvKey]);
 
 	async function handleConnect() {
 		if (!token.trim()) return;

@@ -639,7 +639,7 @@ export function ChatSection() {
 	);
 }
 
-// ── Helper: live elapsed timer ──
+// ── Helper components ──
 function ElapsedTimer({ startedAt }: { startedAt?: number }) {
 	// Initialize with real elapsed time (not 0) to avoid flash on re-mount
 	const [elapsed, setElapsed] = useState(() =>

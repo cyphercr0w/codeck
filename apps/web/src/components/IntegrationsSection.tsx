@@ -318,7 +318,10 @@ function TokenIntegrationDetail({
 						.catch(() => {});
 				}
 			})
-			.catch(() => {})
+			.catch((err: unknown) => {
+				console.error("Failed to check integration status:", err);
+				showToast("Could not load integration details", "error");
+			})
 			.finally(() => setChecking(false));
 	}, [integ.tokenEnvKey]);
 
@@ -601,8 +604,9 @@ function GitHubDetail({ onBack }: { onBack: () => void }) {
 				publicKey: data.publicKey || null,
 				authenticated: data.authenticated || false,
 			});
-		} catch {
-			/* ignore */
+		} catch (err) {
+			console.error("Failed to load SSH status:", err);
+			showToast("Could not load SSH status", "error");
 		}
 	}
 
@@ -611,8 +615,9 @@ function GitHubDetail({ onBack }: { onBack: () => void }) {
 			const res = await apiFetch("/api/github/login-status");
 			const data = await res.json();
 			setGitHub(data);
-		} catch {
-			/* ignore */
+		} catch (err) {
+			console.error("Failed to load GitHub status:", err);
+			showToast("Could not load GitHub status", "error");
 		}
 	}
 
@@ -660,7 +665,7 @@ function GitHubDetail({ onBack }: { onBack: () => void }) {
 			setCopied(true);
 			setTimeout(() => setCopied(false), 2000);
 		} catch {
-			/* ignore */
+			showToast("Could not copy to clipboard", "error");
 		}
 	}
 
@@ -692,7 +697,9 @@ function GitHubDetail({ onBack }: { onBack: () => void }) {
 					}
 				}, 2000);
 			}
-		} catch {
+		} catch (err) {
+			console.error("GitHub login failed:", err);
+			showToast("Could not connect to GitHub", "error");
 			setGhConnecting(false);
 		}
 	}
@@ -903,6 +910,7 @@ export function IntegrationsSection() {
 		async function checkConnections() {
 			setLoading(true);
 			const result: Record<string, ConnectedAccount> = {};
+			let hadError = false;
 
 			// GitHub — has full account info
 			try {
@@ -913,8 +921,9 @@ export function IntegrationsSection() {
 					email: ghData.email,
 					username: ghData.username,
 				};
-			} catch {
-				/* ignore */
+			} catch (err) {
+				console.error("Failed to check GitHub status:", err);
+				hadError = true;
 			}
 
 			// Token-based services via env vars
@@ -931,9 +940,12 @@ export function IntegrationsSection() {
 						result[integ.id] = { connected: true };
 					}
 				}
-			} catch {
-				/* ignore */
+			} catch (err) {
+				console.error("Failed to check integrations:", err);
+				hadError = true;
 			}
+
+			if (hadError) showToast("Could not load integrations", "error");
 
 			// CLI-auth services (e.g. Vercel via device flow) — check if still authenticated
 			for (const integ of INTEGRATIONS) {

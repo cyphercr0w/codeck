@@ -218,6 +218,8 @@ Write-Host ""
 Write-Host "  Open: " -NoNewline
 Write-Host "http://localhost:$CODECK_PORT" -ForegroundColor Cyan
 Write-Host ""
+Write-Host "  Set up your password and connect your Anthropic account to get started." -ForegroundColor DarkGray
+Write-Host ""
 Write-Host "  Manage:" -ForegroundColor White
 Write-Host "    docker logs codeck -f        — view logs"
 Write-Host "    docker restart codeck        — restart"

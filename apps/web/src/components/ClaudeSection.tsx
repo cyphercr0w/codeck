@@ -52,6 +52,7 @@ import {
 import { IconPlus, IconX, IconShell, IconTerminal, IconRefresh } from "./Icons";
 import { MobileTerminalToolbar } from "./MobileTerminalToolbar";
 import { UploadOverlay } from "./UploadOverlay";
+import { SubagentPanel } from "./SubagentPanel";
 
 const MAX_UPLOAD_SIZE = 10 * 1024 * 1024; // 10 MB
 
@@ -875,6 +876,7 @@ export function ClaudeSection({
 			</div>
 			<UploadOverlay file={pendingFile} onDone={() => setPendingFile(null)} />
 			{activeId && !mobile && <TerminalStatusBar />}
+			{activeId && <SubagentPanel sessionId={activeId} />}
 		</div>
 	);
 }

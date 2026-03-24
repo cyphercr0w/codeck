@@ -442,6 +442,7 @@ export function setContextData(
 export interface SubagentInfo {
 	agentId: string;
 	agentType: string;
+	sessionId?: string;
 	startedAt: number;
 	lastLine: string;
 	lines: string[];
@@ -479,6 +480,7 @@ function ensureSubagentGc(): void {
 export function addSubagent(data: {
 	agentId: string;
 	agentType: string;
+	sessionId?: string;
 	startedAt: number;
 	lastMessage?: string;
 }): void {
@@ -500,6 +502,7 @@ export function syncSubagentsFromServer(
 	serverAgents: Array<{
 		agentId: string;
 		agentType: string;
+		sessionId?: string;
 		startedAt: number;
 		lastLine: string;
 	}>,

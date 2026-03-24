@@ -113,8 +113,12 @@ function SubagentRow({
 	);
 }
 
-export function SubagentPanel() {
-	const agents = activeSubagents.value;
+export function SubagentPanel({ sessionId }: { sessionId?: string }) {
+	const allAgents = activeSubagents.value;
+	// Filter to only show sub-agents belonging to the active terminal session
+	const agents = sessionId
+		? allAgents.filter((a) => a.sessionId === sessionId)
+		: allAgents;
 	const [collapsed, setCollapsed] = useState(false);
 	const [expandedId, setExpandedId] = useState<string | null>(null);
 

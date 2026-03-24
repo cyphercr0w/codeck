@@ -189,7 +189,9 @@ export function ChatSection() {
 	const [input, setInput] = useState("");
 	const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 	const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
+	const [attachments, setAttachments] = useState<File[]>([]);
 	const messagesRef = useRef<HTMLDivElement>(null);
+	const fileInputRef = useRef<HTMLInputElement>(null);
 	const inputRef = useRef<HTMLTextAreaElement>(null);
 
 	const messages = chatMessages.value;
@@ -214,19 +216,50 @@ export function ChatSection() {
 		}
 	}, [messages.length, messages[messages.length - 1]?.content]);
 
+	function handleFileSelect(e: Event) {
+		const files = (e.target as HTMLInputElement).files;
+		if (!files) return;
+		const newFiles = Array.from(files).slice(0, 5); // max 5 files
+		setAttachments((prev) => [...prev, ...newFiles].slice(0, 5));
+		if (fileInputRef.current) fileInputRef.current.value = "";
+	}
+
+	function removeAttachment(idx: number) {
+		setAttachments((prev) => prev.filter((_, i) => i !== idx));
+	}
+
 	async function handleSend() {
 		const text = input.trim();
-		if (!text || streaming) return;
+		if (!text && attachments.length === 0) return;
+		if (streaming) return;
 		setInput("");
 
+		// Build message with file contents appended
+		let fullMessage = text;
+		if (attachments.length > 0) {
+			const fileParts: string[] = [];
+			for (const file of attachments) {
+				try {
+					const content = await file.text();
+					fileParts.push(
+						`--- File: ${file.name} (${(file.size / 1024).toFixed(0)} KB) ---\n${content}`,
+					);
+				} catch {
+					fileParts.push(`--- File: ${file.name} (failed to read) ---`);
+				}
+			}
+			fullMessage = text + "\n\n" + fileParts.join("\n\n");
+			setAttachments([]);
+		}
+
 		const isNewConversation = activeConversationId.value === null;
-		addUserMessage(text);
+		addUserMessage(fullMessage);
 
 		try {
 			const res = await apiFetch("/api/chat/message", {
 				method: "POST",
 				body: JSON.stringify({
-					message: text,
+					message: fullMessage,
 					conversationId: activeConversationId.value,
 					model: chatModel.value,
 					useTools: chatUseTools.value,
@@ -283,6 +316,31 @@ export function ChatSection() {
 						</div>
 						<p class="chat-subtitle">How can I help you today?</p>
 						<div class="chat-input-wrap chat-input-centered">
+							<input
+								ref={fileInputRef}
+								type="file"
+								multiple
+								accept=".txt,.md,.csv,.json,.xml,.html,.css,.js,.ts,.py,.sh,.yml,.yaml,.toml,.ini,.cfg,.log,.pdf,.doc,.docx"
+								style="display:none"
+								onChange={handleFileSelect}
+							/>
+							<button
+								class="chat-attach-btn"
+								onClick={() => fileInputRef.current?.click()}
+								title="Attach files"
+							>
+								<svg
+									width="16"
+									height="16"
+									viewBox="0 0 24 24"
+									fill="none"
+									stroke="currentColor"
+									stroke-width="2"
+								>
+									<line x1="12" y1="5" x2="12" y2="19" />
+									<line x1="5" y1="12" x2="19" y2="12" />
+								</svg>
+							</button>
 							<textarea
 								ref={inputRef}
 								class="chat-input"
@@ -292,14 +350,14 @@ export function ChatSection() {
 									setInput((e.target as HTMLTextAreaElement).value)
 								}
 								onKeyDown={handleKeyDown}
-								rows={1}
+								rows={2}
 							/>
 							<ToolsToggle />
 							<ChatModelSelector />
 							<button
 								class="chat-send"
 								onClick={handleSend}
-								disabled={!input.trim()}
+								disabled={!input.trim() && attachments.length === 0}
 							>
 								<svg
 									width="16"
@@ -408,7 +466,48 @@ export function ChatSection() {
 						</div>
 					))}
 				</div>
+				{attachments.length > 0 && (
+					<div class="chat-attachments">
+						{attachments.map((f, i) => (
+							<span key={i} class="chat-attachment-pill">
+								{f.name}
+								<button
+									class="chat-attachment-remove"
+									onClick={() => removeAttachment(i)}
+								>
+									×
+								</button>
+							</span>
+						))}
+					</div>
+				)}
 				<div class="chat-input-wrap">
+					<input
+						ref={fileInputRef}
+						type="file"
+						multiple
+						accept=".txt,.md,.csv,.json,.xml,.html,.css,.js,.ts,.py,.sh,.yml,.yaml,.toml,.ini,.cfg,.log,.pdf,.doc,.docx"
+						style="display:none"
+						onChange={handleFileSelect}
+					/>
+					<button
+						class="chat-attach-btn"
+						onClick={() => fileInputRef.current?.click()}
+						title="Attach files"
+						disabled={streaming}
+					>
+						<svg
+							width="16"
+							height="16"
+							viewBox="0 0 24 24"
+							fill="none"
+							stroke="currentColor"
+							stroke-width="2"
+						>
+							<line x1="12" y1="5" x2="12" y2="19" />
+							<line x1="5" y1="12" x2="19" y2="12" />
+						</svg>
+					</button>
 					<textarea
 						ref={inputRef}
 						class="chat-input"
@@ -418,7 +517,7 @@ export function ChatSection() {
 						value={input}
 						onInput={(e) => setInput((e.target as HTMLTextAreaElement).value)}
 						onKeyDown={handleKeyDown}
-						rows={1}
+						rows={2}
 						disabled={streaming}
 					/>
 					<ToolsToggle />
@@ -426,7 +525,7 @@ export function ChatSection() {
 					<button
 						class="chat-send"
 						onClick={handleSend}
-						disabled={!input.trim() || streaming}
+						disabled={(!input.trim() && attachments.length === 0) || streaming}
 					>
 						<svg
 							width="16"

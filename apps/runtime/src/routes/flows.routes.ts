@@ -19,8 +19,59 @@ import {
 import { runFlow, cancelExecution } from "../services/flow-runner.js";
 import { broadcast } from "../web/logger.js";
 import { randomUUID } from "crypto";
+import { readdirSync, readFileSync, existsSync } from "fs";
+import { join } from "path";
 
 const router = Router();
+
+// ── Available Agents (from ~/.claude/agents/) ──
+
+interface AvailableAgent {
+	id: string;
+	name: string;
+	description: string;
+	tools: string[];
+}
+
+function listAvailableAgents(): AvailableAgent[] {
+	const agentsDir = join(process.env.HOME || "/root", ".claude", "agents");
+	if (!existsSync(agentsDir)) return [];
+	try {
+		return readdirSync(agentsDir)
+			.filter((f) => f.endsWith(".md") && /^[a-zA-Z0-9_-]+\.md$/.test(f))
+			.map((f) => {
+				const id = f.replace(".md", "");
+				const content = readFileSync(join(agentsDir, f), "utf-8");
+				const fmMatch = content.match(/^---\n([\s\S]*?)\n---/);
+				let description = "";
+				let tools: string[] = [];
+				if (fmMatch) {
+					const fm = fmMatch[1];
+					const descMatch = fm.match(/description:\s*(.+)/);
+					if (descMatch) description = descMatch[1].trim();
+					const toolsMatch = fm.match(/tools:\s*\[([^\]]*)\]/);
+					if (toolsMatch) {
+						tools = toolsMatch[1]
+							.split(",")
+							.map((t) => t.trim().replace(/["']/g, ""))
+							.filter(Boolean);
+					}
+				}
+				const name = id
+					.split("-")
+					.map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+					.join(" ");
+				return { id, name, description, tools };
+			})
+			.filter((a) => a.description);
+	} catch {
+		return [];
+	}
+}
+
+router.get("/available-agents", (_req, res) => {
+	res.json({ agents: listAvailableAgents() });
+});
 
 // ── Flow Definitions CRUD ──
 
@@ -33,9 +84,14 @@ router.get("/", (_req, res) => {
 	}
 });
 
+// Sanitize IDs to prevent path traversal
+function safeId(id: string): string {
+	return id.replace(/[^a-zA-Z0-9\-]/g, "");
+}
+
 // Get single flow
 router.get("/:id", (req, res) => {
-	const flow = getFlow(req.params.id);
+	const flow = getFlow(safeId(req.params.id));
 	if (!flow) {
 		res.status(404).json({ error: "Flow not found" });
 		return;
@@ -56,7 +112,7 @@ router.post("/", (req, res) => {
 // Update flow (cannot update templates)
 router.put("/:id", (req, res) => {
 	try {
-		const flow = updateFlow(req.params.id, req.body);
+		const flow = updateFlow(safeId(req.params.id), req.body);
 		if (!flow) {
 			res.status(404).json({ error: "Flow not found or is a template" });
 			return;
@@ -69,7 +125,7 @@ router.put("/:id", (req, res) => {
 
 // Delete flow (cannot delete templates)
 router.delete("/:id", (req, res) => {
-	const deleted = deleteFlow(req.params.id);
+	const deleted = deleteFlow(safeId(req.params.id));
 	if (!deleted) {
 		res.status(404).json({ error: "Flow not found or is a template" });
 		return;
@@ -81,7 +137,7 @@ router.delete("/:id", (req, res) => {
 
 // Start a new execution
 router.post("/:id/execute", async (req, res) => {
-	const flow = getFlow(req.params.id);
+	const flow = getFlow(safeId(req.params.id));
 	if (!flow) {
 		res.status(404).json({ error: "Flow not found" });
 		return;
@@ -110,7 +166,34 @@ router.post("/:id/execute", async (req, res) => {
 
 	saveExecution(execution);
 
-	// Respond immediately — execution runs in background
+	// Build ordered agent list for progress tracking
+	const agentList: Array<{ id: string; name: string; role: string }> = [];
+	{
+		const visited = new Set<string>();
+		let cursor: string | undefined = flow.entryAgentId;
+		while (cursor && !visited.has(cursor) && flow.agents[cursor]) {
+			const ag = flow.agents[cursor]!;
+			agentList.push({ id: ag.id, name: ag.name, role: ag.role });
+			visited.add(cursor);
+			const dflt: string | undefined = ag.transitions.default as
+				| string
+				| undefined;
+			cursor = typeof dflt === "string" && dflt !== "END" ? dflt : undefined;
+		}
+	}
+
+	// Broadcast flow started event so the frontend can track progress
+	broadcast({
+		type: "chat:flow:started",
+		data: {
+			chatId: "",
+			conversationId: "",
+			executionId: execution.id,
+			flowName: flow.name,
+			agents: agentList,
+		},
+	});
+
 	res.status(202).json({
 		executionId: execution.id,
 		flowId: flow.id,
@@ -139,7 +222,7 @@ router.get("/executions/list", (req, res) => {
 
 // Get execution status
 router.get("/executions/:execId", (req, res) => {
-	const execution = getExecution(req.params.execId);
+	const execution = getExecution(safeId(req.params.execId));
 	if (!execution) {
 		res.status(404).json({ error: "Execution not found" });
 		return;
@@ -149,7 +232,7 @@ router.get("/executions/:execId", (req, res) => {
 
 // Cancel running execution
 router.post("/executions/:execId/cancel", (req, res) => {
-	const execution = getExecution(req.params.execId);
+	const execution = getExecution(safeId(req.params.execId));
 	if (!execution) {
 		res.status(404).json({ error: "Execution not found" });
 		return;
@@ -159,7 +242,7 @@ router.post("/executions/:execId/cancel", (req, res) => {
 		return;
 	}
 
-	cancelExecution(req.params.execId);
+	cancelExecution(safeId(req.params.execId));
 
 	execution.status = "cancelled";
 	execution.completedAt = new Date().toISOString();

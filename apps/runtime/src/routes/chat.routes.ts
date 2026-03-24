@@ -16,6 +16,10 @@ import {
 	getOAuthEnv,
 	getValidAgentBinary,
 } from "../services/claude-env.js";
+import { classifyIntent } from "../services/intent-classifier.js";
+import { getFlow, saveExecution } from "../services/flows.js";
+import { runFlow, cancelExecution } from "../services/flow-runner.js";
+import type { FlowExecution } from "../types/flow.types.js";
 
 const router = Router();
 
@@ -34,6 +38,8 @@ interface ChatConversation {
 	createdAt: string;
 	updatedAt: string;
 	messages: ChatMessage[];
+	flowExecutionId?: string;
+	flowStatus?: string;
 }
 
 const CONVERSATIONS_DIR = "/workspace/.codeck/chat/conversations";
@@ -214,7 +220,7 @@ router.post("/message", (req, res) => {
 			{
 				name: "web_search",
 				description:
-					"Search the web for current information. Use when the user asks about recent events, needs facts you're unsure about, or asks you to look something up.",
+					"Search the web for current information. Use when the user asks about recent events, needs facts you're unsure about, or asks you to look something up. Returns search result snippets.",
 				input_schema: {
 					type: "object" as const,
 					properties: {
@@ -226,16 +232,31 @@ router.post("/message", (req, res) => {
 					required: ["query"],
 				},
 			},
+			{
+				name: "web_fetch",
+				description:
+					"Fetch the content of a specific URL. Use after web_search to read full articles, documentation pages, or any webpage the user asks about. Returns the text content of the page.",
+				input_schema: {
+					type: "object" as const,
+					properties: {
+						url: {
+							type: "string",
+							description: "The URL to fetch",
+						},
+					},
+					required: ["url"],
+				},
+			},
 		];
 
 		const systemPrompt =
-			"You are a helpful assistant inside Codeck, a cloud sandbox for coding. You can search the web to answer questions with current information. If the user asks you to modify files, write code to disk, run tests, deploy, or perform any action that requires filesystem or terminal access, politely tell them: \"Toggle the 'Agent' mode in the input bar to enable file access.\" Be concise and helpful.";
+			'You are Claude Haiku 4.5, a fast and helpful assistant inside Codeck, a cloud sandbox for coding. You have two tools: web_search (search the web) and web_fetch (read a specific URL). Use web_search proactively when the user asks about recent events, facts, or anything you are uncertain about. After searching, use web_fetch to read full articles or documentation for detailed answers. If the user asks you to modify files, write code to disk, run tests, deploy, or perform any action that requires filesystem or terminal access, tell them: "Switch to Agent mode using the toggle below to enable file access and code execution." Be concise, direct, and helpful. Answer in the same language the user writes in.';
 
 		// Agentic loop: call API, handle tool_use, send results back
 		(async () => {
 			let fullResponse = "";
 			let loopMessages = [...apiMessages];
-			const MAX_TOOL_ROUNDS = 3;
+			const MAX_TOOL_ROUNDS = 5;
 
 			try {
 				for (let round = 0; round <= MAX_TOOL_ROUNDS; round++) {
@@ -390,7 +411,6 @@ router.post("/message", (req, res) => {
 					for (const tu of toolUseBlocks) {
 						let result = "";
 						if (tu.name === "web_search" && tu.input?.query) {
-							// Execute web search via Brave API or fallback
 							try {
 								broadcast({
 									type: "chat:response:chunk",
@@ -410,15 +430,76 @@ router.post("/message", (req, res) => {
 									},
 								);
 								const html = await searchRes.text();
-								// Extract text snippets from DDG HTML results
-								const snippets = html
-									.match(/<a class="result__snippet"[^>]*>(.*?)<\/a>/gs)
-									?.map((s) => s.replace(/<[^>]*>/g, "").trim())
-									.slice(0, 5)
+								// Extract titles, URLs, and snippets from DDG HTML results
+								const titles =
+									html
+										.match(
+											/<a class="result__a"[^>]*href="([^"]*)"[^>]*>(.*?)<\/a>/gs,
+										)
+										?.map((s) => {
+											const hrefMatch = s.match(/href="([^"]*)"/);
+											const textMatch = s.match(/>([^<]*)<\/a>/);
+											return `${textMatch?.[1]?.trim() || ""}: ${hrefMatch?.[1] || ""}`;
+										})
+										.slice(0, 8) || [];
+								const snippets =
+									html
+										.match(/<a class="result__snippet"[^>]*>(.*?)<\/a>/gs)
+										?.map((s) => s.replace(/<[^>]*>/g, "").trim())
+										.slice(0, 8) || [];
+								const combined = titles
+									.map((t, i) => `${t}\n${snippets[i] || ""}`)
 									.join("\n\n");
-								result = snippets || "No results found for this query.";
+								result = combined || "No results found for this query.";
 							} catch (e) {
 								result = `Search failed: ${(e as Error).message}`;
+							}
+						} else if (tu.name === "web_fetch" && tu.input?.url) {
+							try {
+								const urlStr = String(tu.input.url);
+								// Basic URL validation
+								const parsed = new URL(urlStr);
+								if (!["http:", "https:"].includes(parsed.protocol)) {
+									result = "Only HTTP/HTTPS URLs are supported.";
+								} else {
+									broadcast({
+										type: "chat:response:chunk",
+										data: {
+											chatId,
+											chunk: `\n\n📄 Reading: ${urlStr.slice(0, 80)}...\n\n`,
+										},
+									});
+									fullResponse += `\n\n📄 Reading: ${urlStr.slice(0, 80)}...\n\n`;
+									const fetchRes = await fetch(urlStr, {
+										headers: {
+											"User-Agent": "Codeck/1.0 (Web Fetch)",
+											Accept: "text/html,text/plain,application/json",
+										},
+										signal: AbortSignal.timeout(15000),
+										redirect: "follow",
+									});
+									if (!fetchRes.ok) {
+										result = `HTTP ${fetchRes.status}: ${fetchRes.statusText}`;
+									} else {
+										const contentType =
+											fetchRes.headers.get("content-type") || "";
+										const body = await fetchRes.text();
+										if (contentType.includes("text/html")) {
+											// Strip HTML tags, scripts, styles — extract text content
+											const text = body
+												.replace(/<script[^>]*>[\s\S]*?<\/script>/gi, "")
+												.replace(/<style[^>]*>[\s\S]*?<\/style>/gi, "")
+												.replace(/<[^>]*>/g, " ")
+												.replace(/\s+/g, " ")
+												.trim();
+											result = text.slice(0, 8000);
+										} else {
+											result = body.slice(0, 8000);
+										}
+									}
+								}
+							} catch (e) {
+								result = `Fetch failed: ${(e as Error).message}`;
 							}
 						} else {
 							result = `Tool ${tu.name} is not available.`;
@@ -479,97 +560,243 @@ router.post("/message", (req, res) => {
 		return;
 	}
 
-	// ── Agent mode (with tools, spawn CLI) ──
-	const cliModel = model || "haiku"; // CLI uses short names
-	const binary = getValidAgentBinary();
-	const env = { ...buildCleanEnv(), ...getOAuthEnv(), TERM: "dumb" };
+	// ── Agent mode — classify intent and route to flow or CLI ──
+	(async () => {
+		try {
+			const intent = await classifyIntent(message);
+			console.log(
+				`[Chat] Intent: ${intent.category} (${intent.confidence}) flow=${intent.flowTemplateId || "none"}`,
+			);
 
-	const child = spawn(
-		binary,
-		[
-			"-p",
-			prompt,
-			"--output-format",
-			"text",
-			"--no-session-persistence",
-			"--model",
-			cliModel,
-			"--allowedTools",
-			"Read,Write,Edit,Bash,Glob,Grep,WebSearch,WebFetch",
-			"--max-turns",
-			"3",
-		],
-		{
-			env,
-			cwd: process.env.WORKSPACE || "/workspace",
-			stdio: ["ignore", "pipe", "pipe"],
-		},
-	);
+			// If intent maps to a flow template, trigger flow execution
+			if (intent.flowTemplateId) {
+				const flow = getFlow(intent.flowTemplateId);
+				if (flow) {
+					const execution: FlowExecution = {
+						id: randomUUID(),
+						flowId: flow.id,
+						flowVersion: flow.version,
+						status: "pending",
+						currentAgentId: null,
+						loopCount: 0,
+						maxLoops: 5,
+						startedAt: new Date().toISOString(),
+						completedAt: null,
+						initialInput: message,
+						agentResults: {},
+					};
 
-	activeChatProcesses.set(chatId, child);
+					saveExecution(execution);
 
-	let fullResponse = "";
+					// Link flow to conversation
+					conversation.flowExecutionId = execution.id;
+					conversation.flowStatus = "running";
+					writeConversation(conversation);
 
-	child.stdout.on("data", (chunk: Buffer) => {
-		const text = chunk.toString();
-		fullResponse += text;
-		broadcast({ type: "chat:response:chunk", data: { chatId, chunk: text } });
-	});
+					// Build ordered agent list by walking the graph from entryAgentId
+					const agentList: Array<{ id: string; name: string; role: string }> =
+						[];
+					{
+						const visited = new Set<string>();
+						let cursor: string | undefined = flow.entryAgentId;
+						while (cursor && !visited.has(cursor)) {
+							const def = flow.agents[cursor] as
+								| import("../types/flow.types.js").AgentDefinition
+								| undefined;
+							if (!def) break;
+							agentList.push({ id: def.id, name: def.name, role: def.role });
+							visited.add(cursor);
+							const next = def.transitions.default;
+							cursor =
+								typeof next === "string" && next !== "END" ? next : undefined;
+						}
+					}
 
-	child.stderr.on("data", (chunk: Buffer) => {
-		console.warn(
-			`[Chat] stderr for ${chatId}: ${chunk.toString().slice(0, 200)}`,
-		);
-	});
+					// Broadcast flow started event for chat UI
+					broadcast({
+						type: "chat:flow:started",
+						data: {
+							chatId,
+							conversationId: conversation.id,
+							executionId: execution.id,
+							flowName: flow.name,
+							agents: agentList,
+						},
+					});
 
-	// Timeout: 5 minutes max
-	const timeout = setTimeout(() => {
-		child.kill("SIGTERM");
-		setTimeout(() => {
-			if (!child.killed) child.kill("SIGKILL");
-		}, 5000);
-	}, 300000);
+					res.status(202).json({
+						chatId,
+						conversationId: conversation.id,
+						executionId: execution.id,
+						status: "flow-started",
+						flowName: flow.name,
+						flowAgents: agentList.map((a) => a.name),
+					});
 
-	child.on("close", (code) => {
-		clearTimeout(timeout);
-		activeChatProcesses.delete(chatId);
+					// Run flow async — save result to conversation on completion
+					const workspace = process.env.WORKSPACE || "/workspace";
+					runFlow(execution, flow, workspace)
+						.then(() => {
+							const freshConv = readConversation(conversation.id);
+							if (freshConv) {
+								const finalExec = { ...execution };
+								const outputs = Object.values(finalExec.agentResults)
+									.filter((r) => r.output)
+									.map((r) => `**${r.agentId}**:\n${r.output.slice(0, 2000)}`);
+								if (outputs.length > 0) {
+									freshConv.messages.push({
+										id: randomUUID(),
+										role: "assistant",
+										content: `Flow "${flow.name}" completed.\n\n${outputs.join("\n\n---\n\n")}`,
+										timestamp: Date.now(),
+									});
+								}
+								freshConv.flowStatus = "completed";
+								freshConv.updatedAt = new Date().toISOString();
+								writeConversation(freshConv);
+							}
+						})
+						.catch((err: unknown) => {
+							console.error(
+								`[Chat] Flow execution ${execution.id} failed:`,
+								(err as Error).message,
+							);
+							const freshConv = readConversation(conversation.id);
+							if (freshConv) {
+								freshConv.flowStatus = "failed";
+								freshConv.updatedAt = new Date().toISOString();
+								writeConversation(freshConv);
+							}
+						});
 
-		// Save assistant response to conversation
-		if (fullResponse.trim()) {
-			const freshConv = readConversation(conversation.id);
-			if (freshConv) {
-				const assistantMessage: ChatMessage = {
-					id: randomUUID(),
-					role: "assistant",
-					content: fullResponse,
-					timestamp: Date.now(),
-				};
-				freshConv.messages.push(assistantMessage);
-				freshConv.updatedAt = new Date().toISOString();
-				writeConversation(freshConv);
+					return;
+				}
+				// Flow template not found — fall through to single CLI
+				console.warn(
+					`[Chat] Flow template ${intent.flowTemplateId} not found, falling back to CLI`,
+				);
 			}
-		}
 
-		broadcast({
-			type: "chat:response:complete",
-			data: {
+			// Fallback: single CLI spawn (for CHAT category or missing template)
+			const cliModel = model || "haiku";
+			const binary = getValidAgentBinary();
+			const env = { ...buildCleanEnv(), ...getOAuthEnv(), TERM: "dumb" };
+
+			const child = spawn(
+				binary,
+				[
+					"-p",
+					prompt,
+					"--output-format",
+					"text",
+					"--no-session-persistence",
+					"--model",
+					cliModel,
+					"--allowedTools",
+					"Read,Write,Edit,Bash,Glob,Grep,WebSearch,WebFetch",
+					"--max-turns",
+					"3",
+				],
+				{
+					env,
+					cwd: process.env.WORKSPACE || "/workspace",
+					stdio: ["ignore", "pipe", "pipe"],
+				},
+			);
+
+			activeChatProcesses.set(chatId, child);
+
+			let fullResponse = "";
+
+			child.stdout.on("data", (chunk: Buffer) => {
+				const text = chunk.toString();
+				fullResponse += text;
+				broadcast({
+					type: "chat:response:chunk",
+					data: { chatId, chunk: text },
+				});
+			});
+
+			child.stderr.on("data", (chunk: Buffer) => {
+				console.warn(
+					`[Chat] stderr for ${chatId}: ${chunk.toString().slice(0, 200)}`,
+				);
+			});
+
+			child.on("error", (err) => {
+				console.error(`[Chat] spawn error for ${chatId}:`, err.message);
+				activeChatProcesses.delete(chatId);
+				broadcast({
+					type: "chat:response:complete",
+					data: {
+						chatId,
+						fullResponse: "",
+						exitCode: 1,
+						error: `Process error: ${err.message}`,
+						conversationId: conversation.id,
+					},
+				});
+			});
+
+			const timeout = setTimeout(() => {
+				child.kill("SIGTERM");
+				setTimeout(() => {
+					if (!child.killed) child.kill("SIGKILL");
+				}, 5000);
+			}, 300000);
+
+			child.on("close", (code) => {
+				clearTimeout(timeout);
+				activeChatProcesses.delete(chatId);
+
+				if (fullResponse.trim()) {
+					const freshConv = readConversation(conversation.id);
+					if (freshConv) {
+						freshConv.messages.push({
+							id: randomUUID(),
+							role: "assistant",
+							content: fullResponse,
+							timestamp: Date.now(),
+						});
+						freshConv.updatedAt = new Date().toISOString();
+						writeConversation(freshConv);
+					}
+				}
+
+				broadcast({
+					type: "chat:response:complete",
+					data: {
+						chatId,
+						fullResponse,
+						exitCode: code,
+						conversationId: conversation.id,
+					},
+				});
+			});
+
+			res.status(202).json({
 				chatId,
-				fullResponse,
-				exitCode: code,
 				conversationId: conversation.id,
-			},
-		});
-	});
-
-	// Return immediately — response streams via WS
-	res
-		.status(202)
-		.json({ chatId, conversationId: conversation.id, status: "streaming" });
+				status: "streaming",
+			});
+		} catch (err) {
+			console.error("[Chat] Agent mode error:", (err as Error).message);
+			res.status(500).json({ error: "Failed to process agent request" });
+		}
+	})();
 });
 
-// POST /api/chat/cancel — Cancel an active chat
+// POST /api/chat/cancel — Cancel an active chat or flow execution
 router.post("/cancel", (req, res) => {
-	const { chatId } = req.body;
+	const { chatId, executionId } = req.body;
+
+	// Cancel a flow execution
+	if (executionId && typeof executionId === "string") {
+		cancelExecution(executionId);
+		res.json({ success: true });
+		return;
+	}
+
 	const proc = activeChatProcesses.get(chatId);
 	if (!proc) {
 		res.status(404).json({ error: "Chat not found or already completed" });

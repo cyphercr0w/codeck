@@ -50,6 +50,7 @@ export type Section =
 	| "chat"
 	| "filesystem"
 	| "claude"
+	| "flows"
 	| "agents"
 	| "integrations"
 	| "config"

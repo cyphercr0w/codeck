@@ -15,6 +15,8 @@ import {
 	deleteConversation,
 	chatModel,
 	chatUseTools,
+	activeFlowExecution,
+	archivedFlows,
 } from "../state/chat-store";
 import { showToast } from "../state/store";
 import { apiFetch } from "../api";
@@ -30,6 +32,7 @@ function ConversationSidebar({
 	const activeId = activeConversationId.value;
 	const editingId = editingConversationName.value;
 	const [editName, setEditName] = useState("");
+	const [deletingId, setDeletingId] = useState<string | null>(null);
 	const editRef = useRef<HTMLInputElement>(null);
 
 	useEffect(() => {
@@ -78,11 +81,13 @@ function ConversationSidebar({
 		}
 	}
 
-	function handleDelete(e: Event, id: string) {
+	async function handleDelete(e: Event, id: string) {
 		e.stopPropagation();
-		if (confirm("Delete this conversation? This cannot be undone.")) {
-			deleteConversation(id, apiFetch);
-		}
+		if (deletingId) return;
+		if (!confirm("Delete this conversation?")) return;
+		setDeletingId(id);
+		await deleteConversation(id, apiFetch);
+		setDeletingId(null);
 	}
 
 	if (collapsed) {
@@ -150,6 +155,7 @@ function ConversationSidebar({
 					</svg>
 				</button>
 			</div>
+			{convList.length > 0 && <div class="chat-sidebar-subtitle">Recents</div>}
 			<div class="chat-sidebar-list">
 				{convList.map((c) => (
 					<div
@@ -177,20 +183,28 @@ function ConversationSidebar({
 							class="chat-sidebar-delete"
 							onClick={(e) => handleDelete(e, c.id)}
 							title="Delete conversation"
+							disabled={deletingId === c.id}
 						>
-							<svg
-								width="12"
-								height="12"
-								viewBox="0 0 24 24"
-								fill="none"
-								stroke="currentColor"
-								stroke-width="2"
-							>
-								<path d="M3 6h18M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2m3 0v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6h14" />
-							</svg>
+							{deletingId === c.id ? (
+								<span class="spinner-sm" />
+							) : (
+								<svg
+									width="12"
+									height="12"
+									viewBox="0 0 24 24"
+									fill="none"
+									stroke="currentColor"
+									stroke-width="2"
+								>
+									<path d="M3 6h18M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2m3 0v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6h14" />
+								</svg>
+							)}
 						</button>
 					</div>
 				))}
+				{convList.length === 0 && (
+					<div class="chat-sidebar-empty">No conversations yet</div>
+				)}
 			</div>
 		</div>
 	);
@@ -198,7 +212,22 @@ function ConversationSidebar({
 
 export function ChatSection() {
 	const [input, setInput] = useState("");
-	const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+	const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
+		try {
+			return localStorage.getItem("chat-sidebar-collapsed") === "true";
+		} catch {
+			return false;
+		}
+	});
+	const toggleSidebarCollapsed = () => {
+		setSidebarCollapsed((c) => {
+			const next = !c;
+			try {
+				localStorage.setItem("chat-sidebar-collapsed", String(next));
+			} catch {}
+			return next;
+		});
+	};
 	const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
 	const [attachments, setAttachments] = useState<File[]>([]);
 	const messagesRef = useRef<HTMLDivElement>(null);
@@ -333,7 +362,9 @@ export function ChatSection() {
 				}),
 			});
 			const data = await res.json();
-			if (data.chatId) {
+			// Only create an assistant streaming bubble for regular chat/CLI responses,
+			// not for flow executions (flows use FlowProgressMessage instead)
+			if (data.chatId && data.status !== "flow-started") {
 				addAssistantMessage(data.chatId);
 			}
 			// Set the active conversation ID so subsequent messages go to the same conversation
@@ -356,17 +387,7 @@ export function ChatSection() {
 		}
 	}
 
-	// Quick action chips
-	const quickActions = [
-		{ label: "Code", icon: "</>", prompt: "Help me write code for " },
-		{ label: "Write", icon: "\u270F", prompt: "Help me write " },
-		{ label: "Learn", icon: "\uD83E\uDDE0", prompt: "Explain " },
-		{
-			label: "New Project",
-			icon: "\uD83D\uDE80",
-			prompt: "I want to build a new project: ",
-		},
-	];
+	// Quick action chips removed per user request
 
 	if (isEmpty) {
 		return (
@@ -384,7 +405,7 @@ export function ChatSection() {
 						collapsed={sidebarCollapsed && !mobileSidebarOpen}
 						onToggle={() => {
 							if (mobileSidebarOpen) setMobileSidebarOpen(false);
-							else setSidebarCollapsed((c) => !c);
+							else toggleSidebarCollapsed();
 						}}
 					/>
 				</div>
@@ -478,20 +499,6 @@ export function ChatSection() {
 						<div class="chat-input-footer">
 							<ToolsToggle />
 						</div>
-						<div class="chat-quick-actions">
-							{quickActions.map((a) => (
-								<button
-									key={a.label}
-									class="chat-chip"
-									onClick={() => {
-										setInput(a.prompt);
-										inputRef.current?.focus();
-									}}
-								>
-									<span>{a.icon}</span> {a.label}
-								</button>
-							))}
-						</div>
 					</div>
 				</div>
 			</div>
@@ -513,7 +520,7 @@ export function ChatSection() {
 					collapsed={sidebarCollapsed && !mobileSidebarOpen}
 					onToggle={() => {
 						if (mobileSidebarOpen) setMobileSidebarOpen(false);
-						else setSidebarCollapsed((c) => !c);
+						else toggleSidebarCollapsed();
 					}}
 				/>
 			</div>
@@ -532,8 +539,8 @@ export function ChatSection() {
 							stroke="currentColor"
 							stroke-width="2"
 						>
-							<rect x="3" y="3" width="7" height="18" rx="1" />
-							<rect x="14" y="3" width="7" height="18" rx="1" />
+							<rect x="3" y="3" width="18" height="18" rx="2" />
+							<line x1="9" y1="3" x2="9" y2="21" />
 						</svg>
 					</button>
 					<span class="chat-header-title">Chat</span>
@@ -553,25 +560,42 @@ export function ChatSection() {
 					</button>
 				</div>
 				<div class="chat-messages" ref={messagesRef}>
-					{messages.map((m) => (
-						<div key={m.id} class={`chat-msg chat-msg-${m.role}`}>
-							<div class="chat-msg-content">
-								{m.streaming && !m.content && (
-									<span class="chat-thinking">
-										<span class="spinner-sm" />
-										<ElapsedTimer startedAt={m.streamStartedAt} />
-									</span>
-								)}
-								{m.content}
-								{m.streaming && m.content && (
-									<span class="chat-cursor">{"\u2588"}</span>
+					{messages.map((m) => {
+						// Flow messages render the timeline component
+						if (m.role === "flow") {
+							return (
+								<div key={m.id} class="chat-msg chat-msg-flow">
+									<FlowProgressMessage executionId={m.flowExecutionId} />
+									{!m.streaming && m.durationMs != null && (
+										<div class="chat-msg-meta">
+											{formatDuration(m.durationMs)}
+										</div>
+									)}
+								</div>
+							);
+						}
+						return (
+							<div key={m.id} class={`chat-msg chat-msg-${m.role}`}>
+								<div class="chat-msg-content">
+									{m.streaming && !m.content && (
+										<span class="chat-thinking">
+											<span class="spinner-sm" />
+											<ElapsedTimer startedAt={m.streamStartedAt} />
+										</span>
+									)}
+									{m.content}
+									{m.streaming && m.content && (
+										<span class="chat-cursor">{"\u2588"}</span>
+									)}
+								</div>
+								{!m.streaming && m.durationMs != null && (
+									<div class="chat-msg-meta">
+										{formatDuration(m.durationMs)}
+									</div>
 								)}
 							</div>
-							{!m.streaming && m.durationMs != null && (
-								<div class="chat-msg-meta">{formatDuration(m.durationMs)}</div>
-							)}
-						</div>
-					))}
+						);
+					})}
 				</div>
 				{attachments.length > 0 && (
 					<div class="chat-attachments">
@@ -650,6 +674,111 @@ export function ChatSection() {
 					<ChatModelSelector />
 				</div>
 			</div>
+		</div>
+	);
+}
+
+// ── Flow Progress Timeline ──
+function FlowProgressMessage({ executionId }: { executionId?: string }) {
+	const flow =
+		activeFlowExecution.value?.executionId === executionId
+			? activeFlowExecution.value
+			: executionId
+				? archivedFlows.value[executionId]
+				: activeFlowExecution.value;
+	if (!flow) return null;
+
+	const isComplete =
+		flow.status === "completed" ||
+		flow.status === "failed" ||
+		flow.status === "cancelled";
+	const statusIcon = isComplete
+		? flow.status === "completed"
+			? "\u2713"
+			: "\u2717"
+		: "\u25B6";
+	const statusClass = isComplete
+		? flow.status === "completed"
+			? "flow-done"
+			: "flow-error"
+		: "flow-running";
+
+	return (
+		<div class={`flow-progress ${statusClass}`}>
+			<div class="flow-progress-header">
+				<span class="flow-progress-icon">{statusIcon}</span>
+				<span class="flow-progress-name">{flow.flowName}</span>
+				{!isComplete && <ElapsedTimer startedAt={flow.startedAt} />}
+				{isComplete && flow.startedAt && (
+					<span class="flow-progress-duration">
+						{formatDuration(Date.now() - flow.startedAt)}
+					</span>
+				)}
+			</div>
+			<div class="flow-progress-steps">
+				{flow.agents.map((agent, i) => {
+					const isCurrentAgent = flow.currentAgentId === agent.id;
+					const hasOutput = !!flow.agentOutputs[agent.id];
+					const duration = flow.agentDurations[agent.id];
+					const isDone =
+						duration != null || (flow.currentAgentIndex > i && !isCurrentAgent);
+
+					let stepIcon = "\u25CB"; // empty circle
+					let stepClass = "flow-step-pending";
+					if (isDone) {
+						stepIcon = "\u2713";
+						stepClass = "flow-step-done";
+					} else if (isCurrentAgent) {
+						stepIcon = "\u25CF"; // filled circle
+						stepClass = "flow-step-active";
+					}
+
+					return (
+						<div key={agent.id} class={`flow-step ${stepClass}`}>
+							<div class="flow-step-header">
+								<span class="flow-step-icon">{stepIcon}</span>
+								<span class="flow-step-name">{agent.name}</span>
+								<span class="flow-step-role">{agent.role}</span>
+								{isCurrentAgent && !isDone && (
+									<span class="flow-step-spinner">
+										<span class="spinner-sm" />
+									</span>
+								)}
+								{duration != null && (
+									<span class="flow-step-duration">
+										{formatDuration(duration)}
+									</span>
+								)}
+							</div>
+							{isCurrentAgent && hasOutput && (
+								<div class="flow-step-output">
+									{(flow.agentOutputs[agent.id] || "").slice(-500)}
+									<span class="chat-cursor">{"\u2588"}</span>
+								</div>
+							)}
+							{isDone && hasOutput && !isCurrentAgent && (
+								<FlowStepCollapsible
+									output={flow.agentOutputs[agent.id] || ""}
+								/>
+							)}
+						</div>
+					);
+				})}
+			</div>
+		</div>
+	);
+}
+
+function FlowStepCollapsible({ output }: { output: string }) {
+	const [expanded, setExpanded] = useState(false);
+	const preview = output.slice(0, 150).replace(/\n/g, " ");
+	return (
+		<div class="flow-step-collapsible">
+			<button class="flow-step-toggle" onClick={() => setExpanded(!expanded)}>
+				{expanded ? "\u25BC" : "\u25B6"} {expanded ? "Hide" : "Show"} output
+			</button>
+			{!expanded && <div class="flow-step-preview">{preview}...</div>}
+			{expanded && <div class="flow-step-output">{output}</div>}
 		</div>
 	);
 }

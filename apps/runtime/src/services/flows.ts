@@ -14,9 +14,12 @@ import {
 	readdirSync,
 	unlinkSync,
 } from "fs";
-import { join } from "path";
+import { join, dirname } from "path";
+import { fileURLToPath } from "url";
 import { randomUUID } from "crypto";
 import type { FlowDefinition, FlowExecution } from "../types/flow.types.js";
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
 
 // ── Canonical paths ──
 
@@ -353,5 +356,48 @@ export function initFlowTemplates(): void {
 
 		writeJsonFile(tddPath, template);
 		console.log("[Flows] Initialized tdd-cycle template");
+	}
+
+	// Copy JSON templates from dist/templates/flows/ to the runtime templates directory
+	// These include fullstack-builder and interviewer-to-build
+	try {
+		const distTemplatesDir = join(__dirname, "..", "templates", "flows");
+		if (existsSync(distTemplatesDir)) {
+			const files = readdirSync(distTemplatesDir).filter((f) =>
+				f.endsWith(".json"),
+			);
+			for (const file of files) {
+				const srcPath = join(distTemplatesDir, file);
+				const tpl = readJsonFile<FlowDefinition>(srcPath);
+				if (tpl?.id) {
+					const destPath = join(TEMPLATES_DIR, `${tpl.id}.json`);
+					if (!existsSync(destPath)) {
+						writeJsonFile(destPath, tpl);
+						console.log(`[Flows] Copied template: ${tpl.name} (${tpl.id})`);
+					}
+				}
+			}
+		}
+	} catch (err) {
+		console.warn(
+			"[Flows] Failed to copy dist templates:",
+			(err as Error).message,
+		);
+	}
+
+	// Clean up zombie executions — mark "running" executions as failed on startup
+	// (they can't still be running if the server just started)
+	try {
+		const execs = listExecutions();
+		for (const exec of execs) {
+			if (exec.status === "running" || exec.status === "pending") {
+				exec.status = "failed";
+				exec.completedAt = new Date().toISOString();
+				saveExecution(exec);
+				console.log(`[Flows] Cleaned zombie execution: ${exec.id}`);
+			}
+		}
+	} catch {
+		/* non-fatal */
 	}
 }

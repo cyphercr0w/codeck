@@ -206,12 +206,12 @@ function runAgent(
 			TERM: "dumb",
 		};
 
-		// Build spawn arguments
+		// Build spawn arguments — use stream-json for real-time output
 		const spawnArgs: string[] = [
 			"-p",
 			prompt,
 			"--output-format",
-			"text",
+			"stream-json",
 			"--no-session-persistence",
 		];
 
@@ -249,6 +249,7 @@ function runAgent(
 
 		let outputBuffer = "";
 		let timedOut = false;
+		let streamBuffer = ""; // Buffer for incomplete JSON lines from stream-json
 
 		// Timeout handler
 		const timeoutHandle = setTimeout(() => {
@@ -267,28 +268,69 @@ function runAgent(
 		}, agent.timeoutMs);
 
 		child.stdout?.on("data", (data: Buffer) => {
-			const chunk = data.toString();
-			outputBuffer += chunk;
+			const raw = data.toString();
 
-			// Log to JSONL
-			const logLine =
-				JSON.stringify({
-					timestamp: Date.now(),
-					agentId: agent.id,
-					type: "stdout",
-					data: chunk,
-				}) + "\n";
-			try {
-				appendFileSync(jsonlPath, logLine);
-			} catch {
-				/* ignore write errors */
+			// Parse stream-json: each line is a JSON object
+			streamBuffer += raw;
+			const lines = streamBuffer.split("\n");
+			streamBuffer = lines.pop() || ""; // Keep incomplete last line
+
+			for (const line of lines) {
+				if (!line.trim()) continue;
+				let textChunk = "";
+				try {
+					const event = JSON.parse(line);
+					// Extract text content from stream-json events
+					if (event.type === "assistant" && event.message?.content) {
+						for (const block of event.message.content) {
+							if (block.type === "text" && block.text) {
+								textChunk += block.text;
+							}
+						}
+					} else if (
+						event.type === "content_block_delta" &&
+						event.delta?.text
+					) {
+						textChunk = event.delta.text;
+					} else if (event.type === "result" && event.result) {
+						// Final result — extract text
+						if (typeof event.result === "string") {
+							textChunk = event.result;
+						} else if (event.result.content) {
+							for (const block of event.result.content) {
+								if (block.type === "text") textChunk += block.text;
+							}
+						}
+					}
+				} catch {
+					// Not valid JSON — treat as raw text
+					textChunk = line;
+				}
+
+				if (textChunk) {
+					outputBuffer += textChunk;
+
+					// Log to JSONL
+					const logLine =
+						JSON.stringify({
+							timestamp: Date.now(),
+							agentId: agent.id,
+							type: "stdout",
+							data: textChunk,
+						}) + "\n";
+					try {
+						appendFileSync(jsonlPath, logLine);
+					} catch {
+						/* ignore write errors */
+					}
+
+					// Broadcast live output to frontend
+					broadcast({
+						type: "flow:agent:output",
+						data: { executionId, agentId: agent.id, chunk: textChunk },
+					});
+				}
 			}
-
-			// Broadcast live output
-			broadcast({
-				type: "flow:agent:output",
-				data: { executionId, agentId: agent.id, chunk },
-			});
 		});
 
 		child.stderr?.on("data", (data: Buffer) => {

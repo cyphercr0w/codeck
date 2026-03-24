@@ -19,7 +19,14 @@ import {
 	fetchRecentConversations,
 	pendingRestoredSessions,
 } from "./state/store";
-import { appendToAssistant, completeAssistant } from "./state/chat-store";
+import {
+	appendToAssistant,
+	completeAssistant,
+	startFlowInChat,
+	appendFlowAgentOutput,
+	completeFlowAgent,
+	completeFlowExecution,
+} from "./state/chat-store";
 import { apiFetch, getAuthToken } from "./api";
 
 // Known WebSocket message types — reject anything not in this set
@@ -48,6 +55,11 @@ const KNOWN_MSG_TYPES = new Set([
 	"session:conversationId",
 	"chat:response:chunk",
 	"chat:response:complete",
+	"chat:flow:started",
+	"flow:execution:update",
+	"flow:agent:output",
+	"flow:agent:complete",
+	"flow:execution:complete",
 ]);
 
 /** Runtime validation for incoming WebSocket messages */
@@ -410,6 +422,63 @@ function openWs(wsUrl: string, protocols?: string[]): void {
 						typeof d.error === "string" ? d.error : undefined,
 					);
 				}
+			} else if (msg.type === "chat:flow:started" && msg.data) {
+				const d = msg.data as Record<string, unknown>;
+				if (
+					typeof d.executionId === "string" &&
+					typeof d.conversationId === "string" &&
+					typeof d.flowName === "string" &&
+					Array.isArray(d.agents)
+				) {
+					startFlowInChat(
+						d.executionId,
+						d.conversationId,
+						d.flowName,
+						d.agents as Array<{
+							id: string;
+							name: string;
+							role: string;
+						}>,
+					);
+				}
+			} else if (msg.type === "flow:agent:output" && msg.data) {
+				const d = msg.data as Record<string, unknown>;
+				if (
+					typeof d.executionId === "string" &&
+					typeof d.agentId === "string" &&
+					typeof d.chunk === "string"
+				) {
+					appendFlowAgentOutput(d.executionId, d.agentId, d.chunk);
+				}
+			} else if (msg.type === "flow:agent:complete" && msg.data) {
+				const d = msg.data as Record<string, unknown>;
+				if (
+					typeof d.executionId === "string" &&
+					typeof d.agentId === "string" &&
+					typeof d.result === "object" &&
+					d.result !== null
+				) {
+					const r = d.result as Record<string, unknown>;
+					completeFlowAgent(d.executionId, d.agentId, {
+						status: typeof r.status === "string" ? r.status : "completed",
+						output: typeof r.output === "string" ? r.output : undefined,
+						startedAt:
+							typeof r.startedAt === "string" ? r.startedAt : undefined,
+						completedAt:
+							typeof r.completedAt === "string" ? r.completedAt : null,
+						structuredDecision:
+							typeof r.structuredDecision === "string"
+								? r.structuredDecision
+								: undefined,
+					});
+				}
+			} else if (msg.type === "flow:execution:complete" && msg.data) {
+				const d = msg.data as Record<string, unknown>;
+				if (typeof d.id === "string") {
+					completeFlowExecution(d.id, (d.status as string) || "completed");
+				}
+			} else if (msg.type === "flow:execution:update") {
+				// Status updates handled implicitly by agent:output/complete
 			}
 		} catch (err) {
 			console.warn("[WS] Failed to parse message:", err);

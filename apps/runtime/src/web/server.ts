@@ -455,6 +455,8 @@ export async function startWebServer(): Promise<void> {
 			"/memory",
 			"/console/context",
 			"/console/subagents",
+			"/flows",
+			"/chat",
 		];
 		if (localBypassPaths.some((p) => req.path.startsWith(p))) {
 			const ip = req.ip || "";

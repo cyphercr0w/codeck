@@ -2,13 +2,25 @@ import { signal } from "@preact/signals";
 
 export interface ChatMessage {
 	id: string;
-	role: "user" | "assistant" | "system";
+	role: "user" | "assistant" | "system" | "flow";
 	content: string;
 	timestamp: number;
 	chatId?: string; // links to streaming response
 	streaming?: boolean;
 	streamStartedAt?: number; // when streaming began (for elapsed timer)
 	durationMs?: number; // total response time (set on complete)
+	// Flow-related fields
+	flowType?:
+		| "flow-start"
+		| "agent-active"
+		| "agent-complete"
+		| "flow-complete"
+		| "flow-failed";
+	flowAgentId?: string;
+	flowAgentName?: string;
+	flowExecutionId?: string;
+	flowProgress?: { current: number; total: number };
+	collapsed?: boolean;
 }
 
 export interface ChatConversation {
@@ -28,6 +40,34 @@ export const chatUseTools = signal(false);
 export const conversations = signal<ChatConversation[]>([]);
 export const activeConversationId = signal<string | null>(null);
 export const editingConversationName = signal<string | null>(null);
+
+// ── Flow execution state ──
+
+export interface FlowAgent {
+	id: string;
+	name: string;
+	role: string;
+}
+
+export interface ActiveFlowState {
+	executionId: string;
+	conversationId: string;
+	flowName: string;
+	agents: FlowAgent[];
+	currentAgentId: string | null;
+	currentAgentIndex: number;
+	status: "running" | "completed" | "failed" | "cancelled";
+	agentOutputs: Record<string, string>;
+	agentDurations: Record<string, number>;
+	agentDecisions: Record<string, string>;
+	agentStartedAt: Record<string, number>;
+	loopCount: number;
+	startedAt: number;
+}
+
+export const activeFlowExecution = signal<ActiveFlowState | null>(null);
+// Archived flows keyed by executionId — preserves final state after completion
+export const archivedFlows = signal<Record<string, ActiveFlowState>>({});
 
 export type ApiFetchFn = (
 	url: string,
@@ -167,4 +207,165 @@ export async function deleteConversation(
 	} catch {
 		/* non-fatal */
 	}
+}
+
+// ── Flow integration functions ──
+
+export function startFlowInChat(
+	executionId: string,
+	conversationId: string,
+	flowName: string,
+	agents: FlowAgent[],
+): void {
+	// Idempotent — don't re-initialize if already tracking this execution
+	if (activeFlowExecution.value?.executionId === executionId) return;
+
+	activeFlowExecution.value = {
+		executionId,
+		conversationId,
+		flowName,
+		agents,
+		currentAgentId: null,
+		currentAgentIndex: 0,
+		status: "running",
+		agentOutputs: {},
+		agentDurations: {},
+		agentDecisions: {},
+		agentStartedAt: {},
+		loopCount: 0,
+		startedAt: Date.now(),
+	};
+	chatStreaming.value = true;
+
+	// Add flow-start message to chat
+	chatMessages.value = [
+		...chatMessages.value,
+		{
+			id: crypto.randomUUID(),
+			role: "flow",
+			content: "",
+			timestamp: Date.now(),
+			flowType: "flow-start",
+			flowExecutionId: executionId,
+			streaming: true,
+			streamStartedAt: Date.now(),
+		},
+	];
+}
+
+export function appendFlowAgentOutput(
+	executionId: string,
+	agentId: string,
+	chunk: string,
+): void {
+	const flow = activeFlowExecution.value;
+	if (!flow || flow.executionId !== executionId) return;
+
+	const idx = flow.agents.findIndex((a) => a.id === agentId);
+	const outputs = { ...flow.agentOutputs };
+	outputs[agentId] = (outputs[agentId] || "") + chunk;
+
+	// Track agent start time (first chunk = agent started)
+	const starts = { ...flow.agentStartedAt };
+	if (!starts[agentId]) starts[agentId] = Date.now();
+
+	// Detect loops: if this agent already completed before and is running again
+	let loopCount = flow.loopCount;
+	if (flow.currentAgentId !== agentId && flow.agentDurations[agentId] != null) {
+		loopCount++;
+	}
+
+	activeFlowExecution.value = {
+		...flow,
+		currentAgentId: agentId,
+		currentAgentIndex: idx >= 0 ? idx : flow.currentAgentIndex,
+		agentOutputs: outputs,
+		agentStartedAt: starts,
+		loopCount,
+	};
+
+	// Update the flow-start message to trigger re-render
+	chatMessages.value = chatMessages.value.map((m) => {
+		if (m.flowType === "flow-start" && m.flowExecutionId === executionId) {
+			return { ...m, content: `agent:${agentId}` };
+		}
+		return m;
+	});
+}
+
+export function completeFlowAgent(
+	executionId: string,
+	agentId: string,
+	result: {
+		status: string;
+		output?: string;
+		startedAt?: string;
+		completedAt?: string | null;
+		structuredDecision?: string;
+	},
+): void {
+	const flow = activeFlowExecution.value;
+	if (!flow || flow.executionId !== executionId) return;
+
+	const durations = { ...flow.agentDurations };
+	if (result.startedAt && result.completedAt) {
+		durations[agentId] =
+			new Date(result.completedAt).getTime() -
+			new Date(result.startedAt).getTime();
+	}
+
+	const decisions = { ...flow.agentDecisions };
+	if (result.structuredDecision) {
+		decisions[agentId] = result.structuredDecision;
+	}
+
+	activeFlowExecution.value = {
+		...flow,
+		agentDurations: durations,
+		agentDecisions: decisions,
+	};
+}
+
+export function completeFlowExecution(
+	executionId: string,
+	status: string,
+): void {
+	const flow = activeFlowExecution.value;
+	if (!flow || flow.executionId !== executionId) return;
+
+	const finalStatus =
+		status === "completed" || status === "failed" || status === "cancelled"
+			? status
+			: "completed";
+
+	const finalFlow: ActiveFlowState = {
+		...flow,
+		status: finalStatus as "completed" | "failed" | "cancelled",
+		currentAgentId: null,
+	};
+
+	// Archive the final state so the UI can still render the completed timeline
+	archivedFlows.value = {
+		...archivedFlows.value,
+		[executionId]: finalFlow,
+	};
+
+	// Update the flow message to not streaming
+	chatMessages.value = chatMessages.value.map((m) => {
+		if (m.flowType === "flow-start" && m.flowExecutionId === executionId) {
+			return {
+				...m,
+				streaming: false,
+				flowType:
+					finalStatus === "completed"
+						? ("flow-complete" as const)
+						: ("flow-failed" as const),
+				durationMs: Date.now() - (m.streamStartedAt || Date.now()),
+			};
+		}
+		return m;
+	});
+
+	chatStreaming.value = false;
+	activeFlowExecution.value = null;
 }

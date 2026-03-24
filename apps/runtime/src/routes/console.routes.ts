@@ -692,6 +692,7 @@ router.get("/subagents", (_req, res) => {
 	const agents = [...activeSubagents.values()].map((a) => ({
 		agentId: a.agentId,
 		agentType: a.agentType,
+		sessionId: a.sessionId,
 		startedAt: a.startedAt,
 		lastLine: a.lastLine,
 		elapsed: Date.now() - a.startedAt,

@@ -5,6 +5,7 @@ const SECTION_ROUTES: Record<Section, string> = {
 	chat: "/chat",
 	filesystem: "/files",
 	claude: "/terminal",
+	flows: "/flows",
 	agents: "/agents",
 	integrations: "/integrations",
 	config: "/memory",

@@ -5993,12 +5993,18 @@
 	resize: none;
 	outline: none;
 	line-height: 1.5;
-	min-height: 44px;
+	min-height: 60px;
 	max-height: 160px;
 	overflow-y: auto;
 }
 .chat-input::placeholder {
 	color: var(--text-muted);
+}
+.chat-input-footer {
+	display: flex;
+	align-items: center;
+	padding: 4px 16px 8px;
+	gap: 8px;
 }
 .chat-send {
 	display: flex;
@@ -6322,6 +6328,7 @@
 		animation: slide-right 0.2s ease;
 	}
 	.chat-sidebar-wrap.mobile-open .chat-sidebar {
+		display: flex;
 		width: 100%;
 		height: 100%;
 	}

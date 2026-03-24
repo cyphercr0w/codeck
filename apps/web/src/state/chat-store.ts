@@ -74,16 +74,23 @@ export function appendToAssistant(chatId: string, chunk: string): void {
 	});
 }
 
-export function completeAssistant(chatId: string, exitCode = 0): void {
+export function completeAssistant(
+	chatId: string,
+	exitCode = 0,
+	error?: string,
+): void {
 	chatMessages.value = chatMessages.value.map((m) => {
 		if (m.chatId !== chatId) return m;
 		const durationMs = m.streamStartedAt
 			? Date.now() - m.streamStartedAt
 			: undefined;
 		if (exitCode !== 0 && !m.content) {
+			const errText = error
+				? `Something went wrong: ${error}`
+				: "Something went wrong. Please try again.";
 			return {
 				...m,
-				content: "Something went wrong. Please try again.",
+				content: errText,
 				streaming: false,
 				durationMs,
 			};

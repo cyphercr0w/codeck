@@ -407,6 +407,7 @@ function openWs(wsUrl: string, protocols?: string[]): void {
 					completeAssistant(
 						d.chatId,
 						typeof d.exitCode === "number" ? d.exitCode : 0,
+						typeof d.error === "string" ? d.error : undefined,
 					);
 				}
 			}

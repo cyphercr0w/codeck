@@ -445,9 +445,8 @@ export function ChatSection() {
 								}
 								onKeyDown={handleKeyDown}
 								onFocus={handleInputFocus}
-								rows={2}
+								rows={3}
 							/>
-							<ToolsToggle />
 							<button
 								class="chat-send"
 								onClick={handleSend}
@@ -464,6 +463,9 @@ export function ChatSection() {
 									<path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z" />
 								</svg>
 							</button>
+						</div>
+						<div class="chat-input-footer">
+							<ToolsToggle />
 						</div>
 						<div class="chat-quick-actions">
 							{quickActions.map((a) => (
@@ -612,11 +614,9 @@ export function ChatSection() {
 						onInput={(e) => setInput((e.target as HTMLTextAreaElement).value)}
 						onKeyDown={handleKeyDown}
 						onFocus={handleInputFocus}
-						rows={2}
+						rows={3}
 						disabled={streaming}
 					/>
-					<ToolsToggle />
-					<ChatModelSelector />
 					<button
 						class="chat-send"
 						onClick={handleSend}
@@ -633,6 +633,10 @@ export function ChatSection() {
 							<path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z" />
 						</svg>
 					</button>
+				</div>
+				<div class="chat-input-footer">
+					<ToolsToggle />
+					<ChatModelSelector />
 				</div>
 			</div>
 		</div>

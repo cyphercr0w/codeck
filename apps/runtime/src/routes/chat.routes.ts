@@ -125,6 +125,11 @@ router.post("/message", (req, res) => {
 		return;
 	}
 
+	// Ensure conversations directory exists before any file operations.
+	// On first use after a fresh install the directory may not exist yet,
+	// and readConversation / writeConversation both depend on it.
+	ensureConversationsDir();
+
 	// Validate context if provided
 	const safeContext =
 		typeof context === "string" && context.length <= 50000 ? context : "";
@@ -227,12 +232,22 @@ router.post("/message", (req, res) => {
 				});
 
 				if (!apiRes.ok || !apiRes.body) {
+					let errDetail = `HTTP ${apiRes.status}`;
+					try {
+						const errBody = await apiRes.text();
+						const errJson = JSON.parse(errBody);
+						errDetail = errJson?.error?.message || errBody.slice(0, 200);
+					} catch {
+						/* use status code */
+					}
+					console.error(`[Chat] API error for ${chatId}: ${errDetail}`);
 					broadcast({
 						type: "chat:response:complete",
 						data: {
 							chatId,
 							fullResponse: "",
 							exitCode: 1,
+							error: errDetail,
 							conversationId: conversation.id,
 						},
 					});
@@ -295,16 +310,15 @@ router.post("/message", (req, res) => {
 					},
 				});
 			} catch (err) {
-				console.error(
-					`[Chat] API error for ${chatId}:`,
-					(err as Error).message,
-				);
+				const errMsg = (err as Error).message || "Unknown error";
+				console.error(`[Chat] API error for ${chatId}:`, errMsg);
 				broadcast({
 					type: "chat:response:complete",
 					data: {
 						chatId,
 						fullResponse: "",
 						exitCode: 1,
+						error: errMsg,
 						conversationId: conversation.id,
 					},
 				});

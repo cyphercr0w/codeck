@@ -8,8 +8,8 @@ set -euo pipefail
 # Config is stored as Docker container labels — no host-side state files.
 #
 # Usage:
-#   curl -fsSL https://codeck.xyz/install | bash          # interactive
-#   CODECK_PORT=3000 curl -fsSL https://codeck.xyz/install | bash  # non-interactive
+#   curl -fsSL https://codeck.xyz/install -o /tmp/codeck.sh && bash /tmp/codeck.sh
+#   CODECK_PORT=3000 bash /tmp/codeck.sh   # non-interactive via env vars
 #
 # Environment overrides (skip prompts):
 #   CODECK_PORT     — host port (default: 8080)

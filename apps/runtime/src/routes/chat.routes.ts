@@ -162,10 +162,22 @@ router.post("/message", (req, res) => {
 	conversation.updatedAt = now;
 	writeConversation(conversation);
 
-	// Build prompt — include context if provided
-	const prompt = safeContext
-		? `${safeContext}\n\nUser message: ${message}`
-		: message;
+	// Build prompt with conversation history for continuity
+	let prompt = "";
+	// Include previous messages as context (up to 20 most recent)
+	const prevMessages = conversation.messages.slice(-21, -1); // exclude the message we just added
+	if (prevMessages.length > 0) {
+		prompt += "Previous conversation:\n";
+		for (const msg of prevMessages) {
+			const label = msg.role === "user" ? "User" : "Assistant";
+			prompt += `${label}: ${msg.content}\n\n`;
+		}
+		prompt += "---\n\n";
+	}
+	if (safeContext) {
+		prompt += `${safeContext}\n\n`;
+	}
+	prompt += `User: ${message}`;
 
 	const binary = getValidAgentBinary();
 	const env = { ...buildCleanEnv(), ...getOAuthEnv(), TERM: "dumb" };

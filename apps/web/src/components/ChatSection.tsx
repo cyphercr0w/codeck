@@ -17,7 +17,13 @@ import {
 import { showToast } from "../state/store";
 import { apiFetch } from "../api";
 
-function ConversationSidebar() {
+function ConversationSidebar({
+	collapsed,
+	onToggle,
+}: {
+	collapsed: boolean;
+	onToggle: () => void;
+}) {
 	const convList = conversations.value;
 	const activeId = activeConversationId.value;
 	const editingId = editingConversationName.value;
@@ -73,11 +79,32 @@ function ConversationSidebar() {
 		deleteConversation(id, apiFetch);
 	}
 
+	if (collapsed) {
+		return (
+			<div class="chat-sidebar chat-sidebar-collapsed">
+				<button
+					class="chat-sidebar-toggle"
+					onClick={onToggle}
+					title="Show conversations"
+				>
+					☰
+				</button>
+			</div>
+		);
+	}
+
 	return (
 		<div class="chat-sidebar">
 			<div class="chat-sidebar-header">
 				<button class="chat-sidebar-new" onClick={handleNewChat}>
 					+ New Chat
+				</button>
+				<button
+					class="chat-sidebar-toggle"
+					onClick={onToggle}
+					title="Hide conversations"
+				>
+					✕
 				</button>
 			</div>
 			<div class="chat-sidebar-list">
@@ -119,6 +146,7 @@ function ConversationSidebar() {
 
 export function ChatSection() {
 	const [input, setInput] = useState("");
+	const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 	const messagesRef = useRef<HTMLDivElement>(null);
 	const inputRef = useRef<HTMLTextAreaElement>(null);
 
@@ -126,9 +154,15 @@ export function ChatSection() {
 	const streaming = chatStreaming.value;
 	const isEmpty = messages.length === 0;
 
-	// Fetch conversations on mount
+	// Fetch conversations on mount + reload active conversation if messages lost
 	useEffect(() => {
 		fetchConversations(apiFetch);
+		// If we had an active conversation but messages are gone (navigated away and back),
+		// reload from server
+		const convId = activeConversationId.value;
+		if (convId && chatMessages.value.length === 0) {
+			loadConversation(convId, apiFetch);
+		}
 	}, []);
 
 	// Auto-scroll on new messages
@@ -189,7 +223,10 @@ export function ChatSection() {
 	if (isEmpty) {
 		return (
 			<div class="chat-layout">
-				<ConversationSidebar />
+				<ConversationSidebar
+					collapsed={sidebarCollapsed}
+					onToggle={() => setSidebarCollapsed((c) => !c)}
+				/>
 				<div class="chat-main">
 					<div class="chat-empty">
 						<div class="chat-greeting">
@@ -248,7 +285,10 @@ export function ChatSection() {
 
 	return (
 		<div class="chat-layout">
-			<ConversationSidebar />
+			<ConversationSidebar
+				collapsed={sidebarCollapsed}
+				onToggle={() => setSidebarCollapsed((c) => !c)}
+			/>
 			<div class="chat-main">
 				<div class="chat-header">
 					<span class="chat-header-title">Chat</span>

@@ -6241,3 +6241,32 @@
 .chat-msg-assistant .chat-msg-meta {
 	text-align: left;
 }
+
+/* ── Chat Sidebar Collapse ── */
+.chat-sidebar-collapsed {
+	width: 40px;
+	align-items: center;
+	padding-top: 12px;
+}
+.chat-sidebar-toggle {
+	background: none;
+	border: none;
+	color: var(--text-muted);
+	cursor: pointer;
+	font-size: 16px;
+	padding: 4px 8px;
+	border-radius: 4px;
+	transition: all 0.15s;
+}
+.chat-sidebar-toggle:hover {
+	background: var(--bg-hover);
+	color: var(--text-primary);
+}
+.chat-sidebar-header {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+}
+.chat-sidebar-header .chat-sidebar-new {
+	flex: 1;
+}

@@ -1,9 +1,3 @@
-<!--
-  Source: affaan-m/everything-claude-code (MIT License)
-  https://github.com/affaan-m/everything-claude-code
-  Author: Affaan Mustafa — integrated into Codeck with modifications.
--->
-
 | name | description |
 |------|-------------|
 | cloud-infrastructure-security | Use this skill when deploying to cloud platforms, configuring infrastructure, managing IAM policies, setting up logging/monitoring, or implementing CI/CD pipelines. Provides cloud security checklist aligned with best practices. |

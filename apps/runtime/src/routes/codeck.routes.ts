@@ -3,13 +3,43 @@ import { readdir, stat, readFile, writeFile, realpath, access, mkdir, rm } from 
 import { join, resolve, sep } from 'path';
 import { execFile, spawn } from 'child_process';
 import { promisify } from 'util';
-import { existsSync, createReadStream } from 'fs';
+import { existsSync, createReadStream, readFileSync, writeFileSync } from 'fs';
 
 const execFileAsync = promisify(execFile);
 
 const WORKSPACE = resolve(process.env.WORKSPACE || '/workspace');
 const AGENT_DATA_DIR = join(WORKSPACE, '.codeck');
+const CLAUDE_JSON_PATH = join(process.env.HOME || '/root', '.claude.json');
 const router = Router();
+
+/**
+ * Sync an env var value into MCP server configs in .claude.json.
+ * When a user saves e.g. SUPABASE_ACCESS_TOKEN=xxx, we need to update
+ * the matching env field in mcpServers (or _disabledMcpServers) so
+ * Claude Code can pass it to the MCP subprocess on start.
+ */
+function syncEnvToMcpServers(key: string, value: string | null): void {
+  try {
+    const raw = readFileSync(CLAUDE_JSON_PATH, 'utf-8');
+    const config = JSON.parse(raw);
+    let changed = false;
+
+    for (const section of ['mcpServers', '_disabledMcpServers']) {
+      const servers = config[section];
+      if (!servers || typeof servers !== 'object') continue;
+      for (const serverConfig of Object.values(servers) as Array<{ env?: Record<string, string> }>) {
+        if (serverConfig.env && key in serverConfig.env) {
+          serverConfig.env[key] = value ?? '';
+          changed = true;
+        }
+      }
+    }
+
+    if (changed) {
+      writeFileSync(CLAUDE_JSON_PATH, JSON.stringify(config, null, 2));
+    }
+  } catch { /* non-fatal — .claude.json may not exist yet */ }
+}
 
 /**
  * Resolve a relative path against a base directory, validate it stays within bounds,
@@ -128,12 +158,21 @@ router.put('/files/write', async (req, res) => {
     return;
   }
 
-  // Only allow writing to existing files (no creating new ones via API)
+  // Allow writing to existing files OR creating new files in existing directories
+  // (needed for adding new rules, preferences, etc.)
   try {
     await access(fullPath);
   } catch {
-    res.status(404).json({ error: 'File not found' });
-    return;
+    // File doesn't exist — check if parent directory exists (allow creation there)
+    const { dirname: dirFn } = await import('path');
+    const parentDir = dirFn(fullPath);
+    try {
+      await access(parentDir);
+    } catch {
+      // Parent dir doesn't exist — create it (for rules/user/ etc.)
+      const { mkdir: mkdirFn } = await import('fs/promises');
+      await mkdirFn(parentDir, { recursive: true });
+    }
   }
 
   try {
@@ -142,6 +181,105 @@ router.put('/files/write', async (req, res) => {
   } catch {
     res.status(500).json({ error: 'Write failed' });
   }
+});
+
+// ── Environment Variables (.codeck/.env — encrypted at rest) ──
+
+import { encryptValue, decryptValue, type EncryptedValue } from '../services/auth-anthropic/encryption.js';
+
+const ENV_FILE = join(AGENT_DATA_DIR, '.env');
+const ENV_ENCRYPTED_FILE = join(AGENT_DATA_DIR, '.env.encrypted');
+
+interface EncryptedEnvStore {
+  version: 1;
+  vars: Array<{ key: string; value: EncryptedValue }>;
+}
+
+/** Read and decrypt env vars. Handles migration from plaintext .env */
+function parseEnvFile(): Array<{ key: string; value: string }> {
+  // Prefer encrypted file
+  if (existsSync(ENV_ENCRYPTED_FILE)) {
+    try {
+      const store: EncryptedEnvStore = JSON.parse(readFileSync(ENV_ENCRYPTED_FILE, 'utf-8'));
+      return store.vars.map(v => ({ key: v.key, value: decryptValue(v.value) }));
+    } catch (e) {
+      console.warn('[Env] Failed to decrypt .env.encrypted:', (e as Error).message);
+      // Fall through to plaintext
+    }
+  }
+
+  // Fallback: plaintext .env (legacy or first run)
+  if (!existsSync(ENV_FILE)) return [];
+  try {
+    const content = readFileSync(ENV_FILE, 'utf-8');
+    const vars: Array<{ key: string; value: string }> = [];
+    for (const line of content.split('\n')) {
+      const trimmed = line.trim();
+      if (!trimmed || trimmed.startsWith('#')) continue;
+      const eqIdx = trimmed.indexOf('=');
+      if (eqIdx > 0) {
+        const key = trimmed.slice(0, eqIdx).trim();
+        const val = trimmed.slice(eqIdx + 1).trim().replace(/^["']|["']$/g, '');
+        if (key) vars.push({ key, value: val });
+      }
+    }
+
+    // Auto-migrate: encrypt and delete plaintext
+    if (vars.length > 0) {
+      writeEnvFile(vars);
+      try { writeFileSync(ENV_FILE, '# Migrated to .env.encrypted\n', { mode: 0o600 }); } catch {}
+      console.log(`[Env] Migrated ${vars.length} vars from plaintext .env to encrypted storage`);
+    }
+    return vars;
+  } catch { return []; }
+}
+
+/** Encrypt and write env vars */
+function writeEnvFile(vars: Array<{ key: string; value: string }>) {
+  const store: EncryptedEnvStore = {
+    version: 1,
+    vars: vars.map(v => ({ key: v.key, value: encryptValue(v.value) })),
+  };
+  writeFileSync(ENV_ENCRYPTED_FILE, JSON.stringify(store, null, 2), { mode: 0o600 });
+}
+
+router.get('/env', (_req, res) => {
+  // Return keys only — never expose values via API
+  const vars = parseEnvFile();
+  res.json({ vars: vars.map(v => ({ key: v.key, hasValue: v.value.length > 0 })) });
+});
+
+router.post('/env', (req, res) => {
+  const { key, value } = req.body;
+  if (!key || typeof key !== 'string' || !/^[A-Z_][A-Z0-9_]*$/i.test(key)) {
+    res.status(400).json({ error: 'Invalid key (use UPPER_SNAKE_CASE)' });
+    return;
+  }
+  if (typeof value !== 'string') {
+    res.status(400).json({ error: 'Value required' });
+    return;
+  }
+  const vars = parseEnvFile();
+  const existing = vars.findIndex(v => v.key === key);
+  if (existing >= 0) {
+    vars[existing].value = value;
+  } else {
+    vars.push({ key, value });
+  }
+  writeEnvFile(vars);
+  // Sync to MCP server configs so Claude Code picks up the new value
+  syncEnvToMcpServers(key, value);
+  res.json({ success: true });
+});
+
+router.delete('/env', (req, res) => {
+  const { key } = req.body;
+  if (!key) { res.status(400).json({ error: 'Key required' }); return; }
+  const vars = parseEnvFile().filter(v => v.key !== key);
+  writeEnvFile(vars);
+  // Clear the value in MCP configs (set to empty, don't remove the key)
+  syncEnvToMcpServers(key, '');
+  res.json({ success: true });
 });
 
 // ── Memory Export (tar.gz of .codeck/) ──
@@ -174,6 +312,7 @@ router.get('/export', async (_req, res) => {
       '--exclude=./backups',
       '--exclude=./agents/*/executions',
       '--exclude=./.import-tmp-*',
+      '--exclude=./.env',
       '-C', AGENT_DATA_DIR,
       '.',
     ], { stdio: ['ignore', 'pipe', 'pipe'] });
@@ -247,24 +386,23 @@ router.post('/import', async (req, res) => {
     // Remove the temp tar file
     await rm(tmpFile);
 
-    // Directories to import (preserve auth.json, config.json, sessions)
-    const importDirs = ['memory', 'rules', 'skills', 'preferences.md', 'ecc', 'agents'];
+    // Strict allowlist — only import known safe directories/files.
+    // Never import auth.json, config.json, sessions, .env, or unknown entries.
+    const IMPORT_ALLOWLIST = new Set(['memory', 'rules', 'skills', 'preferences.md', 'ecc', 'agents', 'daily']);
 
     let imported = 0;
     for (const entry of await readdir(tmpDir)) {
-      // Copy each directory/file from extracted archive into .codeck/
+      if (!IMPORT_ALLOWLIST.has(entry)) continue; // skip anything not in allowlist
+
       const src = join(tmpDir, entry);
       const dest = join(AGENT_DATA_DIR, entry);
-      const s = await stat(src);
 
-      if (s.isDirectory() || importDirs.includes(entry) || entry.endsWith('.md')) {
-        // Remove existing and replace
-        if (existsSync(dest)) {
-          await rm(dest, { recursive: true, force: true });
-        }
-        await execFileAsync('cp', ['-a', src, dest], { timeout: 10_000 });
-        imported++;
+      // Remove existing and replace
+      if (existsSync(dest)) {
+        await rm(dest, { recursive: true, force: true });
       }
+      await execFileAsync('cp', ['-a', src, dest], { timeout: 10_000 });
+      imported++;
     }
 
     // Cleanup temp dir

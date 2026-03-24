@@ -79,3 +79,4 @@ docker/compose.override.yml
 # Shared data directory (managed mode — daemon ↔ runtime)
 .codeck-data/
 .playwright-mcp/
+.vercel

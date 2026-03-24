@@ -1,12 +1,7 @@
-<!--
-  Source: affaan-m/everything-claude-code (MIT License)
-  https://github.com/affaan-m/everything-claude-code
-  Author: Affaan Mustafa — integrated into Codeck with modifications.
--->
-
 ---
 name: deployment-patterns
-description: "CI/CD, Docker, health checks, rollbacks. Load when setting up deployment pipelines."
+description: Deployment workflows, CI/CD pipeline patterns, Docker containerization, health checks, rollback strategies, and production readiness checklists for web applications.
+origin: ECC
 ---
 
 # Deployment Patterns

@@ -97,6 +97,10 @@ export function setupInternalPty(): void {
   }, 30000);
 
   wss.on('connection', (ws, req) => {
+    // Disable Nagle for low-latency PTY I/O
+    const socket = (req as any).socket;
+    if (socket?.setNoDelay) socket.setNoDelay(true);
+
     // Extract session ID from URL: /internal/pty/<uuid>
     const pathname = (req.url || '').split('?')[0];
     const parts = pathname.split('/');

@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'preact/hooks';
-import { activeSessionId, activeSection } from '../state/store';
+import { activeSessionId, activeSection, mobileKeyboardOpen, claudeUsage, contextData, sessionStatus, sessions } from '../state/store';
 import { sendTerminalInput, scrollToBottom, fitTerminal, repaintTerminal } from '../terminal';
 
 // Escape sequences for special keys
@@ -299,6 +299,102 @@ export function MobileTerminalToolbar() {
           </button>
         )}
       </div>
+
+      {/* Usage limits bar — shown below special keys when keyboard is closed */}
+      {!mobileKeyboardOpen.value && <MobileLimitsBar />}
     </>
+  );
+}
+
+// ── Mobile Limits Bar ──
+// Compact version of the desktop TerminalStatusBar showing CTX, 5h, 7d limits.
+
+function barColor(p: number): string {
+  if (p < 60) return 'var(--accent)';
+  if (p < 85) return 'var(--warning)';
+  return 'var(--error)';
+}
+
+function MobileLimitsBar() {
+  const usage = claudeUsage.value;
+  const rawCtx = contextData.value;
+  const ctx = rawCtx && (Date.now() - rawCtx.updatedAt < 30_000) ? rawCtx : null;
+  const sid = activeSessionId.value || '';
+  const status = sessionStatus.value[sid] || 'idle';
+  const activeSession = sessions.value.find(s => s.id === sid);
+  const uptime = activeSession ? Math.floor((Date.now() - activeSession.createdAt) / 60000) : 0;
+
+  function formatReset(iso: string | null): string {
+    if (!iso) return '';
+    const diff = new Date(iso).getTime() - Date.now();
+    if (diff <= 0) return 'now';
+    const h = Math.floor(diff / 3600000);
+    const m = Math.floor((diff % 3600000) / 60000);
+    if (h >= 24) return `${Math.floor(h / 24)}d`;
+    if (h > 0) return `${h}h${m}m`;
+    return `${m}m`;
+  }
+
+  function formatUptime(mins: number): string {
+    if (mins < 60) return `${mins}m`;
+    return `${Math.floor(mins / 60)}h ${mins % 60}m`;
+  }
+
+  const hasLimits = (ctx && ctx.contextPercent > 0) || usage?.available;
+  if (!hasLimits) return null;
+
+  return (
+    <div class="mobile-limits-bar">
+      <div class="mobile-limits-items">
+        {ctx && ctx.contextPercent > 0 && (
+          <div class="mobile-limits-item">
+            <span class="mobile-limits-label">CTX</span>
+            <div class="ctx-segments">
+              {[0, 1, 2, 3, 4].map(i => {
+                const segStart = i * 20;
+                const pct = ctx.contextPercent;
+                const filled = pct >= segStart + 20;
+                const partial = !filled && pct > segStart;
+                return (
+                  <div
+                    key={i}
+                    class={`ctx-seg${filled ? ' filled' : ''}${partial ? ' partial' : ''}`}
+                    style={filled ? { background: barColor(pct) } : partial ? { background: `linear-gradient(to right, ${barColor(pct)} ${((pct - segStart) / 20) * 100}%, var(--bg-tertiary, #333) ${((pct - segStart) / 20) * 100}%)` } : undefined}
+                  />
+                );
+              })}
+            </div>
+            <span class="mobile-limits-pct">{ctx.contextPercent}%</span>
+          </div>
+        )}
+        {ctx && ctx.contextPercent > 0 && usage?.available && <span class="mobile-limits-sep">|</span>}
+        {usage?.available && usage.fiveHour && (
+          <div class="mobile-limits-item">
+            <span class="mobile-limits-label">5h</span>
+            <div class="mobile-limits-bar-track">
+              <div class="mobile-limits-bar-fill" style={{ width: `${Math.min(100, usage.fiveHour.percent)}%`, background: barColor(usage.fiveHour.percent) }} />
+            </div>
+            <span class="mobile-limits-pct">{usage.fiveHour.percent}%</span>
+            {usage.fiveHour.resetsAt && <span class="mobile-limits-reset">{formatReset(usage.fiveHour.resetsAt)}</span>}
+          </div>
+        )}
+        {usage?.available && usage.fiveHour && usage.sevenDay && <span class="mobile-limits-sep">|</span>}
+        {usage?.available && usage.sevenDay && (
+          <div class="mobile-limits-item">
+            <span class="mobile-limits-label">7d</span>
+            <div class="mobile-limits-bar-track">
+              <div class="mobile-limits-bar-fill" style={{ width: `${Math.min(100, usage.sevenDay.percent)}%`, background: barColor(usage.sevenDay.percent) }} />
+            </div>
+            <span class="mobile-limits-pct">{usage.sevenDay.percent}%</span>
+            {usage.sevenDay.resetsAt && <span class="mobile-limits-reset">{formatReset(usage.sevenDay.resetsAt)}</span>}
+          </div>
+        )}
+      </div>
+      <div class="mobile-limits-status">
+        <span class={`tsb-dot tsb-dot-${status}`} />
+        <span class="mobile-limits-status-text">{status === 'waiting' ? 'Waiting' : status}</span>
+        {ctx?.model && <span class="mobile-limits-model">{ctx.model}</span>}
+      </div>
+    </div>
   );
 }

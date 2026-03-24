@@ -1,9 +1,3 @@
-<!--
-  Source: affaan-m/everything-claude-code (MIT License)
-  https://github.com/affaan-m/everything-claude-code
-  Author: Affaan Mustafa — integrated into Codeck with modifications.
--->
-
 ---
 description: Comprehensive Go code review for idiomatic patterns, concurrency safety, error handling, and security. Invokes the go-reviewer agent.
 ---

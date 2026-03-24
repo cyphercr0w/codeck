@@ -43,6 +43,7 @@ export function LoginModal({ visible, onClose, onSuccess }: LoginModalProps) {
   const [urlReady, setUrlReady] = useState(false);
   const [done, setDone] = useState(false);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const pollingRef = useRef(false);
 
   useEffect(() => {
     if (visible) {
@@ -78,12 +79,15 @@ export function LoginModal({ visible, onClose, onSuccess }: LoginModalProps) {
       return () => {
         document.removeEventListener('keydown', handleKeyDown);
         if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
+        pollingRef.current = false;
       };
     } else {
       if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
+      pollingRef.current = false;
     }
     return () => {
       if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
+      pollingRef.current = false;
     };
   }, [visible]);
 
@@ -111,7 +115,9 @@ export function LoginModal({ visible, onClose, onSuccess }: LoginModalProps) {
   }
 
   function pollLoginStatus() {
+    if (pollingRef.current) return; // Prevent concurrent polling
     if (pollRef.current) clearInterval(pollRef.current);
+    pollingRef.current = true;
     let pollCount = 0;
 
     pollRef.current = setInterval(async () => {
@@ -119,6 +125,7 @@ export function LoginModal({ visible, onClose, onSuccess }: LoginModalProps) {
       if (pollCount > 120) {
         if (pollRef.current) clearInterval(pollRef.current);
         pollRef.current = null;
+        pollingRef.current = false;
         addLocalLog('error', 'Login timeout');
         onClose();
         return;
@@ -137,6 +144,7 @@ export function LoginModal({ visible, onClose, onSuccess }: LoginModalProps) {
         if (data.authenticated && !done) {
           if (pollRef.current) clearInterval(pollRef.current);
           pollRef.current = null;
+          pollingRef.current = false;
           claudeAuthenticated.value = true;
           setDone(true);
           setStatus('Authentication successful!');
@@ -149,6 +157,7 @@ export function LoginModal({ visible, onClose, onSuccess }: LoginModalProps) {
         if (!data.inProgress && !data.authenticated && !data.url && !urlReady) {
           if (pollRef.current) clearInterval(pollRef.current);
           pollRef.current = null;
+          pollingRef.current = false;
           addLocalLog('error', 'Login ended without URL');
           onClose();
         }
@@ -171,6 +180,7 @@ export function LoginModal({ visible, onClose, onSuccess }: LoginModalProps) {
 
     // Stop polling while submitting
     if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
+    pollingRef.current = false;
 
     setSubmitting(true);
     setStatus('Sending code...');
@@ -207,6 +217,7 @@ export function LoginModal({ visible, onClose, onSuccess }: LoginModalProps) {
 
   function handleCancel() {
     if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
+    pollingRef.current = false;
     apiFetch('/api/claude/login-cancel', { method: 'POST' }).catch(() => {});
     // Reset state so next open starts fresh
     setLoginUrl(null);

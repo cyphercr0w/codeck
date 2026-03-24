@@ -1,9 +1,3 @@
-<!--
-  Source: affaan-m/everything-claude-code (MIT License)
-  https://github.com/affaan-m/everything-claude-code
-  Author: Affaan Mustafa — integrated into Codeck with modifications.
--->
-
 ---
 name: doc-updater
 description: Documentation and codemap specialist. Use PROACTIVELY for updating codemaps and documentation. Runs /update-codemaps and /update-docs, generates docs/CODEMAPS/*, updates READMEs and guides.

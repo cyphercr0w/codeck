@@ -1,9 +1,3 @@
-<!--
-  Source: affaan-m/everything-claude-code (MIT License)
-  https://github.com/affaan-m/everything-claude-code
-  Author: Affaan Mustafa — integrated into Codeck with modifications.
--->
-
 ---
 description: Enforce test-driven development workflow. Scaffold interfaces, generate tests FIRST, then implement minimal code to pass. Ensure 80%+ coverage.
 ---
@@ -325,8 +319,10 @@ Never skip the RED phase. Never write code before tests.
 
 ## Related Agents
 
-This command invokes the `tdd-guide` agent located at:
-`~/.claude/agents/tdd-guide.md`
+This command invokes the `tdd-guide` agent provided by ECC.
 
-And can reference the `tdd-workflow` skill at:
-`~/.claude/skills/tdd-workflow/`
+The related `tdd-workflow` skill is also bundled with ECC.
+
+For manual installs, the source files live at:
+- `agents/tdd-guide.md`
+- `skills/tdd-workflow/SKILL.md`

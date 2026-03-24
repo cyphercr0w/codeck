@@ -11,13 +11,39 @@
   <link rel="icon" type="image/svg+xml" href="/favicon.svg">
   <link rel="apple-touch-icon" href="/icon-192.png">
   <link rel="manifest" href="/manifest.json">
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;700&family=JetBrains+Mono:wght@400;500;700&display=swap">
-  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+  <!-- Inline critical CSS for instant loading spinner -->
+  <style>
+    :root { --bg-primary: #09090b; --accent: #8b5cf6; }
+    body { margin: 0; background: var(--bg-primary); color: #fafafa; font-family: -apple-system, sans-serif; }
+    #app { height: 100dvh; }
+    /* Only center the inline loading spinner — removed once Preact mounts */
+    #app > .view-loading { height: 100%; display: flex; align-items: center; justify-content: center; text-align: center; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .spinner { width: 28px; height: 28px; border: 2px solid #333; border-top-color: var(--accent); border-radius: 50%; animation: spin 0.6s linear infinite; margin: 0 auto 12px; }
+  </style>
+  <!-- Fonts: self-hosted for zero external dependency (loaded via fonts.css in main.tsx) -->
 </head>
 <body>
-  <div id="app"></div>
+  <div id="app">
+    <!-- Inline loading state — renders before JS loads -->
+    <div class="view-loading"><div class="spinner"></div></div>
+  </div>
+  <script>
+    // API prefetch — starts before main bundle loads, saving one full RTT.
+    // The main app consumes window.__prefetch instead of making a new request.
+    (function() {
+      var t = localStorage.getItem('codeck_auth_token');
+      if (t) {
+        window.__prefetch = fetch('/api/status', { headers: { Authorization: 'Bearer ' + t } })
+          .then(function(r) { return r.ok ? r.json() : null; })
+          .catch(function() { return null; });
+      } else {
+        window.__prefetch = fetch('/api/auth/status')
+          .then(function(r) { return r.ok ? r.json() : null; })
+          .catch(function() { return null; });
+      }
+    })();
+  </script>
   <script type="module" src="/src/main.tsx"></script>
 </body>
 </html>

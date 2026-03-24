@@ -92,7 +92,21 @@ function startAuthRecoveryPoller(): void {
 }
 
 export function setupWebSocket(): void {
-  wss = new WebSocketServer({ noServer: true, maxPayload: 64 * 1024 });
+  wss = new WebSocketServer({
+    noServer: true,
+    maxPayload: 64 * 1024,
+    perMessageDeflate: {
+      zlibDeflateOptions: { level: 1 },
+      threshold: 128,
+    },
+    // Accept auth.* subprotocol so browser doesn't reject the connection
+    handleProtocols(protocols) {
+      for (const p of protocols) {
+        if (p.startsWith('auth.')) return p;
+      }
+      return false; // no matching protocol — still connects (just without subprotocol)
+    },
+  });
 
   // --- Server-side ping/pong keepalive ---
   const pingInterval = setInterval(() => {
@@ -137,6 +151,12 @@ export function setupWebSocket(): void {
   const INTERNAL_SECRET = process.env.CODECK_INTERNAL_SECRET || '';
 
   wss.on('connection', (ws, req) => {
+    // Disable Nagle's algorithm for low-latency terminal I/O.
+    // Without this, small packets (single keystrokes) may be delayed up to 40ms
+    // waiting for more data to coalesce. On 250ms links this adds perceptible lag.
+    const socket = (req as any).socket;
+    if (socket?.setNoDelay) socket.setNoDelay(true);
+
     // Auth validation for WebSocket
     if (isPasswordConfigured()) {
       const url = new URL(req.url || '', `http://${req.headers.host}`);
@@ -145,11 +165,35 @@ export function setupWebSocket(): void {
       const isTrustedProxy = INTERNAL_SECRET && internalParam === INTERNAL_SECRET;
 
       if (!isTrustedProxy) {
-        const ticket = url.searchParams.get('ticket');
-        const token = url.searchParams.get('token');
+        // Try subprotocol auth first (preferred — keeps token out of URL/logs)
+        // Format: "auth.<base64url-encoded-token>"
+        let token: string | null = null;
+        const protocols = req.headers['sec-websocket-protocol'];
+        if (protocols) {
+          const authProto = protocols.split(',').map(p => p.trim()).find(p => p.startsWith('auth.'));
+          if (authProto) {
+            const encoded = authProto.slice(5); // remove "auth." prefix
+            try {
+              token = Buffer.from(encoded, 'base64url').toString('utf-8');
+            } catch { /* invalid base64 */ }
+            // Accept the subprotocol so the browser doesn't reject the connection
+            // ws library handles this via handleProtocols in the upgrade handler
+          }
+        }
 
-        const authorized = ticket ? consumeWsTicket(ticket) : (!!token && validateSession(token));
-        if (!authorized) {
+        // Fallback to query params (backward compat + internal tools)
+        if (!token) {
+          const ticket = url.searchParams.get('ticket');
+          const queryToken = url.searchParams.get('token');
+          if (ticket && consumeWsTicket(ticket)) {
+            // ticket auth OK
+          } else if (queryToken && validateSession(queryToken)) {
+            // query token auth OK
+          } else {
+            ws.close(4001, 'Unauthorized');
+            return;
+          }
+        } else if (!validateSession(token)) {
           ws.close(4001, 'Unauthorized');
           return;
         }

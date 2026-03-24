@@ -4,14 +4,14 @@ import {
   view, activeSection, claudeAuthenticated, presetConfigured, isMobile, mobileKeyboardOpen,
   accountEmail, accountOrg, wsConnected,
   updateStateFromServer, setView, setActiveSection, setAuthMode, setActiveSessionId,
-  setPresetConfigured, setAccountInfo, startUsagePolling,
+  setPresetConfigured, setAccountInfo, startUsagePolling, stopUsagePolling,
   sessions, activeSessionId, addSession, removeSession, replaceSession,
   addLocalLog,
   sessionStatus,
   type View, type Section,
 } from './state/store';
 import { apiFetch, getAuthToken, clearAuthToken } from './api';
-import { connectWebSocket } from './ws';
+import { connectWebSocket, disconnectWebSocket } from './ws';
 import { fitTerminal, scrollToBottom, repaintTerminal, ensureTerminalVisible } from './terminal';
 import { LoadingView } from './components/LoadingView';
 import { AuthView } from './components/AuthView';
@@ -22,10 +22,12 @@ import { FilesSection } from './components/FilesSection';
 import { ClaudeSection, mountTerminalForSession, restoreSessions } from './components/ClaudeSection';
 import { LoginModal } from './components/LoginModal';
 import { NewProjectModal } from './components/NewProjectModal';
-import { LogsDrawer } from './components/LogsDrawer';
+// LogsDrawer removed — logs now inline in SettingsSection
 import { PresetWizard } from './components/PresetWizard';
 import { IntegrationsSection } from './components/IntegrationsSection';
-import { ConfigSection } from './components/ConfigSection';
+import { AgentConfigSection } from './components/AgentConfigSection';
+import { SubagentPanel } from './components/SubagentPanel';
+import { ToastContainer } from './components/ToastContainer';
 
 import { AgentsSection } from './components/AgentsSection';
 import { SettingsSection } from './components/SettingsSection';
@@ -206,62 +208,90 @@ export function App() {
     setView('loading');
 
     try {
-      // Check password auth
-      const authRes = await fetch('/api/auth/status', { signal });
-      if (!authRes.ok) throw new Error(`Auth status check failed: ${authRes.status}`);
-      const authData = await authRes.json();
+      // Fast path: if we have a token, skip /api/auth/status and go straight
+      // to /api/status (saves 250ms RTT). If 401 → token is bad → show login.
+      // If server isn't configured yet → /api/status returns needsAuth.
+      const token = getAuthToken();
 
-      if (authData.configured) {
-        const token = getAuthToken();
-        if (!token) {
+      if (!token) {
+        // Consume prefetch if available (inline script started this before bundle loaded)
+        const prefetched = (window as any).__prefetch;
+        if (prefetched) {
+          (window as any).__prefetch = null;
+          const authData = await prefetched;
+          if (authData) {
+            if (authData.configured) {
+              setView('auth');
+              setAuthMode('login');
+            } else {
+              setView('auth');
+              setAuthMode('setup');
+            }
+            return;
+          }
+        }
+        // Fallback: prefetch missed or failed
+        const authRes = await fetch('/api/auth/status', { signal });
+        if (!authRes.ok) throw new Error(`Auth status check failed: ${authRes.status}`);
+        const authData = await authRes.json();
+        if (authData.configured) {
           setView('auth');
           setAuthMode('login');
-          return;
-        }
-        const testRes = await apiFetch('/api/status', { signal });
-        if (testRes.status === 401) {
+        } else {
           setView('auth');
-          setAuthMode('login');
-          return;
+          setAuthMode('setup');
         }
-        // Treat gateway errors as "runtime not ready" — propagate to outer
-        // catch which handles exponential backoff retries
-        if (testRes.status >= 500) {
-          throw new Error(`Server returned ${testRes.status} — runtime not ready`);
-        }
-        const data = await testRes.json();
-        updateStateFromServer(data);
-      } else {
-        // Server says password not configured. If we have a stale token, clear it
-        // so we don't confuse the user — they need to set up the password again.
-        const existingToken = getAuthToken();
-        if (existingToken) {
-          console.warn('[Init] Server reports unconfigured but we have a stored token — clearing stale token');
-          clearAuthToken();
-        }
-        setView('auth');
-        setAuthMode('setup');
         return;
       }
 
-      // Claude check
-      initRetryCount.current = 0; // Reset on success
+      // Start WS connection IN PARALLEL with /api/status — don't wait.
+      // WS handshake takes ~250ms, same as the HTTP request. Running both
+      // simultaneously means the WS is ready by the time we process the response.
+      // If /api/status returns 401, we close the WS (no harm done).
+      connectWebSocket();
+
+      // Consume prefetch if available (inline script started this before bundle loaded)
+      let data: any = null;
+      const prefetched = (window as any).__prefetch;
+      if (prefetched) {
+        (window as any).__prefetch = null;
+        data = await prefetched;
+      }
+
+      if (!data) {
+        // Prefetch missed or failed — fall back to regular fetch
+        const testRes = await apiFetch('/api/status', { signal });
+        if (testRes.status === 401) {
+          clearAuthToken();
+          disconnectWebSocket();
+          setView('auth');
+          setAuthMode('login');
+          return;
+        }
+        if (testRes.status >= 500) {
+          throw new Error(`Server returned ${testRes.status} — runtime not ready`);
+        }
+        data = await testRes.json();
+      }
+
+      updateStateFromServer(data);
+
+      const hasAccount = !!data.account;
+      const hasSessions = !!data.sessions;
+
+      initRetryCount.current = 0;
       if (claudeAuthenticated.value) {
-        await loadAccountInfo(signal);
         if (!presetConfigured.value) {
           setView('preset');
-          connectWebSocket();
+          if (!hasAccount) loadAccountInfo(signal);
         } else {
-          // Set section from URL BEFORE view transition so the
-          // section→URL sync effect doesn't overwrite the pathname.
           setActiveSection(sectionFromUrl());
           setView('main');
-          connectWebSocket();
-          await restoreSessions();
+          if (!hasAccount) loadAccountInfo(signal);
+          if (!hasSessions) restoreSessions();
         }
       } else {
         setView('setup');
-        connectWebSocket();
       }
     } catch (e: any) {
       if (e?.name === 'AbortError') return;
@@ -292,15 +322,16 @@ export function App() {
       updateStateFromServer(data);
 
       if (claudeAuthenticated.value) {
-        await loadAccountInfo();
         if (!presetConfigured.value) {
           setView('preset');
           connectWebSocket();
+          if (!data.account) loadAccountInfo();
         } else {
           setActiveSection(sectionFromUrl());
           setView('main');
           connectWebSocket();
-          await restoreSessions();
+          if (!data.account) loadAccountInfo();
+          if (!data.sessions) restoreSessions();
         }
       } else {
         setView('setup');
@@ -334,6 +365,7 @@ export function App() {
     try {
       await apiFetch('/api/claude/logout', { method: 'POST' });
     } catch { /* ignore */ }
+    stopUsagePolling();
     // Reset client-side auth state and show Claude login (setup) view
     claudeAuthenticated.value = false;
     accountEmail.value = null;
@@ -345,21 +377,22 @@ export function App() {
 
   async function handleLoginSuccess() {
     setLoginModalOpen(false);
-    // Reload status from server and transition
+    let data: Record<string, any> = {};
     try {
       const res = await apiFetch('/api/status');
-      const data = await res.json();
+      data = await res.json();
       updateStateFromServer(data);
     } catch { /* ignore */ }
-    await loadAccountInfo();
     if (!presetConfigured.value) {
       setView('preset');
       connectWebSocket();
+      if (!data.account) loadAccountInfo();
     } else {
       setActiveSection(sectionFromUrl());
       setView('main');
       connectWebSocket();
-      await restoreSessions();
+      if (!data.account) loadAccountInfo();
+      if (!data.sessions) restoreSessions();
     }
   }
 
@@ -534,16 +567,18 @@ export function App() {
 
             {section === 'agents' && <AgentsSection />}
             {section === 'integrations' && <IntegrationsSection />}
-            {section === 'config' && <ConfigSection />}
+            {section === 'config' && <AgentConfigSection />}
             {section === 'settings' && <SettingsSection />}
           </ErrorBoundary>
+          <SubagentPanel />
         </main>
-        {!mobileKeyboardOpen.value && section === 'settings' && <LogsDrawer />}
+        {/* LogsDrawer removed — logs now inline in SettingsSection */}
       </div>
       <LoginModal visible={loginModalOpen} onClose={handleLoginClose} onSuccess={handleLoginSuccess} />
       <NewProjectModal visible={newProjectOpen} onCancel={() => setNewProjectOpen(false)} onConfirm={handleProjectConfirm} />
       <ReconnectOverlay />
       <PullToRefresh />
+      <ToastContainer />
     </div>
   );
 }

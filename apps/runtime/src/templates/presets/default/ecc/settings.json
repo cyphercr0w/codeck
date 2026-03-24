@@ -10,6 +10,9 @@
 			"WebSearch",
 			"Glob",
 			"Grep",
+			"Read(/workspace/.codeck/**)",
+			"Edit(/workspace/.codeck/**)",
+			"Write(/workspace/.codeck/**)",
 			"Edit(/root/.claude/**)",
 			"Write(/root/.claude/**)",
 			"Read(/root/.claude/**)",
@@ -38,7 +41,32 @@
 			"mcp__context7__resolve-library-id",
 			"mcp__context7__query-docs",
 			"mcp__sequential-thinking__sequentialthinking",
-			"mcp__eslint__lint-files"
+			"mcp__eslint__lint-files",
+			"mcp__token-optimizer__count_tokens",
+			"mcp__token-optimizer__optimize_text",
+			"mcp__token-optimizer__compress_text",
+			"mcp__token-optimizer__smart_grep",
+			"mcp__token-optimizer__smart_read",
+			"mcp__token-optimizer__smart_edit",
+			"mcp__token-optimizer__smart_write",
+			"mcp__token-optimizer__smart_glob",
+			"mcp__token-optimizer__smart_diff",
+			"mcp__token-optimizer__smart_test",
+			"mcp__token-optimizer__smart_build",
+			"mcp__token-optimizer__smart_lint",
+			"mcp__token-optimizer__smart_status",
+			"mcp__memory__search_nodes",
+			"mcp__memory__read_graph",
+			"mcp__memory__create_entities",
+			"mcp__memory__add_observations",
+			"mcp__memory__create_relations",
+			"mcp__memory__open_nodes",
+			"mcp__memory__delete_entities",
+			"mcp__memory__delete_observations",
+			"mcp__memory__delete_relations",
+			"mcp__magic__getRegistryItem",
+			"mcp__magic__listRegistryItems",
+			"mcp__magic__searchRegistryItems"
 		],
 		"deny": [
 			"Read(.env*)",
@@ -50,7 +78,10 @@
 	"includeGitInstructions": false,
 	"enableAllProjectMcpServers": true,
 	"effortLevel": "high",
-	"attribution": { "commit": "", "pr": "" },
+	"attribution": {
+		"commit": "",
+		"pr": ""
+	},
 	"statusLine": {
 		"type": "command",
 		"command": "bash /workspace/.codeck/scripts/statusline.sh"
@@ -83,6 +114,110 @@
 						"command": "node /workspace/.codeck/scripts/decision-guidance.mjs"
 					}
 				]
+			},
+			{
+				"matcher": "Bash",
+				"hooks": [
+					{
+						"type": "command",
+						"command": "npx block-no-verify@1.1.2"
+					}
+				],
+				"description": "Block git hook-bypass flag to protect pre-commit, commit-msg, and pre-push hooks from being skipped"
+			},
+			{
+				"matcher": "Bash",
+				"hooks": [
+					{
+						"type": "command",
+						"command": "node \"/workspace/.codeck/scripts/ecc/auto-tmux-dev.js\""
+					}
+				],
+				"description": "Auto-start dev servers in tmux with directory-based session names"
+			},
+			{
+				"matcher": "Bash",
+				"hooks": [
+					{
+						"type": "command",
+						"command": "node \"/workspace/.codeck/scripts/ecc/run-with-flags.js\" \"pre:bash:tmux-reminder\" \"scripts/ecc/pre-bash-tmux-reminder.js\" \"strict\""
+					}
+				],
+				"description": "Reminder to use tmux for long-running commands"
+			},
+			{
+				"matcher": "Bash",
+				"hooks": [
+					{
+						"type": "command",
+						"command": "node \"/workspace/.codeck/scripts/ecc/run-with-flags.js\" \"pre:bash:git-push-reminder\" \"scripts/ecc/pre-bash-git-push-reminder.js\" \"strict\""
+					}
+				],
+				"description": "Reminder before git push to review changes"
+			},
+			{
+				"matcher": "Write",
+				"hooks": [
+					{
+						"type": "command",
+						"command": "node \"/workspace/.codeck/scripts/ecc/run-with-flags.js\" \"pre:write:doc-file-warning\" \"scripts/ecc/doc-file-warning.js\" \"standard,strict\""
+					}
+				],
+				"description": "Doc file warning: warn about non-standard documentation files (exit code 0; warns only)"
+			},
+			{
+				"matcher": "Edit|Write",
+				"hooks": [
+					{
+						"type": "command",
+						"command": "node \"/workspace/.codeck/scripts/ecc/run-with-flags.js\" \"pre:edit-write:suggest-compact\" \"scripts/ecc/suggest-compact.js\" \"standard,strict\""
+					}
+				],
+				"description": "Suggest manual compaction at logical intervals"
+			},
+			{
+				"matcher": "*",
+				"hooks": [
+					{
+						"type": "command",
+						"command": "bash \"/workspace/.codeck/scripts/ecc/run-with-flags-shell.sh\" \"pre:observe\" \"/root/.claude/skills/continuous-learning-v2/hooks/observe.sh\" \"standard,strict\"",
+						"async": true,
+						"timeout": 10
+					}
+				],
+				"description": "Capture tool use observations for continuous learning"
+			},
+			{
+				"matcher": "Bash|Write|Edit|MultiEdit",
+				"hooks": [
+					{
+						"type": "command",
+						"command": "node \"/workspace/.codeck/scripts/ecc/run-with-flags.js\" \"pre:insaits-security\" \"scripts/ecc/insaits-security-wrapper.js\" \"standard,strict\"",
+						"timeout": 15
+					}
+				],
+				"description": "Optional InsAIts AI security monitor for Bash/Edit/Write flows. Enable with ECC_ENABLE_INSAITS=1. Requires: pip install insa-its"
+			},
+			{
+				"matcher": "Bash|Write|Edit|MultiEdit",
+				"hooks": [
+					{
+						"type": "command",
+						"command": "node \"/workspace/.codeck/scripts/ecc/run-with-flags.js\" \"pre:governance-capture\" \"scripts/ecc/governance-capture.js\" \"standard,strict\"",
+						"timeout": 10
+					}
+				],
+				"description": "Capture governance events (secrets, policy violations, approval requests). Enable with ECC_GOVERNANCE_CAPTURE=1"
+			},
+			{
+				"matcher": "*",
+				"hooks": [
+					{
+						"type": "command",
+						"command": "node \"/workspace/.codeck/scripts/ecc/run-with-flags.js\" \"pre:mcp-health-check\" \"scripts/ecc/mcp-health-check.js\" \"standard,strict\""
+					}
+				],
+				"description": "Check MCP server health before MCP tool execution and block unhealthy MCP calls"
 			}
 		],
 		"PostToolUse": [
@@ -117,6 +252,104 @@
 						"command": "node /workspace/.codeck/scripts/tool-result-compressor.mjs"
 					}
 				]
+			},
+			{
+				"matcher": "Bash",
+				"hooks": [
+					{
+						"type": "command",
+						"command": "node \"/workspace/.codeck/scripts/ecc/run-with-flags.js\" \"post:bash:pr-created\" \"scripts/ecc/post-bash-pr-created.js\" \"standard,strict\""
+					}
+				],
+				"description": "Log PR URL and provide review command after PR creation"
+			},
+			{
+				"matcher": "Bash",
+				"hooks": [
+					{
+						"type": "command",
+						"command": "node \"/workspace/.codeck/scripts/ecc/run-with-flags.js\" \"post:bash:build-complete\" \"scripts/ecc/post-bash-build-complete.js\" \"standard,strict\"",
+						"async": true,
+						"timeout": 30
+					}
+				],
+				"description": "Example: async hook for build analysis (runs in background without blocking)"
+			},
+			{
+				"matcher": "Edit|Write|MultiEdit",
+				"hooks": [
+					{
+						"type": "command",
+						"command": "node \"/workspace/.codeck/scripts/ecc/run-with-flags.js\" \"post:quality-gate\" \"scripts/ecc/quality-gate.js\" \"standard,strict\"",
+						"async": true,
+						"timeout": 30
+					}
+				],
+				"description": "Run quality gate checks after file edits"
+			},
+			{
+				"matcher": "Edit",
+				"hooks": [
+					{
+						"type": "command",
+						"command": "node \"/workspace/.codeck/scripts/ecc/run-with-flags.js\" \"post:edit:format\" \"scripts/ecc/post-edit-format.js\" \"standard,strict\""
+					}
+				],
+				"description": "Auto-format JS/TS files after edits (auto-detects Biome or Prettier)"
+			},
+			{
+				"matcher": "Edit",
+				"hooks": [
+					{
+						"type": "command",
+						"command": "node \"/workspace/.codeck/scripts/ecc/run-with-flags.js\" \"post:edit:typecheck\" \"scripts/ecc/post-edit-typecheck.js\" \"standard,strict\""
+					}
+				],
+				"description": "TypeScript check after editing .ts/.tsx files"
+			},
+			{
+				"matcher": "Edit",
+				"hooks": [
+					{
+						"type": "command",
+						"command": "node \"/workspace/.codeck/scripts/ecc/run-with-flags.js\" \"post:edit:console-warn\" \"scripts/ecc/post-edit-console-warn.js\" \"standard,strict\""
+					}
+				],
+				"description": "Warn about console.log statements after edits"
+			},
+			{
+				"matcher": "Bash|Write|Edit|MultiEdit",
+				"hooks": [
+					{
+						"type": "command",
+						"command": "node \"/workspace/.codeck/scripts/ecc/run-with-flags.js\" \"post:governance-capture\" \"scripts/ecc/governance-capture.js\" \"standard,strict\"",
+						"timeout": 10
+					}
+				],
+				"description": "Capture governance events from tool outputs. Enable with ECC_GOVERNANCE_CAPTURE=1"
+			},
+			{
+				"matcher": "*",
+				"hooks": [
+					{
+						"type": "command",
+						"command": "bash \"/workspace/.codeck/scripts/ecc/run-with-flags-shell.sh\" \"post:observe\" \"/root/.claude/skills/continuous-learning-v2/hooks/observe.sh\" \"standard,strict\"",
+						"async": true,
+						"timeout": 10
+					}
+				],
+				"description": "Capture tool use results for continuous learning"
+			},
+			{
+				"matcher": "Edit|Write",
+				"hooks": [
+					{
+						"type": "command",
+						"command": "node /workspace/.codeck/scripts/edit-tracker.mjs",
+						"timeout": 3
+					}
+				],
+				"description": "Track file edits for workflow-checkpoint review enforcement"
 			}
 		],
 		"PreCompact": [
@@ -128,6 +361,16 @@
 						"command": "node /workspace/.codeck/scripts/pre-compact-hook.mjs"
 					}
 				]
+			},
+			{
+				"matcher": "*",
+				"hooks": [
+					{
+						"type": "command",
+						"command": "node \"/workspace/.codeck/scripts/ecc/run-with-flags.js\" \"pre:compact\" \"scripts/ecc/pre-compact.js\" \"standard,strict\""
+					}
+				],
+				"description": "Save state before context compaction"
 			}
 		],
 		"PostCompact": [
@@ -147,9 +390,31 @@
 				"hooks": [
 					{
 						"type": "command",
+						"command": "node /workspace/.codeck/scripts/session-context-hook.mjs",
+						"timeout": 3
+					}
+				],
+				"description": "Inject session memory context on first message (KV-cache optimization \u2014 keeps CLAUDE.md static)"
+			},
+			{
+				"matcher": "",
+				"hooks": [
+					{
+						"type": "command",
 						"command": "node /workspace/.codeck/scripts/memory-nudge-hook.mjs"
 					}
 				]
+			},
+			{
+				"matcher": "",
+				"hooks": [
+					{
+						"type": "command",
+						"command": "node /workspace/.codeck/scripts/context-injector.mjs",
+						"timeout": 3
+					}
+				],
+				"description": "Inject available MCP tools, skills, and workflow hints based on task type"
 			}
 		],
 		"Stop": [
@@ -166,6 +431,63 @@
 						"model": "claude-haiku-4-5"
 					}
 				]
+			},
+			{
+				"matcher": "*",
+				"hooks": [
+					{
+						"type": "command",
+						"command": "node \"/workspace/.codeck/scripts/ecc/run-with-flags.js\" \"stop:check-console-log\" \"scripts/ecc/check-console-log.js\" \"standard,strict\""
+					}
+				],
+				"description": "Check for console.log in modified files after each response"
+			},
+			{
+				"matcher": "*",
+				"hooks": [
+					{
+						"type": "command",
+						"command": "node \"/workspace/.codeck/scripts/ecc/run-with-flags.js\" \"stop:session-end\" \"scripts/ecc/session-end.js\" \"minimal,standard,strict\"",
+						"async": true,
+						"timeout": 10
+					}
+				],
+				"description": "Persist session state after each response (Stop carries transcript_path)"
+			},
+			{
+				"matcher": "*",
+				"hooks": [
+					{
+						"type": "command",
+						"command": "node \"/workspace/.codeck/scripts/ecc/run-with-flags.js\" \"stop:evaluate-session\" \"scripts/ecc/evaluate-session.js\" \"minimal,standard,strict\"",
+						"async": true,
+						"timeout": 10
+					}
+				],
+				"description": "Evaluate session for extractable patterns"
+			},
+			{
+				"matcher": "*",
+				"hooks": [
+					{
+						"type": "command",
+						"command": "node \"/workspace/.codeck/scripts/ecc/run-with-flags.js\" \"stop:cost-tracker\" \"scripts/ecc/cost-tracker.js\" \"minimal,standard,strict\"",
+						"async": true,
+						"timeout": 10
+					}
+				],
+				"description": "Track token and cost metrics per session"
+			},
+			{
+				"matcher": "*",
+				"hooks": [
+					{
+						"type": "command",
+						"command": "node /workspace/.codeck/scripts/workflow-checkpoint.mjs",
+						"timeout": 5
+					}
+				],
+				"description": "Block stop if significant code changes lack review \u2014 forces implement\u2192review\u2192present flow"
 			}
 		],
 		"SessionEnd": [
@@ -178,6 +500,88 @@
 						"async": true
 					}
 				]
+			},
+			{
+				"matcher": "*",
+				"hooks": [
+					{
+						"type": "command",
+						"command": "node \"/workspace/.codeck/scripts/ecc/run-with-flags.js\" \"session:end:marker\" \"scripts/ecc/session-end-marker.js\" \"minimal,standard,strict\"",
+						"async": true,
+						"timeout": 10
+					}
+				],
+				"description": "Session end lifecycle marker (non-blocking)"
+			}
+		],
+		"SessionStart": [
+			{
+				"matcher": "*",
+				"hooks": [
+					{
+						"type": "command",
+						"command": "node /workspace/.codeck/scripts/credential-persist.mjs",
+						"timeout": 5
+					}
+				],
+				"description": "Restore integration credentials (symlinks) after container rebuild"
+			},
+			{
+				"matcher": "*",
+				"hooks": [
+					{
+						"type": "command",
+						"command": "node \"/workspace/.codeck/scripts/ecc/run-with-flags.js\" \"session:start\" \"scripts/ecc/session-start.js\" \"minimal,standard,strict\""
+					}
+				],
+				"description": "Load previous context and detect package manager on new session"
+			},
+			{
+				"matcher": "*",
+				"hooks": [
+					{
+						"type": "command",
+						"command": "node /workspace/.codeck/scripts/skill-index-generator.mjs",
+						"timeout": 5
+					}
+				],
+				"description": "Generate compact skill index for progressive disclosure"
+			}
+		],
+		"PostToolUseFailure": [
+			{
+				"matcher": "*",
+				"hooks": [
+					{
+						"type": "command",
+						"command": "node \"/workspace/.codeck/scripts/ecc/run-with-flags.js\" \"post:mcp-health-check\" \"scripts/ecc/mcp-health-check.js\" \"standard,strict\""
+					}
+				],
+				"description": "Track failed MCP tool calls, mark unhealthy servers, and attempt reconnect"
+			}
+		],
+		"SubagentStart": [
+			{
+				"matcher": "",
+				"hooks": [
+					{
+						"type": "command",
+						"command": "node /workspace/.codeck/scripts/subagent-tracker.mjs"
+					}
+				],
+				"description": "Track subagent lifecycle for real-time UI panel"
+			}
+		],
+		"SubagentStop": [
+			{
+				"matcher": "",
+				"hooks": [
+					{
+						"type": "command",
+						"command": "node /workspace/.codeck/scripts/subagent-tracker.mjs"
+					}
+				],
+				"description": "Track subagent completion for real-time UI panel"
 			}
 		]
 	}

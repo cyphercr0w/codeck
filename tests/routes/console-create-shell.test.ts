@@ -44,6 +44,7 @@ import consoleRouter from '../../apps/runtime/src/routes/console.routes.js';
 
 describe('POST /api/console/create-shell', () => {
   let app: Express;
+  const TEST_WORKSPACE = process.env.WORKSPACE || '/workspace';
 
   beforeEach(() => {
     // Create test Express app
@@ -67,7 +68,7 @@ describe('POST /api/console/create-shell', () => {
     // Arrange
     const mockSession = {
       id: 'shell-session-123',
-      cwd: '/workspace',
+      cwd: TEST_WORKSPACE,
       name: 'Shell Session 1',
       type: 'shell' as const,
       pid: 54321,
@@ -77,16 +78,16 @@ describe('POST /api/console/create-shell', () => {
     // Act
     const response = await request(app)
       .post('/api/console/create-shell')
-      .send({ cwd: '/workspace' });
+      .send({ cwd: TEST_WORKSPACE });
 
     // Assert
     expect(response.status).toBe(200);
     expect(response.body).toEqual({
       sessionId: 'shell-session-123',
-      cwd: '/workspace',
+      cwd: TEST_WORKSPACE,
       name: 'Shell Session 1',
     });
-    expect(mockCreateShellSession).toHaveBeenCalledWith('/workspace');
+    expect(mockCreateShellSession).toHaveBeenCalledWith(TEST_WORKSPACE);
     expect(mockBroadcastStatus).toHaveBeenCalledOnce();
   });
 
@@ -94,7 +95,7 @@ describe('POST /api/console/create-shell', () => {
     // Arrange
     const mockSession = {
       id: 'shell-session-456',
-      cwd: '/workspace',
+      cwd: TEST_WORKSPACE,
       name: 'Shell Session 1',
       type: 'shell' as const,
       pid: 54322,
@@ -104,7 +105,7 @@ describe('POST /api/console/create-shell', () => {
     // Act - Even if Claude is not authenticated, shell sessions should work
     const response = await request(app)
       .post('/api/console/create-shell')
-      .send({ cwd: '/workspace' });
+      .send({ cwd: TEST_WORKSPACE });
 
     // Assert
     expect(response.status).toBe(200);
@@ -119,7 +120,7 @@ describe('POST /api/console/create-shell', () => {
     // Act
     const response = await request(app)
       .post('/api/console/create-shell')
-      .send({ cwd: '/workspace' });
+      .send({ cwd: TEST_WORKSPACE });
 
     // Assert
     expect(response.status).toBe(400);
@@ -134,7 +135,7 @@ describe('POST /api/console/create-shell', () => {
     // Arrange
     const mockSession = {
       id: 'shell-session-789',
-      cwd: '/workspace',
+      cwd: TEST_WORKSPACE,
       name: 'Shell Session 1',
       type: 'shell' as const,
       pid: 54323,
@@ -155,7 +156,7 @@ describe('POST /api/console/create-shell', () => {
     // Arrange
     const mockSession = {
       id: 'shell-session-custom',
-      cwd: '/workspace/custom-project',
+      cwd: `${TEST_WORKSPACE}/custom-project`,
       name: 'Shell Session 1',
       type: 'shell' as const,
       pid: 54324,
@@ -165,24 +166,24 @@ describe('POST /api/console/create-shell', () => {
     // Act
     const response = await request(app)
       .post('/api/console/create-shell')
-      .send({ cwd: '/workspace/custom-project' });
+      .send({ cwd: `${TEST_WORKSPACE}/custom-project` });
 
     // Assert
     expect(response.status).toBe(200);
-    expect(response.body.cwd).toBe('/workspace/custom-project');
-    expect(mockCreateShellSession).toHaveBeenCalledWith('/workspace/custom-project');
+    expect(response.body.cwd).toBe(`${TEST_WORKSPACE}/custom-project`);
+    expect(mockCreateShellSession).toHaveBeenCalledWith(`${TEST_WORKSPACE}/custom-project`);
   });
 
   it('should handle shell session creation failure gracefully', async () => {
     // Arrange
     mockCreateShellSession.mockImplementation(() => {
-      throw new Error('Invalid cwd: /nonexistent');
+      throw new Error('Failed to spawn process');
     });
 
     // Act
     const response = await request(app)
       .post('/api/console/create-shell')
-      .send({ cwd: '/nonexistent' });
+      .send({ cwd: `${TEST_WORKSPACE}/nonexistent` });
 
     // Assert
     expect(response.status).toBe(400);
@@ -201,7 +202,7 @@ describe('POST /api/console/create-shell', () => {
     // Act
     const response = await request(app)
       .post('/api/console/create-shell')
-      .send({ cwd: '/workspace' });
+      .send({ cwd: TEST_WORKSPACE });
 
     // Assert
     expect(response.status).toBe(400);
@@ -215,7 +216,7 @@ describe('POST /api/console/create-shell', () => {
     mockGetSessionCount.mockReturnValue(4); // 4 existing sessions
     const mockSession = {
       id: 'shell-session-last',
-      cwd: '/workspace',
+      cwd: TEST_WORKSPACE,
       name: 'Shell Session 5',
       type: 'shell' as const,
       pid: 99998,
@@ -225,7 +226,7 @@ describe('POST /api/console/create-shell', () => {
     // Act
     const response = await request(app)
       .post('/api/console/create-shell')
-      .send({ cwd: '/workspace' });
+      .send({ cwd: TEST_WORKSPACE });
 
     // Assert - should succeed with 4 existing (5th is allowed)
     expect(response.status).toBe(200);
@@ -236,7 +237,7 @@ describe('POST /api/console/create-shell', () => {
     // Arrange - Claude is not authenticated
     const mockSession = {
       id: 'shell-no-claude',
-      cwd: '/workspace',
+      cwd: TEST_WORKSPACE,
       name: 'Shell Session 1',
       type: 'shell' as const,
       pid: 77777,
@@ -246,7 +247,7 @@ describe('POST /api/console/create-shell', () => {
     // Act
     const response = await request(app)
       .post('/api/console/create-shell')
-      .send({ cwd: '/workspace' });
+      .send({ cwd: TEST_WORKSPACE });
 
     // Assert - should succeed even without Claude auth
     expect(response.status).toBe(200);
@@ -258,7 +259,7 @@ describe('POST /api/console/create-shell', () => {
     // Arrange
     const mockSession = {
       id: 'shell-empty-body',
-      cwd: '/workspace',
+      cwd: TEST_WORKSPACE,
       name: 'Shell Session 1',
       type: 'shell' as const,
       pid: 88888,

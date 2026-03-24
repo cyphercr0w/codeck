@@ -1,41 +1,43 @@
 {
-  "name": "codeck",
-  "version": "0.1.0",
-  "description": "Docker sandbox for working with Claude CLI",
-  "type": "module",
-  "main": "apps/runtime/dist/index.js",
-  "workspaces": [
-    "apps/*"
-  ],
-  "scripts": {
-    "build:frontend": "npm run build -w @codeck/web",
-    "build:backend": "npm run build -w @codeck/runtime",
-    "build:daemon": "npm run build -w @codeck/daemon",
-    "build": "npm run build:frontend && npm run build:backend && npm run build:daemon && npm run build:cli",
-    "start": "node apps/runtime/dist/index.js",
-    "start:web": "node apps/runtime/dist/index.js --web",
-    "dev": "npm run dev -w @codeck/runtime",
-    "clean": "rm -rf dist apps/runtime/dist apps/web/dist apps/daemon/dist apps/cli/dist",
-    "test": "vitest",
-    "test:ui": "vitest --ui",
-    "test:coverage": "vitest --coverage",
-    "docker:build-base": "docker build -t codeck-base -f docker/Dockerfile.base .",
-    "docker:up": "docker compose -f docker/compose.isolated.yml up -d",
-    "docker:down": "docker compose -f docker/compose.isolated.yml down",
-    "docker:logs": "docker compose -f docker/compose.isolated.yml logs -f",
-    "build:cli": "npm run build -w @codeck/cli"
-  },
-  "devDependencies": {
-    "@types/supertest": "^6.0.3",
-    "@vitest/coverage-v8": "^4.0.18",
-    "@vitest/ui": "^4.0.18",
-    "supertest": "^7.2.2",
-    "tsx": "^4.7.0",
-    "typescript": "^5.3.0",
-    "vite": "^5.4.0",
-    "vitest": "^4.0.18"
-  },
-  "engines": {
-    "node": ">=20"
-  }
+	"name": "codeck",
+	"version": "0.1.0",
+	"description": "Docker sandbox for working with Claude CLI",
+	"type": "module",
+	"main": "apps/runtime/dist/index.js",
+	"workspaces": [
+		"apps/runtime",
+		"apps/web"
+	],
+	"scripts": {
+		"build:frontend": "npm run build -w @codeck/web",
+		"build:backend": "npm run build -w @codeck/runtime",
+		"build": "npm run build:frontend && npm run build:backend",
+		"start": "node apps/runtime/dist/index.js",
+		"start:web": "node apps/runtime/dist/index.js --web",
+		"dev": "npm run dev -w @codeck/runtime",
+		"clean": "rm -rf dist apps/runtime/dist apps/web/dist",
+		"test": "vitest",
+		"test:ui": "vitest --ui",
+		"test:coverage": "vitest --coverage",
+		"docker:build-base": "docker build -t codeck-base -f docker/Dockerfile.base .",
+		"docker:build": "docker compose --env-file .env -f docker/compose.yml build",
+		"docker:up": "docker compose --env-file .env -f docker/compose.yml up -d",
+		"docker:down": "docker compose --env-file .env -f docker/compose.yml down",
+		"docker:logs": "docker compose --env-file .env -f docker/compose.yml logs -f",
+		"docker:restart": "docker compose --env-file .env -f docker/compose.yml down && docker compose --env-file .env -f docker/compose.yml up -d",
+		"docker:rebuild": "docker compose --env-file .env -f docker/compose.yml up -d --build"
+	},
+	"devDependencies": {
+		"@types/supertest": "^6.0.3",
+		"@vitest/coverage-v8": "^4.0.18",
+		"@vitest/ui": "^4.0.18",
+		"supertest": "^7.2.2",
+		"tsx": "^4.7.0",
+		"typescript": "^5.3.0",
+		"vite": "^5.4.0",
+		"vitest": "^4.0.18"
+	},
+	"engines": {
+		"node": ">=20"
+	}
 }

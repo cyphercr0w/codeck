@@ -1,14 +1,7 @@
-<!--
-  Source: affaan-m/everything-claude-code (MIT License)
-  https://github.com/affaan-m/everything-claude-code
-  Author: Affaan Mustafa — integrated into Codeck with modifications.
--->
-
 ---
 name: verification-loop
-description: "Build, typecheck, lint, test, and security checks. Load before PRs or after completing features."
-context: fork
-allowed-tools: Read, Grep, Glob, Bash
+description: "A comprehensive verification system for Claude Code sessions."
+origin: ECC
 ---
 
 # Verification Loop Skill

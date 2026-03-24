@@ -1,8 +1,8 @@
 {
 	"id": "default",
 	"name": "Default (Recommended)",
-	"description": "Persistent memory system, rules, sandbox skills, plus 13 sub-agents, 31+ slash commands, universal knowledge packs and dev hooks from everything-claude-code.",
-	"version": "7.2.0",
+	"description": "Persistent memory system, rules, sandbox skills, plus 28 sub-agents, 59 slash commands, 116 skills, 65 rules, and dev hooks from everything-claude-code v1.9.0.",
+	"version": "8.2.0",
 	"author": "codeck",
 	"icon": "⚡",
 	"tags": ["general", "recommended"],
@@ -12,6 +12,7 @@
 		{ "src": "../../CLAUDE.md", "dest": "/workspace/CLAUDE.md" },
 		{ "src": "mcp.json", "dest": "/root/.claude/mcp.json" },
 		{ "src": "AGENTS.md", "dest": "/workspace/.codeck/AGENTS.md" },
+		{ "src": "constitution.md", "dest": "/workspace/.codeck/constitution.md" },
 		{ "src": "preferences.md", "dest": "/workspace/.codeck/preferences.md" },
 		{
 			"src": "rules/coding.md",
@@ -108,6 +109,62 @@
 			"dest": "/workspace/.codeck/scripts/statusline.sh"
 		},
 		{
+			"src": "scripts/subagent-tracker.mjs",
+			"dest": "/workspace/.codeck/scripts/subagent-tracker.mjs"
+		},
+		{
+			"src": "scripts/session-reset.mjs",
+			"dest": "/workspace/.codeck/scripts/session-reset.mjs"
+		},
+		{
+			"src": "scripts/edit-tracker.mjs",
+			"dest": "/workspace/.codeck/scripts/edit-tracker.mjs"
+		},
+		{
+			"src": "scripts/workflow-checkpoint.mjs",
+			"dest": "/workspace/.codeck/scripts/workflow-checkpoint.mjs"
+		},
+		{
+			"src": "scripts/context-injector.mjs",
+			"dest": "/workspace/.codeck/scripts/context-injector.mjs"
+		},
+		{
+			"src": "scripts/session-context-hook.mjs",
+			"dest": "/workspace/.codeck/scripts/session-context-hook.mjs"
+		},
+		{
+			"src": "scripts/skill-index-generator.mjs",
+			"dest": "/workspace/.codeck/scripts/skill-index-generator.mjs"
+		},
+		{
+			"src": "scripts/credential-persist.mjs",
+			"dest": "/workspace/.codeck/scripts/credential-persist.mjs"
+		},
+		{
+			"src": "integrations/vercel.md",
+			"dest": "/workspace/.codeck/integrations/vercel.md"
+		},
+		{
+			"src": "integrations/github.md",
+			"dest": "/workspace/.codeck/integrations/github.md"
+		},
+		{
+			"src": "integrations/supabase.md",
+			"dest": "/workspace/.codeck/integrations/supabase.md"
+		},
+		{
+			"src": "integrations/stripe.md",
+			"dest": "/workspace/.codeck/integrations/stripe.md"
+		},
+		{
+			"src": "integrations/notion.md",
+			"dest": "/workspace/.codeck/integrations/notion.md"
+		},
+		{
+			"src": "integrations/cloudflare.md",
+			"dest": "/workspace/.codeck/integrations/cloudflare.md"
+		},
+		{
 			"src": "scripts/repo-map-generator.mjs",
 			"dest": "/workspace/.codeck/scripts/repo-map-generator.mjs"
 		},
@@ -127,6 +184,8 @@
 		"/workspace/.codeck/rules/user",
 		"/workspace/.codeck/skills",
 		"/workspace/.codeck/scripts",
+		"/workspace/.codeck/scripts/ecc",
+		"/workspace/.codeck/scripts/lib",
 		"/workspace/.codeck/agents"
 	],
 	"recursive_dirs": [
@@ -155,14 +214,14 @@
 			"skipIfExists": true
 		},
 		{
-			"src": "ecc/hooks",
-			"dest": "/root/.claude/ecc/hooks",
+			"src": "scripts/ecc",
+			"dest": "/workspace/.codeck/scripts/ecc",
 			"recursive": true,
 			"skipIfExists": false
 		},
 		{
-			"src": "ecc/lib",
-			"dest": "/root/.claude/ecc/lib",
+			"src": "scripts/lib",
+			"dest": "/workspace/.codeck/scripts/lib",
 			"recursive": true,
 			"skipIfExists": false
 		}

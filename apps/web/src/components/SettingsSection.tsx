@@ -1,6 +1,6 @@
-import { useState, useEffect } from 'preact/hooks';
+import { useState, useEffect, useRef } from 'preact/hooks';
 import { apiFetch, setAuthToken } from '../api';
-import { wsConnected } from '../state/store';
+import { wsConnected, showToast, logs, clearLogs, type LogEntry } from '../state/store';
 import { IconShield, IconKey, IconList, IconPlug, IconPlus, IconX, IconChevronDown, IconChevronRight } from './Icons';
 import { ConfirmModal } from './ConfirmModal';
 
@@ -612,6 +612,150 @@ function PortMappingCard() {
   );
 }
 
+// ── Environment Variables Card ─────────────────────────────────────────────
+
+function EnvVarsCard() {
+  const [vars, setVars] = useState<Array<{ key: string; hasValue: boolean }>>([]);
+  const [newKey, setNewKey] = useState('');
+  const [newValue, setNewValue] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => { loadVars(); }, []);
+
+  async function loadVars() {
+    try {
+      const res = await apiFetch('/api/codeck/env');
+      const data = await res.json();
+      setVars(data.vars || []);
+    } catch { /* ignore */ }
+  }
+
+  async function handleAdd() {
+    const key = newKey.trim().toUpperCase();
+    if (!key || !newValue) return;
+    setSaving(true);
+    try {
+      const res = await apiFetch('/api/codeck/env', {
+        method: 'POST',
+        body: JSON.stringify({ key, value: newValue }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        showToast(`${key} saved`, 'success');
+        setNewKey('');
+        setNewValue('');
+        loadVars();
+      } else {
+        showToast(data.error || 'Failed', 'error');
+      }
+    } catch {
+      showToast('Connection error', 'error');
+    }
+    setSaving(false);
+  }
+
+  async function handleDelete(key: string) {
+    try {
+      await apiFetch('/api/codeck/env', {
+        method: 'DELETE',
+        body: JSON.stringify({ key }),
+      });
+      loadVars();
+    } catch { /* ignore */ }
+  }
+
+  return (
+    <div class="dash-card">
+      <div class="dash-card-title">
+        <IconKey size={14} />
+        <span>Environment Variables</span>
+      </div>
+      <div class="env-hint">
+        Variables are injected into every new terminal session. Changes apply on next session start.
+      </div>
+      {vars.length > 0 && (
+        <div class="env-list">
+          {vars.map(v => (
+            <div key={v.key} class="env-row">
+              <code class="env-key">{v.key}</code>
+              <span class="env-value">{v.hasValue ? '••••••••' : '(empty)'}</span>
+              <button class="btn btn-xs btn-ghost danger" onClick={() => handleDelete(v.key)}>
+                <IconX size={11} />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+      <div class="env-add">
+        <input
+          class="input env-input"
+          placeholder="KEY_NAME"
+          value={newKey}
+          onInput={e => setNewKey((e.target as HTMLInputElement).value.toUpperCase())}
+          onKeyDown={e => e.key === 'Enter' && handleAdd()}
+        />
+        <input
+          class="input env-input"
+          type="text"
+          placeholder="value"
+          value={newValue}
+          onInput={e => setNewValue((e.target as HTMLInputElement).value)}
+          onKeyDown={e => e.key === 'Enter' && handleAdd()}
+          style="-webkit-text-security: disc"
+          autocomplete="off"
+          data-1p-ignore
+          data-lpignore="true"
+        />
+        <button class="btn btn-xs btn-primary" onClick={handleAdd} disabled={saving || !newKey.trim() || !newValue}>
+          {saving ? <span class="spinner-sm" /> : <IconPlus size={11} />}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ── Logs Card (inline, replaces old LogsDrawer) ──────────────────────────
+
+function LogsCard() {
+  const logEntries = logs.value;
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (containerRef.current) {
+      containerRef.current.scrollTop = containerRef.current.scrollHeight;
+    }
+  }, [logEntries.length]);
+
+  return (
+    <div class="dash-card">
+      <div class="dash-card-title">
+        <IconList size={14} />
+        <span>Codeck Logs</span>
+        <span class="badge badge-muted" style="margin-left: auto">{logEntries.length}</span>
+        {logEntries.length > 0 && (
+          <button class="btn btn-xs btn-ghost" onClick={clearLogs} style="margin-left: 8px">Clear</button>
+        )}
+      </div>
+      <div class="settings-logs" ref={containerRef}>
+        {logEntries.length === 0 ? (
+          <div class="dash-meta" style="border-top: none; margin-top: 0; padding-top: 0">No logs yet.</div>
+        ) : (
+          logEntries.slice(-100).map((entry: LogEntry, i: number) => {
+            const time = new Date(entry.timestamp).toLocaleTimeString();
+            return (
+              <div key={i} class={`log-entry${entry.type === 'error' ? ' error' : ''}`}>
+                <span class={`log-dot ${entry.type}`} />
+                <span class="log-time">{time}</span>
+                <span>{entry.message}</span>
+              </div>
+            );
+          })
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ── Main export ────────────────────────────────────────────────────────────
 
 export function SettingsSection() {
@@ -624,16 +768,25 @@ export function SettingsSection() {
             <span>Settings</span>
           </div>
         </div>
-        <div class="dash-grid">
-          <PermissionsCard />
-          <PortMappingCard />
+
+        {/* Logs — real-time, last 100 entries */}
+        <div style="margin-bottom: 24px">
+          <LogsCard />
         </div>
-        <div style="margin-top: 24px; padding-top: 24px; border-top: 1px solid var(--border)">
+
+        {/* Security */}
+        <div style="margin-bottom: 24px">
           <h3 class="dash-title" style="margin-bottom: 16px"><IconShield size={14} /> Security</h3>
           <ActiveSessionsCard />
           <div style="margin-top: 16px">
             <AuthLogCard />
           </div>
+        </div>
+
+        {/* Ports */}
+        <div style="padding-top: 24px; border-top: 1px solid var(--border)">
+          <h3 class="dash-title" style="margin-bottom: 16px"><IconPlug size={14} /> Ports</h3>
+          <PortMappingCard />
         </div>
       </div>
     </div>

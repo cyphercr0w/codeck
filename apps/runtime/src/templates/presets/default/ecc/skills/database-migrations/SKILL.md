@@ -1,12 +1,7 @@
-<!--
-  Source: affaan-m/everything-claude-code (MIT License)
-  https://github.com/affaan-m/everything-claude-code
-  Author: Affaan Mustafa — integrated into Codeck with modifications.
--->
-
 ---
 name: database-migrations
-description: "Safe migration patterns and zero-downtime deployments. Load when changing database schemas."
+description: Database migration best practices for schema changes, data migrations, rollbacks, and zero-downtime deployments across PostgreSQL, MySQL, and common ORMs (Prisma, Drizzle, Django, TypeORM, golang-migrate).
+origin: ECC
 ---
 
 # Database Migration Patterns

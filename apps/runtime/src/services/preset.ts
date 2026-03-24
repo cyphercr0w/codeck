@@ -419,12 +419,35 @@ function registerMcpServers(presetDir: string): void {
       }
     }
 
+    // Read user env vars to hydrate MCP server configs
+    let userEnvVars: Record<string, string> = {};
+    try {
+      const envPath = join(process.env.WORKSPACE || '/workspace', '.codeck', '.env');
+      if (existsSync(envPath)) {
+        const envContent = readFileSync(envPath, 'utf-8');
+        for (const line of envContent.split('\n')) {
+          const trimmed = line.trim();
+          if (!trimmed || trimmed.startsWith('#')) continue;
+          const eqIdx = trimmed.indexOf('=');
+          if (eqIdx > 0) {
+            userEnvVars[trimmed.slice(0, eqIdx)] = trimmed.slice(eqIdx + 1);
+          }
+        }
+      }
+    } catch { /* non-fatal */ }
+
     let added = 0;
     for (const [name, config] of Object.entries(servers)) {
       if (existing[name]) continue; // don't overwrite user-configured servers
-      // Skip servers with required env vars that are empty (they'd fail silently)
+      // Try to populate empty env vars from .codeck/.env
       const env = (config as Record<string, unknown>).env as Record<string, string> | undefined;
       if (env) {
+        for (const [k, v] of Object.entries(env)) {
+          if (v === '' && userEnvVars[k]) {
+            env[k] = userEnvVars[k];
+            console.log(`[Preset]   Populated ${name}.env.${k} from .codeck/.env`);
+          }
+        }
         const missingRequired = Object.entries(env).some(([, v]) => v === '');
         if (missingRequired) {
           console.log(`[Preset]   SKIP MCP server: ${name} (missing required env vars — configure in Integrations)`);

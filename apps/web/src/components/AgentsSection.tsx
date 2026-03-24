@@ -7,31 +7,16 @@ import {
 } from '../state/store';
 import {
   IconPlus, IconBot, IconChevronLeft, IconChevronDown, IconChevronUp,
-  IconRefresh, IconX, IconEdit, IconFolder, IconFolderOpen,
+  IconRefresh, IconX, IconEdit,
   IconPlay, IconPause, IconTrash,
 } from './Icons';
 import { ConfirmModal } from './ConfirmModal';
+import { DirSelector } from './agents/DirSelector';
+import { AgentForm } from './agents/AgentForm';
 
-// ── Schedule presets ──
-
-const SCHEDULE_PRESETS = [
-  { label: '15 min', cron: '*/15 * * * *' },
-  { label: '30 min', cron: '*/30 * * * *' },
-  { label: '1 hour', cron: '0 * * * *' },
-  { label: '6 hours', cron: '0 */6 * * *' },
-  { label: '12 hours', cron: '0 */12 * * *' },
-  { label: 'Daily', cron: '0 0 * * *' },
-  { label: 'Weekly', cron: '0 0 * * 0' },
-];
-
-// ── Model options ──
-
-const MODEL_OPTIONS = [
-  { value: '', label: 'Default (system)' },
-  { value: 'opus', label: 'Opus 4.6' },
-  { value: 'sonnet', label: 'Sonnet 4.5' },
-  { value: 'haiku', label: 'Haiku 4.5' },
-];
+const MODEL_LABELS: Record<string, string> = {
+  '': 'Default (system)', opus: 'Opus 4.6', sonnet: 'Sonnet 4.5', haiku: 'Haiku 4.5',
+};
 
 // ── Helpers ──
 
@@ -50,9 +35,16 @@ function formatDuration(ms: number): string {
   return `${(ms / 60000).toFixed(1)}m`;
 }
 
+const CRON_LABELS: Record<string, string> = {
+  '*/15 * * * *': 'Every 15 min', '*/30 * * * *': 'Every 30 min',
+  '0 * * * *': 'Every hour', '0 */6 * * *': 'Every 6 hours',
+  '0 */12 * * *': 'Every 12 hours', '0 0 * * *': 'Daily',
+  '0 0 * * 0': 'Weekly', '0 9 * * *': 'Daily 9am',
+  '0 9 * * 1-5': 'Weekdays 9am', '0 9 * * 1': 'Weekly Mon 9am',
+};
+
 function cronToHuman(cron: string): string {
-  const preset = SCHEDULE_PRESETS.find(p => p.cron === cron);
-  return preset ? `Every ${preset.label}` : cron;
+  return CRON_LABELS[cron] || cron;
 }
 
 function formatNextRun(ts: number | null): string {
@@ -106,153 +98,6 @@ function StatusBadge({ status, running }: { status: string; running?: boolean })
   return <span class={`badge ${map[status] || 'badge-muted'}`}>{status}</span>;
 }
 
-// ── Directory Cache ──
-
-const DIR_CACHE_TTL = 30_000; // 30 seconds
-const dirCache = new Map<string, { entries: DirEntry[], ts: number }>();
-
-function getCachedDirs(path: string): DirEntry[] | null {
-  const cached = dirCache.get(path);
-  if (cached && Date.now() - cached.ts < DIR_CACHE_TTL) return cached.entries;
-  return null;
-}
-
-function setCachedDirs(path: string, entries: DirEntry[]) {
-  dirCache.set(path, { entries, ts: Date.now() });
-}
-
-async function fetchDirs(relPath: string): Promise<DirEntry[]> {
-  const cached = getCachedDirs(relPath);
-  if (cached) return cached;
-
-  try {
-    const res = await apiFetch(`/api/files?path=${encodeURIComponent(relPath)}&type=dir`);
-    const data = await res.json();
-    const entries: DirEntry[] = (data.items || []).map((e: any) => ({
-      name: e.name,
-      path: relPath ? `${relPath}/${e.name}` : e.name,
-    }));
-    setCachedDirs(relPath, entries);
-    return entries;
-  } catch {
-    return [];
-  }
-}
-
-// ── Directory Selector ──
-
-interface DirEntry { name: string; path: string; }
-
-function DirSelector({ value, onChange }: {
-  value: string;
-  onChange: (path: string) => void;
-}) {
-  const [open, setOpen] = useState(false);
-  const [relativePath, setRelativePath] = useState('');
-  const [dirs, setDirs] = useState<DirEntry[]>([]);
-  const [loading, setLoading] = useState(false);
-
-  const ws = workspacePath.value;
-
-  // Preload root directory on mount
-  useEffect(() => {
-    fetchDirs('');
-  }, []);
-
-  useEffect(() => {
-    if (open) loadDirs(relativePath);
-  }, [open, relativePath]);
-
-  function toAbsolute(rel: string): string {
-    return rel ? `${ws}/${rel}` : ws;
-  }
-
-  async function loadDirs(relPath: string) {
-    const cached = getCachedDirs(relPath);
-    if (cached) {
-      setDirs(cached);
-      setLoading(false);
-      // Prefetch children in background
-      for (const entry of cached) {
-        fetchDirs(entry.path);
-      }
-      return;
-    }
-
-    setLoading(true);
-    const entries = await fetchDirs(relPath);
-    setDirs(entries);
-    setLoading(false);
-
-    // Prefetch children in background
-    for (const entry of entries) {
-      fetchDirs(entry.path);
-    }
-  }
-
-  function handleSelect(relPath: string) {
-    onChange(toAbsolute(relPath));
-    setOpen(false);
-  }
-
-  function handleNavigate(relPath: string) {
-    setRelativePath(relPath);
-  }
-
-  function handleParent() {
-    const parts = relativePath.split('/').filter(Boolean);
-    parts.pop();
-    setRelativePath(parts.join('/'));
-  }
-
-  const displayPath = toAbsolute(relativePath);
-
-  return (
-    <div class="dir-selector">
-      <div class="dir-selector-row">
-        <input
-          type="text"
-          class="input"
-          value={value}
-          onInput={e => onChange((e.target as HTMLInputElement).value)}
-          placeholder={`${ws} (default)`}
-        />
-        <button class="btn btn-xs btn-secondary" type="button" onClick={() => setOpen(!open)} title="Browse directories">
-          {open ? <IconFolderOpen size={14} /> : <IconFolder size={14} />}
-        </button>
-      </div>
-      {open && (
-        <div class="dir-selector-list">
-          <div class="dir-selector-header">
-            <button class="btn btn-xs btn-ghost" onClick={handleParent} disabled={!relativePath}>
-              <IconChevronLeft size={12} /> Up
-            </button>
-            <span class="dir-selector-path">{displayPath}</span>
-            <button class="btn btn-xs btn-primary" onClick={() => handleSelect(relativePath)}>
-              Select
-            </button>
-          </div>
-          {loading ? (
-            <div class="dir-selector-empty"><span class="loading" /> Loading...</div>
-          ) : dirs.length === 0 ? (
-            <div class="dir-selector-empty">No subdirectories</div>
-          ) : (
-            dirs.map(d => (
-              <div key={d.path} class="dir-selector-item" onClick={() => handleNavigate(d.path)}>
-                <IconFolder size={14} />
-                <span>{d.name}</span>
-                <button class="btn btn-xs btn-ghost" onClick={e => { e.stopPropagation(); handleSelect(d.path); }}>
-                  Select
-                </button>
-              </div>
-            ))
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
-
 // ── Agent Card ──
 
 function AgentCard({ agent, onSelect, onAction, onEdit }: {
@@ -275,7 +120,7 @@ function AgentCard({ agent, onSelect, onAction, onEdit }: {
         <div class="dash-meta" style="border-top: none; margin-top: 0; padding-top: 0">
           <span>{cronToHuman(agent.schedule)}</span>
           {agent.model && (
-            <> &middot; <span class="badge badge-muted">{MODEL_OPTIONS.find(m => m.value === agent.model)?.label || agent.model}</span></>
+            <> &middot; <span class="badge badge-muted">{MODEL_LABELS[agent.model] || agent.model || 'Default'}</span></>
           )}
           <> &middot; Last: {formatRelativeTime(agent.lastExecutionAt)}</>
           {agent.nextRunAt && agent.status === 'active' && (
@@ -312,158 +157,6 @@ function AgentCard({ agent, onSelect, onAction, onEdit }: {
         onConfirm={() => { setShowDeleteModal(false); onAction('delete'); }}
         onCancel={() => setShowDeleteModal(false)}
       />
-    </>
-  );
-}
-
-// ── Agent Form (shared between Create and Edit) ──
-
-function AgentForm({ initial, onSubmit, onCancel, submitLabel, submitting }: {
-  initial?: Partial<ProactiveAgent>;
-  onSubmit: (data: any) => void;
-  onCancel: () => void;
-  submitLabel: string;
-  submitting: boolean;
-}) {
-  const [name, setName] = useState(initial?.name || '');
-  const [objective, setObjective] = useState(initial?.objective || '');
-  const [schedule, setSchedule] = useState(initial?.schedule || '0 * * * *');
-  const [customCron, setCustomCron] = useState('');
-  const [showAdvanced, setShowAdvanced] = useState(!!initial);
-  const [cwd, setCwd] = useState(initial?.cwd || workspacePath.value);
-  const [model, setModel] = useState(initial?.model || '');
-  const [timeoutMin, setTimeoutMin] = useState(initial?.timeoutMs ? Math.round(initial.timeoutMs / 60000) : 5);
-  const [maxRetries, setMaxRetries] = useState(initial?.maxRetries || 3);
-  const [error, setError] = useState('');
-
-  const isPreset = SCHEDULE_PRESETS.some(p => p.cron === schedule);
-  const selectedCron = customCron || schedule;
-
-  function handleSubmit() {
-    if (!name.trim() || !objective.trim()) {
-      setError('Name and objective are required');
-      return;
-    }
-    setError('');
-    onSubmit({
-      name: name.trim(),
-      objective: objective.trim(),
-      schedule: selectedCron,
-      cwd: cwd.trim() || workspacePath.value,
-      model,
-      timeoutMs: timeoutMin * 60000,
-      maxRetries,
-    });
-  }
-
-  return (
-    <>
-      <div class="form-group">
-        <label class="form-label">Name</label>
-        <input
-          type="text"
-          class="input"
-          value={name}
-          onInput={e => setName((e.target as HTMLInputElement).value)}
-          placeholder="e.g. Test Runner"
-          maxLength={50}
-        />
-      </div>
-
-      <div class="form-group">
-        <label class="form-label">Objective</label>
-        <textarea
-          class="input"
-          value={objective}
-          onInput={e => setObjective((e.target as HTMLTextAreaElement).value)}
-          placeholder="e.g. Run the test suite, fix any failures, and commit the fixes"
-          rows={3}
-          style="resize: vertical; min-height: 60px"
-        />
-      </div>
-
-      <div class="form-group">
-        <label class="form-label">Schedule <span style="opacity: 0.5; font-size: 0.9em">(UTC)</span></label>
-        <div class="schedule-presets">
-          {SCHEDULE_PRESETS.map(p => (
-            <button
-              key={p.cron}
-              class={`btn btn-xs ${schedule === p.cron && !customCron ? 'btn-primary' : 'btn-secondary'}`}
-              onClick={() => { setSchedule(p.cron); setCustomCron(''); }}
-              type="button"
-            >
-              {p.label}
-            </button>
-          ))}
-        </div>
-        <input
-          type="text"
-          class="input"
-          value={customCron || (!isPreset && initial ? schedule : '')}
-          onInput={e => setCustomCron((e.target as HTMLInputElement).value)}
-          placeholder="Custom cron (e.g. */5 * * * *)"
-        />
-      </div>
-
-      <button
-        class="btn btn-xs btn-ghost"
-        style="margin-bottom: 12px"
-        onClick={() => setShowAdvanced(!showAdvanced)}
-        type="button"
-      >
-        {showAdvanced ? <IconChevronUp size={12} /> : <IconChevronDown size={12} />}
-        {showAdvanced ? 'Hide' : 'Show'} Advanced
-      </button>
-
-      {showAdvanced && (
-        <>
-          <div class="form-group">
-            <label class="form-label">Working Directory</label>
-            <DirSelector value={cwd} onChange={setCwd} />
-          </div>
-          <div class="form-group">
-            <label class="form-label">Model</label>
-            <select class="input" value={model} onChange={e => setModel((e.target as HTMLSelectElement).value)}>
-              {MODEL_OPTIONS.map(m => (
-                <option key={m.value} value={m.value}>{m.label}</option>
-              ))}
-            </select>
-          </div>
-          <div class="form-row">
-            <div class="form-group">
-              <label class="form-label">Timeout (minutes)</label>
-              <input
-                type="number"
-                class="input"
-                value={timeoutMin}
-                onInput={e => setTimeoutMin(parseInt((e.target as HTMLInputElement).value) || 5)}
-                min={1}
-                max={60}
-              />
-            </div>
-            <div class="form-group">
-              <label class="form-label">Max Retries</label>
-              <input
-                type="number"
-                class="input"
-                value={maxRetries}
-                onInput={e => setMaxRetries(parseInt((e.target as HTMLInputElement).value) || 3)}
-                min={1}
-                max={10}
-              />
-            </div>
-          </div>
-        </>
-      )}
-
-      {error && <div class="alert alert-error" style="margin-bottom: 12px">{error}</div>}
-
-      <div class="modal-actions">
-        <button class="btn btn-sm btn-secondary" onClick={onCancel} type="button">Cancel</button>
-        <button class="btn btn-sm btn-primary" onClick={handleSubmit} disabled={submitting} type="button">
-          {submitting ? <><span class="loading" /> {submitLabel}...</> : submitLabel}
-        </button>
-      </div>
     </>
   );
 }
@@ -691,7 +384,7 @@ function AgentDetailView({ agent, onBack, onEdit }: {
           </div>
           <div class="detail-row">
             <span class="detail-label">Model</span>
-            <span>{MODEL_OPTIONS.find(m => m.value === agent.model)?.label || agent.model || 'Default (system)'}</span>
+            <span>{MODEL_LABELS[agent.model] || agent.model || 'Default' || 'Default (system)'}</span>
           </div>
           <div class="detail-row">
             <span class="detail-label">Total Executions</span>

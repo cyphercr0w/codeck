@@ -1,18 +1,58 @@
 # Codeck Documentation
 
-Technical documentation for the Codeck Sandbox project.
+Technical documentation for Codeck — a Docker sandbox that runs Claude Code with persistent memory, terminal access via browser, and one-click integrations.
 
-For a project overview and quick start guide, see the root [README](../README.md).
+## Architecture
+
+Codeck runs as a **single Docker container**. No daemon, no CLI tool, no multi-container orchestration. The container runs an Express server that serves the web UI, manages PTY terminals, handles auth, and provides APIs for everything.
+
+```
+Browser → nginx (optional SSL) → Container :80
+                                   ├── Express (API + static files)
+                                   ├── WebSocket (terminal I/O, status)
+                                   ├── node-pty (Claude Code sessions)
+                                   └── Volumes (workspace, config, ssh)
+```
 
 ## Contents
 
-| Document | Description |
-|----------|-------------|
-| [ARCHITECTURE.md](ARCHITECTURE.md) | Full system architecture: process lifecycle, backend/frontend stack, auth flows, WebSocket protocol, PTY management, tunnel system, preset system, Docker infrastructure, container filesystem layout, security model |
-| [API.md](API.md) | Every REST endpoint and WebSocket message type with request/response formats and examples |
-| [SERVICES.md](SERVICES.md) | Backend service layer: exports, state management, and internal flows for each `services/*.ts` module |
-| [FRONTEND.md](FRONTEND.md) | Preact SPA: component tree, signals-based state, view lifecycle, terminal system, CSS architecture |
-| [PROACTIVE-AGENTS.md](PROACTIVE-AGENTS.md) | Proactive agents: autonomous scheduled tasks, API, WebSocket events, filesystem layout, configuration |
-| [CONFIGURATION.md](CONFIGURATION.md) | Environment variables, Docker build and compose config, volumes, preset system, keyring setup, file permissions |
-| [DEPLOYMENT.md](DEPLOYMENT.md) | Production deployment: systemd installation on Linux VPS, service management, configuration, troubleshooting |
-| [KNOWN-ISSUES.md](KNOWN-ISSUES.md) | Bugs, technical debt, and potential improvements found during codebase audit |
+| Document | What it covers |
+|----------|---------------|
+| [ARCHITECTURE.md](ARCHITECTURE.md) | System design, auth flows, PTY lifecycle, WebSocket protocol, preset system, security model |
+| [API.md](API.md) | REST endpoints and WebSocket messages with request/response formats |
+| [SERVICES.md](SERVICES.md) | Backend services: auth, console, memory, git, agents, permissions |
+| [FRONTEND.md](FRONTEND.md) | Preact SPA: components, signals state, terminal, toast system |
+| [CONFIGURATION.md](CONFIGURATION.md) | Docker config, env vars, volumes, presets, MCP servers |
+| [DEPLOYMENT.md](DEPLOYMENT.md) | Install on VPS, update flow, resource allocation, reverse proxy |
+| [PROACTIVE-AGENTS.md](PROACTIVE-AGENTS.md) | Scheduled background agents (cron-like) |
+| [KNOWN-ISSUES.md](KNOWN-ISSUES.md) | Technical debt and pending improvements |
+
+## Quick Reference
+
+```bash
+# Install
+curl -fsSL https://codeck.xyz/install | bash
+
+# Manual Docker run
+docker run -d --name codeck -p 8080:80 \
+  -v codeck-workspace:/workspace \
+  -v codeck-claude:/root/.claude \
+  -v codeck-ssh:/root/.ssh \
+  -v codeck-gh:/root/.config/gh \
+  -v codeck-data:/data/.codeck \
+  --restart unless-stopped \
+  ghcr.io/cyphercr0w/codeck:latest --web
+
+# Update
+docker pull ghcr.io/cyphercr0w/codeck:latest
+docker stop codeck && docker rm codeck
+# Re-run the docker run command above (volumes persist)
+
+# Dev (from source)
+npm run docker:build-base   # once
+npm run docker:rebuild      # build + start
+npm run docker:up            # start
+npm run docker:down          # stop
+npm run docker:logs          # tail logs
+npm test                     # 621 tests
+```

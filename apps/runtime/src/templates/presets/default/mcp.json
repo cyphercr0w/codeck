@@ -20,18 +20,109 @@
 		"brave-search": {
 			"command": "npx",
 			"args": ["-y", "@anthropic-ai/mcp-server-brave-search"],
-			"env": {
-				"BRAVE_API_KEY": ""
-			},
+			"env": { "BRAVE_API_KEY": "" },
 			"description": "Web search via Brave Search API"
 		},
 		"github": {
 			"command": "npx",
 			"args": ["-y", "@anthropic-ai/mcp-server-github"],
-			"env": {
-				"GITHUB_TOKEN": ""
-			},
+			"env": { "GITHUB_TOKEN": "" },
 			"description": "GitHub repos, PRs, issues, and code search"
+		},
+		"memory": {
+			"command": "npx",
+			"args": ["-y", "@modelcontextprotocol/server-memory"],
+			"description": "Persistent memory across sessions"
+		},
+		"magic": {
+			"command": "npx",
+			"args": ["-y", "@magicuidesign/mcp@latest"],
+			"description": "Magic UI components"
+		},
+		"token-optimizer": {
+			"command": "npx",
+			"args": ["-y", "token-optimizer-mcp"],
+			"description": "Token optimization via content deduplication and compression"
+		}
+	},
+	"_disabledMcpServers": {
+		"exa-web-search": {
+			"command": "npx",
+			"args": ["-y", "exa-mcp-server"],
+			"env": { "EXA_API_KEY": "" },
+			"description": "Web search and research via Exa API"
+		},
+		"firecrawl": {
+			"command": "npx",
+			"args": ["-y", "firecrawl-mcp"],
+			"env": { "FIRECRAWL_API_KEY": "" },
+			"description": "Web scraping and crawling"
+		},
+		"supabase": {
+			"command": "npx",
+			"args": ["-y", "@supabase/mcp-server-supabase@latest"],
+			"env": { "SUPABASE_ACCESS_TOKEN": "" },
+			"description": "Supabase database operations"
+		},
+		"vercel": {
+			"command": "npx",
+			"args": ["-y", "vercel-mcp-server"],
+			"env": { "VERCEL_TOKEN": "" },
+			"description": "Vercel deployments and projects"
+		},
+		"railway": {
+			"command": "npx",
+			"args": ["-y", "@railway/mcp-server"],
+			"env": { "RAILWAY_API_TOKEN": "" },
+			"description": "Railway deployments"
+		},
+		"fal-ai": {
+			"command": "npx",
+			"args": ["-y", "fal-ai-mcp-server"],
+			"env": { "FAL_KEY": "" },
+			"description": "AI image/video/audio generation via fal.ai models"
+		},
+		"browserbase": {
+			"command": "npx",
+			"args": ["-y", "@browserbasehq/mcp-server-browserbase"],
+			"env": { "BROWSERBASE_API_KEY": "" },
+			"description": "Cloud browser sessions via Browserbase"
+		},
+		"confluence": {
+			"command": "npx",
+			"args": ["-y", "confluence-mcp-server"],
+			"env": { "CONFLUENCE_BASE_URL": "", "CONFLUENCE_EMAIL": "", "CONFLUENCE_API_TOKEN": "" },
+			"description": "Confluence Cloud integration"
+		},
+		"stripe": {
+			"command": "npx",
+			"args": ["-y", "@stripe/mcp"],
+			"env": { "STRIPE_SECRET_KEY": "" },
+			"description": "Stripe payments and billing"
+		},
+		"notion": {
+			"command": "npx",
+			"args": ["-y", "@notionhq/mcp-server"],
+			"env": { "NOTION_API_KEY": "" },
+			"description": "Notion pages, databases, and workspaces"
+		},
+		"google": {
+			"command": "npx",
+			"args": ["-y", "@anthropic-ai/mcp-server-google-maps"],
+			"env": { "GOOGLE_API_KEY": "" },
+			"description": "Google services (Gmail, Drive, Sheets, Calendar)"
+		},
+		"cloudflare": {
+			"command": "npx",
+			"args": ["-y", "@anthropic-ai/mcp-server-cloudflare"],
+			"env": { "CLOUDFLARE_API_TOKEN": "" },
+			"description": "Cloudflare DNS, Workers, Pages, and CDN"
+		},
+		"figma": {
+			"command": "npx",
+			"args": ["-y", "figma-mcp-server"],
+			"env": { "FIGMA_ACCESS_TOKEN": "" },
+			"description": "Figma design files, components, and styles"
 		}
 	}
 }

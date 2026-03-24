@@ -60,13 +60,24 @@ RUN npm install -g pnpm @anthropic-ai/claude-code@2.1.39
 # Biome: 10-25x faster than Prettier for TS/JS formatting
 # Ruff: 30x faster than Black for Python formatting
 # typescript-language-server: Claude Code auto-detects installed LSP (900x nav speedup)
-RUN npm install -g @biomejs/biome typescript typescript-language-server && pip3 install --break-system-packages ruff
+RUN npm install -g @biomejs/biome typescript typescript-language-server vercel@39.4.1 && pip3 install --break-system-packages ruff
 
 # ─── Playwright + Chrome (for MCP browser automation) ───
 # The Playwright MCP server uses 'chrome' by default, not 'chromium'.
 # Install both chrome and chromium with system deps for full compatibility.
 # --no-sandbox is required because Docker runs as root (configured in mcp.json).
 RUN npx playwright install chrome chromium --with-deps && rm -rf /tmp/*
+
+# ─── Claude Code Official Plugins ───
+# Pre-install so every Codeck instance has them from first boot.
+RUN claude plugin marketplace add anthropics/claude-plugins-official 2>/dev/null; \
+    claude plugin install vercel@claude-plugins-official 2>/dev/null; \
+    claude plugin install code-review@claude-plugins-official 2>/dev/null; \
+    claude plugin install security-guidance@claude-plugins-official 2>/dev/null; \
+    claude plugin install commit-commands@claude-plugins-official 2>/dev/null; \
+    claude plugin install typescript-lsp@claude-plugins-official 2>/dev/null; \
+    claude plugin install frontend-design@claude-plugins-official 2>/dev/null; \
+    echo "Plugins installed"
 
 # ─── Prebuilt native modules ───
 RUN mkdir -p /prebuilt && cd /prebuilt && npm init -y && npm install node-pty better-sqlite3

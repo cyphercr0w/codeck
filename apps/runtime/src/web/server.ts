@@ -1,4 +1,5 @@
 import express from 'express';
+import compression from 'compression';
 import helmet from 'helmet';
 import { createServer } from 'http';
 import { join, dirname } from 'path';
@@ -12,10 +13,11 @@ import { isPasswordConfigured, setupPassword, validatePassword, validateSession,
 import { getClaudeStatus, isClaudeAuthenticated, getAccountInfo, startTokenRefreshMonitor, stopTokenRefreshMonitor } from '../services/auth-anthropic.js';
 import { ACTIVE_AGENT } from '../services/agent.js';
 import { getGitStatus, updateClaudeMd, initGitHub } from '../services/git.js';
-import { destroyAllSessions, hasSavedSessions, restoreSavedSessions, saveSessionState, updateAgentBinary, clearPendingRestore } from '../services/console.js';
+import { destroyAllSessions, hasSavedSessions, restoreSavedSessions, saveSessionState, updateAgentBinary, clearPendingRestore, listSessions } from '../services/console.js';
 import { getPresetStatus } from '../services/preset.js';
 import agentRoutes from '../routes/agent.routes.js';
 import githubRoutes from '../routes/github.routes.js';
+import cliAuthRoutes from '../routes/cli-auth.routes.js';
 import gitRoutes from '../routes/git.routes.js';
 import sshRoutes from '../routes/ssh.routes.js';
 import filesRoutes from '../routes/files.routes.js';
@@ -36,7 +38,10 @@ import permissionsRoutes from '../routes/permissions.routes.js';
 import systemRoutes from '../routes/system.routes.js';
 import proactiveAgentsRoutes from '../routes/agents.routes.js';
 import skillsRoutes from '../routes/skills.routes.js';
+import mcpRoutes from '../routes/mcp.routes.js';
+import hooksRoutes from '../routes/hooks.routes.js';
 import { initProactiveAgents, shutdownProactiveAgents } from '../services/proactive-agents.js';
+import { initConsolidationCron, shutdownConsolidationCron } from '../services/memory-consolidation.js';
 import { initializeEmbeddings, shutdownEmbeddings } from '../services/embeddings.js';
 import { cleanupOldSessions } from '../services/session-summarizer.js';
 
@@ -197,6 +202,10 @@ export async function startWebServer(): Promise<void> {
     });
   }
 
+  // Compress all responses (JS/CSS/JSON) — reduces 483KB JS bundle to ~126KB over the wire.
+  // Level 1 = fastest compression, minimal CPU overhead. Threshold 1KB skips tiny responses.
+  app.use(compression({ level: 1, threshold: 1024 }));
+
   // Hashed assets (JS/CSS) get long cache; index.html always revalidates
   app.use(express.static(WEB_DIST, {
     setHeaders(res, filePath) {
@@ -336,7 +345,9 @@ export async function startWebServer(): Promise<void> {
     // a reverse proxy (e.g. nginx) and is NOT truly local. With trust proxy enabled,
     // req.ip already reflects the real client IP, but X-Forwarded-For presence is an
     // additional signal that the request was proxied from outside.
-    if (req.path.startsWith('/memory')) {
+    // Localhost bypass for internal APIs — agent hooks inside container post here directly.
+    const localBypassPaths = ['/memory', '/console/context', '/console/subagents'];
+    if (localBypassPaths.some(p => req.path.startsWith(p))) {
       const ip = req.ip || '';
       const isLocalIp = ip === '127.0.0.1' || ip === '::1' || ip === '::ffff:127.0.0.1';
       const isProxied = !!req.headers['x-forwarded-for'];
@@ -391,7 +402,21 @@ export async function startWebServer(): Promise<void> {
 
   // Status + logs
   app.get('/api/status', (_req, res) => {
-    res.json({ claude: getClaudeStatus(), git: getGitStatus(), preset: getPresetStatus(), agent: { name: ACTIVE_AGENT.name, id: ACTIVE_AGENT.id } });
+    // Bundle everything the frontend needs in ONE response.
+    // Eliminates separate /api/account + /api/console/sessions roundtrips (saves 500ms at 250ms latency).
+    const sessionList = listSessions();
+    const account = isClaudeAuthenticated() ? getAccountInfo() : null;
+
+    res.json({
+      claude: getClaudeStatus(),
+      git: getGitStatus(),
+      preset: getPresetStatus(),
+      agent: { name: ACTIVE_AGENT.name, id: ACTIVE_AGENT.id },
+      // Bundled data — frontend uses these instead of separate requests
+      account: account || undefined,
+      sessions: sessionList.length > 0 ? sessionList : undefined,
+      pendingRestore: hasSavedSessions() && sessionList.length === 0 ? true : undefined,
+    });
   });
   app.get('/api/logs', (_req, res) => {
     res.json({ logs: getLogBuffer() });
@@ -400,6 +425,7 @@ export async function startWebServer(): Promise<void> {
   // Routes (all protected by auth middleware above)
   app.use('/api/claude', agentRoutes);
   app.use('/api/github', githubRoutes);
+  app.use('/api/cli-auth', cliAuthRoutes);
   app.use('/api/git', gitRoutes);
   app.use('/api/ssh', sshRoutes);
   app.use('/api/files', filesRoutes);
@@ -414,6 +440,8 @@ export async function startWebServer(): Promise<void> {
   app.use('/api/system', systemRoutes);
   app.use('/api/agents', proactiveAgentsRoutes);
   app.use('/api/skills', skillsRoutes);
+  app.use('/api/mcp-servers', mcpRoutes);
+  app.use('/api/hooks', hooksRoutes);
 
   // Account endpoint
   app.get('/api/account', (_req, res) => {
@@ -467,6 +495,7 @@ export async function startWebServer(): Promise<void> {
     saveSessionState('shutdown');
     stopTokenRefreshMonitor();
     shutdownProactiveAgents();
+    shutdownConsolidationCron();
     shutdownEmbeddings();
     shutdownSearch();
     shutdownIndexer();
@@ -523,6 +552,7 @@ export async function startWebServer(): Promise<void> {
     startMdns();
     initProactiveAgents(broadcast);
     startTokenRefreshMonitor(broadcast);
+    initConsolidationCron();
 
     // Daily session transcript cleanup (remove >30 day old JSONL files)
     // Run once at startup and then every 24 hours

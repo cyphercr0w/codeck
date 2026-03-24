@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef } from 'preact/hooks';
-import { currentFilesPath, workspacePath } from '../state/store';
+import { currentFilesPath, workspacePath, showToast } from '../state/store';
 import { apiFetch } from '../api';
 import { IconFolder, IconRefresh, IconArrowUp, IconEdit, IconSave, IconX, IconPlus, IconTrash, IconFile, getFileIcon } from './Icons';
 
@@ -49,13 +49,7 @@ export function FilesBrowser() {
   const [renaming, setRenaming] = useState(false);
   const renameRef = useRef<HTMLInputElement>(null);
 
-  // Status toast
-  const [toast, setToast] = useState<{ type: 'success' | 'error'; msg: string } | null>(null);
-
-  function showToast(type: 'success' | 'error', msg: string) {
-    setToast({ type, msg });
-    setTimeout(() => setToast(null), 3000);
-  }
+  // (toasts use global showToast from store)
 
   async function loadFiles(path: string) {
     currentFilesPath.value = path;
@@ -90,10 +84,10 @@ export function FilesBrowser() {
         setEditing(false);
         setSaveMsg('');
       } else {
-        showToast('error', data.error || 'Could not read file');
+        showToast(data.error || 'Could not read file', 'error');
       }
     } catch {
-      showToast('error', 'Could not read file');
+      showToast('Could not read file', 'error');
     }
   }
 
@@ -134,9 +128,9 @@ export function FilesBrowser() {
         });
         const data = await res.json();
         if (data.success) {
-          showToast('success', `Folder "${name}" created`);
+          showToast(`Folder "${name}" created`, 'success');
         } else {
-          showToast('error', data.error || 'Failed to create folder');
+          showToast(data.error || 'Failed to create folder', 'error');
         }
       } else {
         const fullRelPath = dirPath ? `${dirPath}/${name}` : name;
@@ -146,16 +140,16 @@ export function FilesBrowser() {
         });
         const data = await res.json();
         if (data.success) {
-          showToast('success', `File "${name}" created`);
+          showToast(`File "${name}" created`, 'success');
         } else {
-          showToast('error', data.error || 'Failed to create file');
+          showToast(data.error || 'Failed to create file', 'error');
         }
       }
       setShowCreate(null);
       setCreateName('');
       loadFiles(dirPath);
     } catch {
-      showToast('error', 'Failed to create');
+      showToast('Failed to create', 'error');
     }
     setCreating(false);
   }
@@ -171,14 +165,14 @@ export function FilesBrowser() {
       });
       const data = await res.json();
       if (data.success) {
-        showToast('success', `"${deleteTarget.name}" deleted`);
+        showToast(`"${deleteTarget.name}" deleted`, 'success');
       } else {
-        showToast('error', data.error || 'Failed to delete');
+        showToast(data.error || 'Failed to delete', 'error');
       }
       setDeleteTarget(null);
       loadFiles(dirPath);
     } catch {
-      showToast('error', 'Failed to delete');
+      showToast('Failed to delete', 'error');
     }
     setDeleting(false);
   }
@@ -195,15 +189,15 @@ export function FilesBrowser() {
       });
       const data = await res.json();
       if (data.success) {
-        showToast('success', `Renamed to "${renameName.trim()}"`);
+        showToast(`Renamed to "${renameName.trim()}"`, 'success');
       } else {
-        showToast('error', data.error || 'Failed to rename');
+        showToast(data.error || 'Failed to rename', 'error');
       }
       setRenameTarget(null);
       setRenameName('');
       loadFiles(dirPath);
     } catch {
-      showToast('error', 'Failed to rename');
+      showToast('Failed to rename', 'error');
     }
     setRenaming(false);
   }
@@ -271,11 +265,6 @@ export function FilesBrowser() {
           </button>
         </div>
       </div>
-
-      {/* Toast */}
-      {toast && (
-        <div class={`fb-toast fb-toast-${toast.type}`}>{toast.msg}</div>
-      )}
 
       {/* Create inline */}
       {showCreate && (

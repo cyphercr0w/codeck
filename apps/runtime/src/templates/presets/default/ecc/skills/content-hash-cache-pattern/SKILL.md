@@ -1,12 +1,7 @@
-<!--
-  Source: affaan-m/everything-claude-code (MIT License)
-  https://github.com/affaan-m/everything-claude-code
-  Author: Affaan Mustafa — integrated into Codeck with modifications.
--->
-
 ---
 name: content-hash-cache-pattern
-description: "SHA-256 content hash caching for expensive file processing. Load when building cache layers."
+description: Cache expensive file processing results using SHA-256 content hashes — path-independent, auto-invalidating, with service layer separation.
+origin: ECC
 ---
 
 # Content-Hash File Cache Pattern

@@ -1,12 +1,7 @@
-<!--
-  Source: affaan-m/everything-claude-code (MIT License)
-  https://github.com/affaan-m/everything-claude-code
-  Author: Affaan Mustafa — integrated into Codeck with modifications.
--->
-
 ---
 name: e2e-testing
-description: "Playwright E2E testing patterns and CI integration. Load when writing end-to-end tests."
+description: Playwright E2E testing patterns, Page Object Model, configuration, CI/CD integration, artifact management, and flaky test strategies.
+origin: ECC
 ---
 
 # E2E Testing Patterns

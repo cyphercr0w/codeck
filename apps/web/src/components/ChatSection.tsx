@@ -448,7 +448,6 @@ export function ChatSection() {
 								rows={2}
 							/>
 							<ToolsToggle />
-							<ChatModelSelector />
 							<button
 								class="chat-send"
 								onClick={handleSend}

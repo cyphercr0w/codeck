@@ -180,12 +180,8 @@ router.post("/message", (req, res) => {
 	prompt += `User: ${message}`;
 
 	// Validate model (default to haiku for fast chat)
-	const MODEL_MAP: Record<string, string> = {
-		haiku: "claude-haiku-4-5-20251001",
-		sonnet: "claude-sonnet-4-6-20250514",
-		opus: "claude-opus-4-6-20250514",
-	};
-	const chatModel = MODEL_MAP[model] || MODEL_MAP.haiku;
+	// Chat mode uses Haiku 4.5 (fast, available via OAuth token)
+	const chatModel = "claude-haiku-4-5-20251001";
 
 	// ── API Direct mode (no tools, fast) ──
 	if (!useTools) {

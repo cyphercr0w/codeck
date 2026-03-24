@@ -44,7 +44,7 @@ interface HomeSectionProps {
 	onLogout: () => void;
 }
 
-const DASHBOARD_REFRESH_MS = 120_000; // 2 min — dashboard data changes slowly
+const DASHBOARD_REFRESH_MS = 300_000; // 5 min — match backend cache, avoid 429 rate limits
 
 function formatBytes(bytes: number): string {
 	if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(0) + " KB";

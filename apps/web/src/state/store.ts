@@ -663,7 +663,7 @@ export function startUsagePolling(
 	}
 
 	poll(); // immediate first fetch
-	usagePollTimer = setInterval(poll, 60_000);
+	usagePollTimer = setInterval(poll, 300_000); // 5 min — match backend cache TTL
 }
 
 export function stopUsagePolling(): void {

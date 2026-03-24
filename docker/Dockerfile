@@ -42,6 +42,7 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
 EXPOSE 80
 
 ENV WORKSPACE=/workspace
+ENV CODECK_DIR=/workspace/.codeck
 ENV NODE_OPTIONS="--max-old-space-size=2048"
 
 ENTRYPOINT ["/usr/local/bin/init-keyring.sh", "env", "NODE_ENV=production", "node", "apps/runtime/dist/index.js"]

@@ -44,9 +44,9 @@ ask() {
   fi
   if [[ -t 0 ]]; then
     read -rp "  ${prompt} [${default}]: " value
-    eval "$var=\"${value:-$default}\""
+    printf -v "$var" '%s' "${value:-$default}"
   else
-    eval "$var=\"$default\""
+    printf -v "$var" '%s' "$default"
   fi
 }
 
@@ -280,6 +280,7 @@ echo -e "  ${BOLD}Data (persists across updates):${NC}"
 echo "    Workspace:  codeck-workspace"
 echo "    Claude:     codeck-claude"
 echo "    SSH keys:   codeck-ssh"
+echo "    GitHub:     codeck-gh"
 echo ""
 echo -e "  ${DIM}Installer v${VERSION}${NC}"
 echo ""

@@ -164,8 +164,8 @@ router.post("/message", (req, res) => {
 
 	// Build prompt with conversation history for continuity
 	let prompt = "";
-	// Include previous messages as context (up to 20 most recent)
-	const prevMessages = conversation.messages.slice(-21, -1); // exclude the message we just added
+	// Include previous messages as context (up to 10 most recent for speed)
+	const prevMessages = conversation.messages.slice(-11, -1); // exclude the message we just added
 	if (prevMessages.length > 0) {
 		prompt += "Previous conversation:\n";
 		for (const msg of prevMessages) {
@@ -193,7 +193,7 @@ router.post("/message", (req, res) => {
 			"--allowedTools",
 			"Read,Glob,Grep,WebSearch,WebFetch",
 			"--max-turns",
-			"10",
+			"3",
 		],
 		{
 			env,

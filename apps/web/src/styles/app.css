@@ -1760,88 +1760,12 @@
 	color: var(--text-muted);
 }
 
-.tsb-model-selector {
-	position: relative;
-}
 .tsb-model {
 	font-size: 10px;
 	color: var(--text-muted);
 	opacity: 0.7;
-	background: none;
-	border: none;
-	cursor: pointer;
 	font-family: var(--font-mono);
 	padding: 2px 4px;
-	border-radius: 3px;
-	transition: all 0.15s;
-}
-.tsb-model:hover {
-	opacity: 1;
-	background: var(--bg-hover);
-	color: var(--accent);
-}
-.tsb-model.switching {
-	opacity: 0.5;
-}
-.tsb-model-dropup {
-	position: absolute;
-	bottom: calc(100% + 6px);
-	left: 50%;
-	transform: translateX(-50%);
-	background: var(--bg-primary);
-	border: 1px solid var(--border);
-	border-radius: var(--radius);
-	box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.3);
-	min-width: 220px;
-	padding: 4px;
-	z-index: 100;
-	animation: dropup-in 0.15s ease-out;
-}
-.tsb-model-chevron {
-	font-size: 8px;
-	opacity: 0.5;
-	margin-left: 2px;
-}
-@keyframes dropup-in {
-	from {
-		opacity: 0;
-		transform: translateX(-50%) translateY(4px);
-	}
-	to {
-		opacity: 1;
-		transform: translateX(-50%) translateY(0);
-	}
-}
-.tsb-model-option {
-	display: flex;
-	align-items: center;
-	justify-content: space-between;
-	gap: 8px;
-	width: 100%;
-	padding: 6px 10px;
-	background: none;
-	border: none;
-	border-radius: 3px;
-	cursor: pointer;
-	font-family: inherit;
-	color: var(--text-primary);
-	font-size: 12px;
-	text-align: left;
-	transition: background 0.1s;
-}
-.tsb-model-option:hover {
-	background: var(--bg-hover);
-}
-.tsb-model-option.active {
-	background: color-mix(in srgb, var(--accent) 12%, transparent);
-	color: var(--accent);
-}
-.tsb-model-option-name {
-	font-weight: 600;
-}
-.tsb-model-option-desc {
-	font-size: 10px;
-	color: var(--text-muted);
 }
 
 .mobile-limits-model {

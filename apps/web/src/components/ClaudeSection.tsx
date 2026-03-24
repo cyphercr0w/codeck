@@ -17,7 +17,6 @@ import {
 	claudeUsage,
 	contextData,
 	setContextData,
-	showToast,
 	activeSection,
 	recentConversations,
 	fetchRecentConversations,
@@ -54,23 +53,15 @@ import { IconPlus, IconX, IconShell, IconTerminal, IconRefresh } from "./Icons";
 import { MobileTerminalToolbar } from "./MobileTerminalToolbar";
 import { UploadOverlay } from "./UploadOverlay";
 
-const IMAGE_MIME_TYPES = new Set([
-	"image/png",
-	"image/jpeg",
-	"image/gif",
-	"image/webp",
-]);
+const MAX_UPLOAD_SIZE = 10 * 1024 * 1024; // 10 MB
 
-/** Extract an image File from a DragEvent, or null if none found. */
-function getImageFromDrop(e: DragEvent): File | null {
+/** Extract the first file from a DragEvent, or null if none found / too large. */
+function getFileFromDrop(e: DragEvent): File | null {
 	const files = e.dataTransfer?.files;
-	if (!files) return null;
-	for (let i = 0; i < files.length; i++) {
-		if (IMAGE_MIME_TYPES.has(files[i].type)) {
-			return files[i];
-		}
-	}
-	return null;
+	if (!files || files.length === 0) return null;
+	const file = files[0];
+	if (file.size > MAX_UPLOAD_SIZE) return null;
+	return file;
 }
 
 interface ClaudeSectionProps {
@@ -453,9 +444,9 @@ export function ClaudeSection({
 	function handleDrop(e: DragEvent) {
 		e.preventDefault();
 		setDragOver(false);
-		const img = getImageFromDrop(e);
-		if (img && activeSessionId.value) {
-			setPendingFile(img);
+		const file = getFileFromDrop(e);
+		if (file && activeSessionId.value) {
+			setPendingFile(file);
 		}
 	}
 
@@ -888,93 +879,6 @@ export function ClaudeSection({
 	);
 }
 
-const MODEL_OPTIONS = [
-	{ id: "haiku", label: "Haiku", desc: "Fast, lightweight" },
-	{ id: "sonnet", label: "Sonnet", desc: "Best for coding" },
-	{ id: "opus", label: "Opus", desc: "Deep reasoning" },
-	{ id: "opus[1m]", label: "Opus 1M", desc: "Opus + extended context" },
-];
-
-function ModelSelector({ currentModel }: { currentModel: string }) {
-	const [open, setOpen] = useState(false);
-	const [switching, setSwitching] = useState(false);
-	const ref = useRef<HTMLDivElement>(null);
-
-	// Close on outside click
-	useEffect(() => {
-		if (!open) return;
-		const handler = (e: MouseEvent) => {
-			if (ref.current && !ref.current.contains(e.target as Node))
-				setOpen(false);
-		};
-		document.addEventListener("mousedown", handler);
-		return () => document.removeEventListener("mousedown", handler);
-	}, [open]);
-
-	async function switchModel(modelId: string) {
-		setSwitching(true);
-		setOpen(false);
-		try {
-			const res = await apiFetch("/api/system/model", {
-				method: "POST",
-				body: JSON.stringify({ model: modelId }),
-			});
-			const data = await res.json();
-			if (data.success) {
-				showToast(`Model → ${modelId}`, "success", 2000);
-			} else {
-				showToast(data.error || "Failed to switch model", "error");
-			}
-		} catch {
-			showToast("Failed to switch model", "error");
-		}
-		setSwitching(false);
-	}
-
-	// Detect which option is active
-	const current =
-		MODEL_OPTIONS.find(
-			(m) =>
-				currentModel.toLowerCase().includes(m.id.replace("[1m]", "")) &&
-				(m.id.includes("[1m]")
-					? currentModel.includes("1m") || currentModel.includes("1M")
-					: !currentModel.includes("1m") && !currentModel.includes("1M")),
-		) || MODEL_OPTIONS.find((m) => currentModel.toLowerCase().includes(m.id));
-
-	return (
-		<div class="tsb-model-selector" ref={ref}>
-			<button
-				class={`tsb-model${switching ? " switching" : ""}`}
-				onClick={() => setOpen(!open)}
-				title="Switch model"
-			>
-				{switching ? (
-					<span class="spinner-sm" />
-				) : (
-					<>
-						{currentModel}{" "}
-						<span class="tsb-model-chevron">{open ? "▾" : "▴"}</span>
-					</>
-				)}
-			</button>
-			{open && (
-				<div class="tsb-model-dropup">
-					{MODEL_OPTIONS.map((m) => (
-						<button
-							key={m.id}
-							class={`tsb-model-option${current?.id === m.id ? " active" : ""}`}
-							onClick={() => m.id !== current?.id && switchModel(m.id)}
-						>
-							<span class="tsb-model-option-name">{m.label}</span>
-							<span class="tsb-model-option-desc">{m.desc}</span>
-						</button>
-					))}
-				</div>
-			)}
-		</div>
-	);
-}
-
 function TerminalStatusBar() {
 	const usage = claudeUsage.value;
 	const rawCtx = contextData.value;
@@ -1095,11 +999,13 @@ function TerminalStatusBar() {
 						)}
 					</div>
 				)}
-				{/* Model selector */}
+				{/* Model indicator (read-only — use /model in terminal to switch) */}
 				{ctx?.model && (
 					<>
 						<span class="tsb-sep">|</span>
-						<ModelSelector currentModel={ctx.model} />
+						<span class="tsb-model" title="Use /model in terminal to switch">
+							{ctx.model}
+						</span>
 					</>
 				)}
 				{/* Context usage */}

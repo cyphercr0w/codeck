@@ -239,22 +239,24 @@ export function startFlowInChat(
 		startedAt: Date.now(),
 		completedAt: null,
 	};
-	chatStreaming.value = true;
-
-	// Add flow-start message to chat
-	chatMessages.value = [
-		...chatMessages.value,
-		{
-			id: crypto.randomUUID(),
-			role: "flow",
-			content: "",
-			timestamp: Date.now(),
-			flowType: "flow-start",
-			flowExecutionId: executionId,
-			streaming: true,
-			streamStartedAt: Date.now(),
-		},
-	];
+	// Only add flow message to chat if triggered from a chat conversation
+	// (not from Orchestrator, which passes empty conversationId)
+	if (conversationId) {
+		chatStreaming.value = true;
+		chatMessages.value = [
+			...chatMessages.value,
+			{
+				id: crypto.randomUUID(),
+				role: "flow",
+				content: "",
+				timestamp: Date.now(),
+				flowType: "flow-start",
+				flowExecutionId: executionId,
+				streaming: true,
+				streamStartedAt: Date.now(),
+			},
+		];
+	}
 }
 
 export function appendFlowAgentOutput(

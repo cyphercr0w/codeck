@@ -4,6 +4,7 @@ import { showToast } from "../state/store";
 import {
 	activeFlowExecution,
 	archivedFlows,
+	flowStateVersion,
 	startFlowInChat,
 } from "../state/chat-store";
 import {
@@ -145,6 +146,7 @@ export function FlowsSection() {
 
 	const liveFlow = activeFlowExecution.value;
 	const isAnyFlowRunning = liveFlow?.status === "running";
+	const loadingExecutions = useRef(false);
 
 	useEffect(() => {
 		loadFlows();
@@ -156,35 +158,44 @@ export function FlowsSection() {
 			loadExecutions();
 			return;
 		}
-		const iv = setInterval(loadExecutions, 5000);
+		const iv = setInterval(() => {
+			if (!loadingExecutions.current) loadExecutions();
+		}, 5000);
 		return () => clearInterval(iv);
 	}, [isAnyFlowRunning]);
 
 	async function loadFlows() {
 		try {
 			const r = await apiFetch("/api/flows");
+			if (!r.ok) throw new Error(`HTTP ${r.status}`);
 			const d = await r.json();
 			setFlows(d.flows || []);
 		} catch {
-			/* */
+			showToast("Failed to load flows", "error");
 		}
 	}
 	async function loadExecutions() {
+		if (loadingExecutions.current) return;
+		loadingExecutions.current = true;
 		try {
 			const r = await apiFetch("/api/flows/executions/list");
+			if (!r.ok) throw new Error(`HTTP ${r.status}`);
 			const d = await r.json();
 			setExecutions(d.executions || []);
 		} catch {
-			/* */
+			/* non-fatal: polling, don't toast on every failure */
+		} finally {
+			loadingExecutions.current = false;
 		}
 	}
 	async function loadSystemAgents() {
 		try {
 			const r = await apiFetch("/api/flows/available-agents");
+			if (!r.ok) throw new Error(`HTTP ${r.status}`);
 			const d = await r.json();
 			setSystemAgents(d.agents || []);
 		} catch {
-			/* */
+			/* non-fatal */
 		}
 	}
 	async function deleteFlow(id: string) {
@@ -451,17 +462,24 @@ function ExecutionViewer({
 	onBack: () => void;
 	onEdit: () => void;
 }) {
+	const [submittedInput, setSubmittedInput] = useState("");
 	const agents = walkAgents(flow);
+	// Subscribe to flow state changes (incremented on every agent output chunk)
+	const _fsv = flowStateVersion.value;
 	const liveFlow = activeFlowExecution.value;
 	// Match archived flows by executionId from recent executions for this flow,
 	// rather than by flowName (which breaks on rename and is ambiguous).
 	const recentExecIds = new Set(executions.map((e) => e.id));
-	const archived = Object.values(archivedFlows.value).find((f) =>
-		recentExecIds.has(f.executionId),
-	);
-	const src = liveFlow?.flowName === flow.name ? liveFlow : archived;
+	const archived =
+		Object.values(archivedFlows.value)
+			.filter((f) => recentExecIds.has(f.executionId))
+			.sort((a, b) => b.startedAt - a.startedAt)[0] ?? null;
+	const src =
+		liveFlow && recentExecIds.has(liveFlow.executionId) ? liveFlow : archived;
 	const isRunning =
-		liveFlow?.flowName === flow.name && liveFlow?.status === "running";
+		liveFlow != null &&
+		recentExecIds.has(liveFlow.executionId) &&
+		liveFlow.status === "running";
 	const isComplete = !!src && !isRunning;
 	const outputRef = useRef<HTMLDivElement>(null);
 	const [expandedAgents, setExpandedAgents] = useState<Set<string>>(new Set());
@@ -573,10 +591,10 @@ function ExecutionViewer({
 					class={`exec-log${isRunning ? " exec-log-running" : ""}`}
 					ref={outputRef}
 				>
-					{runInput.trim() && (
+					{submittedInput.trim() && (
 						<div class="exec-log-entry exec-log-user">
 							<div class="exec-log-label">Your prompt</div>
-							<div class="exec-log-text">{runInput}</div>
+							<div class="exec-log-text">{submittedInput}</div>
 						</div>
 					)}
 					{src &&
@@ -659,7 +677,10 @@ function ExecutionViewer({
 							<span>{src.status === "completed" ? "\u2713" : "\u2717"}</span>
 							<strong>
 								Flow {src.status} in{" "}
-								{Math.round((Date.now() - src.startedAt) / 1000)}s
+								{Math.round(
+									((src.completedAt || Date.now()) - src.startedAt) / 1000,
+								)}
+								s
 								{src.loopCount > 0 &&
 									` \u2014 ${src.loopCount} loop${src.loopCount > 1 ? "s" : ""}`}
 							</strong>
@@ -684,7 +705,10 @@ function ExecutionViewer({
 						<button
 							class="btn btn-primary"
 							disabled={!runInput.trim() || running}
-							onClick={onRun}
+							onClick={() => {
+								setSubmittedInput(runInput);
+								onRun();
+							}}
 						>
 							<IconPlay size={14} /> {running ? "Starting..." : "Run"}
 						</button>
@@ -922,7 +946,7 @@ function FlowEditor({
 		setShowAgentPicker(false);
 	}
 	function addBlankAgent() {
-		const id = `agent-${agents.length + 1}`;
+		const id = `agent-${crypto.randomUUID().slice(0, 8)}`;
 		const last = agents[agents.length - 1];
 		const updated = { ...flow.agents };
 		if (last?.transitions.default === "END")

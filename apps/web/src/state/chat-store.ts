@@ -63,11 +63,14 @@ export interface ActiveFlowState {
 	agentStartedAt: Record<string, number>;
 	loopCount: number;
 	startedAt: number;
+	completedAt: number | null;
 }
 
 export const activeFlowExecution = signal<ActiveFlowState | null>(null);
 // Archived flows keyed by executionId — preserves final state after completion
 export const archivedFlows = signal<Record<string, ActiveFlowState>>({});
+// Incremented on every flow state change to trigger re-renders without remapping chatMessages
+export const flowStateVersion = signal(0);
 
 export type ApiFetchFn = (
 	url: string,
@@ -234,6 +237,7 @@ export function startFlowInChat(
 		agentStartedAt: {},
 		loopCount: 0,
 		startedAt: Date.now(),
+		completedAt: null,
 	};
 	chatStreaming.value = true;
 
@@ -271,8 +275,12 @@ export function appendFlowAgentOutput(
 
 	// Detect loops: if this agent already completed before and is running again
 	let loopCount = flow.loopCount;
-	if (flow.currentAgentId !== agentId && flow.agentDurations[agentId] != null) {
+	const durations = { ...flow.agentDurations };
+	if (flow.currentAgentId !== agentId && durations[agentId] != null) {
 		loopCount++;
+		// Reset agent state so UI doesn't show it as both done and running
+		delete durations[agentId];
+		starts[agentId] = Date.now();
 	}
 
 	activeFlowExecution.value = {
@@ -280,17 +288,13 @@ export function appendFlowAgentOutput(
 		currentAgentId: agentId,
 		currentAgentIndex: idx >= 0 ? idx : flow.currentAgentIndex,
 		agentOutputs: outputs,
+		agentDurations: durations,
 		agentStartedAt: starts,
 		loopCount,
 	};
 
-	// Update the flow-start message to trigger re-render
-	chatMessages.value = chatMessages.value.map((m) => {
-		if (m.flowType === "flow-start" && m.flowExecutionId === executionId) {
-			return { ...m, content: `agent:${agentId}` };
-		}
-		return m;
-	});
+	// Bump version to trigger re-render in components that read flowStateVersion
+	flowStateVersion.value++;
 }
 
 export function completeFlowAgent(
@@ -342,6 +346,7 @@ export function completeFlowExecution(
 		...flow,
 		status: finalStatus as "completed" | "failed" | "cancelled",
 		currentAgentId: null,
+		completedAt: Date.now(),
 	};
 
 	// Archive the final state so the UI can still render the completed timeline.
@@ -363,9 +368,7 @@ export function completeFlowExecution(
 			const flowType =
 				finalStatus === "completed"
 					? ("flow-complete" as const)
-					: finalStatus === "cancelled"
-						? ("flow-failed" as const) // show as failed with cancelled label
-						: ("flow-failed" as const);
+					: ("flow-failed" as const);
 			return {
 				...m,
 				streaming: false,

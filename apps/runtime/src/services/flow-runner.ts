@@ -221,8 +221,10 @@ function runAgent(
 		};
 
 		// Build spawn arguments — use stream-json for real-time output
+		// --bare skips hooks/LSP/plugins (agents don't need them)
 		// --verbose is required for stream-json to work with --print
 		const spawnArgs: string[] = [
+			"--bare",
 			"-p",
 			prompt,
 			"--output-format",

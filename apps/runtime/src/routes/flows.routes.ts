@@ -182,7 +182,7 @@ router.post("/:id/execute", async (req, res) => {
 	let cwd: string | undefined;
 	if (rawCwd && typeof rawCwd === "string") {
 		const resolved = resolve(rawCwd);
-		if (!resolved.startsWith(WORKSPACE)) {
+		if (resolved !== WORKSPACE && !resolved.startsWith(WORKSPACE + "/")) {
 			res
 				.status(400)
 				.json({ error: "cwd must be within the workspace directory" });

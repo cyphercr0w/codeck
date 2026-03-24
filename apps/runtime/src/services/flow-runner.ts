@@ -67,7 +67,11 @@ export async function runFlow(
 		if (cancelledExecutions.has(execution.id)) {
 			cancelledExecutions.delete(execution.id);
 			execution.status = "cancelled";
-			break;
+			execution.completedAt = new Date().toISOString();
+			execution.currentAgentId = null;
+			saveExecution(execution);
+			broadcast({ type: "flow:execution:complete", data: execution });
+			return;
 		}
 
 		const agent = flow.agents[currentAgentId];
@@ -80,12 +84,11 @@ export async function runFlow(
 			return;
 		}
 
-		// Anti-loop: track how many times each agent has been visited.
-		// Any agent visited more than once indicates a loop iteration.
+		// Anti-loop: track visits per agent.
+		// Only count a "loop" when the entry agent is revisited — that's a complete cycle.
 		const visits = (agentVisitCounts.get(currentAgentId) || 0) + 1;
 		agentVisitCounts.set(currentAgentId, visits);
-		if (visits > 1) {
-			// Each revisit of any agent counts as one loop iteration
+		if (visits > 1 && currentAgentId === flow.entryAgentId) {
 			execution.loopCount++;
 		}
 

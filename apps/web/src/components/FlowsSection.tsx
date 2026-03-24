@@ -4,8 +4,8 @@ import { showToast } from "../state/store";
 import {
 	activeFlowExecution,
 	archivedFlows,
-	flowStateVersion,
 	startFlowInChat,
+	type AgentVisit,
 } from "../state/chat-store";
 import {
 	IconPlus,
@@ -464,8 +464,6 @@ function ExecutionViewer({
 }) {
 	const [submittedInput, setSubmittedInput] = useState("");
 	const agents = walkAgents(flow);
-	// Subscribe to flow state changes (incremented on every agent output chunk)
-	const _fsv = flowStateVersion.value;
 	const liveFlow = activeFlowExecution.value;
 	// Match archived flows by executionId from recent executions for this flow,
 	// rather than by flowName (which breaks on rename and is ambiguous).
@@ -585,7 +583,7 @@ function ExecutionViewer({
 				)}
 			</div>
 
-			{/* Zone 2: Execution Log */}
+			{/* Zone 2: Execution Log — renders from visitLog */}
 			{(isRunning || isComplete) && (
 				<div
 					class={`exec-log${isRunning ? " exec-log-running" : ""}`}
@@ -597,81 +595,101 @@ function ExecutionViewer({
 							<div class="exec-log-text">{submittedInput}</div>
 						</div>
 					)}
-					{src &&
-						agents.map((agent, i) => {
-							const out = src.agentOutputs[agent.id];
-							const dur = src.agentDurations[agent.id];
-							const decision = src.agentDecisions[agent.id];
-							const isCurrent = src.currentAgentId === agent.id;
-							const isDone = dur != null;
-							const isExpanded = expandedAgents.has(agent.id);
-							if (!out && !isCurrent && !isDone) return null;
-							return (
-								<div key={`${agent.id}-${i}`}>
-									{i > 0 && (out || isCurrent || isDone) && (
-										<div class="exec-log-transition">
-											{agents[i - 1].name} {"\u2192"} {agent.name}
-											{i > 0 && src.agentDecisions[agents[i - 1].id] && (
-												<span class="exec-log-decision">
-													{src.agentDecisions[agents[i - 1].id]}
-												</span>
-											)}
-										</div>
-									)}
-									<div
-										class={`exec-log-entry exec-log-agent${isCurrent && isRunning ? " exec-log-active" : ""}`}
-									>
-										<div
-											class="exec-log-header"
-											onClick={() =>
-												isDone && !isCurrent
-													? toggleExpand(agent.id)
-													: undefined
-											}
-										>
-											{isCurrent && isRunning && <span class="spinner-sm" />}
-											{isDone && <span class="exec-log-check">{"\u2713"}</span>}
-											<span class="exec-log-name">{agent.name}</span>
-											{isCurrent &&
-												isRunning &&
-												src.agentStartedAt[agent.id] && (
-													<FlowTimer startedAt={src.agentStartedAt[agent.id]} />
-												)}
-											{isDone && (
-												<span class="exec-log-dur">
-													{Math.round(dur / 1000)}s
-												</span>
-											)}
-											{isDone && !isCurrent && (
-												<span class="exec-log-expand">
-													{isExpanded ? "\u25BC" : "\u25B6"}
-												</span>
-											)}
-										</div>
-										{isCurrent && isRunning && out && (
-											<pre class="exec-log-output">
-												{out.slice(-3000)}
-												<span class="chat-cursor">{"\u2588"}</span>
-											</pre>
-										)}
-										{isDone && !isCurrent && isExpanded && out && (
-											<pre class="exec-log-output">{out}</pre>
-										)}
-										{isDone && !isCurrent && !isExpanded && out && (
-											<div class="exec-log-preview">
-												{out
-													.trim()
-													.split("\n")
-													.slice(0, 2)
-													.join(" ")
-													.slice(0, 150)}
-												...
-											</div>
+					{src?.visitLog.map((visit, i) => {
+						const prevVisit = i > 0 ? src.visitLog[i - 1] : null;
+						const isActive = visit.status === "running" && isRunning;
+						const isDone = visit.status === "completed";
+						const visitKey = `${visit.agentId}-v${visit.visit}`;
+						const isExpanded = expandedAgents.has(visitKey);
+
+						return (
+							<div key={visitKey}>
+								{/* Transition between agents */}
+								{prevVisit && prevVisit.agentId !== visit.agentId && (
+									<div class="exec-log-transition">
+										{prevVisit.agentName} {"\u2192"} {visit.agentName}
+										{prevVisit.decision && (
+											<span
+												class={`exec-log-decision exec-log-decision-${prevVisit.decision.toLowerCase().replace(/_/g, "-")}`}
+											>
+												{prevVisit.decision}
+											</span>
 										)}
 									</div>
+								)}
+								{/* Loop marker — same agent running again */}
+								{prevVisit &&
+									prevVisit.agentId === visit.agentId &&
+									visit.visit > 1 && (
+										<div class="exec-log-loop-marker">
+											{"\u21BB"} Loop {visit.visit - 1} — {visit.agentName}{" "}
+											re-evaluating
+										</div>
+									)}
+								{/* Agent visit card — click anywhere to expand/collapse */}
+								<div
+									class={`exec-log-entry exec-log-agent${isActive ? " exec-log-active" : ""}`}
+									onClick={() => (isDone ? toggleExpand(visitKey) : undefined)}
+									style={isDone ? { cursor: "pointer" } : undefined}
+								>
+									<div class="exec-log-header">
+										{isActive && <span class="spinner-sm" />}
+										{isDone && <span class="exec-log-check">{"\u2713"}</span>}
+										<span class="exec-log-name">
+											{visit.agentName}
+											{visit.visit > 1 && (
+												<span class="exec-log-visit-num">
+													{" "}
+													(pass {visit.visit})
+												</span>
+											)}
+										</span>
+										{isActive && <FlowTimer startedAt={visit.startedAt} />}
+										{isDone && visit.duration != null && (
+											<span class="exec-log-dur">
+												{Math.round(visit.duration / 1000)}s
+											</span>
+										)}
+										{visit.decision && (
+											<span
+												class={`exec-log-decision exec-log-decision-${visit.decision.toLowerCase().replace(/_/g, "-")}`}
+											>
+												{visit.decision}
+											</span>
+										)}
+										{isDone && (
+											<span class="exec-log-expand">
+												{isExpanded ? "\u25BC" : "\u25B6"}
+											</span>
+										)}
+									</div>
+									{/* Active: always show streaming output */}
+									{isActive && visit.output && (
+										<pre class="exec-log-output">
+											{visit.output.slice(-3000)}
+											<span class="chat-cursor">{"\u2588"}</span>
+										</pre>
+									)}
+									{/* Completed + expanded: full output */}
+									{isDone && isExpanded && visit.output && (
+										<pre class="exec-log-output">{visit.output}</pre>
+									)}
+									{/* Completed + collapsed: preview */}
+									{isDone && !isExpanded && visit.output && (
+										<div class="exec-log-preview">
+											{visit.output
+												.trim()
+												.split("\n")
+												.slice(0, 2)
+												.join(" ")
+												.slice(0, 150)}
+											...
+										</div>
+									)}
 								</div>
-							);
-						})}
+							</div>
+						);
+					})}
 					{isComplete && src && (
 						<div class="exec-log-entry exec-log-summary">
 							<span>{src.status === "completed" ? "\u2713" : "\u2717"}</span>

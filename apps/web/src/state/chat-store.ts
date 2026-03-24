@@ -49,6 +49,17 @@ export interface FlowAgent {
 	role: string;
 }
 
+export interface AgentVisit {
+	agentId: string;
+	agentName: string;
+	visit: number; // 1-based visit counter for this agent
+	output: string;
+	duration?: number;
+	decision?: string;
+	startedAt: number;
+	status: "running" | "completed" | "failed";
+}
+
 export interface ActiveFlowState {
 	executionId: string;
 	conversationId: string;
@@ -64,6 +75,8 @@ export interface ActiveFlowState {
 	loopCount: number;
 	startedAt: number;
 	completedAt: number | null;
+	// Ordered log of every agent visit — each loop gets its own entry
+	visitLog: AgentVisit[];
 }
 
 export const activeFlowExecution = signal<ActiveFlowState | null>(null);
@@ -238,6 +251,7 @@ export function startFlowInChat(
 		loopCount: 0,
 		startedAt: Date.now(),
 		completedAt: null,
+		visitLog: [],
 	};
 	// Only add flow message to chat if triggered from a chat conversation
 	// (not from Orchestrator, which passes empty conversationId)
@@ -271,18 +285,43 @@ export function appendFlowAgentOutput(
 	const outputs = { ...flow.agentOutputs };
 	outputs[agentId] = (outputs[agentId] || "") + chunk;
 
-	// Track agent start time (first chunk = agent started)
 	const starts = { ...flow.agentStartedAt };
 	if (!starts[agentId]) starts[agentId] = Date.now();
 
-	// Detect loops: if this agent already completed before and is running again
+	// Detect loops: agent already completed before and is running again
 	let loopCount = flow.loopCount;
 	const durations = { ...flow.agentDurations };
 	if (flow.currentAgentId !== agentId && durations[agentId] != null) {
 		loopCount++;
-		// Reset agent state so UI doesn't show it as both done and running
 		delete durations[agentId];
 		starts[agentId] = Date.now();
+	}
+
+	// Visit log: create new entry when agent changes
+	const visitLog = [...flow.visitLog];
+	const lastVisit = visitLog[visitLog.length - 1];
+	if (
+		!lastVisit ||
+		lastVisit.agentId !== agentId ||
+		lastVisit.status !== "running"
+	) {
+		// New visit — count how many times this agent has been visited
+		const priorVisits = visitLog.filter((v) => v.agentId === agentId).length;
+		const agentDef = flow.agents.find((a) => a.id === agentId);
+		visitLog.push({
+			agentId,
+			agentName: agentDef?.name || agentId,
+			visit: priorVisits + 1,
+			output: chunk,
+			startedAt: Date.now(),
+			status: "running",
+		});
+	} else {
+		// Append to current visit
+		visitLog[visitLog.length - 1] = {
+			...lastVisit,
+			output: lastVisit.output + chunk,
+		};
 	}
 
 	activeFlowExecution.value = {
@@ -293,6 +332,7 @@ export function appendFlowAgentOutput(
 		agentDurations: durations,
 		agentStartedAt: starts,
 		loopCount,
+		visitLog,
 	};
 
 	// Bump version to trigger re-render in components that read flowStateVersion
@@ -325,10 +365,25 @@ export function completeFlowAgent(
 		decisions[agentId] = result.structuredDecision;
 	}
 
+	// Mark the latest visit for this agent as completed
+	const visitLog = [...flow.visitLog];
+	for (let i = visitLog.length - 1; i >= 0; i--) {
+		if (visitLog[i].agentId === agentId && visitLog[i].status === "running") {
+			visitLog[i] = {
+				...visitLog[i],
+				status: "completed",
+				duration: durations[agentId],
+				decision: result.structuredDecision,
+			};
+			break;
+		}
+	}
+
 	activeFlowExecution.value = {
 		...flow,
 		agentDurations: durations,
 		agentDecisions: decisions,
+		visitLog,
 	};
 }
 

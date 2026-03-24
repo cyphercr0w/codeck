@@ -7242,6 +7242,29 @@
 	color: var(--warning, #f59e0b);
 	font-weight: 600;
 }
+.exec-log-decision-approve,
+.exec-log-decision-clean {
+	background: color-mix(in srgb, var(--success, #22c55e) 12%, transparent);
+	color: var(--success, #22c55e);
+}
+.exec-log-decision-request-changes,
+.exec-log-decision-loop {
+	background: color-mix(in srgb, var(--warning, #f59e0b) 12%, transparent);
+	color: var(--warning, #f59e0b);
+}
+.exec-log-loop-marker {
+	text-align: center;
+	font-size: 11px;
+	color: var(--warning, #f59e0b);
+	padding: 6px 0;
+	font-weight: 500;
+	animation: flow-log-fadein 0.3s ease-out;
+}
+.exec-log-visit-num {
+	font-size: 10px;
+	color: var(--text-muted);
+	font-weight: 400;
+}
 .exec-log-summary {
 	display: flex;
 	align-items: center;

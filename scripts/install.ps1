@@ -239,6 +239,7 @@ Write-Host "  Data (persists across updates):" -ForegroundColor White
 Write-Host "    Workspace:  codeck-workspace"
 Write-Host "    Claude:     codeck-claude"
 Write-Host "    SSH keys:   codeck-ssh"
+Write-Host "    GitHub:     codeck-gh"
 Write-Host ""
 Write-Host "  Installer v$VERSION" -ForegroundColor DarkGray
 Write-Host ""

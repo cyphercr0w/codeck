@@ -18,7 +18,7 @@ You have access to the host's Docker daemon via a mounted socket. Containers you
 ## What you MUST NOT do
 
 - **`docker stop/rm` the Codeck container** — you'd kill yourself. The Codeck container name contains `sandbox` in compose.
-- **`docker volume rm`** of `workspace`, `codeck-data`, `claude-config`, or `ssh-data` — these are Codeck's persistent storage. Deleting them erases the user's work, your memory, and credentials.
+- **`docker volume rm`** of `codeck-workspace`, `codeck-claude`, `codeck-ssh`, or `codeck-gh` — these are Codeck's persistent storage. Deleting them erases the user's work, your memory, and credentials.
 - **`docker system prune`** — this removes all stopped containers, unused networks, and dangling images. It could delete the user's work.
 - **`docker image rm`** of the Codeck image — breaks the system on next restart.
 - **`docker compose down` in the Codeck project directory** — kills the sandbox.

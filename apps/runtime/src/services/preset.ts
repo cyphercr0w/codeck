@@ -20,30 +20,6 @@ const CONFIG_FILE = join(WORKSPACE_CODECK, "config.json");
 const TEMPLATES_DIR = resolve(join(__dirname, "../templates/presets"));
 const BACKUPS_DIR = join(WORKSPACE_CODECK, "backups");
 
-// Migrate config.json from old CODECK_DIR location to WORKSPACE/.codeck/
-// Prevents existing users from seeing the preset selector again after the path change.
-const LEGACY_CONFIG = join(
-	process.env.CODECK_DIR || "/workspace/.codeck",
-	"config.json",
-);
-if (!existsSync(CONFIG_FILE) && existsSync(LEGACY_CONFIG)) {
-	try {
-		if (!existsSync(WORKSPACE_CODECK))
-			mkdirSync(WORKSPACE_CODECK, { recursive: true });
-		writeFileSync(CONFIG_FILE, readFileSync(LEGACY_CONFIG, "utf-8"), {
-			mode: 0o600,
-		});
-		console.log(
-			`[Preset] Migrated config.json from ${LEGACY_CONFIG} → ${CONFIG_FILE}`,
-		);
-	} catch (e) {
-		console.warn(
-			`[Preset] Failed to migrate config.json:`,
-			(e as Error).message,
-		);
-	}
-}
-
 // Strict allowlist for preset IDs: alphanumeric, hyphens, underscores only
 const VALID_PRESET_ID = /^[a-zA-Z0-9_-]+$/;
 

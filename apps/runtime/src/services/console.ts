@@ -184,6 +184,12 @@ function detectConversationId(
 					console.log(
 						`[Console] Detected conversation: ${session.conversationId} (${watchExisting ? "resume" : "new"})`,
 					);
+					// Notify frontend so "OPEN" badge appears on recent conversations
+					broadcast({
+						type: "session:conversationId",
+						sessionId: session.id,
+						conversationId: session.conversationId,
+					});
 					clearInterval(interval);
 				} else if (attempts >= maxAttempts) {
 					console.warn(
@@ -239,7 +245,9 @@ function _createConsoleSessionInner(
 	if (!existsSync(workDir)) {
 		if (opts.resume) {
 			const fallback = process.env.WORKSPACE || "/workspace";
-			console.warn(`[Console] Resume cwd missing (${workDir}), falling back to ${fallback}`);
+			console.warn(
+				`[Console] Resume cwd missing (${workDir}), falling back to ${fallback}`,
+			);
 			workDir = fallback;
 		} else {
 			throw new Error(`Working directory does not exist: ${workDir}`);

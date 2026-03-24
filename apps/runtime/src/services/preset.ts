@@ -486,7 +486,7 @@ function registerMcpServers(presetDir: string): void {
 		let added = 0;
 		for (const [name, config] of Object.entries(servers)) {
 			if (existing[name]) continue; // don't overwrite user-configured servers
-			// Try to populate empty env vars from .codeck/.env
+			// Try to populate empty env vars from .codeck/.env or encrypted env
 			const env = (config as Record<string, unknown>).env as
 				| Record<string, string>
 				| undefined;
@@ -494,22 +494,45 @@ function registerMcpServers(presetDir: string): void {
 				for (const [k, v] of Object.entries(env)) {
 					if (v === "" && userEnvVars[k]) {
 						env[k] = userEnvVars[k];
-						console.log(
-							`[Preset]   Populated ${name}.env.${k} from .codeck/.env`,
-						);
+						console.log(`[Preset]   Populated ${name}.env.${k} from user env`);
 					}
-				}
-				const missingRequired = Object.entries(env).some(([, v]) => v === "");
-				if (missingRequired) {
-					console.log(
-						`[Preset]   SKIP MCP server: ${name} (missing required env vars — configure in Integrations)`,
-					);
-					continue;
 				}
 			}
 			existing[name] = config;
 			added++;
 			console.log(`[Preset]   REGISTER MCP server: ${name}`);
+		}
+
+		// Also register disabled servers (need API keys) — they show in UI
+		// and get enabled when user configures the integration
+		const disabledServers = template._disabledMcpServers;
+		if (disabledServers && typeof disabledServers === "object") {
+			for (const [name, config] of Object.entries(disabledServers)) {
+				if (existing[name]) continue;
+				const serverConfig = config as Record<string, unknown>;
+				// Try to populate env vars — if all filled, register as enabled
+				const env = serverConfig.env as Record<string, string> | undefined;
+				let allFilled = true;
+				if (env) {
+					for (const [k, v] of Object.entries(env)) {
+						if (v === "" && userEnvVars[k]) {
+							env[k] = userEnvVars[k];
+							console.log(
+								`[Preset]   Populated ${name}.env.${k} from user env`,
+							);
+						}
+						if (env[k] === "") allFilled = false;
+					}
+				}
+				if (!allFilled) {
+					serverConfig.disabled = true;
+				}
+				existing[name] = serverConfig;
+				added++;
+				console.log(
+					`[Preset]   REGISTER MCP server: ${name}${allFilled ? "" : " (disabled — needs API key)"}`,
+				);
+			}
 		}
 
 		if (added > 0) {

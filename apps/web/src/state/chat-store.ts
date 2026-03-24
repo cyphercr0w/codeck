@@ -22,6 +22,7 @@ export interface ChatConversation {
 export const chatMessages = signal<ChatMessage[]>([]);
 export const chatStreaming = signal(false);
 export const activeChatId = signal<string | null>(null);
+export const chatModel = signal<"haiku" | "sonnet" | "opus">("haiku");
 
 export const conversations = signal<ChatConversation[]>([]);
 export const activeConversationId = signal<string | null>(null);

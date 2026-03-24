@@ -13,6 +13,7 @@ import {
 	loadConversation,
 	renameConversation,
 	deleteConversation,
+	chatModel,
 } from "../state/chat-store";
 import { showToast } from "../state/store";
 import { apiFetch } from "../api";
@@ -99,6 +100,23 @@ function ConversationSidebar({
 					>
 						<rect x="3" y="3" width="18" height="18" rx="2" />
 						<line x1="9" y1="3" x2="9" y2="21" />
+					</svg>
+				</button>
+				<button
+					class="chat-sidebar-toggle"
+					onClick={handleNewChat}
+					title="New chat"
+				>
+					<svg
+						width="16"
+						height="16"
+						viewBox="0 0 24 24"
+						fill="none"
+						stroke="currentColor"
+						stroke-width="2"
+					>
+						<line x1="12" y1="5" x2="12" y2="19" />
+						<line x1="5" y1="12" x2="19" y2="12" />
 					</svg>
 				</button>
 			</div>
@@ -209,6 +227,7 @@ export function ChatSection() {
 				body: JSON.stringify({
 					message: text,
 					conversationId: activeConversationId.value,
+					model: chatModel.value,
 				}),
 			});
 			const data = await res.json();
@@ -273,6 +292,7 @@ export function ChatSection() {
 								onKeyDown={handleKeyDown}
 								rows={1}
 							/>
+							<ChatModelSelector />
 							<button
 								class="chat-send"
 								onClick={handleSend}
@@ -398,6 +418,7 @@ export function ChatSection() {
 						rows={1}
 						disabled={streaming}
 					/>
+					<ChatModelSelector />
 					<button
 						class="chat-send"
 						onClick={handleSend}
@@ -447,4 +468,42 @@ function formatDuration(ms: number): string {
 	const s = Math.floor(ms / 1000);
 	if (s < 60) return `${s}s`;
 	return `${Math.floor(s / 60)}m ${s % 60}s`;
+}
+
+// ── Helper: model selector ──
+const CHAT_MODELS = [
+	{ id: "haiku" as const, label: "Haiku", desc: "Fast" },
+	{ id: "sonnet" as const, label: "Sonnet", desc: "Balanced" },
+	{ id: "opus" as const, label: "Opus", desc: "Best" },
+];
+
+function ChatModelSelector() {
+	const [open, setOpen] = useState(false);
+	const current =
+		CHAT_MODELS.find((m) => m.id === chatModel.value) || CHAT_MODELS[0];
+
+	return (
+		<div class="chat-model-selector">
+			<button class="chat-model-btn" onClick={() => setOpen(!open)}>
+				{current.label} <span class="chat-model-chevron">▾</span>
+			</button>
+			{open && (
+				<div class="chat-model-dropdown">
+					{CHAT_MODELS.map((m) => (
+						<button
+							key={m.id}
+							class={`chat-model-option${m.id === chatModel.value ? " active" : ""}`}
+							onClick={() => {
+								chatModel.value = m.id;
+								setOpen(false);
+							}}
+						>
+							<span>{m.label}</span>
+							<span class="chat-model-desc">{m.desc}</span>
+						</button>
+					))}
+				</div>
+			)}
+		</div>
+	);
 }

@@ -115,7 +115,7 @@ const activeChatProcesses = new Map<string, ChildProcess>();
 //   chat:response:complete { chatId, fullResponse }
 // Accepts optional conversationId to append to an existing conversation
 router.post("/message", (req, res) => {
-	const { message, context, conversationId } = req.body;
+	const { message, context, conversationId, model } = req.body;
 	if (!message || typeof message !== "string") {
 		res.status(400).json({ error: "message (string) is required" });
 		return;
@@ -182,6 +182,14 @@ router.post("/message", (req, res) => {
 	const binary = getValidAgentBinary();
 	const env = { ...buildCleanEnv(), ...getOAuthEnv(), TERM: "dumb" };
 
+	// Validate model if provided (default to haiku for fast chat)
+	const VALID_CHAT_MODELS: Record<string, string> = {
+		haiku: "haiku",
+		sonnet: "sonnet",
+		opus: "opus",
+	};
+	const chatModel = VALID_CHAT_MODELS[model] || "haiku";
+
 	const child = spawn(
 		binary,
 		[
@@ -190,6 +198,8 @@ router.post("/message", (req, res) => {
 			"--output-format",
 			"text",
 			"--no-session-persistence",
+			"--model",
+			chatModel,
 			"--allowedTools",
 			"Read,Glob,Grep,WebSearch,WebFetch",
 			"--max-turns",

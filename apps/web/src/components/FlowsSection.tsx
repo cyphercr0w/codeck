@@ -83,12 +83,26 @@ const ALL_TOOLS = [
 function walkAgents(flow: FlowDef): AgentDef[] {
 	const ordered: AgentDef[] = [];
 	const visited = new Set<string>();
-	let cursor: string | undefined = flow.entryAgentId;
-	while (cursor && !visited.has(cursor) && flow.agents[cursor]) {
+	const queue: string[] = [flow.entryAgentId];
+	while (queue.length > 0) {
+		const cursor = queue.shift()!;
+		if (visited.has(cursor) || !flow.agents[cursor]) continue;
 		ordered.push(flow.agents[cursor]);
 		visited.add(cursor);
-		const next = flow.agents[cursor].transitions.default as string | undefined;
-		cursor = typeof next === "string" && next !== "END" ? next : undefined;
+		// Follow default transition
+		const next = flow.agents[cursor].transitions.default;
+		if (typeof next === "string" && next !== "END") {
+			queue.push(next);
+		}
+		// Follow conditional transitions
+		const conds = flow.agents[cursor].transitions.conditions;
+		if (conds) {
+			for (const cond of conds) {
+				if (cond.goto !== "END") {
+					queue.push(cond.goto);
+				}
+			}
+		}
 	}
 	return ordered;
 }
@@ -439,8 +453,11 @@ function ExecutionViewer({
 }) {
 	const agents = walkAgents(flow);
 	const liveFlow = activeFlowExecution.value;
-	const archived = Object.values(archivedFlows.value).find(
-		(f) => f.flowName === flow.name,
+	// Match archived flows by executionId from recent executions for this flow,
+	// rather than by flowName (which breaks on rename and is ambiguous).
+	const recentExecIds = new Set(executions.map((e) => e.id));
+	const archived = Object.values(archivedFlows.value).find((f) =>
+		recentExecIds.has(f.executionId),
 	);
 	const src = liveFlow?.flowName === flow.name ? liveFlow : archived;
 	const isRunning =
@@ -692,7 +709,18 @@ function ExecutionViewer({
 					<div class="exec-status-bar">
 						<span>{src?.status === "completed" ? "\u2713" : "\u2717"}</span>
 						<span>Flow {src?.status}</span>
-						<button class="btn btn-primary" onClick={() => onInputChange("")}>
+						<button
+							class="btn btn-primary"
+							onClick={() => {
+								// Clear archived state so the UI resets to the input view
+								if (src?.executionId) {
+									const updated = { ...archivedFlows.value };
+									delete updated[src.executionId];
+									archivedFlows.value = updated;
+								}
+								onInputChange("");
+							}}
+						>
 							Run Again
 						</button>
 					</div>
@@ -813,7 +841,13 @@ function FlowCard({
 					<IconEdit size={14} />
 				</button>
 				{!flow.isTemplate && (
-					<button class="btn-icon btn-danger" onClick={onDelete} title="Delete">
+					<button
+						class="btn-icon btn-danger"
+						onClick={() => {
+							if (confirm(`Delete flow "${flow.name}"?`)) onDelete();
+						}}
+						title="Delete"
+					>
 						<IconTrash size={14} />
 					</button>
 				)}

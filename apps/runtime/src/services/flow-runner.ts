@@ -60,7 +60,7 @@ export async function runFlow(
 
 	let currentAgentId: string | null = flow.entryAgentId;
 	let prevOutput: string = execution.initialInput;
-	let lastAgentId: string | null = null;
+	const agentVisitCounts = new Map<string, number>();
 
 	while (currentAgentId && currentAgentId !== "END") {
 		// Cancelled externally via cancelExecution()?
@@ -80,12 +80,13 @@ export async function runFlow(
 			return;
 		}
 
-		// Anti-loop: detect same agent running repeatedly
-		if (currentAgentId === lastAgentId) {
+		// Anti-loop: track how many times each agent has been visited.
+		// Any agent visited more than once indicates a loop iteration.
+		const visits = (agentVisitCounts.get(currentAgentId) || 0) + 1;
+		agentVisitCounts.set(currentAgentId, visits);
+		if (visits > 1) {
+			// Each revisit of any agent counts as one loop iteration
 			execution.loopCount++;
-		} else {
-			// Different agent — reset is not needed, loopCount tracks total loops
-			// across the entire execution, not per-agent.
 		}
 
 		if (execution.loopCount >= execution.maxLoops) {
@@ -137,7 +138,18 @@ export async function runFlow(
 
 		saveExecution(execution);
 
-		// If agent failed, fail the execution
+		// If cancelled while agent was running, respect the cancellation
+		if (cancelledExecutions.has(execution.id)) {
+			cancelledExecutions.delete(execution.id);
+			execution.status = "cancelled";
+			execution.completedAt = new Date().toISOString();
+			execution.currentAgentId = null;
+			saveExecution(execution);
+			broadcast({ type: "flow:execution:update", data: execution });
+			return;
+		}
+
+		// If agent failed (and not cancelled), fail the execution
 		if (result.status === "failed") {
 			execution.status = "failed";
 			execution.completedAt = new Date().toISOString();
@@ -161,7 +173,6 @@ export async function runFlow(
 		}
 
 		// Resolve next agent
-		lastAgentId = currentAgentId;
 		currentAgentId = resolveTransition(agent.transitions, decision);
 		prevOutput = result.output;
 	}
@@ -440,14 +451,27 @@ function parseStructuredDecision(
 		}
 	}
 
-	// Fallback: look for any of the enum values in the output (last occurrence wins)
-	// Search from end of output since the decision is typically at the end
+	// Fallback: look for enum values as standalone words (word-boundary match)
+	// in the last lines of output, since the decision is typically at the end.
+	// Requires word boundaries to avoid matching substrings like "APPROVE" in
+	// "I cannot APPROVE this because..."
 	const lines = output.split("\n").reverse();
 	for (const line of lines) {
 		const upperLine = line.toUpperCase();
 		for (const decision of schema.decisionsEnum) {
-			if (upperLine.includes(decision)) {
-				return decision;
+			const wordPattern = new RegExp(`\\b${decision}\\b`);
+			if (wordPattern.test(upperLine)) {
+				// Only match if the line is short (likely a standalone decision line)
+				// or the decision appears as a standalone word/phrase, not mid-sentence
+				const trimmed = upperLine.trim();
+				if (
+					trimmed === decision ||
+					trimmed.startsWith(`${decision}:`) ||
+					trimmed.startsWith(`${decision} `) ||
+					trimmed.endsWith(decision)
+				) {
+					return decision;
+				}
 			}
 		}
 	}

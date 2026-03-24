@@ -344,22 +344,33 @@ export function completeFlowExecution(
 		currentAgentId: null,
 	};
 
-	// Archive the final state so the UI can still render the completed timeline
-	archivedFlows.value = {
-		...archivedFlows.value,
-		[executionId]: finalFlow,
-	};
+	// Archive the final state so the UI can still render the completed timeline.
+	// Cap at 20 entries to prevent unbounded memory growth.
+	const MAX_ARCHIVED = 20;
+	const updated = { ...archivedFlows.value, [executionId]: finalFlow };
+	const keys = Object.keys(updated);
+	if (keys.length > MAX_ARCHIVED) {
+		// Remove oldest entries (first keys added)
+		for (const key of keys.slice(0, keys.length - MAX_ARCHIVED)) {
+			delete updated[key];
+		}
+	}
+	archivedFlows.value = updated;
 
 	// Update the flow message to not streaming
 	chatMessages.value = chatMessages.value.map((m) => {
 		if (m.flowType === "flow-start" && m.flowExecutionId === executionId) {
+			const flowType =
+				finalStatus === "completed"
+					? ("flow-complete" as const)
+					: finalStatus === "cancelled"
+						? ("flow-failed" as const) // show as failed with cancelled label
+						: ("flow-failed" as const);
 			return {
 				...m,
 				streaming: false,
-				flowType:
-					finalStatus === "completed"
-						? ("flow-complete" as const)
-						: ("flow-failed" as const),
+				flowType,
+				content: finalStatus === "cancelled" ? "Flow cancelled" : m.content,
 				durationMs: Date.now() - (m.streamStartedAt || Date.now()),
 			};
 		}

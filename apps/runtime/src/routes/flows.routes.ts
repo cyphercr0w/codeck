@@ -20,7 +20,7 @@ import { runFlow, cancelExecution } from "../services/flow-runner.js";
 import { broadcast } from "../web/logger.js";
 import { randomUUID } from "crypto";
 import { readdirSync, readFileSync, existsSync } from "fs";
-import { join } from "path";
+import { join, resolve } from "path";
 
 const router = Router();
 
@@ -102,7 +102,35 @@ router.get("/:id", (req, res) => {
 // Create new flow
 router.post("/", (req, res) => {
 	try {
-		const flow = createFlow(req.body);
+		const body = req.body;
+		// Validate required fields
+		if (!body || typeof body !== "object") {
+			res.status(400).json({ error: "Request body must be a JSON object" });
+			return;
+		}
+		if (typeof body.name !== "string" || !body.name.trim()) {
+			res.status(400).json({ error: "name (string) is required" });
+			return;
+		}
+		if (
+			!body.agents ||
+			typeof body.agents !== "object" ||
+			Array.isArray(body.agents) ||
+			Object.keys(body.agents).length === 0
+		) {
+			res.status(400).json({ error: "agents (non-empty object) is required" });
+			return;
+		}
+		if (
+			typeof body.entryAgentId !== "string" ||
+			!body.agents[body.entryAgentId]
+		) {
+			res
+				.status(400)
+				.json({ error: "entryAgentId must reference a valid agent" });
+			return;
+		}
+		const flow = createFlow(body);
 		res.status(201).json(flow);
 	} catch (e) {
 		res.status(400).json({ error: (e as Error).message });
@@ -143,10 +171,24 @@ router.post("/:id/execute", async (req, res) => {
 		return;
 	}
 
-	const { input, cwd } = req.body;
+	const { input, cwd: rawCwd } = req.body;
 	if (!input || typeof input !== "string") {
 		res.status(400).json({ error: "input (string) is required" });
 		return;
+	}
+
+	// Validate cwd is within /workspace if provided
+	const WORKSPACE = process.env.WORKSPACE || "/workspace";
+	let cwd: string | undefined;
+	if (rawCwd && typeof rawCwd === "string") {
+		const resolved = resolve(rawCwd);
+		if (!resolved.startsWith(WORKSPACE)) {
+			res
+				.status(400)
+				.json({ error: "cwd must be within the workspace directory" });
+			return;
+		}
+		cwd = resolved;
 	}
 
 	// Create execution record
@@ -166,19 +208,32 @@ router.post("/:id/execute", async (req, res) => {
 
 	saveExecution(execution);
 
-	// Build ordered agent list for progress tracking
+	// Build ordered agent list for progress tracking.
+	// Walk default transitions first, then collect any agents only reachable
+	// via conditional transitions (e.g. reviewer→implementer on REQUEST_CHANGES).
 	const agentList: Array<{ id: string; name: string; role: string }> = [];
 	{
 		const visited = new Set<string>();
-		let cursor: string | undefined = flow.entryAgentId;
-		while (cursor && !visited.has(cursor) && flow.agents[cursor]) {
+		const queue: string[] = [flow.entryAgentId];
+		while (queue.length > 0) {
+			const cursor = queue.shift()!;
+			if (visited.has(cursor) || !flow.agents[cursor]) continue;
 			const ag = flow.agents[cursor]!;
 			agentList.push({ id: ag.id, name: ag.name, role: ag.role });
 			visited.add(cursor);
-			const dflt: string | undefined = ag.transitions.default as
-				| string
-				| undefined;
-			cursor = typeof dflt === "string" && dflt !== "END" ? dflt : undefined;
+			// Follow default transition
+			const dflt = ag.transitions.default;
+			if (typeof dflt === "string" && dflt !== "END") {
+				queue.push(dflt);
+			}
+			// Follow conditional transitions
+			if (ag.transitions.conditions) {
+				for (const cond of ag.transitions.conditions) {
+					if (cond.goto !== "END") {
+						queue.push(cond.goto);
+					}
+				}
+			}
 		}
 	}
 

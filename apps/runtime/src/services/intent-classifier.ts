@@ -43,19 +43,8 @@ interface PatternRule {
 }
 
 const KEYWORD_RULES: readonly PatternRule[] = Object.freeze([
-	// NEW_PROJECT — strong signals
-	{
-		pattern:
-			/\b(build\s+me|create\s+(a\s+)?(new\s+)?|new\s+project|start\s+(a\s+)?new|quiero\s+(crear|hacer|armar|construir)|hazme|crea(me)?\s+(un|una)|construi(r|me)|armame)\b/i,
-		category: "NEW_PROJECT",
-	},
-	{
-		pattern:
-			/\b(from\s+scratch|desde\s+cero|proyecto\s+nuevo|landing\s+page|web\s+app|mobile\s+app|api\s+server)\b/i,
-		category: "NEW_PROJECT",
-	},
-
-	// BUG_FIX — error/fix signals
+	// BUG_FIX — error/fix signals (checked BEFORE NEW_PROJECT to avoid
+	// "build me a fix" matching NEW_PROJECT due to "build me")
 	{
 		pattern:
 			/\b(fix\s+(this|the|a)|bug|not\s+working|broken|crash(es|ing)?|error|fails?|failing|arregla|no\s+funciona|no\s+anda|se\s+rompe|está\s+roto)\b/i,
@@ -72,6 +61,18 @@ const KEYWORD_RULES: readonly PatternRule[] = Object.freeze([
 		pattern:
 			/\b(what\s+are|difference\s+between|compare|pros\s+and\s+cons|recommend|suggest|opinion|help\s+me\s+understand)\b/i,
 		category: "CHAT",
+	},
+
+	// NEW_PROJECT — strong signals (after BUG_FIX so mixed signals route correctly)
+	{
+		pattern:
+			/\b(build\s+me|create\s+(a\s+)?(new\s+)?|new\s+project|start\s+(a\s+)?new|quiero\s+(crear|hacer|armar|construir)|hazme|crea(me)?\s+(un|una)|construi(r|me)|armame)\b/i,
+		category: "NEW_PROJECT",
+	},
+	{
+		pattern:
+			/\b(from\s+scratch|desde\s+cero|proyecto\s+nuevo|landing\s+page|web\s+app|mobile\s+app|api\s+server)\b/i,
+		category: "NEW_PROJECT",
 	},
 
 	// FEATURE — multi-file implementation signals

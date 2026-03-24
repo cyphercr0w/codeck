@@ -332,23 +332,23 @@ export function ChatSection() {
 
 	return (
 		<div class="chat-layout">
-			<ConversationSidebar
-				collapsed={sidebarCollapsed}
-				onToggle={() => setSidebarCollapsed((c) => !c)}
-			/>
 			{mobileSidebarOpen && (
 				<div
 					class="chat-mobile-overlay"
 					onClick={() => setMobileSidebarOpen(false)}
-				>
-					<div class="chat-mobile-panel" onClick={(e) => e.stopPropagation()}>
-						<ConversationSidebar
-							collapsed={false}
-							onToggle={() => setMobileSidebarOpen(false)}
-						/>
-					</div>
-				</div>
+				/>
 			)}
+			<div
+				class={`chat-sidebar-wrap${mobileSidebarOpen ? " mobile-open" : ""}`}
+			>
+				<ConversationSidebar
+					collapsed={sidebarCollapsed && !mobileSidebarOpen}
+					onToggle={() => {
+						if (mobileSidebarOpen) setMobileSidebarOpen(false);
+						else setSidebarCollapsed((c) => !c);
+					}}
+				/>
+			</div>
 			<div class="chat-main">
 				<div class="chat-header">
 					<button

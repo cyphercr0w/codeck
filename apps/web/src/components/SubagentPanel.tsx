@@ -67,7 +67,7 @@ function TranscriptView({
 		return (
 			<div class="sa-transcript">
 				<div class="sa-transcript-empty">
-					{isRunning ? "Waiting for output..." : "No output recorded"}
+					{isRunning ? "Starting up..." : "No output recorded"}
 				</div>
 			</div>
 		);

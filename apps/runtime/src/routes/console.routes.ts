@@ -433,7 +433,6 @@ router.get("/context", (req, res) => {
 // ── Subagent tracking — real-time panel for background sub-agents ──
 
 import { watch, type FSWatcher } from "fs";
-import { readFile } from "fs/promises";
 
 interface ActiveSubagent {
 	agentId: string;
@@ -528,34 +527,35 @@ function startTranscriptWatch(
 	if (!transcriptPath) return;
 	if (transcriptWatchers.has(agentId)) return;
 
-	// Transcript file may not exist yet — retry up to 10 times (every 1s)
+	// Transcript file may not exist yet — retry with backoff (up to 30s)
 	if (!existsSync(transcriptPath)) {
-		if (retries < 10 && activeSubagents.has(agentId)) {
+		if (retries < 30 && activeSubagents.has(agentId)) {
+			const delay = retries < 5 ? 500 : 1000; // fast retries first, then 1s
 			setTimeout(
 				() => startTranscriptWatch(agentId, transcriptPath, retries + 1),
-				1000,
+				delay,
+			);
+		} else if (retries >= 30) {
+			console.warn(
+				`[Subagent] Transcript watcher gave up after 30 retries: ${agentId.slice(0, 8)} (${transcriptPath})`,
 			);
 		}
 		return;
 	}
 
-	let lastSize = 0;
-	try {
-		lastSize = statSync(transcriptPath).size;
-	} catch {
-		/* new file */
-	}
+	console.log(
+		`[Subagent] Transcript watcher attached: ${agentId.slice(0, 8)} (retry ${retries})`,
+	);
 
-	const watcher = watch(transcriptPath, async () => {
-		const agent = activeSubagents.get(agentId);
-		if (!agent) {
-			watcher.close();
-			transcriptWatchers.delete(agentId);
-			return;
-		}
-
+	// Read existing content immediately — catch output written before watcher attached
+	function processTranscript(agent: {
+		agentId: string;
+		agentType: string;
+		lastLine: string;
+		linesRead: number;
+	}) {
 		try {
-			const content = await readFile(transcriptPath, "utf-8");
+			const content = readFileSync(transcriptPath, "utf-8");
 			const lines = content.split("\n").filter((l) => l.trim());
 			const newLines = lines.slice(agent.linesRead);
 
@@ -573,6 +573,20 @@ function startTranscriptWatch(
 		} catch {
 			/* file might be locked */
 		}
+	}
+
+	// Initial read — process any lines already in the file
+	const agent = activeSubagents.get(agentId);
+	if (agent) processTranscript(agent);
+
+	const watcher = watch(transcriptPath, () => {
+		const a = activeSubagents.get(agentId);
+		if (!a) {
+			watcher.close();
+			transcriptWatchers.delete(agentId);
+			return;
+		}
+		processTranscript(a);
 	});
 
 	transcriptWatchers.set(agentId, watcher);
@@ -624,8 +638,8 @@ router.post("/subagents", (req, res) => {
 
 		// Start watching the transcript file for streaming output
 		if (transcriptPath) {
-			// Small delay — file may not exist yet when SubagentStart fires
-			setTimeout(() => startTranscriptWatch(agentId, transcriptPath), 500);
+			// Short delay — file may not exist yet when SubagentStart fires
+			setTimeout(() => startTranscriptWatch(agentId, transcriptPath), 200);
 		}
 	}
 

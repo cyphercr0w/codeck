@@ -198,12 +198,12 @@ export function Sidebar({
 						>
 							<IconSettings size={14} />
 						</button>
-						<div class="sidebar-status">
-							<span class={`status-dot${connected ? " online" : ""}`} />
-							{!collapsed && (
+						{!collapsed && (
+							<div class="sidebar-status">
+								<span class={`status-dot${connected ? " online" : ""}`} />
 								<span>{connected ? "Connected" : "Disconnected"}</span>
-							)}
-						</div>
+							</div>
+						)}
 					</div>
 				</div>
 			</aside>

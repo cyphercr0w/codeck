@@ -1856,6 +1856,30 @@
 	gap: 10px;
 }
 
+/* Mobile: status bar wraps into 2 rows, hide session time + status */
+@media (max-width: 640px) {
+	.terminal-status-bar {
+		flex-wrap: wrap;
+		padding: 6px 10px;
+		gap: 4px 12px;
+		min-height: auto;
+	}
+	.tsb-left {
+		flex-wrap: wrap;
+		gap: 4px 6px;
+	}
+	.tsb-right {
+		display: none;
+	}
+	.tsb-limit-bar {
+		width: 36px;
+	}
+	.tsb-model-dropup {
+		left: 0;
+		transform: none;
+	}
+}
+
 .tsb-limit-group {
 	display: flex;
 	flex-direction: column;

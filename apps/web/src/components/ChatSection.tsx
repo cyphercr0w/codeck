@@ -147,6 +147,7 @@ function ConversationSidebar({
 export function ChatSection() {
 	const [input, setInput] = useState("");
 	const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+	const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
 	const messagesRef = useRef<HTMLDivElement>(null);
 	const inputRef = useRef<HTMLTextAreaElement>(null);
 
@@ -289,8 +290,38 @@ export function ChatSection() {
 				collapsed={sidebarCollapsed}
 				onToggle={() => setSidebarCollapsed((c) => !c)}
 			/>
+			{mobileSidebarOpen && (
+				<div
+					class="chat-mobile-overlay"
+					onClick={() => setMobileSidebarOpen(false)}
+				>
+					<div class="chat-mobile-panel" onClick={(e) => e.stopPropagation()}>
+						<ConversationSidebar
+							collapsed={false}
+							onToggle={() => setMobileSidebarOpen(false)}
+						/>
+					</div>
+				</div>
+			)}
 			<div class="chat-main">
 				<div class="chat-header">
+					<button
+						class="chat-mobile-toggle"
+						onClick={() => setMobileSidebarOpen(true)}
+						title="Conversations"
+					>
+						<svg
+							width="16"
+							height="16"
+							viewBox="0 0 24 24"
+							fill="none"
+							stroke="currentColor"
+							stroke-width="2"
+						>
+							<rect x="3" y="3" width="7" height="18" rx="1" />
+							<rect x="14" y="3" width="7" height="18" rx="1" />
+						</svg>
+					</button>
 					<span class="chat-header-title">Chat</span>
 					<button
 						class="chat-new-btn"

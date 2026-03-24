@@ -6270,3 +6270,48 @@
 .chat-sidebar-header .chat-sidebar-new {
 	flex: 1;
 }
+
+/* ── Chat Mobile Conversations Overlay ── */
+.chat-mobile-toggle {
+	display: none;
+	background: none;
+	border: none;
+	color: var(--text-muted);
+	cursor: pointer;
+	padding: 4px;
+	border-radius: 4px;
+}
+.chat-mobile-toggle:hover {
+	background: var(--bg-hover);
+	color: var(--text-primary);
+}
+@media (max-width: 700px) {
+	.chat-mobile-toggle { display: flex; }
+}
+.chat-mobile-overlay {
+	position: fixed;
+	inset: 0;
+	background: rgba(0, 0, 0, 0.5);
+	z-index: 200;
+	animation: fade-in 0.15s ease;
+}
+@keyframes fade-in {
+	from { opacity: 0; }
+	to { opacity: 1; }
+}
+.chat-mobile-panel {
+	position: absolute;
+	left: 0;
+	top: 0;
+	bottom: 0;
+	width: 280px;
+	animation: slide-right 0.2s ease;
+}
+.chat-mobile-panel .chat-sidebar {
+	width: 100%;
+	height: 100%;
+}
+@keyframes slide-right {
+	from { transform: translateX(-100%); }
+	to { transform: translateX(0); }
+}

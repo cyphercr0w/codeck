@@ -406,11 +406,9 @@ router.post("/import", async (req, res) => {
 	const buffer = Buffer.from(data, "base64");
 	const MAX_IMPORT_SIZE = 50 * 1024 * 1024; // 50 MB
 	if (buffer.length > MAX_IMPORT_SIZE) {
-		res
-			.status(400)
-			.json({
-				error: `Import too large (max ${MAX_IMPORT_SIZE / 1024 / 1024} MB)`,
-			});
+		res.status(400).json({
+			error: `Import too large (max ${MAX_IMPORT_SIZE / 1024 / 1024} MB)`,
+		});
 		return;
 	}
 
@@ -540,7 +538,7 @@ const ACCOUNT_CHECKERS: Record<
 			username: `${projects.length} project${projects.length !== 1 ? "s" : ""}`,
 		};
 	},
-	STRIPE_API_KEY: async (token) => {
+	STRIPE_SECRET_KEY: async (token) => {
 		const res = await fetch("https://api.stripe.com/v1/account", {
 			headers: { Authorization: `Bearer ${token}` },
 			signal: AbortSignal.timeout(8000),
@@ -557,7 +555,7 @@ const ACCOUNT_CHECKERS: Record<
 	},
 };
 
-router.get("/integration/:envKey/account", (req, res) => {
+router.get("/integration/:envKey/account", async (req, res) => {
 	const { envKey } = req.params;
 	const checker = ACCOUNT_CHECKERS[envKey];
 	if (!checker) {
@@ -573,11 +571,12 @@ router.get("/integration/:envKey/account", (req, res) => {
 		res.json({ connected: false });
 		return;
 	}
-	checker(token)
-		.then((info) => res.json({ connected: true, ...info }))
-		.catch(() =>
-			res.json({ connected: false, error: "Failed to verify token" }),
-		);
+	try {
+		const info = await checker(token);
+		res.json({ connected: true, ...info });
+	} catch {
+		res.json({ connected: false, error: "Failed to verify token" });
+	}
 });
 
 export default router;

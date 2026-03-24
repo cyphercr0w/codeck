@@ -22,7 +22,6 @@ docker run -d --name codeck \
   -v codeck-claude:/root/.claude \
   -v codeck-ssh:/root/.ssh \
   -v codeck-gh:/root/.config/gh \
-  -v codeck-data:/data/.codeck \
   --restart unless-stopped \
   ghcr.io/cyphercr0w/codeck:latest --web
 ```
@@ -188,7 +187,6 @@ docker run -d --name codeck \
   -v codeck-claude:/root/.claude \
   -v codeck-ssh:/root/.ssh \
   -v codeck-gh:/root/.config/gh \
-  -v codeck-data:/data/.codeck \
   --restart unless-stopped \
   ghcr.io/cyphercr0w/codeck:latest --web
 ```
@@ -210,7 +208,6 @@ docker compose -f docker/compose.yml up -d --build
 | Claude credentials | `codeck-claude` | Yes |
 | SSH keys | `codeck-ssh` | Yes |
 | GitHub CLI auth | `codeck-gh` | Yes |
-| Codeck config, memory, agents | `codeck-data` | Yes |
 
 **Warning:** `docker compose down -v` deletes all named volumes permanently.
 
@@ -293,7 +290,6 @@ docker compose -f docker/compose.yml down -v
 docker compose -f docker/compose.yml down
 
 # Reset only the Codeck config (preserves workspace)
-docker volume rm codeck-data
 ```
 
 ---

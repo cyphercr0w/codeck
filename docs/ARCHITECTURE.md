@@ -741,14 +741,13 @@ services:
     environment:
       - CODECK_PORT=80
       - CODECK_NETWORK_MODE=bridge
-      - CODECK_DIR=/data/.codeck
+      - CODECK_DIR=/workspace/.codeck
       - WORKSPACE=/workspace
     volumes:
       - codeck-workspace:/workspace
       - codeck-claude:/root/.claude
       - codeck-ssh:/root/.ssh
       - codeck-gh:/root/.config/gh
-      - codeck-data:/data/.codeck
 ```
 
 ### Security hardening
@@ -800,7 +799,7 @@ healthcheck:
 | Path | Purpose | Persistent? |
 |------|---------|------------|
 | `/workspace` | Projects and repos | Yes (volume) |
-| `/data/.codeck` | Codeck data (auth, config, memory, rules, skills, agents) | Yes (volume) |
+| `/workspace/.codeck` | Codeck data (auth, config, memory, rules, skills, agents) | Yes (volume) |
 | `/root/.claude` | Claude CLI credentials, settings, MCP config | Yes (volume) |
 | `/root/.ssh` | SSH keys | Yes (volume) |
 | `/root/.config/gh` | GitHub CLI OAuth token | Yes (volume) |

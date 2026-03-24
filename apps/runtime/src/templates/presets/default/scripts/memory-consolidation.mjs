@@ -118,7 +118,7 @@ const oauthToken = process.env.CLAUDE_CODE_OAUTH_TOKEN;
 let token = apiKey || oauthToken;
 if (!token) {
   try {
-    const credsPath = join(process.env.CODECK_DIR || '/data/.codeck', 'auth.json');
+    const credsPath = join(process.env.CODECK_DIR || '/workspace/.codeck', 'auth.json');
     if (existsSync(credsPath)) {
       const creds = JSON.parse(readFileSync(credsPath, 'utf-8'));
       token = creds.claudeAiOauth?.accessToken;

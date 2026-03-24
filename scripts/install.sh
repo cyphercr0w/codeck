@@ -155,6 +155,8 @@ DOCKER_ARGS=(
   -v codeck-claude:/root/.claude
   -v codeck-ssh:/root/.ssh
   -v codeck-gh:/root/.config/gh
+  -e CODECK_DIR=/workspace/.codeck
+  -e WORKSPACE=/workspace
   --cap-drop ALL
   --cap-add CHOWN
   --cap-add SETUID

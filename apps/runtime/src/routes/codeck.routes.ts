@@ -512,7 +512,7 @@ const ACCOUNT_CHECKERS: Record<
 		token: string,
 	) => Promise<{ username?: string; email?: string; team?: string }>
 > = {
-	VERCEL_TOKEN: async (token) => {
+	VERCEL_API_KEY: async (token) => {
 		const res = await fetch("https://api.vercel.com/v2/user", {
 			headers: { Authorization: `Bearer ${token}` },
 			signal: AbortSignal.timeout(8000),

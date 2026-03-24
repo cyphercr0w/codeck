@@ -822,18 +822,23 @@ export function clearPendingRestore(): void {
 	_pendingRestore = false;
 }
 
-export function restoreSavedSessions(): Array<{
+/**
+ * Read saved sessions from disk WITHOUT creating PTY processes.
+ * Returns the list for the frontend to show Resume/Discard prompt.
+ * PTY creation happens only when the user explicitly calls restoreSessionsNow().
+ */
+export function readSavedSessions(): Array<{
 	id: string;
 	type: string;
 	cwd: string;
 	name: string;
+	conversationId?: string;
 }> {
 	if (!existsSync(SESSIONS_STATE_PATH)) return [];
 
 	let state: SessionsState;
 	try {
 		const raw = JSON.parse(readFileSync(SESSIONS_STATE_PATH, "utf8"));
-		// Migrate old format (no version field) to v1
 		state = {
 			version: raw.version || 1,
 			savedAt: raw.savedAt || Date.now(),
@@ -847,7 +852,39 @@ export function restoreSavedSessions(): Array<{
 		return [];
 	}
 
-	console.log(`[Console] Restoring ${state.sessions.length} saved sessions...`);
+	console.log(
+		`[Console] Found ${state.sessions.length} saved sessions (deferred — waiting for user action)`,
+	);
+
+	return state.sessions.map((s) => ({
+		id: s.id,
+		type: s.type || "agent",
+		cwd: s.cwd,
+		name: s.name || s.cwd.split("/").pop() || "session",
+		conversationId: s.conversationId,
+	}));
+}
+
+/**
+ * Actually create PTY processes for saved sessions.
+ * Called when the user clicks "Resume" in the frontend.
+ */
+export function restoreSessionsNow(
+	savedSessions: Array<{
+		type: string;
+		cwd: string;
+		name: string;
+		conversationId?: string;
+	}>,
+): Array<{
+	id: string;
+	type: string;
+	cwd: string;
+	name: string;
+}> {
+	console.log(
+		`[Console] User chose Resume — creating ${savedSessions.length} sessions...`,
+	);
 	const restored: Array<{
 		id: string;
 		type: string;
@@ -855,40 +892,26 @@ export function restoreSavedSessions(): Array<{
 		name: string;
 	}> = [];
 
-	for (const saved of state.sessions) {
-		console.log(
-			`[Console] Restoring session ${saved.id.slice(0, 8)}: type=${saved.type}, cwd=${saved.cwd}, conversationId=${saved.conversationId?.slice(0, 8) || "none"}`,
-		);
+	for (const saved of savedSessions) {
 		try {
-			// Validate saved cwd exists, fallback to /workspace
 			const cwd = existsSync(saved.cwd) ? saved.cwd : "/workspace";
 			if (saved.type === "agent") {
 				let session: ConsoleSession;
 				if (saved.conversationId) {
-					// Best case: we have the exact conversation ID — resume it directly
 					session = createConsoleSession({
 						cwd,
 						resume: true,
 						conversationId: saved.conversationId,
 					});
 				} else {
-					// Fallback: find the most recent valid conversation (with real user/assistant messages)
-					// and resume it by ID.  Avoids --continue which can fail with trust dialogs or if
-					// it can't find the conversation via its own heuristics.
 					const recentConvId = findMostRecentConversation(cwd);
 					if (recentConvId) {
-						console.log(
-							`[Console] Found recent conversation ${recentConvId.slice(0, 8)} for ${saved.id.slice(0, 8)}, resuming`,
-						);
 						session = createConsoleSession({
 							cwd,
 							resume: true,
 							conversationId: recentConvId,
 						});
 					} else {
-						console.log(
-							`[Console] No valid conversations for ${saved.id.slice(0, 8)}, starting fresh`,
-						);
 						session = createConsoleSession({ cwd });
 					}
 				}
@@ -908,9 +931,8 @@ export function restoreSavedSessions(): Array<{
 				});
 			}
 		} catch (e) {
-			const errMsg = (e as Error).message;
 			console.warn(
-				`[Console] Failed to restore session ${saved.id.slice(0, 8)}: ${errMsg}`,
+				`[Console] Failed to restore session: ${(e as Error).message}`,
 			);
 		}
 	}
@@ -927,7 +949,7 @@ export function restoreSavedSessions(): Array<{
 	}
 
 	console.log(
-		`[Console] Restored ${restored.length}/${state.sessions.length} sessions`,
+		`[Console] Restored ${restored.length}/${savedSessions.length} sessions`,
 	);
 	return restored;
 }

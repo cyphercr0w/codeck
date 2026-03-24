@@ -36,7 +36,8 @@ import { getGitStatus, updateClaudeMd, initGitHub } from "../services/git.js";
 import {
 	destroyAllSessions,
 	hasSavedSessions,
-	restoreSavedSessions,
+	readSavedSessions,
+	restoreSessionsNow,
 	saveSessionState,
 	updateAgentBinary,
 	clearPendingRestore,
@@ -715,15 +716,10 @@ export async function startWebServer(): Promise<void> {
 				10,
 			);
 			setTimeout(() => {
-				const restored = restoreSavedSessions();
-				// Clear the pending restore flag BEFORE broadcasting so that any client
-				// connecting after this point sees pendingRestore:false in the status message.
+				// Read saved sessions WITHOUT creating PTYs — user must choose Resume first
+				const saved = readSavedSessions();
 				clearPendingRestore();
-				// Always broadcast sessions:restored, even if empty.
-				// The frontend keeps the "Restoring sessions..." overlay visible until it
-				// receives this message. If we only broadcast on restored.length > 0, an empty
-				// restore (e.g. all sessions failed) leaves the overlay stuck forever.
-				broadcast({ type: "sessions:restored", data: restored });
+				broadcast({ type: "sessions:restored", data: saved });
 			}, restoreDelayMs);
 		}
 	});

@@ -12,6 +12,7 @@ import {
 	renameSession,
 	listSessions,
 	hasResumableConversations,
+	restoreSessionsNow,
 } from "../services/console.js";
 import { broadcastStatus } from "../web/websocket.js";
 import { broadcast } from "../web/logger.js";
@@ -385,6 +386,28 @@ const contextBySession = new Map<
 >();
 
 // Destroy console session
+// Restore saved sessions — called when user clicks "Resume" in the restore prompt.
+// Creates the actual PTY processes. Before this, sessions are just metadata.
+router.post("/restore-sessions", (req, res) => {
+	const { sessions: savedSessions } = req.body;
+	if (!Array.isArray(savedSessions) || savedSessions.length === 0) {
+		res.status(400).json({ error: "sessions array required" });
+		return;
+	}
+	try {
+		const restored = restoreSessionsNow(savedSessions);
+		console.log(
+			`[Console] Restored ${restored.length}/${savedSessions.length} sessions`,
+		);
+		broadcastStatus();
+		res.json({ success: true, sessions: restored });
+	} catch (e) {
+		res
+			.status(500)
+			.json({ error: "Failed to restore: " + (e as Error).message });
+	}
+});
+
 router.post("/destroy", (req, res) => {
 	const { sessionId } = req.body;
 	if (!sessionId) {

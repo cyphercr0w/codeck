@@ -17,6 +17,7 @@ import {
 	claudeUsage,
 	contextData,
 	setContextData,
+	showToast,
 	activeSection,
 	recentConversations,
 	fetchRecentConversations,
@@ -828,19 +829,35 @@ export function ClaudeSection({
 								<div class="claude-empty-actions">
 									<button
 										class="claude-empty-btn primary"
-										onClick={() => {
+										onClick={async () => {
 											const pending = pendingRestoredSessions.value;
 											pendingRestoredSessions.value = [];
-											for (const s of pending) {
-												addSession({
-													id: s.id,
-													type: s.type,
-													cwd: s.cwd,
-													name: s.name,
-													createdAt: Date.now(),
-												});
+											try {
+												const res = await apiFetch(
+													"/api/console/restore-sessions",
+													{
+														method: "POST",
+														body: JSON.stringify({ sessions: pending }),
+													},
+												);
+												const data = await res.json();
+												if (data.sessions) {
+													for (const s of data.sessions) {
+														addSession({
+															id: s.id,
+															type: s.type,
+															cwd: s.cwd,
+															name: s.name,
+															createdAt: Date.now(),
+														});
+													}
+													if (data.sessions.length > 0) {
+														setActiveSessionId(data.sessions[0].id);
+													}
+												}
+											} catch {
+												showToast("Failed to restore sessions", "error");
 											}
-											if (pending.length > 0) setActiveSessionId(pending[0].id);
 										}}
 									>
 										Resume{" "}
@@ -851,13 +868,7 @@ export function ClaudeSection({
 									<button
 										class="claude-empty-btn secondary"
 										onClick={() => {
-											// Discard — tell server to destroy the pending sessions
-											for (const s of pendingRestoredSessions.value) {
-												apiFetch("/api/console/destroy", {
-													method: "POST",
-													body: JSON.stringify({ sessionId: s.id }),
-												}).catch(() => {});
-											}
+											// Discard — just clear the pending list (no PTYs to destroy)
 											pendingRestoredSessions.value = [];
 										}}
 									>

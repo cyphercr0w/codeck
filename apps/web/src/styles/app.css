@@ -6307,9 +6307,6 @@
 	}
 }
 /* Sidebar wrapper — desktop: inline, mobile: overlay */
-.chat-sidebar-wrap {
-	display: contents;
-}
 @media (max-width: 700px) {
 	.chat-sidebar-wrap {
 		display: none;
@@ -6403,27 +6400,35 @@
 }
 
 /* ── Chat Tools Toggle ── */
-.chat-tools-toggle {
+/* ── Chat Mode Switch (Chat / Agent) ── */
+.chat-mode-switch {
+	display: flex;
+	border: 1px solid var(--border);
+	border-radius: 8px;
+	overflow: hidden;
+	flex-shrink: 0;
+}
+.chat-mode-btn {
 	display: flex;
 	align-items: center;
 	gap: 4px;
+	padding: 4px 10px;
+	border: none;
 	background: none;
-	border: 1px solid var(--border);
 	color: var(--text-muted);
 	font-size: 11px;
 	cursor: pointer;
-	padding: 3px 8px;
-	border-radius: 12px;
-	flex-shrink: 0;
 	transition: all 0.15s;
 }
-.chat-tools-toggle:hover {
-	border-color: var(--text-muted);
+.chat-mode-btn:first-child {
+	border-right: 1px solid var(--border);
+}
+.chat-mode-btn:hover {
+	background: var(--bg-hover);
 	color: var(--text-primary);
 }
-.chat-tools-toggle.active {
+.chat-mode-btn.selected {
 	background: color-mix(in srgb, var(--accent) 15%, transparent);
-	border-color: var(--accent);
 	color: var(--accent);
 }
 
@@ -6479,4 +6484,15 @@
 }
 .chat-attachment-remove:hover {
 	color: var(--error);
+}
+
+/* ── Chat header in empty state ── */
+.chat-header-empty {
+	border-bottom: none;
+	padding: 8px 16px;
+}
+@media (min-width: 701px) {
+	.chat-header-empty .chat-mobile-toggle {
+		display: none;
+	}
 }

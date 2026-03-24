@@ -216,10 +216,66 @@ export function ChatSection() {
 		}
 	}, [messages.length, messages[messages.length - 1]?.content]);
 
+	// Scroll to bottom when input is focused (mobile keyboard opens)
+	function handleInputFocus() {
+		setTimeout(() => {
+			if (messagesRef.current) {
+				messagesRef.current.scrollTop = messagesRef.current.scrollHeight;
+			}
+		}, 300); // wait for keyboard to appear
+	}
+
+	const TEXT_EXTENSIONS = new Set([
+		".txt",
+		".md",
+		".csv",
+		".json",
+		".xml",
+		".html",
+		".css",
+		".js",
+		".ts",
+		".py",
+		".sh",
+		".yml",
+		".yaml",
+		".toml",
+		".ini",
+		".cfg",
+		".log",
+		".jsx",
+		".tsx",
+		".rs",
+		".go",
+		".java",
+		".rb",
+		".php",
+		".sql",
+		".env",
+		".gitignore",
+	]);
+
+	function isTextFile(file: File): boolean {
+		if (file.type.startsWith("text/")) return true;
+		if (file.type === "application/json" || file.type === "application/xml")
+			return true;
+		const ext = "." + file.name.split(".").pop()?.toLowerCase();
+		return TEXT_EXTENSIONS.has(ext);
+	}
+
 	function handleFileSelect(e: Event) {
 		const files = (e.target as HTMLInputElement).files;
 		if (!files) return;
-		const newFiles = Array.from(files).slice(0, 5); // max 5 files
+		const allFiles = Array.from(files);
+		const textFiles = allFiles.filter(isTextFile);
+		const rejected = allFiles.length - textFiles.length;
+		if (rejected > 0) {
+			showToast(
+				`${rejected} file(s) skipped — only text files are supported in chat`,
+				"error",
+			);
+		}
+		const newFiles = textFiles.slice(0, 5);
 		setAttachments((prev) => [...prev, ...newFiles].slice(0, 5));
 		if (fileInputRef.current) fileInputRef.current.value = "";
 	}
@@ -304,11 +360,49 @@ export function ChatSection() {
 	if (isEmpty) {
 		return (
 			<div class="chat-layout">
-				<ConversationSidebar
-					collapsed={sidebarCollapsed}
-					onToggle={() => setSidebarCollapsed((c) => !c)}
-				/>
+				{mobileSidebarOpen && (
+					<div
+						class="chat-mobile-overlay"
+						onClick={() => setMobileSidebarOpen(false)}
+					/>
+				)}
+				<div
+					class={`chat-sidebar-wrap${mobileSidebarOpen ? " mobile-open" : ""}`}
+				>
+					<ConversationSidebar
+						collapsed={sidebarCollapsed && !mobileSidebarOpen}
+						onToggle={() => {
+							if (mobileSidebarOpen) setMobileSidebarOpen(false);
+							else setSidebarCollapsed((c) => !c);
+						}}
+					/>
+				</div>
 				<div class="chat-main">
+					{conversations.value.length > 0 && (
+						<div class="chat-header chat-header-empty">
+							<button
+								class="chat-mobile-toggle"
+								onClick={() => setMobileSidebarOpen(true)}
+								title="Conversations"
+							>
+								<svg
+									width="16"
+									height="16"
+									viewBox="0 0 24 24"
+									fill="none"
+									stroke="currentColor"
+									stroke-width="2"
+								>
+									<rect x="3" y="3" width="7" height="18" rx="1" />
+									<rect x="14" y="3" width="7" height="18" rx="1" />
+								</svg>
+							</button>
+							<span class="chat-header-title">
+								{conversations.value.length} conversation
+								{conversations.value.length !== 1 ? "s" : ""}
+							</span>
+						</div>
+					)}
 					<div class="chat-empty">
 						<div class="chat-greeting">
 							<span class="chat-sparkle">{"\u2726"}</span>
@@ -350,6 +444,7 @@ export function ChatSection() {
 									setInput((e.target as HTMLTextAreaElement).value)
 								}
 								onKeyDown={handleKeyDown}
+								onFocus={handleInputFocus}
 								rows={2}
 							/>
 							<ToolsToggle />
@@ -517,6 +612,7 @@ export function ChatSection() {
 						value={input}
 						onInput={(e) => setInput((e.target as HTMLTextAreaElement).value)}
 						onKeyDown={handleKeyDown}
+						onFocus={handleInputFocus}
 						rows={2}
 						disabled={streaming}
 					/>
@@ -615,28 +711,43 @@ function ChatModelSelector() {
 function ToolsToggle() {
 	const active = chatUseTools.value;
 	return (
-		<button
-			class={`chat-tools-toggle${active ? " active" : ""}`}
-			onClick={() => {
-				chatUseTools.value = !chatUseTools.value;
-			}}
-			title={
-				active
-					? "Tools enabled — can modify files"
-					: "Chat only — toggle to enable file access"
-			}
-		>
-			<svg
-				width="14"
-				height="14"
-				viewBox="0 0 24 24"
-				fill="none"
-				stroke="currentColor"
-				stroke-width="2"
+		<div class="chat-mode-switch">
+			<button
+				class={`chat-mode-btn${!active ? " selected" : ""}`}
+				onClick={() => {
+					chatUseTools.value = false;
+				}}
 			>
-				<path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z" />
-			</svg>
-			{active ? "Tools" : "Chat"}
-		</button>
+				<svg
+					width="12"
+					height="12"
+					viewBox="0 0 24 24"
+					fill="none"
+					stroke="currentColor"
+					stroke-width="2"
+				>
+					<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+				</svg>
+				Chat
+			</button>
+			<button
+				class={`chat-mode-btn${active ? " selected" : ""}`}
+				onClick={() => {
+					chatUseTools.value = true;
+				}}
+			>
+				<svg
+					width="12"
+					height="12"
+					viewBox="0 0 24 24"
+					fill="none"
+					stroke="currentColor"
+					stroke-width="2"
+				>
+					<path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z" />
+				</svg>
+				Agent
+			</button>
+		</div>
 	);
 }

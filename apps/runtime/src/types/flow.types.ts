@@ -17,6 +17,7 @@ export interface AgentDefinition {
 	allowedTools: string[];
 	mcpServers: string[];
 	maxTurns: number;
+	maxVisits?: number; // Max times this agent can be visited before failing (default: 10)
 	timeoutMs: number;
 	outputParser: "raw" | "structured";
 	structuredOutputSchema?: {

@@ -85,11 +85,24 @@ export async function runFlow(
 		}
 
 		// Anti-loop: track visits per agent.
-		// Only count a "loop" when the entry agent is revisited — that's a complete cycle.
+		// Increment loopCount when the entry agent is revisited (complete cycle),
+		// but also guard against non-entry agent cycles via per-agent visit limits.
 		const visits = (agentVisitCounts.get(currentAgentId) || 0) + 1;
 		agentVisitCounts.set(currentAgentId, visits);
 		if (visits > 1 && currentAgentId === flow.entryAgentId) {
 			execution.loopCount++;
+		}
+
+		const maxAgentVisits = agent.maxVisits ?? 10;
+		if (visits > maxAgentVisits) {
+			execution.status = "failed";
+			execution.completedAt = new Date().toISOString();
+			saveExecution(execution);
+			broadcast({ type: "flow:execution:update", data: execution });
+			console.error(
+				`[FlowRunner] Execution ${execution.id}: agent ${currentAgentId} exceeded max visits (${maxAgentVisits})`,
+			);
+			return;
 		}
 
 		if (execution.loopCount >= execution.maxLoops) {
@@ -218,24 +231,22 @@ function runAgent(
 			...cleanEnv,
 			...oauthEnv,
 			TERM: "dumb",
-			// --bare requires ANTHROPIC_API_KEY (ignores OAuth/keychain)
-			// The OAuth token works as an API key for the Anthropic Messages API
-			...(oauthEnv.CLAUDE_CODE_OAUTH_TOKEN
-				? { ANTHROPIC_API_KEY: oauthEnv.CLAUDE_CODE_OAUTH_TOKEN }
-				: {}),
+			// Disable nonessential features inside flow agents to avoid hook blocking
+			CLAUDE_CODE_DISABLE_NONESSENTIAL: "1",
 		};
 
 		// Build spawn arguments — use stream-json for real-time output
-		// --bare skips hooks/LSP/plugins (agents don't need them)
 		// --verbose is required for stream-json to work with --print
+		// --permission-mode bypassPermissions avoids interactive prompts
 		const spawnArgs: string[] = [
-			"--bare",
 			"-p",
 			prompt,
 			"--output-format",
 			"stream-json",
 			"--verbose",
 			"--no-session-persistence",
+			"--permission-mode",
+			"bypassPermissions",
 		];
 
 		// Pass allowed tools if configured
@@ -276,7 +287,9 @@ function runAgent(
 
 		let outputBuffer = "";
 		let timedOut = false;
+		let settled = false;
 		let streamBuffer = ""; // Buffer for incomplete JSON lines from stream-json
+		let sigkillTimer: ReturnType<typeof setTimeout> | undefined;
 
 		// Timeout handler
 		const timeoutHandle = setTimeout(() => {
@@ -285,7 +298,7 @@ function runAgent(
 				`[FlowRunner] Agent ${agent.id} timed out after ${agent.timeoutMs}ms`,
 			);
 			child.kill("SIGTERM");
-			setTimeout(() => {
+			sigkillTimer = setTimeout(() => {
 				try {
 					child.kill("SIGKILL");
 				} catch {
@@ -320,12 +333,16 @@ function runAgent(
 					) {
 						textChunk = event.delta.text;
 					} else if (event.type === "result" && event.result) {
-						// Final result — extract text
-						if (typeof event.result === "string") {
-							textChunk = event.result;
-						} else if (event.result.content) {
-							for (const block of event.result.content) {
-								if (block.type === "text") textChunk += block.text;
+						// Result is the final aggregated output — skip to avoid
+						// double-counting with content_block_delta events.
+						// Only use it as a fallback if no deltas were received.
+						if (!outputBuffer.trim()) {
+							if (typeof event.result === "string") {
+								textChunk = event.result;
+							} else if (event.result.content) {
+								for (const block of event.result.content) {
+									if (block.type === "text") textChunk += block.text;
+								}
 							}
 						}
 					}
@@ -380,8 +397,47 @@ function runAgent(
 		});
 
 		child.on("close", (exitCode) => {
+			if (settled) return;
+			settled = true;
 			clearTimeout(timeoutHandle);
+			if (sigkillTimer) clearTimeout(sigkillTimer);
 			runningProcesses.delete(executionId);
+
+			// Flush remaining streamBuffer — the last line may not end with \n
+			if (streamBuffer.trim()) {
+				let textChunk = "";
+				try {
+					const event = JSON.parse(streamBuffer);
+					if (event.type === "assistant" && event.message?.content) {
+						for (const block of event.message.content) {
+							if (block.type === "text" && block.text) {
+								textChunk += block.text;
+							}
+						}
+					} else if (
+						event.type === "content_block_delta" &&
+						event.delta?.text
+					) {
+						textChunk = event.delta.text;
+					} else if (event.type === "result" && event.result) {
+						if (!outputBuffer.trim()) {
+							if (typeof event.result === "string") {
+								textChunk = event.result;
+							} else if (event.result.content) {
+								for (const block of event.result.content) {
+									if (block.type === "text") textChunk += block.text;
+								}
+							}
+						}
+					}
+				} catch {
+					textChunk = streamBuffer;
+				}
+				if (textChunk) {
+					outputBuffer += textChunk;
+				}
+				streamBuffer = "";
+			}
 
 			// Sync credentials — CLI may have refreshed the token
 			syncCredentialsAfterCLI();
@@ -411,7 +467,10 @@ function runAgent(
 		});
 
 		child.on("error", (err) => {
+			if (settled) return;
+			settled = true;
 			clearTimeout(timeoutHandle);
+			if (sigkillTimer) clearTimeout(sigkillTimer);
 			runningProcesses.delete(executionId);
 
 			reject(new Error(`Failed to spawn agent ${agent.id}: ${err.message}`));
@@ -430,11 +489,11 @@ function buildPrompt(
 	inputTemplate: string,
 	variables: Record<string, string>,
 ): string {
-	let prompt = inputTemplate;
-
-	for (const [key, value] of Object.entries(variables)) {
-		prompt = prompt.replaceAll(`{{${key}}}`, value);
-	}
+	// Replace all variables in a single pass to prevent injection:
+	// if prev_output contains "{{flow_context}}", it must NOT be expanded.
+	let prompt = inputTemplate.replace(/\{\{(\w+)\}\}/g, (match, key) => {
+		return key in variables ? variables[key] : match;
+	});
 
 	// Prepend system prompt as context
 	if (systemPrompt) {
@@ -473,7 +532,8 @@ function parseStructuredDecision(
 	for (const line of lines) {
 		const upperLine = line.toUpperCase();
 		for (const decision of schema.decisionsEnum) {
-			const wordPattern = new RegExp(`\\b${decision}\\b`);
+			const escaped = decision.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+			const wordPattern = new RegExp(`\\b${escaped}\\b`);
 			if (wordPattern.test(upperLine)) {
 				// Only match if the line is short (likely a standalone decision line)
 				// or the decision appears as a standalone word/phrase, not mid-sentence
@@ -517,7 +577,12 @@ function resolveTransition(
 		return transitions.default === "END" ? null : transitions.default;
 	}
 
-	// No transition defined — end the flow
+	// No transition defined — this is likely a misconfiguration.
+	// Log a warning so flow authors can diagnose missing transitions.
+	console.warn(
+		`[FlowRunner] No transition found (decision=${decision ?? "none"}). ` +
+			"Ending flow. Check that all transitions are configured correctly.",
+	);
 	return null;
 }
 
@@ -539,6 +604,8 @@ export function cancelExecution(executionId: string): void {
 				/* already dead */
 			}
 		}, 5000);
-		runningProcesses.delete(executionId);
+		// Don't delete from runningProcesses here — let the close handler do it
+		// to avoid a race window where a new process for the same execution could
+		// have its entry lost.
 	}
 }

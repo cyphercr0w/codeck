@@ -8,7 +8,8 @@
  */
 
 import { spawn, type ChildProcess } from "child_process";
-import { existsSync, mkdirSync, appendFileSync } from "fs";
+import { existsSync, mkdirSync } from "fs";
+import { appendFile } from "fs/promises";
 import { join } from "path";
 
 import { broadcast } from "../web/logger.js";
@@ -17,8 +18,8 @@ import {
 	getValidAgentBinary,
 	getOAuthEnv,
 	buildCleanEnv,
+	ensureOnboardingComplete,
 } from "./claude-env.js";
-import { ensureOnboardingComplete } from "./claude-env.js";
 import { syncToClaudeSettings } from "./permissions.js";
 import { syncCredentialsAfterCLI } from "./auth-anthropic.js";
 
@@ -105,7 +106,7 @@ export async function runFlow(
 			return;
 		}
 
-		if (execution.loopCount >= execution.maxLoops) {
+		if (execution.loopCount > execution.maxLoops) {
 			execution.status = "failed";
 			execution.completedAt = new Date().toISOString();
 			saveExecution(execution);
@@ -132,7 +133,7 @@ export async function runFlow(
 		try {
 			result = await runAgent(agent, prompt, execution.id, cwd);
 		} catch (err) {
-			const errorMsg = (err as Error).message;
+			const errorMsg = err instanceof Error ? err.message : String(err);
 			result = {
 				agentId: agent.id,
 				status: "failed",
@@ -143,8 +144,9 @@ export async function runFlow(
 			console.error(`[FlowRunner] Agent ${agent.id} error: ${errorMsg}`);
 		}
 
-		// Store result
-		execution.agentResults[agent.id] = result;
+		// Store result — use composite key to preserve history on loop revisits
+		const resultKey = visits > 1 ? `${agent.id}:${visits}` : agent.id;
+		execution.agentResults[resultKey] = result;
 
 		// Broadcast agent completion
 		broadcast({
@@ -184,7 +186,7 @@ export async function runFlow(
 			);
 			result.structuredDecision = decision;
 			// Re-save with decision attached
-			execution.agentResults[agent.id] = result;
+			execution.agentResults[resultKey] = result;
 			saveExecution(execution);
 		}
 
@@ -236,7 +238,6 @@ function runAgent(
 		};
 
 		// Build spawn arguments — use stream-json for real-time output
-		// --verbose is required for stream-json to work with --print
 		// --verbose is required for stream-json to work with --print
 		// acceptEdits auto-approves file edits (bypassPermissions blocked under root)
 		const spawnArgs: string[] = [
@@ -292,11 +293,12 @@ function runAgent(
 		let streamBuffer = ""; // Buffer for incomplete JSON lines from stream-json
 		let sigkillTimer: ReturnType<typeof setTimeout> | undefined;
 
-		// Timeout handler
+		// Timeout handler — guard against zero/negative values
+		const effectiveTimeout = Math.max(agent.timeoutMs, 5000);
 		const timeoutHandle = setTimeout(() => {
 			timedOut = true;
 			console.log(
-				`[FlowRunner] Agent ${agent.id} timed out after ${agent.timeoutMs}ms`,
+				`[FlowRunner] Agent ${agent.id} timed out after ${effectiveTimeout}ms`,
 			);
 			child.kill("SIGTERM");
 			sigkillTimer = setTimeout(() => {
@@ -306,7 +308,45 @@ function runAgent(
 					/* already dead */
 				}
 			}, 15000);
-		}, agent.timeoutMs);
+		}, effectiveTimeout);
+
+		/** Parse a single stream-json line and extract text content. */
+		const parseStreamEvent = (raw: string): string => {
+			if (!raw.trim()) return "";
+			try {
+				const event = JSON.parse(raw);
+				if (event.type === "assistant" && event.message?.content) {
+					let text = "";
+					for (const block of event.message.content) {
+						if (block.type === "text" && block.text) {
+							text += block.text;
+						}
+					}
+					return text;
+				} else if (event.type === "content_block_delta" && event.delta?.text) {
+					return event.delta.text;
+				} else if (event.type === "result" && event.result) {
+					// Result is the final aggregated output — skip to avoid
+					// double-counting with content_block_delta events.
+					// Only use it as a fallback if no deltas were received.
+					if (!outputBuffer.trim()) {
+						if (typeof event.result === "string") {
+							return event.result;
+						} else if (event.result.content) {
+							let text = "";
+							for (const block of event.result.content) {
+								if (block.type === "text") text += block.text;
+							}
+							return text;
+						}
+					}
+				}
+			} catch {
+				// Not valid JSON — treat as raw text
+				return raw;
+			}
+			return "";
+		};
 
 		child.stdout?.on("data", (data: Buffer) => {
 			const raw = data.toString();
@@ -317,45 +357,12 @@ function runAgent(
 			streamBuffer = lines.pop() || ""; // Keep incomplete last line
 
 			for (const line of lines) {
-				if (!line.trim()) continue;
-				let textChunk = "";
-				try {
-					const event = JSON.parse(line);
-					// Extract text content from stream-json events
-					if (event.type === "assistant" && event.message?.content) {
-						for (const block of event.message.content) {
-							if (block.type === "text" && block.text) {
-								textChunk += block.text;
-							}
-						}
-					} else if (
-						event.type === "content_block_delta" &&
-						event.delta?.text
-					) {
-						textChunk = event.delta.text;
-					} else if (event.type === "result" && event.result) {
-						// Result is the final aggregated output — skip to avoid
-						// double-counting with content_block_delta events.
-						// Only use it as a fallback if no deltas were received.
-						if (!outputBuffer.trim()) {
-							if (typeof event.result === "string") {
-								textChunk = event.result;
-							} else if (event.result.content) {
-								for (const block of event.result.content) {
-									if (block.type === "text") textChunk += block.text;
-								}
-							}
-						}
-					}
-				} catch {
-					// Not valid JSON — treat as raw text
-					textChunk = line;
-				}
+				const textChunk = parseStreamEvent(line);
 
 				if (textChunk) {
 					outputBuffer += textChunk;
 
-					// Log to JSONL
+					// Log to JSONL (async — don't block event loop)
 					const logLine =
 						JSON.stringify({
 							timestamp: Date.now(),
@@ -363,11 +370,7 @@ function runAgent(
 							type: "stdout",
 							data: textChunk,
 						}) + "\n";
-					try {
-						appendFileSync(jsonlPath, logLine);
-					} catch {
-						/* ignore write errors */
-					}
+					appendFile(jsonlPath, logLine).catch(() => {});
 
 					// Broadcast live output to frontend
 					broadcast({
@@ -382,7 +385,7 @@ function runAgent(
 			const errChunk = data.toString();
 			console.warn(`[FlowRunner] Agent ${agent.id} stderr: ${errChunk.trim()}`);
 
-			// Also log stderr to JSONL
+			// Also log stderr to JSONL (async)
 			const logLine =
 				JSON.stringify({
 					timestamp: Date.now(),
@@ -390,11 +393,7 @@ function runAgent(
 					type: "stderr",
 					data: errChunk,
 				}) + "\n";
-			try {
-				appendFileSync(jsonlPath, logLine);
-			} catch {
-				/* ignore write errors */
-			}
+			appendFile(jsonlPath, logLine).catch(() => {});
 		});
 
 		child.on("close", (exitCode) => {
@@ -406,34 +405,7 @@ function runAgent(
 
 			// Flush remaining streamBuffer — the last line may not end with \n
 			if (streamBuffer.trim()) {
-				let textChunk = "";
-				try {
-					const event = JSON.parse(streamBuffer);
-					if (event.type === "assistant" && event.message?.content) {
-						for (const block of event.message.content) {
-							if (block.type === "text" && block.text) {
-								textChunk += block.text;
-							}
-						}
-					} else if (
-						event.type === "content_block_delta" &&
-						event.delta?.text
-					) {
-						textChunk = event.delta.text;
-					} else if (event.type === "result" && event.result) {
-						if (!outputBuffer.trim()) {
-							if (typeof event.result === "string") {
-								textChunk = event.result;
-							} else if (event.result.content) {
-								for (const block of event.result.content) {
-									if (block.type === "text") textChunk += block.text;
-								}
-							}
-						}
-					}
-				} catch {
-					textChunk = streamBuffer;
-				}
+				const textChunk = parseStreamEvent(streamBuffer);
 				if (textChunk) {
 					outputBuffer += textChunk;
 				}

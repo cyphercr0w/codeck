@@ -133,8 +133,13 @@ CODECK_MEMORY="${CODECK_MEMORY:-}"
 CODECK_CPUS="${CODECK_CPUS:-}"
 
 ask CODECK_PORT "Port" "$DEFAULT_PORT"
-ask CODECK_MEMORY "Memory limit (e.g. 4g, or blank for unlimited)" "${EXISTING_MEMORY:-}"
+ask CODECK_MEMORY "Memory limit in GB (e.g. 4, or blank for unlimited)" "${EXISTING_MEMORY:-}"
 ask CODECK_CPUS "CPU limit (e.g. 2, or blank for unlimited)" "${EXISTING_CPUS:-}"
+
+# Normalize memory input: "4" → "4g", "512m" stays, "" stays
+if [[ -n "$CODECK_MEMORY" && "$CODECK_MEMORY" =~ ^[0-9]+$ ]]; then
+  CODECK_MEMORY="${CODECK_MEMORY}g"
+fi
 
 echo ""
 

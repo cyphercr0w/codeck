@@ -97,6 +97,11 @@ Ask "CODECK_PORT" "Port" $DEFAULT_PORT
 Ask "CODECK_MEMORY" "Memory limit (e.g. 4g, or blank for unlimited)" $CODECK_MEMORY
 Ask "CODECK_CPUS" "CPU limit (e.g. 2, or blank for unlimited)" $CODECK_CPUS
 
+# Normalize memory input: "4" → "4g", "512m" stays, "" stays
+if ($CODECK_MEMORY -match '^\d+$') {
+    $CODECK_MEMORY = "${CODECK_MEMORY}g"
+}
+
 Write-Host ""
 
 # ─── Pull image ──────────────────────────────────────────────────────

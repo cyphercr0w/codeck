@@ -869,7 +869,7 @@ export function ClaudeSection({
 				{mobile && activeId && <MobileTerminalToolbar />}
 				{dragOver && (
 					<div class="image-drop-indicator">
-						<div class="image-drop-indicator-text">Drop image here</div>
+						<div class="image-drop-indicator-text">Drop file here</div>
 					</div>
 				)}
 			</div>

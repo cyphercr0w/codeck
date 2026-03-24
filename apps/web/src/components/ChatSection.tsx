@@ -404,8 +404,8 @@ export function ChatSection() {
 									stroke="currentColor"
 									stroke-width="2"
 								>
-									<rect x="3" y="3" width="7" height="18" rx="1" />
-									<rect x="14" y="3" width="7" height="18" rx="1" />
+									<rect x="3" y="3" width="18" height="18" rx="2" />
+									<line x1="9" y1="3" x2="9" y2="21" />
 								</svg>
 							</button>
 							<span class="chat-header-title">

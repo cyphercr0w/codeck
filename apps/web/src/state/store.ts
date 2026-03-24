@@ -237,6 +237,7 @@ export function updateStateFromServer(data: Record<string, any>): void {
 				cwd: s.cwd,
 				name: s.name,
 				createdAt: s.createdAt || Date.now(),
+				conversationId: s.conversationId,
 			})),
 		);
 	}

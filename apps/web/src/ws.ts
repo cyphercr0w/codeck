@@ -44,6 +44,7 @@ const KNOWN_MSG_TYPES = new Set([
 	"subagent:start",
 	"subagent:output",
 	"subagent:stop",
+	"session:conversationId",
 ]);
 
 /** Runtime validation for incoming WebSocket messages */
@@ -380,6 +381,18 @@ function openWs(wsUrl: string, protocols?: string[]): void {
 					(msg.data as any).duration,
 					(msg.data as any).lastMessage,
 				);
+			} else if (msg.type === "session:conversationId") {
+				const sid = msg.sessionId as string;
+				const convId = (raw as any).conversationId as string;
+				if (sid && convId) {
+					const current = sessions.value;
+					const idx = current.findIndex((s) => s.id === sid);
+					if (idx >= 0 && !current[idx].conversationId) {
+						const updated = [...current];
+						updated[idx] = { ...updated[idx], conversationId: convId };
+						sessions.value = updated;
+					}
+				}
 			}
 		} catch (err) {
 			console.warn("[WS] Failed to parse message:", err);

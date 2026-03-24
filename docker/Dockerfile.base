@@ -88,10 +88,10 @@ RUN mkdir -p /app /workspace /workspace/.codeck /root/.claude /root/.ssh /run/db
 # ─── SSH: writable known_hosts ───
 # /root/.ssh is bind-mounted read-only (protects private keys).
 # SSH needs to write known_hosts on new host connections, so we redirect it
-# to /data/.codeck/known_hosts (writable bind-mount) while still reading
+# to /workspace/.codeck/known_hosts (writable workspace volume) while still reading
 # the existing entries from the ro mount as a fallback.
 RUN mkdir -p /etc/ssh/ssh_config.d && \
-    printf 'Host *\n    UserKnownHostsFile /data/.codeck/known_hosts /root/.ssh/known_hosts\n' \
+    printf 'Host *\n    UserKnownHostsFile /workspace/.codeck/known_hosts /root/.ssh/known_hosts\n' \
     > /etc/ssh/ssh_config.d/known-hosts.conf
 
 # ─── Keyring initialization ───

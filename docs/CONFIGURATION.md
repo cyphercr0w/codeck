@@ -10,7 +10,7 @@ All environment variables are for the single container runtime. Set via `.env` f
 |----------|---------|-------------|
 | `CODECK_PORT` | `80` | HTTP listening port inside the container |
 | `WORKSPACE` | `/workspace` | Workspace directory for projects |
-| `CODECK_DIR` | `/data/.codeck` | Codeck data directory (auth, config, memory, rules, skills, preferences, agents) |
+| `CODECK_DIR` | `/workspace/.codeck` | Codeck data directory (auth, config, memory, rules, skills, preferences, agents) |
 | `CODECK_NETWORK_MODE` | `bridge` | Docker network mode (bridge only) |
 | `CODECK_MAPPED_PORTS` | — | Comma-separated port ranges exposed from Docker (e.g., `80,3000-3009,5173-5179`) |
 | `CODECK_MEMORY_LIMIT` | `0` | Docker memory limit for the container (e.g., `4G`). Set to `0` for unlimited. |
@@ -203,7 +203,6 @@ The project uses a single `docker/compose.yml` file. No separate isolated or man
 |--------|---------------|---------|
 | `codeck-workspace` | `/workspace` | Projects and repos |
 | `codeck-claude` | `/root/.claude` | OAuth credentials, settings, MCP config |
-| `codeck-data` | `/data/.codeck` | Codeck data (auth, config, memory, rules, skills, agents) |
 | `codeck-ssh` | `/root/.ssh` | SSH keys |
 | `codeck-gh` | `/root/.config/gh` | GitHub CLI OAuth token |
 
@@ -271,7 +270,6 @@ Running `docker compose down -v` permanently deletes all data including projects
 
 ```bash
 docker volume create codeck-workspace
-docker volume create codeck-data
 docker volume create codeck-claude
 docker volume create codeck-ssh
 docker volume create codeck-gh

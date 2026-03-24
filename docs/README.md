@@ -39,7 +39,6 @@ docker run -d --name codeck -p 8080:80 \
   -v codeck-claude:/root/.claude \
   -v codeck-ssh:/root/.ssh \
   -v codeck-gh:/root/.config/gh \
-  -v codeck-data:/data/.codeck \
   --restart unless-stopped \
   ghcr.io/cyphercr0w/codeck:latest --web
 

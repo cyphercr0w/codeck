@@ -165,8 +165,11 @@
 	z-index: 1;
 }
 .exec-log-entry {
-	padding: 10px 16px;
-	border-bottom: 1px solid color-mix(in srgb, var(--border) 40%, transparent);
+	padding: 12px 16px;
+	margin: 8px 12px;
+	border: 1px solid var(--border);
+	border-radius: 8px;
+	background: var(--bg-secondary);
 	animation: flow-log-fadein 0.3s ease-out;
 }
 .exec-log-user {
@@ -194,8 +197,9 @@
 	padding: 2px 0;
 }
 .exec-log-active {
+	border-color: var(--accent);
 	border-left: 3px solid var(--accent);
-	background: color-mix(in srgb, var(--accent) 3%, transparent);
+	background: color-mix(in srgb, var(--accent) 5%, var(--bg-secondary));
 }
 .exec-log-check {
 	color: var(--success, #22c55e);
@@ -219,8 +223,11 @@
 	font-size: 11px;
 	line-height: 1.5;
 	color: var(--text-secondary);
-	padding: 6px 0 6px 12px;
-	margin: 4px 0 0;
+	background: var(--bg-primary);
+	border: 1px solid color-mix(in srgb, var(--border) 60%, transparent);
+	border-radius: 6px;
+	padding: 10px 12px;
+	margin: 8px 0 0;
 	white-space: pre-wrap;
 	word-break: break-word;
 	max-height: 400px;
@@ -229,10 +236,11 @@
 .exec-log-preview {
 	font-size: 11px;
 	color: var(--text-muted);
-	padding: 2px 0 0 12px;
+	padding: 4px 0 0 12px;
 	overflow: hidden;
 	text-overflow: ellipsis;
 	white-space: nowrap;
+	font-style: italic;
 }
 .exec-log-transition {
 	text-align: center;
@@ -280,7 +288,12 @@
 	align-items: center;
 	gap: 8px;
 	font-size: 13px;
-	background: color-mix(in srgb, var(--success, #22c55e) 6%, transparent);
+	border-color: var(--success, #22c55e);
+	background: color-mix(
+		in srgb,
+		var(--success, #22c55e) 8%,
+		var(--bg-secondary)
+	);
 }
 
 /* Zone 3: Controls */
@@ -333,4 +346,3 @@
 .flow-past-execs summary:hover {
 	color: var(--text-primary);
 }
-

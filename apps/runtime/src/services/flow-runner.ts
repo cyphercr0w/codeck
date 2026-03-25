@@ -239,7 +239,13 @@ function runAgent(
 
 		// Build spawn arguments — use stream-json for real-time output
 		// --verbose is required for stream-json to work with --print
+		// --settings points to a clean config without hooks (hooks block flow agents)
 		// acceptEdits auto-approves file edits (bypassPermissions blocked under root)
+		const flowSettings = join(
+			process.env.WORKSPACE || "/workspace",
+			".codeck",
+			"flow-agent-settings.json",
+		);
 		const spawnArgs: string[] = [
 			"-p",
 			prompt,
@@ -249,6 +255,8 @@ function runAgent(
 			"--no-session-persistence",
 			"--permission-mode",
 			"acceptEdits",
+			"--settings",
+			flowSettings,
 		];
 
 		// Pass allowed tools if configured

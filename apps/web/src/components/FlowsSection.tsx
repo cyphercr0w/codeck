@@ -301,6 +301,11 @@ export function FlowsSection() {
 	if (view === "list") {
 		const templates = flows.filter((f) => f.isTemplate);
 		const userFlows = flows.filter((f) => !f.isTemplate);
+		// Recent completed/failed executions for the "Recent Activity" section
+		const recentExecs = executions
+			.filter((e) => e.status === "completed" || e.status === "failed")
+			.slice(0, 5);
+
 		return (
 			<div class="flows-section">
 				<div class="flows-header">
@@ -309,6 +314,8 @@ export function FlowsSection() {
 						<IconPlus size={14} /> New Flow
 					</button>
 				</div>
+
+				{/* Active execution — always first, prominent */}
 				{isAnyFlowRunning && liveFlow && (
 					<ActiveFlowBanner
 						flow={liveFlow}
@@ -341,9 +348,56 @@ export function FlowsSection() {
 							</button>
 						</div>
 					)}
+
+				{/* Recent activity — completed executions */}
+				{recentExecs.length > 0 && (
+					<div class="flows-group">
+						<h3 class="flows-group-title">Recent Activity</h3>
+						<div class="flows-recent-list">
+							{recentExecs.map((exec) => {
+								const f = flows.find((fl) => fl.id === exec.flowId);
+								const elapsed = exec.completedAt
+									? Math.round(
+											(new Date(exec.completedAt).getTime() -
+												new Date(exec.startedAt).getTime()) /
+												1000,
+										)
+									: 0;
+								const agentCount = Object.keys(exec.agentResults || {}).length;
+								return (
+									<div
+										key={exec.id}
+										class="flows-recent-item"
+										onClick={() => {
+											if (f) {
+												setSelectedFlowId(f.id);
+												setView("run");
+											}
+										}}
+									>
+										<span class={`flows-recent-status ${exec.status}`}>
+											{exec.status === "completed" ? "\u2713" : "\u2717"}
+										</span>
+										<div class="flows-recent-info">
+											<span class="flows-recent-name">
+												{f?.name || "Unknown flow"}
+											</span>
+											<span class="flows-recent-meta">
+												{agentCount} agents &middot; {elapsed}s &middot;{" "}
+												{new Date(exec.startedAt).toLocaleString()}
+											</span>
+										</div>
+									</div>
+								);
+							})}
+						</div>
+					</div>
+				)}
+
+				{/* Templates — secondary */}
 				{templates.length > 0 && (
 					<div class="flows-group">
-						<h3 class="flows-group-title">Templates</h3>
+						<h3 class="flows-group-title">Flow Templates</h3>
 						<div class="flows-grid">
 							{templates.map((f) => (
 								<FlowCard

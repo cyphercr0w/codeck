@@ -1,0 +1,74 @@
+/* ========== Views ========== */
+.view-loading {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	height: 100vh;
+	flex-direction: column;
+	gap: 12px;
+}
+
+.loading-brand {
+	color: var(--accent);
+	animation: pulse-brand 2s ease-in-out infinite;
+}
+
+.loading-brand-name {
+	font-size: 20px;
+	font-weight: 700;
+	color: var(--text-primary);
+	letter-spacing: 0.5px;
+}
+
+.view-loading .loading-text {
+	color: var(--text-secondary);
+	font-size: 14px;
+}
+
+@keyframes pulse-brand {
+	0%,
+	100% {
+		opacity: 1;
+		transform: scale(1);
+	}
+	50% {
+		opacity: 0.6;
+		transform: scale(0.95);
+	}
+}
+
+.view-setup {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	height: 100vh;
+}
+
+.setup-card {
+	background: var(--bg-card);
+	border: 1px solid var(--border);
+	border-radius: var(--radius-lg);
+	padding: 40px;
+	max-width: 420px;
+	width: 90%;
+	text-align: center;
+	box-shadow: var(--shadow);
+}
+
+.setup-logo {
+	color: var(--accent);
+	margin-bottom: 16px;
+	display: flex;
+	justify-content: center;
+}
+.setup-title {
+	font-size: 22px;
+	font-weight: 700;
+	margin-bottom: 8px;
+}
+.setup-desc {
+	color: var(--text-secondary);
+	margin-bottom: 32px;
+	font-size: 14px;
+}
+

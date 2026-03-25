@@ -1,0 +1,238 @@
+/* ========== Home ========== */
+.home-content {
+	padding: 32px;
+	overflow-y: auto;
+	overflow-x: hidden;
+	flex: 1;
+	-webkit-overflow-scrolling: touch;
+}
+
+.experimental-warning {
+	display: flex;
+	align-items: flex-start;
+	gap: 12px;
+	padding: 16px;
+	margin-bottom: 24px;
+	background: rgba(234, 179, 8, 0.1);
+	border: 1px solid rgba(234, 179, 8, 0.3);
+	border-radius: 8px;
+	color: var(--warning, #eab308);
+}
+.experimental-warning-icon {
+	font-size: 24px;
+	flex-shrink: 0;
+}
+.experimental-warning-text strong {
+	display: block;
+	margin-bottom: 4px;
+	font-size: 15px;
+}
+.experimental-warning-text p {
+	margin: 0;
+	font-size: 13px;
+	opacity: 0.9;
+	color: var(--fg-secondary, #999);
+}
+
+.home-header {
+	display: flex;
+	align-items: flex-start;
+	justify-content: space-between;
+	gap: 12px;
+	margin-bottom: 24px;
+}
+.home-subtitle {
+	color: var(--text-muted);
+	font-size: 13px;
+	margin: 2px 0 0;
+}
+.home-title {
+	font-size: 18px;
+	font-weight: 700;
+	margin-bottom: 0;
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	letter-spacing: -0.01em;
+}
+/* Welcome Card */
+.welcome-card {
+	position: relative;
+	background: var(--bg-card);
+	border: 1px solid var(--border);
+	border-left: 4px solid #6366f1;
+	border-radius: var(--radius);
+	padding: 28px 32px;
+	margin-bottom: 28px;
+}
+.welcome-dismiss {
+	position: absolute;
+	top: 12px;
+	right: 12px;
+	background: none;
+	border: none;
+	color: var(--text-muted);
+	cursor: pointer;
+	padding: 4px;
+	line-height: 1;
+	border-radius: 4px;
+}
+.welcome-dismiss:hover {
+	color: var(--fg);
+	background: var(--bg-hover, rgba(255, 255, 255, 0.05));
+}
+.welcome-title {
+	font-size: 20px;
+	font-weight: 700;
+	margin: 0 0 4px 0;
+	letter-spacing: -0.02em;
+}
+.welcome-subtitle {
+	font-size: 14px;
+	color: var(--text-muted);
+	margin: 0 0 20px 0;
+}
+.welcome-features {
+	list-style: none;
+	padding: 0;
+	margin: 0 0 24px 0;
+	display: flex;
+	flex-direction: column;
+	gap: 14px;
+}
+.welcome-features li {
+	display: flex;
+	align-items: flex-start;
+	gap: 10px;
+	font-size: 13px;
+	line-height: 1.5;
+	color: var(--fg-secondary, #ccc);
+}
+.welcome-feature-icon {
+	flex-shrink: 0;
+	font-size: 18px;
+	width: 24px;
+	text-align: center;
+}
+.welcome-features li strong {
+	color: var(--fg);
+}
+.welcome-cta {
+	font-size: 14px;
+	padding: 8px 20px;
+}
+
+.info-cards {
+	display: grid;
+	grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+	gap: 10px;
+}
+
+.info-card {
+	background: var(--bg-card);
+	border: 1px solid var(--border);
+	border-radius: var(--radius);
+	padding: 16px;
+	transition: border-color var(--transition);
+}
+
+.info-card:hover {
+	border-color: var(--border-light);
+}
+
+.info-card-label {
+	font-size: 12px;
+	color: var(--text-muted);
+	text-transform: uppercase;
+	letter-spacing: 0.5px;
+	margin-bottom: 8px;
+}
+
+.info-card-value {
+	font-size: 15px;
+	font-weight: 600;
+}
+.info-card-value.muted {
+	color: var(--text-muted);
+	font-weight: 400;
+	font-style: italic;
+}
+
+/* ── Home Account Card ── */
+
+.home-account-rows {
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+	margin-bottom: 12px;
+}
+
+.home-account-row {
+	display: flex;
+	justify-content: space-between;
+	align-items: center;
+	font-size: 13px;
+}
+
+.home-account-label {
+	color: var(--text-muted);
+	font-size: 12px;
+}
+
+.home-account-limits {
+	border-top: 1px solid var(--border);
+	padding-top: 10px;
+	margin-bottom: 12px;
+}
+
+.home-account-limits-loading {
+	display: flex;
+	align-items: flex-start;
+	gap: 8px;
+	font-size: 12px;
+	color: var(--text-muted);
+	padding: 4px 0;
+	line-height: 1.4;
+}
+
+.home-account-limits-title {
+	font-size: 11px;
+	color: var(--text-muted);
+	text-transform: uppercase;
+	letter-spacing: 0.5px;
+	margin-bottom: 6px;
+}
+
+.home-account-relogin {
+	border-top: 1px solid var(--border);
+	padding-top: 10px;
+	margin-bottom: 8px;
+	font-size: 12px;
+	color: var(--text-muted);
+}
+
+.home-account-relogin p {
+	margin: 0 0 6px;
+}
+
+.home-account-disconnect {
+	border-top: 1px solid var(--border);
+	padding-top: 10px;
+	text-align: center;
+	margin-top: auto;
+}
+
+/* ── Home Filesystem ── */
+
+.home-filesystem {
+	margin-top: 24px;
+	padding-top: 24px;
+	border-top: 1px solid var(--border);
+}
+
+.home-export {
+	padding: 10px 12px;
+	display: flex;
+	justify-content: flex-end;
+}
+

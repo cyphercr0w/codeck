@@ -1,0 +1,143 @@
+/* ========== Preset Wizard ========== */
+.view-preset {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	min-height: 100vh;
+	padding: 32px 16px;
+}
+
+.preset-header {
+	text-align: center;
+	margin-bottom: 32px;
+}
+
+.preset-logo {
+	color: var(--accent);
+	margin-bottom: 12px;
+	display: flex;
+	justify-content: center;
+}
+.preset-title {
+	font-size: 24px;
+	font-weight: 700;
+	margin: 0 0 8px;
+}
+.preset-subtitle {
+	color: var(--text-secondary);
+	font-size: 15px;
+	margin: 0;
+}
+
+.preset-cards {
+	display: grid;
+	grid-template-columns: 1fr 1fr;
+	gap: 20px;
+	max-width: 720px;
+	width: 100%;
+}
+
+.preset-card {
+	background: var(--bg-card);
+	border: 1px solid var(--border);
+	border-radius: var(--radius-lg);
+	padding: 28px 24px;
+	cursor: pointer;
+	transition:
+		border-color var(--transition),
+		background var(--transition);
+	position: relative;
+	display: flex;
+	flex-direction: column;
+}
+
+.preset-card:hover {
+	border-color: var(--border-light);
+	background: var(--bg-hover);
+}
+
+.preset-card--selected {
+	border-color: var(--accent);
+	background: var(--accent-subtle);
+}
+
+.preset-card-badge {
+	position: absolute;
+	top: 12px;
+	right: 12px;
+	background: var(--accent);
+	color: #fff;
+	font-size: 11px;
+	font-weight: 600;
+	padding: 2px 8px;
+	border-radius: 4px;
+	text-transform: uppercase;
+	letter-spacing: 0.5px;
+}
+
+.preset-card-icon {
+	font-size: 32px;
+	margin-bottom: 12px;
+}
+.preset-card-title {
+	font-size: 18px;
+	font-weight: 700;
+	margin: 0 0 8px;
+}
+.preset-card-desc {
+	color: var(--text-secondary);
+	font-size: 13px;
+	margin: 0 0 16px;
+	line-height: 1.5;
+}
+
+.preset-card-features {
+	list-style: none;
+	padding: 0;
+	margin: 0 0 20px;
+	flex: 1;
+}
+
+.preset-card-features li {
+	color: var(--text-secondary);
+	font-size: 12px;
+	padding: 4px 0;
+	padding-left: 16px;
+	position: relative;
+}
+
+.preset-card-features li::before {
+	content: "";
+	position: absolute;
+	left: 0;
+	top: 50%;
+	transform: translateY(-50%);
+	width: 4px;
+	height: 4px;
+	border-radius: 50%;
+	background: var(--accent);
+}
+
+.preset-error {
+	margin-top: 16px;
+	color: var(--error);
+	font-size: 13px;
+	text-align: center;
+}
+
+.preset-progress {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	margin-top: 20px;
+	color: var(--text-secondary);
+	font-size: 14px;
+}
+
+@media (max-width: 600px) {
+	.preset-cards {
+		grid-template-columns: 1fr;
+	}
+}
+

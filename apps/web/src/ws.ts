@@ -192,12 +192,21 @@ export function wsSend(msg: object): void {
 	}
 }
 
+// Pending attach queue — if WS is not open when attachSession is called,
+// the attach message is queued and sent once the connection opens.
+const pendingAttaches = new Set<string>();
+
 /** Send console:attach only once per session per WS connection.
  *  After attaching, flushes any inputs buffered while the WS was down. */
 export function attachSession(sessionId: string): void {
 	if (attachedSessions.has(sessionId)) return;
 	attachedSessions.add(sessionId);
-	wsSend({ type: "console:attach", sessionId });
+	if (ws && ws.readyState === WebSocket.OPEN) {
+		wsSend({ type: "console:attach", sessionId });
+	} else {
+		// WS not ready — queue the attach for when it connects
+		pendingAttaches.add(sessionId);
+	}
 
 	// Flush pending inputs immediately after attach — the server processes
 	// console:attach synchronously and registers the client before reading
@@ -230,6 +239,12 @@ function openWs(wsUrl: string, protocols?: string[]): void {
 			ws!.send(JSON.stringify(msg));
 		}
 		pendingResizes.clear();
+
+		// Flush pending attach messages (sessions created while WS was down)
+		for (const sid of pendingAttaches) {
+			ws!.send(JSON.stringify({ type: "console:attach", sessionId: sid }));
+		}
+		pendingAttaches.clear();
 		// pendingInputs are flushed per-session inside attachSession()
 
 		// Stale connection detector

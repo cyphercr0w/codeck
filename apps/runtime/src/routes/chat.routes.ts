@@ -293,7 +293,9 @@ router.post("/message", (req, res) => {
 
 		const oauthToken = getOAuthEnv().CLAUDE_CODE_OAUTH_TOKEN;
 		if (!oauthToken) {
-			res.status(401).json({ error: "Not authenticated" });
+			res
+				.status(401)
+				.json({ error: "Not authenticated — please re-login in Terminal" });
 			return;
 		}
 

@@ -985,6 +985,12 @@
 	opacity: 1 !important;
 	color: var(--error);
 }
+/* Mobile: no hover — always show delete button */
+@media (max-width: 700px) {
+	.chat-sidebar-delete {
+		opacity: 0.5;
+	}
+}
 .chat-sidebar-edit {
 	flex: 1;
 	background: var(--bg-primary);
@@ -1456,4 +1462,3 @@
 		display: none;
 	}
 }
-

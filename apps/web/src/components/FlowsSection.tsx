@@ -6,6 +6,7 @@ import {
 	archivedFlows,
 	startFlowInChat,
 } from "../state/chat-store";
+import { FlowCanvas } from "./FlowCanvas";
 import {
 	IconPlus,
 	IconPlay,
@@ -148,7 +149,7 @@ export function FlowsSection() {
 		useState<SystemAgent[]>(cachedSystemAgents);
 	const [selectedFlowId, setSelectedFlowId] = useState<string | null>(null);
 	const [editingFlow, setEditingFlow] = useState<FlowDef | null>(null);
-	const [editingAgentId, setEditingAgentId] = useState<string | null>(null);
+	// editingAgentId removed — canvas manages selection internally
 	const [runInput, setRunInput] = useState("");
 	const [running, setRunning] = useState(false);
 	const [view, setView] = useState<"list" | "edit" | "run">("list");
@@ -332,7 +333,6 @@ export function FlowsSection() {
 				},
 			},
 		});
-		setEditingAgentId("agent-1");
 		setView("edit");
 	}
 
@@ -439,7 +439,6 @@ export function FlowsSection() {
 									}}
 									onEdit={() => {
 										setEditingFlow({ ...f });
-										setEditingAgentId(f.entryAgentId);
 										setView("edit");
 									}}
 									onDelete={() => deleteFlow(f.id)}
@@ -502,14 +501,12 @@ export function FlowsSection() {
 		);
 	}
 
-	// ── EDIT VIEW ──
+	// ── EDIT VIEW (Visual Canvas) ──
 	if (view === "edit" && editingFlow) {
 		return (
-			<FlowEditor
+			<FlowCanvas
 				flow={editingFlow}
-				activeAgentId={editingAgentId}
 				systemAgents={systemAgents}
-				onAgentSelect={setEditingAgentId}
 				onChange={setEditingFlow}
 				onSave={() => saveFlow(editingFlow)}
 				onCancel={() => {
@@ -536,7 +533,6 @@ export function FlowsSection() {
 				}}
 				onEdit={() => {
 					setEditingFlow({ ...selectedFlow });
-					setEditingAgentId(selectedFlow.entryAgentId);
 					setView("edit");
 				}}
 			/>

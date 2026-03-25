@@ -261,22 +261,33 @@ export function startFlowInChat(
 	// Idempotent — don't re-initialize if already tracking this execution
 	if (activeFlowExecution.value?.executionId === executionId) return;
 
+	// Create initial visit entry for the first agent so UI has immediate feedback
+	const firstAgent = agents[0];
+	const initialVisit: AgentVisit = {
+		agentId: firstAgent?.id || "unknown",
+		agentName: firstAgent?.name || "Agent",
+		visit: 1,
+		output: `Starting ${firstAgent?.name || "agent"}...\n`,
+		startedAt: Date.now(),
+		status: "running",
+	};
+
 	activeFlowExecution.value = {
 		executionId,
 		conversationId,
 		flowName,
 		agents,
-		currentAgentId: null,
+		currentAgentId: firstAgent?.id || null,
 		currentAgentIndex: 0,
 		status: "running",
 		agentOutputs: {},
 		agentDurations: {},
 		agentDecisions: {},
-		agentStartedAt: {},
+		agentStartedAt: firstAgent ? { [firstAgent.id]: Date.now() } : {},
 		loopCount: 0,
 		startedAt: Date.now(),
 		completedAt: null,
-		visitLog: [],
+		visitLog: [initialVisit],
 	};
 	// Only add flow message to chat if triggered from a chat conversation
 	// (not from Orchestrator, which passes empty conversationId)

@@ -5,7 +5,6 @@ import {
 	activeFlowExecution,
 	archivedFlows,
 	startFlowInChat,
-	type AgentVisit,
 } from "../state/chat-store";
 import {
 	IconPlus,
@@ -153,6 +152,29 @@ export function FlowsSection() {
 		loadExecutions();
 		loadSystemAgents();
 	}, []);
+
+	// Auto-navigate to running flow when entering Orchestrator
+	useEffect(() => {
+		if (view !== "list") return;
+		// If we have a live flow, go to its detail view
+		if (isAnyFlowRunning && liveFlow) {
+			const f = flows.find((fl) => fl.name === liveFlow.flowName);
+			if (f) {
+				setSelectedFlowId(f.id);
+				setView("run");
+				return;
+			}
+		}
+		// If server reports a running execution, go to it
+		const serverRunning = executions.find((e) => e.status === "running");
+		if (serverRunning) {
+			const f = flows.find((fl) => fl.id === serverRunning.flowId);
+			if (f) {
+				setSelectedFlowId(f.id);
+				setView("run");
+			}
+		}
+	}, [flows.length, executions.length, isAnyFlowRunning]);
 	useEffect(() => {
 		if (!isAnyFlowRunning) {
 			loadExecutions();
@@ -519,19 +541,21 @@ function ExecutionViewer({
 	const [submittedInput, setSubmittedInput] = useState("");
 	const agents = walkAgents(flow);
 	const liveFlow = activeFlowExecution.value;
-	// Match archived flows by executionId from recent executions for this flow,
-	// rather than by flowName (which breaks on rename and is ambiguous).
 	const recentExecIds = new Set(executions.map((e) => e.id));
 	const archived =
 		Object.values(archivedFlows.value)
 			.filter((f) => recentExecIds.has(f.executionId))
 			.sort((a, b) => b.startedAt - a.startedAt)[0] ?? null;
-	const src =
-		liveFlow && recentExecIds.has(liveFlow.executionId) ? liveFlow : archived;
-	const isRunning =
+
+	// Check both live signal AND server executions for running state
+	const liveIsForThisFlow =
 		liveFlow != null &&
-		recentExecIds.has(liveFlow.executionId) &&
-		liveFlow.status === "running";
+		(recentExecIds.has(liveFlow.executionId) ||
+			liveFlow.flowName === flow.name);
+	const serverRunning = executions.find((e) => e.status === "running");
+	const isRunning =
+		(liveIsForThisFlow && liveFlow!.status === "running") || !!serverRunning;
+	const src = liveIsForThisFlow ? liveFlow : archived;
 	const isComplete = !!src && !isRunning;
 	const outputRef = useRef<HTMLDivElement>(null);
 	const [expandedAgents, setExpandedAgents] = useState<Set<string>>(new Set());
@@ -810,16 +834,21 @@ function ExecutionViewer({
 						</button>
 					</>
 				)}
-				{isRunning && src && (
+				{isRunning && (
 					<div class="exec-status-bar">
 						<span class="spinner-sm" />
-						<span>
-							Agent {(src.currentAgentIndex || 0) + 1}/{agents.length} —{" "}
-							<strong>
-								{agents.find((a) => a.id === src.currentAgentId)?.name || "..."}
-							</strong>{" "}
-							working
-						</span>
+						{src ? (
+							<span>
+								Agent {(src.currentAgentIndex || 0) + 1}/{agents.length} —{" "}
+								<strong>
+									{agents.find((a) => a.id === src.currentAgentId)?.name ||
+										"..."}
+								</strong>{" "}
+								working
+							</span>
+						) : (
+							<span>Flow running — waiting for agent output...</span>
+						)}
 						<button class="btn btn-ghost exec-cancel" onClick={cancelFlow}>
 							Cancel
 						</button>

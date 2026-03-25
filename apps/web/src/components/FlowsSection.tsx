@@ -133,10 +133,18 @@ function FlowTimer({ startedAt }: { startedAt?: number }) {
 // ══ MAIN COMPONENT
 // ══════════════════════════════════════════
 
+// Module-level cache — persists across tab switches (component unmount/remount)
+let cachedFlows: FlowDef[] = [];
+let cachedExecutions: FlowExecution[] = [];
+let cachedSystemAgents: SystemAgent[] = [];
+let cacheLoaded = false;
+
 export function FlowsSection() {
-	const [flows, setFlows] = useState<FlowDef[]>([]);
-	const [executions, setExecutions] = useState<FlowExecution[]>([]);
-	const [systemAgents, setSystemAgents] = useState<SystemAgent[]>([]);
+	const [flows, setFlows] = useState<FlowDef[]>(cachedFlows);
+	const [executions, setExecutions] =
+		useState<FlowExecution[]>(cachedExecutions);
+	const [systemAgents, setSystemAgents] =
+		useState<SystemAgent[]>(cachedSystemAgents);
 	const [selectedFlowId, setSelectedFlowId] = useState<string | null>(null);
 	const [editingFlow, setEditingFlow] = useState<FlowDef | null>(null);
 	const [editingAgentId, setEditingAgentId] = useState<string | null>(null);
@@ -149,9 +157,13 @@ export function FlowsSection() {
 	const loadingExecutions = useRef(false);
 
 	useEffect(() => {
+		// Always refresh in background, but show cached data instantly
 		loadFlows();
 		loadExecutions();
-		loadSystemAgents();
+		if (!cacheLoaded) {
+			loadSystemAgents();
+			cacheLoaded = true;
+		}
 	}, []);
 
 	// Auto-navigate to running flow when entering Orchestrator
@@ -194,9 +206,11 @@ export function FlowsSection() {
 			const r = await apiFetch("/api/flows");
 			if (!r.ok) throw new Error(`HTTP ${r.status}`);
 			const d = await r.json();
-			setFlows(d.flows || []);
+			const list = d.flows || [];
+			cachedFlows = list;
+			setFlows(list);
 		} catch {
-			showToast("Failed to load flows", "error");
+			/* use cache on failure */
 		}
 	}
 	async function loadExecutions() {
@@ -206,9 +220,11 @@ export function FlowsSection() {
 			const r = await apiFetch("/api/flows/executions/list");
 			if (!r.ok) throw new Error(`HTTP ${r.status}`);
 			const d = await r.json();
-			setExecutions(d.executions || []);
+			const list = d.executions || [];
+			cachedExecutions = list;
+			setExecutions(list);
 		} catch {
-			/* non-fatal: polling, don't toast on every failure */
+			/* use cache on failure */
 		} finally {
 			loadingExecutions.current = false;
 		}
@@ -218,9 +234,10 @@ export function FlowsSection() {
 			const r = await apiFetch("/api/flows/available-agents");
 			if (!r.ok) throw new Error(`HTTP ${r.status}`);
 			const d = await r.json();
-			setSystemAgents(d.agents || []);
+			cachedSystemAgents = d.agents || [];
+			setSystemAgents(cachedSystemAgents);
 		} catch {
-			/* non-fatal */
+			/* use cache */
 		}
 	}
 	async function deleteFlow(id: string) {

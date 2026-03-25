@@ -126,17 +126,23 @@
 	align-items: center;
 	gap: 2px;
 	margin-left: -60px;
+	color: var(--text-muted);
+	opacity: 0.4;
+	transition: all 0.3s;
+}
+.exec-loop-indicator.exec-loop-active {
+	color: var(--warning, #f59e0b);
+	opacity: 1;
 	animation: flow-log-fadein 0.4s ease-out;
 }
 .exec-loop-arrow {
-	opacity: 0.7;
+	opacity: 0.8;
 }
 .exec-loop-badge {
 	font-size: 10px;
 	padding: 2px 8px;
 	border-radius: 10px;
-	background: color-mix(in srgb, var(--warning, #f59e0b) 12%, transparent);
-	color: var(--warning, #f59e0b);
+	background: color-mix(in srgb, currentColor 12%, transparent);
 	font-weight: 600;
 	white-space: nowrap;
 }

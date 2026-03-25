@@ -732,6 +732,7 @@ router.post("/message", (req, res) => {
 							chatId,
 							conversationId: conversation.id,
 							executionId: execution.id,
+							flowId: flow.id,
 							flowName: flow.name,
 							agents: agentList,
 						},

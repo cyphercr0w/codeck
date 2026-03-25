@@ -85,8 +85,8 @@ function walkAgents(flow: FlowDef): AgentDef[] {
 	const visited = new Set<string>();
 	const queue: string[] = [flow.entryAgentId];
 	while (queue.length > 0) {
-		const cursor = queue.shift()!;
-		if (visited.has(cursor) || !flow.agents[cursor]) continue;
+		const cursor = queue.shift();
+		if (!cursor || visited.has(cursor) || !flow.agents[cursor]) continue;
 		ordered.push(flow.agents[cursor]);
 		visited.add(cursor);
 		// Follow default transition
@@ -111,13 +111,14 @@ function walkAgents(flow: FlowDef): AgentDef[] {
 
 function FlowTimer({ startedAt }: { startedAt?: number }) {
 	const [elapsed, setElapsed] = useState(() =>
-		startedAt ? Math.floor((Date.now() - startedAt) / 1000) : 0,
+		startedAt ? Math.max(0, Math.floor((Date.now() - startedAt) / 1000)) : 0,
 	);
 	useEffect(() => {
 		if (!startedAt) return;
-		setElapsed(Math.floor((Date.now() - startedAt) / 1000));
+		setElapsed(Math.max(0, Math.floor((Date.now() - startedAt) / 1000)));
 		const iv = setInterval(
-			() => setElapsed(Math.floor((Date.now() - startedAt) / 1000)),
+			() =>
+				setElapsed(Math.max(0, Math.floor((Date.now() - startedAt) / 1000))),
 			1000,
 		);
 		return () => clearInterval(iv);
@@ -158,7 +159,9 @@ export function FlowsSection() {
 		if (view !== "list") return;
 		// If we have a live flow, go to its detail view
 		if (isAnyFlowRunning && liveFlow) {
-			const f = flows.find((fl) => fl.name === liveFlow.flowName);
+			const f =
+				flows.find((fl) => fl.id === liveFlow.flowId) ??
+				flows.find((fl) => fl.name === liveFlow.flowName);
 			if (f) {
 				setSelectedFlowId(f.id);
 				setView("run");
@@ -238,21 +241,24 @@ export function FlowsSection() {
 				method: "POST",
 				body: JSON.stringify({ input }),
 			});
+			if (!res.ok) throw new Error(`HTTP ${res.status}`);
 			const data = await res.json();
 			if (data.executionId) {
 				const agents = walkAgents(flow);
 				startFlowInChat(
 					data.executionId,
 					"",
+					flow.id,
 					flow.name,
 					agents.map((a) => ({ id: a.id, name: a.name, role: a.role })),
 				);
-				loadExecutions();
+				await loadExecutions();
 			}
 		} catch {
 			showToast("Failed to start flow", "error");
+		} finally {
+			setRunning(false);
 		}
-		setRunning(false);
 	}
 	async function saveFlow(flow: FlowDef) {
 		try {
@@ -326,6 +332,10 @@ export function FlowsSection() {
 		// Recent completed/failed executions for the "Recent Activity" section
 		const recentExecs = executions
 			.filter((e) => e.status === "completed" || e.status === "failed")
+			.sort(
+				(a, b) =>
+					new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime(),
+			)
 			.slice(0, 5);
 
 		return (
@@ -342,7 +352,9 @@ export function FlowsSection() {
 					<ActiveFlowBanner
 						flow={liveFlow}
 						onOpen={() => {
-							const f = flows.find((fl) => fl.name === liveFlow.flowName);
+							const f =
+								flows.find((fl) => fl.id === liveFlow.flowId) ??
+								flows.find((fl) => fl.name === liveFlow.flowName);
 							if (f) {
 								setSelectedFlowId(f.id);
 								setView("run");
@@ -539,7 +551,13 @@ function ExecutionViewer({
 	onEdit: () => void;
 }) {
 	const [submittedInput, setSubmittedInput] = useState("");
+	const [showInputView, setShowInputView] = useState(false);
 	const agents = walkAgents(flow);
+	// Reset showInputView when a new execution starts
+	useEffect(() => {
+		if (activeFlowExecution.value?.status === "running")
+			setShowInputView(false);
+	}, [activeFlowExecution.value?.status]);
 	const liveFlow = activeFlowExecution.value;
 	const recentExecIds = new Set(executions.map((e) => e.id));
 	const archived =
@@ -551,6 +569,7 @@ function ExecutionViewer({
 	const liveIsForThisFlow =
 		liveFlow != null &&
 		(recentExecIds.has(liveFlow.executionId) ||
+			liveFlow.flowId === flow.id ||
 			liveFlow.flowName === flow.name);
 	const serverRunning = executions.find((e) => e.status === "running");
 	const isRunning =
@@ -618,7 +637,7 @@ function ExecutionViewer({
 										{isDone && (
 											<span class="exec-node-dur">
 												{Math.round(
-													(src!.agentDurations[agent.id] || 0) / 1000,
+													(src?.agentDurations[agent.id] || 0) / 1000,
 												)}
 												s
 											</span>
@@ -650,33 +669,52 @@ function ExecutionViewer({
 							</div>
 						);
 					})}
-					{src && src.loopCount > 0 && (
-						<div class="exec-loop-indicator">
-							<svg
-								class="exec-loop-arrow"
-								viewBox="0 0 120 28"
-								width="120"
-								height="28"
+					{/* Loop indicator — show if flow definition has conditional transitions (loop-capable) */}
+					{(() => {
+						const hasLoop = agents.some((a) =>
+							a.transitions.conditions?.some((c) => {
+								const target = c.goto;
+								return (
+									target !== "END" &&
+									agents.findIndex((x) => x.id === target) <
+										agents.findIndex((x) => x.id === a.id)
+								);
+							}),
+						);
+						const loopCount = src?.loopCount || 0;
+						if (!hasLoop) return null;
+						return (
+							<div
+								class={`exec-loop-indicator${loopCount > 0 ? " exec-loop-active" : ""}`}
 							>
-								<path
-									d="M100 2 C110 2, 115 10, 115 14 C115 18, 110 26, 100 26 L20 26 C10 26, 5 18, 5 14 L5 14"
-									stroke="var(--warning, #f59e0b)"
-									stroke-width="1.5"
-									fill="none"
-									stroke-dasharray="4 3"
-								/>
-								<path
-									d="M2 10 L5 14 L8 10"
-									stroke="var(--warning, #f59e0b)"
-									stroke-width="1.5"
-									fill="none"
-								/>
-							</svg>
-							<span class="exec-loop-badge">
-								{"\u21BB"} Loop {src.loopCount}
-							</span>
-						</div>
-					)}
+								<svg
+									class="exec-loop-arrow"
+									viewBox="0 0 120 28"
+									width="120"
+									height="28"
+								>
+									<path
+										d="M100 2 C110 2, 115 10, 115 14 C115 18, 110 26, 100 26 L20 26 C10 26, 5 18, 5 14 L5 14"
+										stroke="currentColor"
+										stroke-width="1.5"
+										fill="none"
+										stroke-dasharray="4 3"
+									/>
+									<path
+										d="M2 10 L5 14 L8 10"
+										stroke="currentColor"
+										stroke-width="1.5"
+										fill="none"
+									/>
+								</svg>
+								<span class="exec-loop-badge">
+									{loopCount > 0
+										? `\u21BB Loop ${loopCount}`
+										: "\u21BB Loop capable"}
+								</span>
+							</div>
+						);
+					})()}
 				</div>
 				{!isRunning && !isComplete && (
 					<button class="btn btn-ghost" onClick={onEdit}>
@@ -731,7 +769,7 @@ function ExecutionViewer({
 								{/* Agent visit card — click anywhere to expand/collapse */}
 								<div
 									class={`exec-log-entry exec-log-agent${isActive ? " exec-log-active" : ""}`}
-									onClick={() => (isDone ? toggleExpand(visitKey) : undefined)}
+									onClick={isDone ? () => toggleExpand(visitKey) : undefined}
 									style={isDone ? { cursor: "pointer" } : undefined}
 								>
 									<div class="exec-log-header">
@@ -811,7 +849,7 @@ function ExecutionViewer({
 
 			{/* Zone 3: Controls */}
 			<div class="exec-controls">
-				{!isRunning && !isComplete && (
+				{((!isRunning && !isComplete) || showInputView) && (
 					<>
 						<textarea
 							class="exec-input"
@@ -827,6 +865,7 @@ function ExecutionViewer({
 							disabled={!runInput.trim() || running}
 							onClick={() => {
 								setSubmittedInput(runInput);
+								setShowInputView(false);
 								onRun();
 							}}
 						>
@@ -854,19 +893,14 @@ function ExecutionViewer({
 						</button>
 					</div>
 				)}
-				{isComplete && (
+				{isComplete && !showInputView && (
 					<div class="exec-status-bar">
 						<span>{src?.status === "completed" ? "\u2713" : "\u2717"}</span>
 						<span>Flow {src?.status}</span>
 						<button
 							class="btn btn-primary"
 							onClick={() => {
-								// Clear archived state so the UI resets to the input view
-								if (src?.executionId) {
-									const updated = { ...archivedFlows.value };
-									delete updated[src.executionId];
-									archivedFlows.value = updated;
-								}
+								setShowInputView(true);
 								onInputChange("");
 							}}
 						>
@@ -876,8 +910,8 @@ function ExecutionViewer({
 				)}
 			</div>
 
-			{/* Past executions */}
-			{executions.length > 0 && (
+			{/* Past executions — hidden during active run */}
+			{!isRunning && executions.length > 0 && (
 				<details class="flow-past-execs">
 					<summary>Past executions ({executions.length})</summary>
 					{executions.slice(0, 5).map((e) => (
@@ -907,10 +941,15 @@ function ActiveFlowBanner({
 	};
 	onOpen: () => void;
 }) {
-	const [elapsed, setElapsed] = useState(0);
+	const [elapsed, setElapsed] = useState(() =>
+		Math.max(0, Math.floor((Date.now() - flow.startedAt) / 1000)),
+	);
 	useEffect(() => {
 		const iv = setInterval(
-			() => setElapsed(Math.floor((Date.now() - flow.startedAt) / 1000)),
+			() =>
+				setElapsed(
+					Math.max(0, Math.floor((Date.now() - flow.startedAt) / 1000)),
+				),
 			1000,
 		);
 		return () => clearInterval(iv);

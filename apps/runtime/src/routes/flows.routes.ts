@@ -244,6 +244,7 @@ router.post("/:id/execute", async (req, res) => {
 			chatId: "",
 			conversationId: "",
 			executionId: execution.id,
+			flowId: flow.id,
 			flowName: flow.name,
 			agents: agentList,
 		},

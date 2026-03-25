@@ -430,6 +430,7 @@ function openWs(wsUrl: string, protocols?: string[]): void {
 					typeof d.flowName === "string" &&
 					Array.isArray(d.agents)
 				) {
+					const flowId = typeof d.flowId === "string" ? d.flowId : "";
 					// Validate each agent element has the required fields
 					const validAgents = (d.agents as unknown[]).filter(
 						(a): a is { id: string; name: string; role: string } => {
@@ -446,6 +447,7 @@ function openWs(wsUrl: string, protocols?: string[]): void {
 						startFlowInChat(
 							d.executionId,
 							d.conversationId,
+							flowId,
 							d.flowName,
 							validAgents,
 						);

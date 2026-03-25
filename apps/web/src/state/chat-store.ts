@@ -64,6 +64,7 @@ export interface AgentVisit {
 export interface ActiveFlowState {
 	executionId: string;
 	conversationId: string;
+	flowId: string;
 	flowName: string;
 	agents: FlowAgent[];
 	currentAgentId: string | null;
@@ -255,6 +256,7 @@ export async function deleteConversation(
 export function startFlowInChat(
 	executionId: string,
 	conversationId: string,
+	flowId: string,
 	flowName: string,
 	agents: FlowAgent[],
 ): void {
@@ -275,6 +277,7 @@ export function startFlowInChat(
 	activeFlowExecution.value = {
 		executionId,
 		conversationId,
+		flowId,
 		flowName,
 		agents,
 		currentAgentId: firstAgent?.id || null,

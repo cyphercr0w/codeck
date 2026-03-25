@@ -2,11 +2,9 @@ import { spawn as ptySpawn, type IPty } from "node-pty";
 import {
 	readFileSync,
 	existsSync,
-	readdirSync,
 	mkdirSync,
 	unlinkSync,
 	renameSync,
-	statSync,
 } from "fs";
 import {
 	readdir as readdirAsync,
@@ -64,6 +62,15 @@ const sessions = new Map<string, ConsoleSession>();
 // Set to true during destroyAllSessions() to suppress per-session state saves
 // that would overwrite the shutdown snapshot with an empty session list.
 let suppressStateSave = false;
+
+// Callbacks invoked when any session's PTY exits — allows external modules
+// (routes, websocket) to clean up per-session state without circular imports.
+type SessionExitCallback = (sessionId: string, exitCode: number) => void;
+const globalSessionExitCallbacks: SessionExitCallback[] = [];
+
+export function onAnySessionExit(cb: SessionExitCallback): void {
+	globalSessionExitCallbacks.push(cb);
+}
 
 console.log(`[Console] Agent binary resolved: ${getAgentBinaryPath()}`);
 
@@ -209,6 +216,9 @@ function detectConversationId(
 // Simple mutex to prevent concurrent session creation from exceeding MAX_SESSIONS.
 // Check-then-create is not atomic without this — two simultaneous POST /api/console/create
 // could both pass the getSessionCount() < MAX_SESSIONS check before either creates a session.
+// IMPORTANT: Synchronous-only mutex — works because createConsoleSession and
+// _createConsoleSessionInner are fully synchronous. If an `await` is ever added inside
+// _createConsoleSessionInner, replace with an async mutex (e.g., p-limit or promise chain).
 let sessionCreationLocked = false;
 
 export function createConsoleSession(
@@ -384,10 +394,12 @@ function _createConsoleSessionInner(
 	// Start session capture for transcript logging
 	startSessionCapture(id, workDir);
 
-	// Buffer PTY output until a WS client attaches (with size cap)
+	// Buffer PTY output until a WS client attaches (with size cap).
+	// captureOutput runs here only when unattached; when attached, websocket.ts handles it
+	// to avoid double callback overhead on every PTY byte.
 	const dataDisposable = pty.onData((data: string) => {
-		captureOutput(id, data);
 		if (!session.attached) {
+			captureOutput(id, data);
 			session.outputBuffer.push(data);
 			session.outputBufferSize += data.length;
 			while (
@@ -400,6 +412,22 @@ function _createConsoleSessionInner(
 		}
 	});
 	session.dataDisposable = dataDisposable;
+
+	// Register PTY exit handler at creation time — ensures cleanup even if no WS client
+	// ever attaches. Without this, sessions created during restore that never get a WS
+	// attachment become zombie entries in the sessions Map.
+	pty.onExit(({ exitCode }: { exitCode: number }) => {
+		for (const cb of globalSessionExitCallbacks) {
+			try {
+				cb(id, exitCode);
+			} catch {
+				/* non-fatal */
+			}
+		}
+		if (sessions.has(id)) {
+			destroySession(id);
+		}
+	});
 
 	sessions.set(id, session);
 	saveSessionState("session_created");
@@ -469,8 +497,8 @@ export function createShellSession(cwd?: string): ConsoleSession {
 	console.log(`[Console] Shell: step3 capture started +${Date.now() - t0}ms`);
 
 	const shellDataDisposable = pty.onData((data: string) => {
-		captureOutput(id, data);
 		if (!session.attached) {
+			captureOutput(id, data);
 			session.outputBuffer.push(data);
 			session.outputBufferSize += data.length;
 			while (
@@ -483,6 +511,20 @@ export function createShellSession(cwd?: string): ConsoleSession {
 		}
 	});
 	session.dataDisposable = shellDataDisposable;
+
+	// Register PTY exit handler at creation time (same as agent sessions)
+	pty.onExit(({ exitCode }: { exitCode: number }) => {
+		for (const cb of globalSessionExitCallbacks) {
+			try {
+				cb(id, exitCode);
+			} catch {
+				/* non-fatal */
+			}
+		}
+		if (sessions.has(id)) {
+			destroySession(id);
+		}
+	});
 
 	sessions.set(id, session);
 	saveSessionState("session_created");
@@ -536,15 +578,16 @@ export function destroySession(id: string): void {
 		session.dataDisposable.dispose();
 	}
 
-	const sessionCwd = session.cwd;
-	sessions.delete(id);
-
-	// Send SIGTERM first to allow graceful shutdown (flush buffers, close files)
+	// Send SIGTERM first to allow graceful shutdown (flush buffers, close files).
+	// Kill before removing from registry so code that checks sessions.has(id)
+	// (e.g., detectConversationId poller) sees the session as present until signaled.
 	try {
 		session.pty.kill("SIGTERM");
 	} catch {
 		// Process may have already exited
 	}
+
+	sessions.delete(id);
 
 	// Force SIGKILL after 2s grace period if still running
 	setTimeout(() => {
@@ -628,28 +671,7 @@ function encodeProjectPath(cwd: string): string {
 }
 
 /**
- * Check if a .jsonl file contains at least one real conversation message (user or assistant type).
- * Filters out files that only contain metadata entries like file-history-snapshot.
- * Sync version — used only in startup paths (restoreSavedSessions).
- */
-function hasRealMessages(filePath: string): boolean {
-	try {
-		const lines = readFileSync(filePath, "utf8").split("\n").filter(Boolean);
-		return lines.some((line) => {
-			try {
-				const d = JSON.parse(line);
-				return d.type === "user" || d.type === "assistant";
-			} catch {
-				return false;
-			}
-		});
-	} catch {
-		return false;
-	}
-}
-
-/**
- * Async version of hasRealMessages — used in polling paths to avoid blocking the event loop.
+ * Check if a .jsonl file contains at least one real conversation message (async).
  * Reading large .jsonl conversation files synchronously was blocking for 100ms+ per file.
  */
 async function hasRealMessagesAsync(filePath: string): Promise<boolean> {
@@ -682,28 +704,39 @@ async function hasRealMessagesAsync(filePath: string): Promise<boolean> {
 }
 
 /**
- * Find the most recent valid conversation ID for the given cwd.
- * "Valid" means the .jsonl file has at least one real user/assistant message.
- * Returns undefined if no valid conversation is found.
+ * Find the most recent valid conversation ID for the given cwd (async).
+ * Uses async I/O to avoid blocking the event loop — the previous sync version
+ * used readdirSync + statSync + readFileSync on every .jsonl file, which blocked
+ * for seconds when project directories had many conversation files.
  */
-function findMostRecentConversation(cwd: string): string | undefined {
+async function findMostRecentConversationAsync(
+	cwd: string,
+): Promise<string | undefined> {
 	const encoded = encodeProjectPath(cwd);
 	const projectDir = `${ACTIVE_AGENT.projectsDir}/${encoded}`;
 	try {
-		if (!existsSync(projectDir)) return undefined;
-		const files = readdirSync(projectDir)
-			.filter((f) => f.endsWith(".jsonl"))
-			.flatMap((f) => {
+		const entries = await readdirAsync(projectDir).catch(() => [] as string[]);
+		const jsonlFiles = entries.filter((f) => f.endsWith(".jsonl"));
+
+		const fileStats = await Promise.all(
+			jsonlFiles.map(async (f) => {
 				try {
-					return [{ name: f, mtime: statSync(`${projectDir}/${f}`).mtimeMs }];
+					const s = await statAsync(`${projectDir}/${f}`);
+					return { name: f, mtime: s.mtimeMs };
 				} catch {
-					return [];
+					return null;
 				}
-			})
-			.sort((a, b) => b.mtime - a.mtime); // most recent first
-		for (const { name } of files) {
-			if (hasRealMessages(`${projectDir}/${name}`))
+			}),
+		);
+
+		const sorted = fileStats
+			.filter((s): s is { name: string; mtime: number } => s !== null)
+			.sort((a, b) => b.mtime - a.mtime);
+
+		for (const { name } of sorted) {
+			if (await hasRealMessagesAsync(`${projectDir}/${name}`)) {
 				return name.replace(".jsonl", "");
+			}
 		}
 		return undefined;
 	} catch {
@@ -748,7 +781,24 @@ interface SessionsState {
 	sessions: SavedSession[];
 }
 
+let saveStateTimer: ReturnType<typeof setTimeout> | null = null;
+
+/**
+ * Debounced session state save — coalesces rapid saves (e.g., during restore of
+ * multiple sessions) into a single disk write after 500ms of inactivity.
+ */
 export function saveSessionState(
+	reason: string,
+	continuationPrompt?: string,
+): void {
+	if (saveStateTimer) clearTimeout(saveStateTimer);
+	saveStateTimer = setTimeout(() => {
+		saveStateTimer = null;
+		saveSessionStateNow(reason, continuationPrompt);
+	}, 500);
+}
+
+function saveSessionStateNow(
 	reason: string,
 	continuationPrompt?: string,
 ): SessionsState {
@@ -882,19 +932,21 @@ export function readSavedSessions(): Array<{
  * Actually create PTY processes for saved sessions.
  * Called when the user clicks "Resume" in the frontend.
  */
-export function restoreSessionsNow(
+export async function restoreSessionsNow(
 	savedSessions: Array<{
 		type: string;
 		cwd: string;
 		name: string;
 		conversationId?: string;
 	}>,
-): Array<{
-	id: string;
-	type: string;
-	cwd: string;
-	name: string;
-}> {
+): Promise<
+	Array<{
+		id: string;
+		type: string;
+		cwd: string;
+		name: string;
+	}>
+> {
 	console.log(
 		`[Console] User chose Resume — creating ${savedSessions.length} sessions...`,
 	);
@@ -917,7 +969,8 @@ export function restoreSessionsNow(
 						conversationId: saved.conversationId,
 					});
 				} else {
-					const recentConvId = findMostRecentConversation(cwd);
+					// Async — avoids blocking the event loop with sync stat/readFile
+					const recentConvId = await findMostRecentConversationAsync(cwd);
 					if (recentConvId) {
 						session = createConsoleSession({
 							cwd,
@@ -950,16 +1003,7 @@ export function restoreSessionsNow(
 		}
 	}
 
-	// Rename sessions.json to .bak after restore (keep for debugging, but won't re-trigger on next restart)
-	try {
-		renameSync(SESSIONS_STATE_PATH, SESSIONS_STATE_PATH + ".bak");
-	} catch {
-		try {
-			unlinkSync(SESSIONS_STATE_PATH);
-		} catch {
-			/* ignore */
-		}
-	}
+	// .bak rename already handled by readSavedSessions() — no duplicate rename needed
 
 	console.log(
 		`[Console] Restored ${restored.length}/${savedSessions.length} sessions`,

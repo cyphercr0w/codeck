@@ -388,14 +388,14 @@ const contextBySession = new Map<
 // Destroy console session
 // Restore saved sessions — called when user clicks "Resume" in the restore prompt.
 // Creates the actual PTY processes. Before this, sessions are just metadata.
-router.post("/restore-sessions", (req, res) => {
+router.post("/restore-sessions", async (req, res) => {
 	const { sessions: savedSessions } = req.body;
 	if (!Array.isArray(savedSessions) || savedSessions.length === 0) {
 		res.status(400).json({ error: "sessions array required" });
 		return;
 	}
 	try {
-		const restored = restoreSessionsNow(savedSessions);
+		const restored = await restoreSessionsNow(savedSessions);
 		console.log(
 			`[Console] Restored ${restored.length}/${savedSessions.length} sessions`,
 		);

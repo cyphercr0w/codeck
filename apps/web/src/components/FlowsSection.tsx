@@ -63,6 +63,7 @@ interface FlowExecution {
 	currentAgentId: string | null;
 	startedAt: string;
 	completedAt: string | null;
+	initialInput: string;
 	agentResults: Record<
 		string,
 		{ agentId: string; status: string; output: string }
@@ -747,11 +748,18 @@ function ExecutionViewer({
 					class={`exec-log${isRunning ? " exec-log-running" : ""}`}
 					ref={outputRef}
 				>
-					{(src?.initialInput || submittedInput).trim() && (
+					{(
+						src?.initialInput ||
+						submittedInput ||
+						executions[0]?.initialInput ||
+						""
+					).trim() && (
 						<div class="exec-log-entry exec-log-user">
-							<div class="exec-log-label">Your prompt</div>
+							<div class="exec-log-label">Task</div>
 							<div class="exec-log-text">
-								{src?.initialInput || submittedInput}
+								{src?.initialInput ||
+									submittedInput ||
+									executions[0]?.initialInput}
 							</div>
 						</div>
 					)}

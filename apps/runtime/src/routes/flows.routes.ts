@@ -247,6 +247,7 @@ router.post("/:id/execute", async (req, res) => {
 			flowId: flow.id,
 			flowName: flow.name,
 			agents: agentList,
+			initialInput: input,
 		},
 	});
 

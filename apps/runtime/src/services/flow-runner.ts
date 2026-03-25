@@ -301,6 +301,12 @@ function runAgent(
 		let streamBuffer = ""; // Buffer for incomplete JSON lines from stream-json
 		let sigkillTimer: ReturnType<typeof setTimeout> | undefined;
 
+		// Tool call tracking — emit tool names/summaries into the output stream
+		// so the frontend can show what tools the agent is using in real time.
+		let activeToolName = "";
+		let activeToolInput = "";
+		let insideToolUse = false;
+
 		// Timeout handler — guard against zero/negative values
 		const effectiveTimeout = Math.max(agent.timeoutMs, 5000);
 		const timeoutHandle = setTimeout(() => {
@@ -318,6 +324,35 @@ function runAgent(
 			}, 15000);
 		}, effectiveTimeout);
 
+		/** Summarize a tool call input into a compact one-liner for the output stream. */
+		const summarizeToolInput = (name: string, inputStr: string): string => {
+			try {
+				const input = JSON.parse(inputStr);
+				switch (name) {
+					case "Read":
+						return input.file_path || "";
+					case "Write":
+						return input.file_path || "";
+					case "Edit":
+						return input.file_path || "";
+					case "Bash":
+						return (input.command || "").slice(0, 80);
+					case "Glob":
+						return input.pattern || "";
+					case "Grep":
+						return input.pattern || "";
+					case "WebSearch":
+						return input.query || "";
+					case "WebFetch":
+						return input.url || "";
+					default:
+						return Object.values(input).join(", ").slice(0, 60);
+				}
+			} catch {
+				return "";
+			}
+		};
+
 		/** Parse a single stream-json line and extract text content. */
 		const parseStreamEvent = (raw: string): string => {
 			if (!raw.trim()) return "";
@@ -333,6 +368,33 @@ function runAgent(
 					return text;
 				} else if (event.type === "content_block_delta" && event.delta?.text) {
 					return event.delta.text;
+				} else if (
+					event.type === "content_block_delta" &&
+					event.delta?.type === "input_json_delta" &&
+					event.delta?.partial_json
+				) {
+					// Accumulate tool input JSON for summary on content_block_stop
+					activeToolInput += event.delta.partial_json;
+					return "";
+				} else if (
+					event.type === "content_block_start" &&
+					event.content_block?.type === "tool_use"
+				) {
+					// Tool call started — record name, will emit summary on stop
+					activeToolName = event.content_block.name || "unknown";
+					activeToolInput = "";
+					insideToolUse = true;
+					return "";
+				} else if (event.type === "content_block_stop" && insideToolUse) {
+					// Tool call complete — emit a compact summary line
+					const summary = summarizeToolInput(activeToolName, activeToolInput);
+					const line = summary
+						? `\n[${activeToolName}: ${summary}]\n`
+						: `\n[${activeToolName}]\n`;
+					activeToolName = "";
+					activeToolInput = "";
+					insideToolUse = false;
+					return line;
 				} else if (event.type === "result" && event.result) {
 					// Result is the final aggregated output — skip to avoid
 					// double-counting with content_block_delta events.

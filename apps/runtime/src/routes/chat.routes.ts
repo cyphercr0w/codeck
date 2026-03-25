@@ -867,29 +867,33 @@ router.post("/message", (req, res) => {
 				}, 5000);
 			}, 300000);
 
-			child.on("close", (code) => {
+			child.on("close", async (code) => {
 				clearTimeout(timeout);
 				activeChatProcesses.delete(chatId);
 
+				// Await save before broadcasting complete — prevents race where
+				// client reloads conversation before the response is persisted.
 				if (fullResponse.trim()) {
-					withConversationLock(conversation.id, async () => {
-						const freshConv = readConversation(conversation.id);
-						if (freshConv) {
-							freshConv.messages.push({
-								id: randomUUID(),
-								role: "assistant",
-								content: fullResponse,
-								timestamp: Date.now(),
-							});
-							freshConv.updatedAt = new Date().toISOString();
-							writeConversation(freshConv);
-						}
-					}).catch((err) => {
+					try {
+						await withConversationLock(conversation.id, async () => {
+							const freshConv = readConversation(conversation.id);
+							if (freshConv) {
+								freshConv.messages.push({
+									id: randomUUID(),
+									role: "assistant",
+									content: fullResponse,
+									timestamp: Date.now(),
+								});
+								freshConv.updatedAt = new Date().toISOString();
+								writeConversation(freshConv);
+							}
+						});
+					} catch (err) {
 						console.error(
 							`[Chat] Failed to save conversation ${conversation.id}:`,
 							(err as Error).message,
 						);
-					});
+					}
 				}
 
 				broadcast({

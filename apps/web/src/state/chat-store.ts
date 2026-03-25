@@ -82,9 +82,76 @@ export interface ActiveFlowState {
 	visitLog: AgentVisit[];
 }
 
-export const activeFlowExecution = signal<ActiveFlowState | null>(null);
+// ── localStorage persistence for flow state (survives F5) ──
+
+const FLOW_STORAGE_KEY = "codeck:activeFlow";
+const ARCHIVE_STORAGE_KEY = "codeck:archivedFlows";
+
+function loadFlowFromStorage(): ActiveFlowState | null {
+	try {
+		const raw = localStorage.getItem(FLOW_STORAGE_KEY);
+		if (!raw) return null;
+		const state = JSON.parse(raw) as ActiveFlowState;
+		// Don't restore stale running flows older than 2 hours
+		if (state.status === "running" && Date.now() - state.startedAt > 7200000) {
+			localStorage.removeItem(FLOW_STORAGE_KEY);
+			return null;
+		}
+		return state;
+	} catch {
+		localStorage.removeItem(FLOW_STORAGE_KEY);
+		return null;
+	}
+}
+
+function loadArchiveFromStorage(): Record<string, ActiveFlowState> {
+	try {
+		const raw = localStorage.getItem(ARCHIVE_STORAGE_KEY);
+		return raw ? (JSON.parse(raw) as Record<string, ActiveFlowState>) : {};
+	} catch {
+		return {};
+	}
+}
+
+let persistTimer: ReturnType<typeof setTimeout> | null = null;
+
+function persistFlowState(state: ActiveFlowState | null): void {
+	// Throttle writes to max once per second during streaming to avoid
+	// hammering localStorage on every output chunk
+	if (persistTimer) return;
+	persistTimer = setTimeout(
+		() => {
+			persistTimer = null;
+			try {
+				const current = activeFlowExecution.value;
+				if (current) {
+					localStorage.setItem(FLOW_STORAGE_KEY, JSON.stringify(current));
+				} else {
+					localStorage.removeItem(FLOW_STORAGE_KEY);
+				}
+			} catch {
+				/* localStorage full or unavailable */
+			}
+		},
+		state === null ? 0 : 1000,
+	); // Immediate on clear, throttled on update
+}
+
+function persistArchive(archive: Record<string, ActiveFlowState>): void {
+	try {
+		localStorage.setItem(ARCHIVE_STORAGE_KEY, JSON.stringify(archive));
+	} catch {
+		/* localStorage full or unavailable */
+	}
+}
+
+export const activeFlowExecution = signal<ActiveFlowState | null>(
+	loadFlowFromStorage(),
+);
 // Archived flows keyed by executionId — preserves final state after completion
-export const archivedFlows = signal<Record<string, ActiveFlowState>>({});
+export const archivedFlows = signal<Record<string, ActiveFlowState>>(
+	loadArchiveFromStorage(),
+);
 // Incremented on every flow state change to trigger re-renders without remapping chatMessages
 export const flowStateVersion = signal(0);
 
@@ -295,6 +362,7 @@ export function startFlowInChat(
 		completedAt: null,
 		visitLog: [initialVisit],
 	};
+	persistFlowState(activeFlowExecution.value);
 	// Only add flow message to chat if triggered from a chat conversation
 	// (not from Orchestrator, which passes empty conversationId)
 	if (conversationId) {
@@ -378,6 +446,9 @@ export function appendFlowAgentOutput(
 		visitLog,
 	};
 
+	// Persist to localStorage (throttled implicitly by chunked updates)
+	persistFlowState(activeFlowExecution.value);
+
 	// Bump version to trigger re-render in components that read flowStateVersion
 	flowStateVersion.value++;
 }
@@ -427,6 +498,7 @@ export function completeFlowAgent(
 		agentDecisions: decisions,
 		visitLog,
 	};
+	persistFlowState(activeFlowExecution.value);
 }
 
 export function completeFlowExecution(
@@ -455,6 +527,7 @@ export function completeFlowExecution(
 		}
 	}
 	archivedFlows.value = updated;
+	persistArchive(archivedFlows.value);
 
 	// Update the flow message to not streaming
 	chatMessages.value = chatMessages.value.map((m) => {
@@ -482,4 +555,5 @@ export function completeFlowExecution(
 	);
 	if (!stillStreaming) chatStreaming.value = false;
 	activeFlowExecution.value = null;
+	persistFlowState(null);
 }

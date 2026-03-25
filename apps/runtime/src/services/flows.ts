@@ -243,7 +243,7 @@ export function initFlowTemplates(): void {
 					allowedTools: ["Read", "Glob", "Grep", "Bash"],
 					mcpServers: [],
 					maxTurns: 25,
-					timeoutMs: 300000,
+					timeoutMs: 900000,
 					outputParser: "structured",
 					structuredOutputSchema: {
 						decisionField: "decision",
@@ -266,8 +266,8 @@ export function initFlowTemplates(): void {
 					inputTemplate: "Code review findings to fix:\n\n{{prev_output}}",
 					allowedTools: ["Read", "Edit", "Write", "Bash", "Glob", "Grep"],
 					mcpServers: [],
-					maxTurns: 50,
-					timeoutMs: 600000,
+					maxTurns: 80,
+					timeoutMs: 1800000,
 					outputParser: "raw",
 					transitions: {
 						default: "reviewer",

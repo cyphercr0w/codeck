@@ -194,7 +194,7 @@
 	display: flex;
 	gap: 10px;
 	font-size: 10px;
-	color: var(--text-muted, #666);
+	color: var(--text-muted, #999);
 }
 .canvas-node-meta span {
 	opacity: 0.8;
@@ -203,9 +203,9 @@
 /* ── Handles ── */
 
 .canvas-handle {
-	width: 10px !important;
-	height: 10px !important;
-	background: var(--border, #333) !important;
+	width: 14px !important;
+	height: 14px !important;
+	background: var(--border, #444) !important;
 	border: 2px solid var(--bg-secondary, #141425) !important;
 	transition:
 		background 0.15s,
@@ -222,8 +222,19 @@
 
 .canvas-handle-cond {
 	background: #fbbf24 !important;
-	width: 8px !important;
-	height: 8px !important;
+	width: 12px !important;
+	height: 12px !important;
+}
+
+@media (pointer: coarse) {
+	.canvas-handle {
+		width: 18px !important;
+		height: 18px !important;
+	}
+	.canvas-handle-cond {
+		width: 16px !important;
+		height: 16px !important;
+	}
 }
 
 /* ── Edge Labels ── */
@@ -423,7 +434,7 @@
 }
 
 .flow-panel-cond-arrow {
-	color: var(--text-muted, #666);
+	color: var(--text-muted, #999);
 	font-size: 14px;
 }
 
@@ -539,7 +550,7 @@
 .flow-canvas-picker-empty {
 	padding: 24px;
 	text-align: center;
-	color: var(--text-muted, #666);
+	color: var(--text-muted, #999);
 	font-size: 13px;
 }
 

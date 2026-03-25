@@ -5,13 +5,7 @@
  * Each node is a configurable agent panel, edges represent transitions.
  */
 
-import {
-	useState,
-	useCallback,
-	useMemo,
-	useEffect,
-	useRef,
-} from "preact/hooks";
+import { useState, useCallback, useMemo, useEffect } from "preact/hooks";
 import {
 	ReactFlow,
 	Background,
@@ -102,7 +96,7 @@ type AgentNode = Node<AgentNodeData>;
 
 // ── Custom Agent Node ──
 
-function AgentNodeComponent({ id, data, selected }: NodeProps<AgentNode>) {
+function AgentNodeComponent({ data, selected }: NodeProps<AgentNode>) {
 	const { agent, isEntry } = data;
 	const toolCount = agent.allowedTools.length;
 	const hasConditions = (agent.transitions.conditions?.length ?? 0) > 0;
@@ -110,7 +104,6 @@ function AgentNodeComponent({ id, data, selected }: NodeProps<AgentNode>) {
 	return (
 		<div
 			class={`canvas-agent-node${selected ? " selected" : ""}${isEntry ? " entry" : ""}`}
-			onDblClick={() => data.onSelect(id)}
 		>
 			<Handle
 				type="target"
@@ -345,7 +338,6 @@ export function FlowCanvas({
 }) {
 	const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
 	const [showPicker, setShowPicker] = useState(false);
-	const isFirstRender = useRef(true);
 
 	const onSelect = useCallback((id: string) => {
 		setSelectedAgentId((prev) => (prev === id ? null : id));
@@ -363,10 +355,6 @@ export function FlowCanvas({
 	// Sync graph when flow data changes (from property panel edits)
 	// Preserve node positions from current canvas state
 	useEffect(() => {
-		if (isFirstRender.current) {
-			isFirstRender.current = false;
-			return;
-		}
 		setNodes((prev) => {
 			const posMap = new Map(prev.map((n) => [n.id, n.position]));
 			return graph.nodes.map((n) => ({
@@ -375,7 +363,7 @@ export function FlowCanvas({
 			}));
 		});
 		setEdges(graph.edges);
-	}, [flow, selectedAgentId]);
+	}, [graph]);
 
 	const onNodesChange: OnNodesChange<AgentNode> = useCallback(
 		(changes) =>
@@ -392,6 +380,8 @@ export function FlowCanvas({
 	const onConnect: OnConnect = useCallback(
 		(conn: Connection) => {
 			if (!conn.source || !conn.target) return;
+			// Guard: prevent self-loops (would cause infinite loop in runtime)
+			if (conn.source === conn.target) return;
 			const sourceAgent = flow.agents[conn.source];
 			if (!sourceAgent) return;
 
@@ -416,7 +406,7 @@ export function FlowCanvas({
 		[flow, onChange],
 	);
 
-	const onNodeClick = useCallback((_: any, node: AgentNode) => {
+	const onNodeClick = useCallback((_: MouseEvent, node: AgentNode) => {
 		setSelectedAgentId((prev) => (prev === node.id ? null : node.id));
 	}, []);
 
@@ -451,8 +441,16 @@ export function FlowCanvas({
 	// Node deletion → remove agent from flow
 	const onNodesDelete = useCallback(
 		(deleted: AgentNode[]) => {
-			const removing = new Set(deleted.map((n) => n.id));
-			if (Object.keys(flow.agents).length - removing.size < 1) return;
+			// Filter out deletions that would remove all agents
+			const agentCount = Object.keys(flow.agents).length;
+			const removing = new Set(
+				deleted.map((n) => n.id).filter((id) => flow.agents[id]),
+			);
+			if (agentCount - removing.size < 1) {
+				// Restore nodes to prevent canvas/data desync
+				setNodes((prev) => prev);
+				return;
+			}
 
 			const updated: Record<string, AgentDef> = {};
 			for (const [id, agent] of Object.entries(flow.agents)) {
@@ -493,7 +491,7 @@ export function FlowCanvas({
 
 	function addAgentFromSystem(sa: SystemAgent) {
 		const uniqueId = flow.agents[sa.id]
-			? `${sa.id}-${allAgentIds.length + 1}`
+			? `${sa.id}-${crypto.randomUUID().slice(0, 8)}`
 			: sa.id;
 		const updated = { ...flow.agents };
 		updated[uniqueId] = {
@@ -661,6 +659,9 @@ export function FlowCanvas({
 						onPaneClick={onPaneClick}
 						onEdgesDelete={onEdgesDelete}
 						onNodesDelete={onNodesDelete}
+						isValidConnection={(conn: Connection) =>
+							conn.source !== conn.target
+						}
 						nodeTypes={nodeTypes}
 						edgeTypes={edgeTypes}
 						fitView

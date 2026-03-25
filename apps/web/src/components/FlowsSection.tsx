@@ -251,6 +251,7 @@ export function FlowsSection() {
 					flow.id,
 					flow.name,
 					agents.map((a) => ({ id: a.id, name: a.name, role: a.role })),
+					input,
 				);
 				await loadExecutions();
 			}
@@ -383,52 +384,7 @@ export function FlowsSection() {
 						</div>
 					)}
 
-				{/* Recent activity — completed executions */}
-				{recentExecs.length > 0 && (
-					<div class="flows-group">
-						<h3 class="flows-group-title">Recent Activity</h3>
-						<div class="flows-recent-list">
-							{recentExecs.map((exec) => {
-								const f = flows.find((fl) => fl.id === exec.flowId);
-								const elapsed = exec.completedAt
-									? Math.round(
-											(new Date(exec.completedAt).getTime() -
-												new Date(exec.startedAt).getTime()) /
-												1000,
-										)
-									: 0;
-								const agentCount = Object.keys(exec.agentResults || {}).length;
-								return (
-									<div
-										key={exec.id}
-										class="flows-recent-item"
-										onClick={() => {
-											if (f) {
-												setSelectedFlowId(f.id);
-												setView("run");
-											}
-										}}
-									>
-										<span class={`flows-recent-status ${exec.status}`}>
-											{exec.status === "completed" ? "\u2713" : "\u2717"}
-										</span>
-										<div class="flows-recent-info">
-											<span class="flows-recent-name">
-												{f?.name || "Unknown flow"}
-											</span>
-											<span class="flows-recent-meta">
-												{agentCount} agents &middot; {elapsed}s &middot;{" "}
-												{new Date(exec.startedAt).toLocaleString()}
-											</span>
-										</div>
-									</div>
-								);
-							})}
-						</div>
-					</div>
-				)}
-
-				{/* Templates — secondary */}
+				{/* Templates — primary */}
 				{templates.length > 0 && (
 					<div class="flows-group">
 						<h3 class="flows-group-title">Flow Templates</h3>
@@ -477,6 +433,51 @@ export function FlowsSection() {
 				{flows.length === 0 && (
 					<div class="flows-empty">
 						<p>No flows yet. Create one or wait for templates to load.</p>
+					</div>
+				)}
+
+				{/* Recent activity — last */}
+				{recentExecs.length > 0 && (
+					<div class="flows-group">
+						<h3 class="flows-group-title">Recent Executions</h3>
+						<div class="flows-recent-list">
+							{recentExecs.map((exec) => {
+								const f = flows.find((fl) => fl.id === exec.flowId);
+								const elapsed = exec.completedAt
+									? Math.round(
+											(new Date(exec.completedAt).getTime() -
+												new Date(exec.startedAt).getTime()) /
+												1000,
+										)
+									: 0;
+								const agentCount = Object.keys(exec.agentResults || {}).length;
+								return (
+									<div
+										key={exec.id}
+										class="flows-recent-item"
+										onClick={() => {
+											if (f) {
+												setSelectedFlowId(f.id);
+												setView("run");
+											}
+										}}
+									>
+										<span class={`flows-recent-status ${exec.status}`}>
+											{exec.status === "completed" ? "\u2713" : "\u2717"}
+										</span>
+										<div class="flows-recent-info">
+											<span class="flows-recent-name">
+												{f?.name || "Unknown flow"}
+											</span>
+											<span class="flows-recent-meta">
+												{agentCount} agents &middot; {elapsed}s &middot;{" "}
+												{new Date(exec.startedAt).toLocaleString()}
+											</span>
+										</div>
+									</div>
+								);
+							})}
+						</div>
 					</div>
 				)}
 			</div>
@@ -729,10 +730,12 @@ function ExecutionViewer({
 					class={`exec-log${isRunning ? " exec-log-running" : ""}`}
 					ref={outputRef}
 				>
-					{submittedInput.trim() && (
+					{(src?.initialInput || submittedInput).trim() && (
 						<div class="exec-log-entry exec-log-user">
 							<div class="exec-log-label">Your prompt</div>
-							<div class="exec-log-text">{submittedInput}</div>
+							<div class="exec-log-text">
+								{src?.initialInput || submittedInput}
+							</div>
 						</div>
 					)}
 					{src?.visitLog.map((visit, i) => {

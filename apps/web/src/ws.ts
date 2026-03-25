@@ -450,6 +450,7 @@ function openWs(wsUrl: string, protocols?: string[]): void {
 							flowId,
 							d.flowName,
 							validAgents,
+							typeof d.initialInput === "string" ? d.initialInput : undefined,
 						);
 					}
 				}
@@ -472,7 +473,6 @@ function openWs(wsUrl: string, protocols?: string[]): void {
 				) {
 					const r = d.result as Record<string, unknown>;
 					completeFlowAgent(d.executionId, d.agentId, {
-						status: typeof r.status === "string" ? r.status : "completed",
 						output: typeof r.output === "string" ? r.output : undefined,
 						startedAt:
 							typeof r.startedAt === "string" ? r.startedAt : undefined,
@@ -487,7 +487,12 @@ function openWs(wsUrl: string, protocols?: string[]): void {
 			} else if (msg.type === "flow:execution:complete" && msg.data) {
 				const d = msg.data as Record<string, unknown>;
 				if (typeof d.id === "string") {
-					completeFlowExecution(d.id, (d.status as string) || "completed");
+					const s = typeof d.status === "string" ? d.status : "completed";
+					const validStatus =
+						s === "completed" || s === "failed" || s === "cancelled"
+							? s
+							: "completed";
+					completeFlowExecution(d.id, validStatus);
 				}
 			} else if (msg.type === "flow:execution:update") {
 				// Status updates handled implicitly by agent:output/complete

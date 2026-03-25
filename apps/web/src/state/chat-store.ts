@@ -66,6 +66,7 @@ export interface ActiveFlowState {
 	conversationId: string;
 	flowId: string;
 	flowName: string;
+	initialInput?: string;
 	agents: FlowAgent[];
 	currentAgentId: string | null;
 	currentAgentIndex: number;
@@ -259,6 +260,7 @@ export function startFlowInChat(
 	flowId: string,
 	flowName: string,
 	agents: FlowAgent[],
+	initialInput?: string,
 ): void {
 	// Idempotent — don't re-initialize if already tracking this execution
 	if (activeFlowExecution.value?.executionId === executionId) return;
@@ -279,6 +281,7 @@ export function startFlowInChat(
 		conversationId,
 		flowId,
 		flowName,
+		initialInput,
 		agents,
 		currentAgentId: firstAgent?.id || null,
 		currentAgentIndex: 0,

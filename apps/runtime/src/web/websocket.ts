@@ -28,7 +28,7 @@ import {
 import { detectDockerSocketMount } from "../services/environment.js";
 import type { Socket } from "net";
 
-let clients: WebSocket[] = [];
+const clients = new Set<WebSocket>();
 
 // Track ping/pong liveness per connection (replaces `(ws as any)._isAlive`)
 const wsAlive = new WeakMap<WebSocket, boolean>();
@@ -122,10 +122,7 @@ export function setupWebSocket(): void {
 	wss = new WebSocketServer({
 		noServer: true,
 		maxPayload: 64 * 1024,
-		perMessageDeflate: {
-			zlibDeflateOptions: { level: 1 },
-			threshold: 128,
-		},
+		perMessageDeflate: false,
 		// Accept auth.* subprotocol so browser doesn't reject the connection
 		handleProtocols(protocols) {
 			for (const p of protocols) {
@@ -148,16 +145,23 @@ export function setupWebSocket(): void {
 		}
 	}, 30000);
 
-	// Application-level heartbeat for client stale detection
+	// Application-level heartbeat for client stale detection.
+	// Sent directly to each client (not via broadcast()) so heartbeats
+	// are never silently dropped by the backpressure check in broadcast().
+	const heartbeatPayload = JSON.stringify({ type: "heartbeat" });
 	const heartbeatInterval = setInterval(() => {
-		broadcast({ type: "heartbeat" });
+		for (const ws of clients) {
+			if (ws.readyState === WebSocket.OPEN) {
+				ws.send(heartbeatPayload);
+			}
+		}
 	}, 25000);
 
 	// Monitor Claude auth state — detect token expiry between explicit status broadcasts.
 	// When auth is broken, also call syncCredentialsAfterCLI() to catch in-terminal re-login.
 	let lastAuthState: boolean | null = null;
 	const authMonitorInterval = setInterval(() => {
-		if (clients.length === 0) return;
+		if (clients.size === 0) return;
 		if (!isClaudeAuthenticated()) {
 			syncCredentialsAfterCLI();
 		}
@@ -236,13 +240,13 @@ export function setupWebSocket(): void {
 			}
 		}
 
-		(ws as any)._isAlive = true;
+		wsAlive.set(ws, true);
 		ws.on("pong", () => {
-			(ws as any)._isAlive = true;
+			wsAlive.set(ws, true);
 		});
 
 		console.log("[WS] Client connected");
-		clients.push(ws);
+		clients.add(ws);
 		setWsClients(clients);
 
 		// Initial state + logs + sessions
@@ -278,7 +282,7 @@ export function setupWebSocket(): void {
 
 		ws.on("close", () => {
 			console.log("[WS] Client disconnected");
-			clients = clients.filter((c) => c !== ws);
+			clients.delete(ws);
 			setWsClients(clients);
 
 			for (const [sessionId, clientSet] of sessionClients) {
@@ -533,16 +537,24 @@ function handleConsoleMessage(
 						client.send(payload, (err) => {
 							if (err)
 								console.warn("[WS] Send error for session", sid, err.message);
-							// Resume only when ALL clients are below low water mark
+							// Resume only when ALL clients are below low water mark.
+							// Use live sessionClients set (not stale clientSnapshot) so
+							// disconnected/new clients are correctly accounted for.
 							if (sessionPtyPaused.get(sid)) {
-								const allDrained = clientSnapshot.every(
-									(c) =>
-										c.readyState !== WebSocket.OPEN ||
-										c.bufferedAmount < LOW_WATER,
-								);
-								if (allDrained) {
+								const liveClients = sessionClients.get(sid);
+								if (!liveClients || liveClients.size === 0) {
 									sessionPtyPaused.set(sid, false);
 									session.pty.resume();
+								} else {
+									const allDrained = [...liveClients].every(
+										(c) =>
+											c.readyState !== WebSocket.OPEN ||
+											c.bufferedAmount < LOW_WATER,
+									);
+									if (allDrained) {
+										sessionPtyPaused.set(sid, false);
+										session.pty.resume();
+									}
 								}
 							}
 						});

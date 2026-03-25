@@ -238,9 +238,9 @@ function openWs(wsUrl: string, protocols?: string[]): void {
 			if (
 				ws &&
 				ws.readyState === WebSocket.OPEN &&
-				Date.now() - lastMessageAt > 45000
+				Date.now() - lastMessageAt > 60000
 			) {
-				console.warn("[WS] Connection stale (no data in 45s), reconnecting");
+				console.warn("[WS] Connection stale (no data in 60s), reconnecting");
 				ws.close();
 			}
 		}, 10000);

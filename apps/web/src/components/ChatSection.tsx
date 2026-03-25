@@ -2,7 +2,6 @@ import { useState, useRef, useEffect } from "preact/hooks";
 import {
 	chatMessages,
 	chatStreaming,
-	activeChatId,
 	addUserMessage,
 	addAssistantMessage,
 	clearChat,
@@ -43,13 +42,7 @@ function ConversationSidebar({
 	}, [editingId]);
 
 	function handleNewChat() {
-		if (activeChatId.value) {
-			apiFetch("/api/chat/cancel", {
-				method: "POST",
-				body: JSON.stringify({ chatId: activeChatId.value }),
-			}).catch(() => {});
-		}
-		clearChat();
+		clearChat(apiFetch);
 		onToggle(); // collapse sidebar after action
 	}
 
@@ -446,7 +439,7 @@ export function ChatSection() {
 								ref={fileInputRef}
 								type="file"
 								multiple
-								accept=".txt,.md,.csv,.json,.xml,.html,.css,.js,.ts,.py,.sh,.yml,.yaml,.toml,.ini,.cfg,.log,.pdf,.doc,.docx"
+								accept=".txt,.md,.csv,.json,.xml,.html,.css,.js,.ts,.py,.sh,.yml,.yaml,.toml,.ini,.cfg,.log,.jsx,.tsx,.rs,.go,.java,.rb,.php,.sql,.env,.gitignore"
 								style="display:none"
 								onChange={handleFileSelect}
 							/>
@@ -547,13 +540,7 @@ export function ChatSection() {
 					<button
 						class="chat-new-btn"
 						onClick={() => {
-							if (activeChatId.value) {
-								apiFetch("/api/chat/cancel", {
-									method: "POST",
-									body: JSON.stringify({ chatId: activeChatId.value }),
-								}).catch(() => {});
-							}
-							clearChat();
+							clearChat(apiFetch);
 						}}
 					>
 						+ New Chat
@@ -600,7 +587,10 @@ export function ChatSection() {
 				{attachments.length > 0 && (
 					<div class="chat-attachments">
 						{attachments.map((f, i) => (
-							<span key={i} class="chat-attachment-pill">
+							<span
+								key={`${f.name}-${f.size}-${f.lastModified}`}
+								class="chat-attachment-pill"
+							>
 								{f.name}
 								<button
 									class="chat-attachment-remove"
@@ -617,7 +607,7 @@ export function ChatSection() {
 						ref={fileInputRef}
 						type="file"
 						multiple
-						accept=".txt,.md,.csv,.json,.xml,.html,.css,.js,.ts,.py,.sh,.yml,.yaml,.toml,.ini,.cfg,.log,.pdf,.doc,.docx"
+						accept=".txt,.md,.csv,.json,.xml,.html,.css,.js,.ts,.py,.sh,.yml,.yaml,.toml,.ini,.cfg,.log,.jsx,.tsx,.rs,.go,.java,.rb,.php,.sql,.env,.gitignore"
 						style="display:none"
 						onChange={handleFileSelect}
 					/>
@@ -711,7 +701,7 @@ function FlowProgressMessage({ executionId }: { executionId?: string }) {
 				{!isComplete && <ElapsedTimer startedAt={flow.startedAt} />}
 				{isComplete && flow.startedAt && (
 					<span class="flow-progress-duration">
-						{formatDuration(Date.now() - flow.startedAt)}
+						{formatDuration((flow.completedAt || Date.now()) - flow.startedAt)}
 					</span>
 				)}
 			</div>
@@ -821,11 +811,27 @@ const CHAT_MODELS = [
 
 function ChatModelSelector() {
 	const [open, setOpen] = useState(false);
+	const containerRef = useRef<HTMLDivElement>(null);
 	const current =
 		CHAT_MODELS.find((m) => m.id === chatModel.value) || CHAT_MODELS[0];
 
+	// Close dropdown on outside click
+	useEffect(() => {
+		if (!open) return;
+		function handleClickOutside(e: MouseEvent) {
+			if (
+				containerRef.current &&
+				!containerRef.current.contains(e.target as Node)
+			) {
+				setOpen(false);
+			}
+		}
+		document.addEventListener("mousedown", handleClickOutside);
+		return () => document.removeEventListener("mousedown", handleClickOutside);
+	}, [open]);
+
 	return (
-		<div class="chat-model-selector">
+		<div class="chat-model-selector" ref={containerRef}>
 			<button class="chat-model-btn" onClick={() => setOpen(!open)}>
 				{current.label} <span class="chat-model-chevron">▾</span>
 			</button>

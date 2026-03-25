@@ -10,6 +10,7 @@ import {
 	existsSync,
 } from "fs";
 import { join } from "path";
+import { lookup } from "dns/promises";
 import { broadcast } from "../web/logger.js";
 import {
 	buildCleanEnv,
@@ -44,6 +45,64 @@ interface ChatConversation {
 
 const CONVERSATIONS_DIR = "/workspace/.codeck/chat/conversations";
 
+// Map client model names to API model IDs (module-level constant)
+const MODEL_MAP: Readonly<Record<string, string>> = {
+	haiku: "claude-haiku-4-5-20251001",
+	sonnet: "claude-sonnet-4-5-20250514",
+	opus: "claude-opus-4-0-20250115",
+};
+
+// ── SSRF protection: block requests to private/reserved IP ranges ──
+
+function isPrivateIP(ip: string): boolean {
+	// Normalize IPv6-mapped IPv4 (e.g., ::ffff:127.0.0.1 → 127.0.0.1)
+	// Lowercase early so IPv6 unique-local checks (fc/fd) work regardless of case
+	const normalized = ip.replace(/^::ffff:/i, "").toLowerCase();
+
+	// IPv4 private/reserved ranges
+	const parts = normalized.split(".").map(Number);
+	if (parts.length === 4 && parts.every((p) => p >= 0 && p <= 255)) {
+		if (parts[0] === 127) return true; // 127.0.0.0/8 loopback
+		if (parts[0] === 10) return true; // 10.0.0.0/8 private
+		if (parts[0] === 172 && parts[1] >= 16 && parts[1] <= 31) return true; // 172.16.0.0/12 private
+		if (parts[0] === 192 && parts[1] === 168) return true; // 192.168.0.0/16 private
+		if (parts[0] === 169 && parts[1] === 254) return true; // 169.254.0.0/16 link-local
+		if (parts[0] === 100 && parts[1] >= 64 && parts[1] <= 127) return true; // 100.64.0.0/10 CGNAT (RFC 6598)
+		if (parts[0] === 198 && (parts[1] === 18 || parts[1] === 19)) return true; // 198.18.0.0/15 benchmark
+		if (parts[0] >= 240) return true; // 240.0.0.0/4 reserved + 255.255.255.255 broadcast
+		if (parts[0] === 0) return true; // 0.0.0.0/8
+	}
+
+	// IPv6 loopback and link-local
+	if (normalized === "::1" || normalized === "::") return true;
+	if (normalized.startsWith("fe80:")) return true;
+	if (normalized.startsWith("fc") || normalized.startsWith("fd")) return true;
+
+	return false;
+}
+
+async function assertNotPrivateURL(urlStr: string): Promise<void> {
+	const parsed = new URL(urlStr);
+	const hostname = parsed.hostname;
+	// Reject IP literals directly
+	if (/^\d{1,3}(\.\d{1,3}){3}$/.test(hostname) || hostname.startsWith("[")) {
+		const ip = hostname.replace(/^\[|\]$/g, "");
+		if (isPrivateIP(ip)) {
+			throw new Error("Requests to private/internal IP addresses are blocked");
+		}
+	}
+	// Resolve hostname and check ALL addresses (IPv4 + IPv6) to prevent
+	// attackers from having a public A record but a private AAAA record.
+	// Note: TOCTOU/DNS-rebinding risk remains (fetch does its own resolution).
+	// Full mitigation requires a custom DNS-pinning fetch agent.
+	const results = await lookup(hostname, { all: true });
+	for (const { address } of results) {
+		if (isPrivateIP(address)) {
+			throw new Error("Requests to private/internal IP addresses are blocked");
+		}
+	}
+}
+
 function ensureConversationsDir(): void {
 	mkdirSync(CONVERSATIONS_DIR, { recursive: true });
 }
@@ -51,11 +110,17 @@ function ensureConversationsDir(): void {
 function conversationPath(id: string): string {
 	// Sanitize id to prevent path traversal
 	const safeId = id.replace(/[^a-zA-Z0-9\-]/g, "");
+	if (!safeId) throw new Error("Invalid conversation ID");
 	return join(CONVERSATIONS_DIR, `${safeId}.json`);
 }
 
 function readConversation(id: string): ChatConversation | null {
-	const filePath = conversationPath(id);
+	let filePath: string;
+	try {
+		filePath = conversationPath(id);
+	} catch {
+		return null;
+	}
 	if (!existsSync(filePath)) return null;
 	try {
 		const data = readFileSync(filePath, "utf-8");
@@ -71,6 +136,30 @@ function writeConversation(conversation: ChatConversation): void {
 	writeFileSync(filePath, JSON.stringify(conversation, null, 2), {
 		mode: 0o600,
 	});
+}
+
+// ── Per-conversation write serialization ──
+// Prevents read-modify-write race conditions on concurrent requests
+const conversationLocks = new Map<string, Promise<void>>();
+
+function withConversationLock<T>(
+	conversationId: string,
+	fn: () => Promise<T>,
+): Promise<T> {
+	const prev = conversationLocks.get(conversationId) ?? Promise.resolve();
+	const settle = prev.catch(() => {}).then(fn);
+	const tail = settle.then(
+		() => {},
+		() => {},
+	);
+	conversationLocks.set(conversationId, tail);
+	// Clean up when this is still the latest entry
+	tail.then(() => {
+		if (conversationLocks.get(conversationId) === tail) {
+			conversationLocks.delete(conversationId);
+		}
+	});
+	return settle;
 }
 
 function autoName(message: string): string {
@@ -190,9 +279,8 @@ router.post("/message", (req, res) => {
 	}
 	prompt += `User: ${message}`;
 
-	// Validate model (default to haiku for fast chat)
-	// Chat mode uses Haiku 4.5 (fast, available via OAuth token)
-	const chatModel = "claude-haiku-4-5-20251001";
+	const chatModel =
+		MODEL_MAP[typeof model === "string" ? model : ""] || MODEL_MAP.haiku;
 
 	// ── API Direct mode (with web search tool) ──
 	if (!useTools) {
@@ -457,11 +545,12 @@ router.post("/message", (req, res) => {
 						} else if (tu.name === "web_fetch" && tu.input?.url) {
 							try {
 								const urlStr = String(tu.input.url);
-								// Basic URL validation
+								// Validate protocol and block private/internal IPs (SSRF protection)
 								const parsed = new URL(urlStr);
 								if (!["http:", "https:"].includes(parsed.protocol)) {
 									result = "Only HTTP/HTTPS URLs are supported.";
 								} else {
+									await assertNotPrivateURL(urlStr);
 									broadcast({
 										type: "chat:response:chunk",
 										data: {
@@ -470,15 +559,33 @@ router.post("/message", (req, res) => {
 										},
 									});
 									fullResponse += `\n\n📄 Reading: ${urlStr.slice(0, 80)}...\n\n`;
-									const fetchRes = await fetch(urlStr, {
-										headers: {
-											"User-Agent": "Codeck/1.0 (Web Fetch)",
-											Accept: "text/html,text/plain,application/json",
-										},
-										signal: AbortSignal.timeout(15000),
-										redirect: "follow",
-									});
-									if (!fetchRes.ok) {
+									// Use redirect: "manual" to prevent SSRF bypass via
+									// redirect to private/internal IPs. Validate each hop.
+									const MAX_REDIRECTS = 3;
+									let currentUrl = urlStr;
+									let fetchRes: Response | null = null;
+									for (let hop = 0; hop <= MAX_REDIRECTS; hop++) {
+										fetchRes = await fetch(currentUrl, {
+											headers: {
+												"User-Agent": "Codeck/1.0 (Web Fetch)",
+												Accept: "text/html,text/plain,application/json",
+											},
+											signal: AbortSignal.timeout(15000),
+											redirect: "manual",
+										});
+										if (fetchRes.status >= 300 && fetchRes.status < 400) {
+											const location = fetchRes.headers.get("location");
+											if (!location) break;
+											const nextUrl = new URL(location, currentUrl).href;
+											await assertNotPrivateURL(nextUrl);
+											currentUrl = nextUrl;
+											continue;
+										}
+										break;
+									}
+									if (!fetchRes) {
+										result = "Fetch failed: no response received";
+									} else if (!fetchRes.ok) {
 										result = `HTTP ${fetchRes.status}: ${fetchRes.statusText}`;
 									} else {
 										const contentType =
@@ -519,18 +626,24 @@ router.post("/message", (req, res) => {
 					// Continue the loop — next round will process tool results
 				}
 
-				// Save to conversation
-				const freshConv = readConversation(conversation.id);
-				if (freshConv && fullResponse.trim()) {
-					freshConv.messages.push({
-						id: randomUUID(),
-						role: "assistant",
-						content: fullResponse,
-						timestamp: Date.now(),
-					});
-					freshConv.updatedAt = new Date().toISOString();
-					writeConversation(freshConv);
-				}
+				// Save to conversation (strip tool status messages from stored content)
+				const cleanResponse = fullResponse
+					.replace(/\n*🔍 Searching: [^\n]*\.\.\.\n*/g, "")
+					.replace(/\n*📄 Reading: [^\n]*\.\.\.\n*/g, "")
+					.trim();
+				await withConversationLock(conversation.id, async () => {
+					const freshConv = readConversation(conversation.id);
+					if (freshConv && cleanResponse) {
+						freshConv.messages.push({
+							id: randomUUID(),
+							role: "assistant",
+							content: cleanResponse,
+							timestamp: Date.now(),
+						});
+						freshConv.updatedAt = new Date().toISOString();
+						writeConversation(freshConv);
+					}
+				});
 
 				broadcast({
 					type: "chat:response:complete",
@@ -636,37 +749,43 @@ router.post("/message", (req, res) => {
 					// Run flow async — save result to conversation on completion
 					const workspace = process.env.WORKSPACE || "/workspace";
 					runFlow(execution, flow, workspace)
-						.then(() => {
-							const freshConv = readConversation(conversation.id);
-							if (freshConv) {
-								const finalExec = { ...execution };
-								const outputs = Object.values(finalExec.agentResults)
-									.filter((r) => r.output)
-									.map((r) => `**${r.agentId}**:\n${r.output.slice(0, 2000)}`);
-								if (outputs.length > 0) {
-									freshConv.messages.push({
-										id: randomUUID(),
-										role: "assistant",
-										content: `Flow "${flow.name}" completed.\n\n${outputs.join("\n\n---\n\n")}`,
-										timestamp: Date.now(),
-									});
+						.then(() =>
+							withConversationLock(conversation.id, async () => {
+								const freshConv = readConversation(conversation.id);
+								if (freshConv) {
+									const finalExec = { ...execution };
+									const outputs = Object.values(finalExec.agentResults)
+										.filter((r) => r.output)
+										.map(
+											(r) => `**${r.agentId}**:\n${r.output.slice(0, 2000)}`,
+										);
+									if (outputs.length > 0) {
+										freshConv.messages.push({
+											id: randomUUID(),
+											role: "assistant",
+											content: `Flow "${flow.name}" completed.\n\n${outputs.join("\n\n---\n\n")}`,
+											timestamp: Date.now(),
+										});
+									}
+									freshConv.flowStatus = "completed";
+									freshConv.updatedAt = new Date().toISOString();
+									writeConversation(freshConv);
 								}
-								freshConv.flowStatus = "completed";
-								freshConv.updatedAt = new Date().toISOString();
-								writeConversation(freshConv);
-							}
-						})
+							}),
+						)
 						.catch((err: unknown) => {
 							console.error(
 								`[Chat] Flow execution ${execution.id} failed:`,
 								(err as Error).message,
 							);
-							const freshConv = readConversation(conversation.id);
-							if (freshConv) {
-								freshConv.flowStatus = "failed";
-								freshConv.updatedAt = new Date().toISOString();
-								writeConversation(freshConv);
-							}
+							return withConversationLock(conversation.id, async () => {
+								const freshConv = readConversation(conversation.id);
+								if (freshConv) {
+									freshConv.flowStatus = "failed";
+									freshConv.updatedAt = new Date().toISOString();
+									writeConversation(freshConv);
+								}
+							});
 						});
 
 					return;
@@ -750,17 +869,24 @@ router.post("/message", (req, res) => {
 				activeChatProcesses.delete(chatId);
 
 				if (fullResponse.trim()) {
-					const freshConv = readConversation(conversation.id);
-					if (freshConv) {
-						freshConv.messages.push({
-							id: randomUUID(),
-							role: "assistant",
-							content: fullResponse,
-							timestamp: Date.now(),
-						});
-						freshConv.updatedAt = new Date().toISOString();
-						writeConversation(freshConv);
-					}
+					withConversationLock(conversation.id, async () => {
+						const freshConv = readConversation(conversation.id);
+						if (freshConv) {
+							freshConv.messages.push({
+								id: randomUUID(),
+								role: "assistant",
+								content: fullResponse,
+								timestamp: Date.now(),
+							});
+							freshConv.updatedAt = new Date().toISOString();
+							writeConversation(freshConv);
+						}
+					}).catch((err) => {
+						console.error(
+							`[Chat] Failed to save conversation ${conversation.id}:`,
+							(err as Error).message,
+						);
+					});
 				}
 
 				broadcast({

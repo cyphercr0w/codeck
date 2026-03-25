@@ -30,6 +30,9 @@ import type { Socket } from "net";
 
 let clients: WebSocket[] = [];
 
+// Track ping/pong liveness per connection (replaces `(ws as any)._isAlive`)
+const wsAlive = new WeakMap<WebSocket, boolean>();
+
 // --- Multi-client PTY session tracking ---
 // Multiple clients (e.g. PC + mobile) can attach to the same PTY session.
 // Output is broadcast to ALL attached clients; resize uses max dimensions.
@@ -135,12 +138,12 @@ export function setupWebSocket(): void {
 	// --- Server-side ping/pong keepalive ---
 	const pingInterval = setInterval(() => {
 		for (const ws of clients) {
-			if ((ws as any)._isAlive === false) {
+			if (wsAlive.get(ws) === false) {
 				console.log("[WS] Terminating stale client");
 				ws.terminate();
 				continue;
 			}
-			(ws as any)._isAlive = false;
+			wsAlive.set(ws, false);
 			ws.ping();
 		}
 	}, 30000);

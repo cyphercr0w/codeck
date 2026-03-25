@@ -430,16 +430,26 @@ function openWs(wsUrl: string, protocols?: string[]): void {
 					typeof d.flowName === "string" &&
 					Array.isArray(d.agents)
 				) {
-					startFlowInChat(
-						d.executionId,
-						d.conversationId,
-						d.flowName,
-						d.agents as Array<{
-							id: string;
-							name: string;
-							role: string;
-						}>,
+					// Validate each agent element has the required fields
+					const validAgents = (d.agents as unknown[]).filter(
+						(a): a is { id: string; name: string; role: string } => {
+							if (typeof a !== "object" || a === null) return false;
+							const obj = a as Record<string, unknown>;
+							return (
+								typeof obj.id === "string" &&
+								typeof obj.name === "string" &&
+								typeof obj.role === "string"
+							);
+						},
 					);
+					if (validAgents.length > 0) {
+						startFlowInChat(
+							d.executionId,
+							d.conversationId,
+							d.flowName,
+							validAgents,
+						);
+					}
 				}
 			} else if (msg.type === "flow:agent:output" && msg.data) {
 				const d = msg.data as Record<string, unknown>;

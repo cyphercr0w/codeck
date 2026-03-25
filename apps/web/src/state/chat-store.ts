@@ -15,7 +15,8 @@ export interface ChatMessage {
 		| "agent-active"
 		| "agent-complete"
 		| "flow-complete"
-		| "flow-failed";
+		| "flow-failed"
+		| "flow-cancelled";
 	flowAgentId?: string;
 	flowAgentName?: string;
 	flowExecutionId?: string;
@@ -157,7 +158,26 @@ export function completeAssistant(
 	activeChatId.value = null;
 }
 
-export function clearChat(): void {
+export function clearChat(apiFetchFn?: ApiFetchFn): void {
+	// Cancel any active streaming or flow execution before clearing
+	const currentChatId = activeChatId.value;
+	const flow = activeFlowExecution.value;
+	const cancelBody: Record<string, string> = {};
+	if (currentChatId) cancelBody.chatId = currentChatId;
+	if (flow && flow.status === "running")
+		cancelBody.executionId = flow.executionId;
+	if (Object.keys(cancelBody).length > 0) {
+		const fetchFn = apiFetchFn || fetch;
+		fetchFn("/api/chat/cancel", {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify(cancelBody),
+		}).catch(() => {});
+	}
+	// Archive active flow before clearing (preserves final state for UI)
+	if (flow) {
+		completeFlowExecution(flow.executionId, "cancelled");
+	}
 	chatMessages.value = [];
 	chatStreaming.value = false;
 	activeChatId.value = null;
@@ -169,10 +189,12 @@ export async function fetchConversations(
 ): Promise<void> {
 	try {
 		const res = await apiFetchFn("/api/chat/conversations");
-		const data = await res.json();
+		const data = (await res.json()) as {
+			conversations?: ChatConversation[];
+		};
 		conversations.value = data.conversations || [];
-	} catch {
-		/* non-fatal */
+	} catch (err) {
+		console.warn("[chat-store] fetchConversations failed:", err);
 	}
 }
 
@@ -182,13 +204,15 @@ export async function loadConversation(
 ): Promise<void> {
 	try {
 		const res = await apiFetchFn(`/api/chat/conversations/${id}`);
-		const data = await res.json();
+		const data = (await res.json()) as {
+			messages?: ChatMessage[];
+		};
 		if (data.messages) {
 			chatMessages.value = data.messages;
 			activeConversationId.value = id;
 		}
-	} catch {
-		/* non-fatal */
+	} catch (err) {
+		console.warn("[chat-store] loadConversation failed:", err);
 	}
 }
 
@@ -205,8 +229,8 @@ export async function renameConversation(
 		conversations.value = conversations.value.map((c) =>
 			c.id === id ? { ...c, name } : c,
 		);
-	} catch {
-		/* non-fatal */
+	} catch (err) {
+		console.warn("[chat-store] renameConversation failed:", err);
 	}
 }
 
@@ -216,12 +240,13 @@ export async function deleteConversation(
 ): Promise<void> {
 	try {
 		await apiFetchFn(`/api/chat/conversations/${id}`, { method: "DELETE" });
-		conversations.value = conversations.value.filter((c) => c.id !== id);
-		if (activeConversationId.value === id) {
-			clearChat();
-		}
-	} catch {
-		/* non-fatal */
+	} catch (err) {
+		console.warn("[chat-store] deleteConversation failed:", err);
+		return;
+	}
+	conversations.value = conversations.value.filter((c) => c.id !== id);
+	if (activeConversationId.value === id) {
+		clearChat(apiFetchFn);
 	}
 }
 
@@ -290,10 +315,11 @@ export function appendFlowAgentOutput(
 
 	// Detect loops: agent already completed before and is running again
 	let loopCount = flow.loopCount;
-	const durations = { ...flow.agentDurations };
+	let durations = { ...flow.agentDurations };
 	if (flow.currentAgentId !== agentId && durations[agentId] != null) {
 		loopCount++;
-		delete durations[agentId];
+		const { [agentId]: _, ...withoutAgent } = durations;
+		durations = withoutAgent;
 		starts[agentId] = Date.now();
 	}
 
@@ -343,7 +369,6 @@ export function completeFlowAgent(
 	executionId: string,
 	agentId: string,
 	result: {
-		status: string;
 		output?: string;
 		startedAt?: string;
 		completedAt?: string | null;
@@ -389,19 +414,14 @@ export function completeFlowAgent(
 
 export function completeFlowExecution(
 	executionId: string,
-	status: string,
+	status: "completed" | "failed" | "cancelled",
 ): void {
 	const flow = activeFlowExecution.value;
 	if (!flow || flow.executionId !== executionId) return;
 
-	const finalStatus =
-		status === "completed" || status === "failed" || status === "cancelled"
-			? status
-			: "completed";
-
 	const finalFlow: ActiveFlowState = {
 		...flow,
-		status: finalStatus as "completed" | "failed" | "cancelled",
+		status,
 		currentAgentId: null,
 		completedAt: Date.now(),
 	};
@@ -423,20 +443,26 @@ export function completeFlowExecution(
 	chatMessages.value = chatMessages.value.map((m) => {
 		if (m.flowType === "flow-start" && m.flowExecutionId === executionId) {
 			const flowType =
-				finalStatus === "completed"
+				status === "completed"
 					? ("flow-complete" as const)
-					: ("flow-failed" as const);
+					: status === "cancelled"
+						? ("flow-cancelled" as const)
+						: ("flow-failed" as const);
 			return {
 				...m,
 				streaming: false,
 				flowType,
-				content: finalStatus === "cancelled" ? "Flow cancelled" : m.content,
+				content: status === "cancelled" ? "Flow cancelled" : m.content,
 				durationMs: Date.now() - (m.streamStartedAt || Date.now()),
 			};
 		}
 		return m;
 	});
 
-	chatStreaming.value = false;
+	// Only clear streaming if no other message is still streaming
+	const stillStreaming = chatMessages.value.some(
+		(m) => m.streaming && m.flowExecutionId !== executionId,
+	);
+	if (!stillStreaming) chatStreaming.value = false;
 	activeFlowExecution.value = null;
 }

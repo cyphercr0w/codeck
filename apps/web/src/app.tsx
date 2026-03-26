@@ -29,6 +29,7 @@ import {
 	showToast,
 	type View,
 	type Section,
+	previewSplit,
 } from "./state/store";
 import { apiFetch, getAuthToken, clearAuthToken } from "./api";
 import { connectWebSocket, disconnectWebSocket } from "./ws";
@@ -719,34 +720,45 @@ export function App() {
 						)}
 						{section === "chat" && <ChatSection />}
 						{section === "filesystem" && <FilesSection />}
-						{/* ClaudeSection is always mounted — never unmount it.
-                Unmounting destroys xterm instances (expensive WebGL teardown + init on remount,
-                causes 5-10s input freeze) and loses the attach state (black terminal on return).
-                CSS display:none/contents hides/shows it without touching the DOM tree. */}
+						{/* ClaudeSection + PreviewPanel always mounted.
+                Split layout: terminal left, preview right when active.
+                CSS display:none/contents toggles visibility without unmounting. */}
 						<div
 							style={
 								section !== "claude"
 									? { display: "none" }
-									: { display: "contents" }
+									: { display: "flex", flex: 1, minHeight: 0 }
 							}
 						>
-							<ClaudeSection
-								onNewSession={handleNewSession}
-								onNewShell={handleNewShell}
-							/>
+							<div
+								style={{
+									flex: 1,
+									minWidth: 0,
+									display: "flex",
+									flexDirection: "column",
+								}}
+							>
+								<ClaudeSection
+									onNewSession={handleNewSession}
+									onNewShell={handleNewShell}
+								/>
+							</div>
+							{previewSplit.value && (
+								<div
+									style={{
+										width: "45%",
+										minWidth: 300,
+										borderLeft: "1px solid var(--border)",
+										display: "flex",
+										flexDirection: "column",
+									}}
+								>
+									<PreviewPanel />
+								</div>
+							)}
 						</div>
 
 						{section === "flows" && <FlowsSection />}
-						{/* PreviewPanel always mounted — iframe survives section switches */}
-						<div
-							style={
-								section !== "preview"
-									? { display: "none" }
-									: { display: "contents" }
-							}
-						>
-							<PreviewPanel />
-						</div>
 						{section === "agents" && <AgentsSection />}
 						{section === "integrations" && <IntegrationsSection />}
 						{section === "config" && <AgentConfigSection />}

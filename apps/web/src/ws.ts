@@ -18,6 +18,9 @@ import {
 	syncSubagentsFromServer,
 	fetchRecentConversations,
 	pendingRestoredSessions,
+	previewPort,
+	previewUrl,
+	previewSplit,
 } from "./state/store";
 import {
 	appendToAssistant,
@@ -435,6 +438,14 @@ function openWs(wsUrl: string, protocols?: string[]): void {
 					(msg.data as any).duration,
 					(msg.data as any).lastMessage,
 				);
+			} else if (msg.type === "preview:navigate" && msg.data) {
+				// Agent requested a preview — open it in the split view
+				const { port, url } = msg.data as { port?: number; url?: string };
+				if (port) {
+					previewPort.value = port;
+					previewUrl.value = url || `localhost:${port}`;
+					previewSplit.value = true;
+				}
 			} else if (msg.type === "preview:frame" && msg.data) {
 				onPreviewFrame?.(
 					msg.data as string,

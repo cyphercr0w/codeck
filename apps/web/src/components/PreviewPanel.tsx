@@ -8,7 +8,7 @@
  * For self-hosted without wildcard DNS, falls back to dedicated-port proxy.
  */
 import { useState, useRef } from "preact/hooks";
-import { previewPort } from "../state/store";
+import { previewPort, previewUrl, previewSplit } from "../state/store";
 import { IconRefresh, IconX, IconPlay } from "./Icons";
 
 /** Build the iframe URL via subdomain or path-based fallback. */
@@ -31,10 +31,14 @@ function buildPreviewUrl(port: number): string {
 }
 
 export function PreviewPanel() {
-	const [inputUrl, setInputUrl] = useState("localhost:3000");
+	const inputUrl = previewUrl.value;
+	const setInputUrl = (v: string) => {
+		previewUrl.value = v;
+	};
 	const activePort = previewPort.value;
 	const setActivePort = (port: number | null) => {
 		previewPort.value = port;
+		previewSplit.value = port !== null;
 	};
 	const [loading, setLoading] = useState(false);
 	const [iframeReady, setIframeReady] = useState(false);

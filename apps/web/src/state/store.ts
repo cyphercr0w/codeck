@@ -469,8 +469,26 @@ export interface SubagentInfo {
 
 export const activeSubagents = signal<SubagentInfo[]>([]);
 
-// ── Preview state (persists across section changes) ──
-export const previewPort = signal<number | null>(null);
+// ── Preview state — persisted in sessionStorage across F5 ──
+const _savedPort = sessionStorage.getItem("codeck:previewPort");
+export const previewPort = signal<number | null>(
+	_savedPort ? parseInt(_savedPort, 10) : null,
+);
+const _savedUrl = sessionStorage.getItem("codeck:previewUrl");
+export const previewUrl = signal<string>(_savedUrl || "localhost:3000");
+export const previewSplit = signal<boolean>(_savedPort !== null);
+
+// Auto-persist preview state
+previewPort.subscribe((p) => {
+	if (p !== null) {
+		sessionStorage.setItem("codeck:previewPort", String(p));
+	} else {
+		sessionStorage.removeItem("codeck:previewPort");
+	}
+});
+previewUrl.subscribe((u) => {
+	sessionStorage.setItem("codeck:previewUrl", u);
+});
 
 const SUBAGENT_EXPIRE_MS = 10 * 60 * 1000; // 10 min auto-expire
 let subagentGcTimer: ReturnType<typeof setInterval> | null = null;

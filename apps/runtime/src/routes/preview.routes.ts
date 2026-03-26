@@ -3,6 +3,7 @@
  * handle input injection from the frontend canvas.
  */
 import { Router } from "express";
+import { broadcast } from "../web/logger.js";
 import {
 	startPreview,
 	navigatePreview,
@@ -161,7 +162,27 @@ router.post(
 	}),
 );
 
-// ── Dedicated-port proxy (iframe preview) ───────────────────────────
+// ── Agent-controlled preview ─────────────────────────────────────────
+
+// Agent opens a preview for the user (broadcast via WebSocket)
+router.post("/navigate-to", (req, res) => {
+	const { port, url } = req.body || {};
+	if (
+		typeof port !== "number" ||
+		!Number.isFinite(port) ||
+		port < 1 ||
+		port > 65535
+	) {
+		res.status(400).json({ error: "port must be a valid number" });
+		return;
+	}
+	// Broadcast to all connected clients — frontend will open the preview
+	broadcast({
+		type: "preview:navigate",
+		data: { port, url: url || `localhost:${port}` },
+	});
+	res.json({ success: true });
+});
 
 // Screenshot (for agent use)
 router.get(

@@ -6,9 +6,9 @@ export function buildPreviewUrl(port: number): string {
 	if (/^\d+\.\d+\.\d+\.\d+$/.test(hostname)) {
 		return `/preview-proxy/${port}/`;
 	}
-	// localhost: preview-{port}.localhost (Chrome/Firefox resolve *.localhost)
+	// localhost: {port}.localhost (Chrome/Firefox resolve *.localhost via RFC 6761)
 	if (hostname === "localhost") {
-		return `${protocol}//preview-${port}.${hostname}${portSuffix}/`;
+		return `${protocol}//${port}.${hostname}${portSuffix}/`;
 	}
 	// Production: p{port}.{baseDomain} — strip leading subdomain
 	// dev.codeck.xyz → p4321.codeck.xyz (single-level, covered by Universal SSL)

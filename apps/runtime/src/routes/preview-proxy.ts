@@ -100,10 +100,11 @@ function writeWsUpgrade(
 function extractSubdomainPort(host: string | undefined): number | null {
 	if (!host) return null;
 	const hostname = host.split(":")[0];
-	// Match both formats:
+	// Match all formats:
+	// - 5173.localhost (shortest — just the port number)
 	// - p4321.codeck.xyz (single-level, covered by free Cloudflare SSL)
-	// - preview-4321.localhost (development)
-	const match = hostname.match(/^(?:p|preview-)(\d{1,5})\./);
+	// - preview-4321.localhost (development, legacy)
+	const match = hostname.match(/^(?:p|preview-)?(\d{1,5})\./);
 	if (!match) return null;
 	const port = parseInt(match[1], 10);
 	return validatePort(port) ? port : null;

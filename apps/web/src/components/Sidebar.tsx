@@ -107,7 +107,6 @@ const SECTION_ICONS: Record<Section, () => preact.JSX.Element> = {
 	filesystem: () => <IconFolder size={18} />,
 	claude: () => <IconTerminal size={18} />,
 	flows: () => <IconFlow size={18} />,
-	preview: () => <IconMonitor size={18} />,
 	agents: () => <IconBot size={18} />,
 	integrations: () => <IconPlug size={18} />,
 	config: () => <IconBrain size={18} />,

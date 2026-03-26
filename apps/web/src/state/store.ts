@@ -51,7 +51,6 @@ export type Section =
 	| "filesystem"
 	| "claude"
 	| "flows"
-	| "preview"
 	| "agents"
 	| "integrations"
 	| "config"
@@ -470,13 +469,29 @@ export interface SubagentInfo {
 export const activeSubagents = signal<SubagentInfo[]>([]);
 
 // ── Preview state — persisted in sessionStorage across F5 ──
+export type PreviewMode = "hidden" | "split" | "full-preview" | "full-terminal";
+
 const _savedPort = sessionStorage.getItem("codeck:previewPort");
+const _savedUrl = sessionStorage.getItem("codeck:previewUrl");
+const _savedMode = sessionStorage.getItem(
+	"codeck:previewMode",
+) as PreviewMode | null;
+
 export const previewPort = signal<number | null>(
 	_savedPort ? parseInt(_savedPort, 10) : null,
 );
-const _savedUrl = sessionStorage.getItem("codeck:previewUrl");
 export const previewUrl = signal<string>(_savedUrl || "localhost:3000");
-export const previewSplit = signal<boolean>(_savedPort !== null);
+export const previewMode = signal<PreviewMode>(
+	_savedMode || (_savedPort ? "split" : "hidden"),
+);
+// Compat: derived from previewMode
+export const previewSplit = signal<boolean>(
+	_savedMode
+		? _savedMode === "split" || _savedMode === "full-preview"
+		: _savedPort !== null,
+);
+// Mobile preview overlay
+export const mobilePreviewOpen = signal(false);
 
 // Auto-persist preview state
 previewPort.subscribe((p) => {
@@ -489,6 +504,18 @@ previewPort.subscribe((p) => {
 previewUrl.subscribe((u) => {
 	sessionStorage.setItem("codeck:previewUrl", u);
 });
+previewMode.subscribe((m) => {
+	sessionStorage.setItem("codeck:previewMode", m);
+	previewSplit.value = m === "split" || m === "full-preview";
+});
+
+export function togglePreview(): void {
+	if (previewMode.value === "hidden") {
+		previewMode.value = "split";
+	} else {
+		previewMode.value = "hidden";
+	}
+}
 
 const SUBAGENT_EXPIRE_MS = 10 * 60 * 1000; // 10 min auto-expire
 let subagentGcTimer: ReturnType<typeof setInterval> | null = null;

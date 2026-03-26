@@ -6,7 +6,6 @@ const SECTION_ROUTES: Record<Section, string> = {
 	filesystem: "/files",
 	claude: "/terminal",
 	flows: "/flows",
-	preview: "/preview",
 	agents: "/agents",
 	integrations: "/integrations",
 	config: "/memory",

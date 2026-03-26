@@ -28,6 +28,7 @@ import {
 	mobilePreviewOpen,
 } from "../state/store";
 import { PreviewPanel } from "./PreviewPanel";
+import { MobilePreviewSheet } from "./MobilePreviewSheet";
 import { apiFetch } from "../api";
 import {
 	createTerminal,
@@ -584,6 +585,19 @@ export function ClaudeSection({
 		}
 	}
 
+	// Refit terminal when preview mode changes (container width changes)
+	useEffect(() => {
+		return previewMode.subscribe(() => {
+			const id = activeSessionId.value;
+			if (id && getTerminal(id)) {
+				setTimeout(() => {
+					fitTerminal(id);
+					repaintTerminal(id);
+				}, 200);
+			}
+		});
+	}, []);
+
 	const mobile = isMobile.value;
 	const pMode = previewMode.value;
 	const showPreviewSplit =
@@ -915,6 +929,7 @@ export function ClaudeSection({
 					<PreviewPanel />
 				</div>
 			)}
+			{mobile && <MobilePreviewSheet />}
 		</div>
 	);
 }

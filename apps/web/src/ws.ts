@@ -20,7 +20,10 @@ import {
 	pendingRestoredSessions,
 	previewPort,
 	previewUrl,
-	previewSplit,
+	previewMode,
+	mobilePreviewOpen,
+	isMobile,
+	showToast,
 } from "./state/store";
 import {
 	appendToAssistant,
@@ -439,12 +442,17 @@ function openWs(wsUrl: string, protocols?: string[]): void {
 					(msg.data as any).lastMessage,
 				);
 			} else if (msg.type === "preview:navigate" && msg.data) {
-				// Agent requested a preview — open it in the split view
+				// Agent requested a preview — open it
 				const { port, url } = msg.data as { port?: number; url?: string };
 				if (port) {
 					previewPort.value = port;
 					previewUrl.value = url || `localhost:${port}`;
-					previewSplit.value = true;
+					if (isMobile.value) {
+						mobilePreviewOpen.value = false; // show indicator, user taps to expand
+					} else {
+						previewMode.value = "split";
+					}
+					showToast(`Preview opened on port ${port}`, "info", 3000);
 				}
 			} else if (msg.type === "preview:frame" && msg.data) {
 				onPreviewFrame?.(

@@ -902,7 +902,19 @@ export function ClaudeSection({
 							}}
 							title="Split view"
 						>
-							&#9636;
+							<svg
+								width="14"
+								height="14"
+								viewBox="0 0 24 24"
+								fill="none"
+								stroke="currentColor"
+								stroke-width="1.5"
+								stroke-linecap="round"
+								stroke-linejoin="round"
+							>
+								<rect x="3" y="3" width="18" height="18" rx="2" />
+								<line x1="12" y1="3" x2="12" y2="21" />
+							</svg>
 						</button>
 						<button
 							class={`preview-mode-btn${pMode === "full-preview" ? " active" : ""}`}
@@ -911,7 +923,21 @@ export function ClaudeSection({
 							}}
 							title="Full preview"
 						>
-							&#9634;
+							<svg
+								width="14"
+								height="14"
+								viewBox="0 0 24 24"
+								fill="none"
+								stroke="currentColor"
+								stroke-width="1.5"
+								stroke-linecap="round"
+								stroke-linejoin="round"
+							>
+								<polyline points="15 3 21 3 21 9" />
+								<polyline points="9 21 3 21 3 15" />
+								<line x1="21" y1="3" x2="14" y2="10" />
+								<line x1="3" y1="21" x2="10" y2="14" />
+							</svg>
 						</button>
 						<button
 							class="preview-mode-btn"

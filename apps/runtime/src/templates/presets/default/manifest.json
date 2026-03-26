@@ -28,8 +28,8 @@
 			"skipIfExists": true
 		},
 		{
-			"src": "skills/sandbox.md",
-			"dest": "/workspace/.codeck/skills/sandbox.md"
+			"src": "skills/codeck.md",
+			"dest": "/workspace/.codeck/skills/codeck.md"
 		},
 		{
 			"src": "skills/docker.md",

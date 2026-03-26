@@ -601,10 +601,7 @@ export function ClaudeSection({
 	const mobile = isMobile.value;
 	const pMode = previewMode.value;
 	const showPreviewSplit =
-		!mobile &&
-		pMode !== "hidden" &&
-		pMode !== "full-terminal" &&
-		previewPort.value !== null;
+		!mobile && pMode !== "hidden" && pMode !== "full-terminal";
 
 	return (
 		<div class="content-section terminal-preview-layout">

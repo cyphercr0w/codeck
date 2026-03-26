@@ -58,6 +58,7 @@ const KNOWN_MSG_TYPES = new Set([
 	"subagent:start",
 	"subagent:output",
 	"subagent:stop",
+	"preview:navigate",
 	"preview:frame",
 	"preview:error",
 	"session:conversationId",

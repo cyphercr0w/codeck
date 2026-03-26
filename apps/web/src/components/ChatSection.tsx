@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from "preact/hooks";
+import { useState, useRef, useEffect, useMemo } from "preact/hooks";
 import {
 	chatMessages,
 	chatStreaming,
@@ -19,6 +19,14 @@ import {
 } from "../state/chat-store";
 import { showToast } from "../state/store";
 import { apiFetch } from "../api";
+import { marked } from "marked";
+import DOMPurify from "dompurify";
+
+// Configure marked for security and GFM support
+marked.setOptions({
+	breaks: true,
+	gfm: true,
+});
 
 function ConversationSidebar({
 	collapsed,
@@ -563,18 +571,26 @@ export function ChatSection() {
 						}
 						return (
 							<div key={m.id} class={`chat-msg chat-msg-${m.role}`}>
-								<div class="chat-msg-content">
-									{m.streaming && !m.content && (
-										<span class="chat-thinking">
-											<span class="spinner-sm" />
-											<ElapsedTimer startedAt={m.streamStartedAt} />
-										</span>
-									)}
-									{m.content}
-									{m.streaming && m.content && (
-										<span class="chat-cursor">{"\u2588"}</span>
-									)}
-								</div>
+								{m.role === "assistant" && m.content ? (
+									<MarkdownContent
+										content={m.content}
+										streaming={m.streaming}
+										streamStartedAt={m.streamStartedAt}
+									/>
+								) : (
+									<div class="chat-msg-content">
+										{m.streaming && !m.content && (
+											<span class="chat-thinking">
+												<span class="spinner-sm" />
+												<ElapsedTimer startedAt={m.streamStartedAt} />
+											</span>
+										)}
+										{m.content}
+										{m.streaming && m.content && (
+											<span class="chat-cursor">{"\u2588"}</span>
+										)}
+									</div>
+								)}
 								{!m.streaming && m.durationMs != null && (
 									<div class="chat-msg-meta">
 										{formatDuration(m.durationMs)}
@@ -664,6 +680,39 @@ export function ChatSection() {
 					<ChatModelSelector />
 				</div>
 			</div>
+		</div>
+	);
+}
+
+// ── Markdown rendering for assistant messages ──
+function MarkdownContent({
+	content,
+	streaming,
+	streamStartedAt,
+}: {
+	content: string;
+	streaming?: boolean;
+	streamStartedAt?: number;
+}) {
+	// Parse markdown and sanitize with DOMPurify to prevent XSS
+	const html = useMemo(() => {
+		const raw = marked.parse(content);
+		// marked.parse can return string | Promise<string>; we only use sync mode
+		if (typeof raw !== "string") return "";
+		return DOMPurify.sanitize(raw);
+	}, [content]);
+
+	return (
+		<div class="chat-msg-content markdown-body">
+			{streaming && !content && (
+				<span class="chat-thinking">
+					<span class="spinner-sm" />
+					<ElapsedTimer startedAt={streamStartedAt} />
+				</span>
+			)}
+			{/* Content is sanitized via DOMPurify.sanitize() above */}
+			<div dangerouslySetInnerHTML={{ __html: html }} />
+			{streaming && content && <span class="chat-cursor">{"\u2588"}</span>}
 		</div>
 	);
 }

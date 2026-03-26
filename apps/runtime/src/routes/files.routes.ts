@@ -14,6 +14,7 @@ import {
 import { existsSync } from "fs";
 import { join, resolve, sep } from "path";
 import { broadcastStatus } from "../web/websocket.js";
+import { asyncHandler } from "../utils/async-handler.js";
 
 // Resolve WORKSPACE to absolute path at startup for consistent path traversal checks
 const WORKSPACE = resolve(process.env.WORKSPACE || "/workspace");
@@ -112,8 +113,23 @@ async function safePath(
 	return resolved;
 }
 
+// Blocklist: sensitive files that must never be read or written via the API
+const SENSITIVE_PATTERNS = [
+	/\/\.codeck\/auth\.json$/,
+	/\/\.codeck\/sessions\.json$/,
+	/\/\.codeck\/\.env$/,
+	/\/\.codeck\/\.env\.encrypted$/,
+	/\/\.codeck\/\.encryption-key$/,
+	/\/\.git-credentials$/,
+	/\/\.codeck\/state\//,
+];
+
+function isSensitivePath(filePath: string): boolean {
+	return SENSITIVE_PATTERNS.some((pattern) => pattern.test(filePath));
+}
+
 // List directory files
-router.get("/", async (req, res) => {
+router.get("/", asyncHandler(async (req, res) => {
 	const relativePath = (req.query.path || "") as string;
 	const typeFilter = req.query.type as string | undefined;
 	const fullPath = await safePath(WORKSPACE, relativePath);
@@ -166,10 +182,10 @@ router.get("/", async (req, res) => {
 	} catch {
 		res.status(404).json({ error: "Directory not found" });
 	}
-});
+}));
 
 // Read file content (text only, limited to 100KB)
-router.get("/read", async (req, res) => {
+router.get("/read", asyncHandler(async (req, res) => {
 	const relativePath = req.query.path as string;
 	if (!relativePath) {
 		res.status(400).json({ error: "Path required" });
@@ -179,6 +195,11 @@ router.get("/read", async (req, res) => {
 	const fullPath = await safePath(WORKSPACE, relativePath);
 
 	if (!fullPath) {
+		res.status(403).json({ error: "Access denied" });
+		return;
+	}
+
+	if (isSensitivePath(fullPath)) {
 		res.status(403).json({ error: "Access denied" });
 		return;
 	}
@@ -196,10 +217,10 @@ router.get("/read", async (req, res) => {
 	} catch {
 		res.status(404).json({ error: "File not found" });
 	}
-});
+}));
 
 // Write file content (text only, limited to 500KB)
-router.put("/write", async (req, res) => {
+router.put("/write", asyncHandler(async (req, res) => {
 	const { path: relativePath, content } = req.body;
 	if (!relativePath || typeof relativePath !== "string") {
 		res.status(400).json({ error: "Path required" });
@@ -221,6 +242,11 @@ router.put("/write", async (req, res) => {
 		return;
 	}
 
+	if (isSensitivePath(fullPath)) {
+		res.status(403).json({ error: "Access denied" });
+		return;
+	}
+
 	try {
 		// Write directly — handle ENOENT to report missing parent directory
 		await writeFile(fullPath, content, "utf-8");
@@ -233,10 +259,10 @@ router.put("/write", async (req, res) => {
 			res.status(500).json({ error: "Error writing file" });
 		}
 	}
-});
+}));
 
 // Create directory
-router.post("/mkdir", async (req, res) => {
+router.post("/mkdir", asyncHandler(async (req, res) => {
 	const { name } = req.body;
 	if (!name || typeof name !== "string") {
 		res.status(400).json({ error: "name required" });
@@ -278,10 +304,10 @@ router.post("/mkdir", async (req, res) => {
 			res.status(500).json({ error: "Error creating directory" });
 		}
 	}
-});
+}));
 
 // Delete file or directory
-router.delete("/delete", async (req, res) => {
+router.delete("/delete", asyncHandler(async (req, res) => {
 	const { path: relativePath, force } = req.body;
 	if (!relativePath || typeof relativePath !== "string") {
 		res.status(400).json({ error: "Path required" });
@@ -324,10 +350,10 @@ router.delete("/delete", async (req, res) => {
 			res.status(500).json({ error: "Error deleting file" });
 		}
 	}
-});
+}));
 
 // Rename/move file or directory
-router.post("/rename", async (req, res) => {
+router.post("/rename", asyncHandler(async (req, res) => {
 	const { oldPath, newPath } = req.body;
 	if (!oldPath || typeof oldPath !== "string") {
 		res.status(400).json({ error: "oldPath required" });
@@ -364,11 +390,11 @@ router.post("/rename", async (req, res) => {
 			res.status(500).json({ error: "Error renaming file" });
 		}
 	}
-});
+}));
 
 // Upload image — accepts base64-encoded image data, saves to .codeck/uploads/,
 // returns the absolute path for injection into Claude Code's stdin.
-router.post("/upload-image", async (req, res) => {
+router.post("/upload-image", asyncHandler(async (req, res) => {
 	const { data, mimeType, fileName } = req.body;
 
 	if (!data || typeof data !== "string") {
@@ -427,7 +453,7 @@ router.post("/upload-image", async (req, res) => {
 		console.error("[Files] Image upload failed:", (e as Error).message);
 		res.status(500).json({ error: "Failed to save image" });
 	}
-});
+}));
 
 // Generalized upload — images, videos, text, documents, any file
 const MAX_UPLOAD_BYTES = 10 * 1024 * 1024; // 10 MB universal limit
@@ -486,7 +512,7 @@ const UPLOAD_TYPES: Record<
 	},
 };
 
-router.post("/upload", async (req, res) => {
+router.post("/upload", asyncHandler(async (req, res) => {
 	const { data, mimeType, fileName, type } = req.body;
 
 	if (!data || typeof data !== "string") {
@@ -580,6 +606,6 @@ router.post("/upload", async (req, res) => {
 		console.error("[Files] Upload failed:", (e as Error).message);
 		res.status(500).json({ error: "Failed to save file" });
 	}
-});
+}));
 
 export default router;

@@ -1,47 +1,68 @@
-import { existsSync, readFileSync, writeFileSync, mkdirSync, readdirSync, statSync, renameSync, unlinkSync } from 'fs';
-import { readdir as readdirAsync, stat as statAsync, unlink as unlinkAsync } from 'fs/promises';
-import { join, resolve, dirname } from 'path';
-import { createHash, randomBytes } from 'crypto';
-import { sanitizeSecrets } from './session-writer.js';
+import {
+	existsSync,
+	readFileSync,
+	writeFileSync,
+	mkdirSync,
+	readdirSync,
+	statSync,
+	renameSync,
+	unlinkSync,
+} from "fs";
+import {
+	readdir as readdirAsync,
+	stat as statAsync,
+	unlink as unlinkAsync,
+} from "fs/promises";
+import { join, resolve, dirname } from "path";
+import { createHash, randomBytes } from "crypto";
+import { sanitizeSecrets } from "./session-writer.js";
 
 // ── Atomic write helper ──
 // Writes to a temp file in the same directory, then renames atomically.
 // Prevents corruption from crashes or disk-full mid-write.
 
-export function atomicWriteFileSync(filePath: string, data: string, options?: { mode?: number }): void {
-  const dir = dirname(filePath);
-  const tmpPath = join(dir, `.tmp-${randomBytes(6).toString('hex')}`);
-  try {
-    writeFileSync(tmpPath, data, options);
-    renameSync(tmpPath, filePath);
-  } catch (e) {
-    try { unlinkSync(tmpPath); } catch { /* ignore cleanup failure */ }
-    throw e;
-  }
+export function atomicWriteFileSync(
+	filePath: string,
+	data: string,
+	options?: { mode?: number },
+): void {
+	const dir = dirname(filePath);
+	const tmpPath = join(dir, `.tmp-${randomBytes(6).toString("hex")}`);
+	try {
+		writeFileSync(tmpPath, data, options);
+		renameSync(tmpPath, filePath);
+	} catch (e) {
+		try {
+			unlinkSync(tmpPath);
+		} catch {
+			/* ignore cleanup failure */
+		}
+		throw e;
+	}
 }
 
 // ── Canonical paths ──
 
-const WORKSPACE = resolve(process.env.WORKSPACE || '/workspace');
-const CODECK_DIR = join(WORKSPACE, '.codeck');
+const WORKSPACE = resolve(process.env.WORKSPACE || "/workspace");
+const CODECK_DIR = join(WORKSPACE, ".codeck");
 
 // Memory files (agent-accessible)
-const MEMORY_DIR = join(CODECK_DIR, 'memory');
-const DAILY_DIR = join(MEMORY_DIR, 'daily');
-const DECISIONS_DIR = join(MEMORY_DIR, 'decisions');
-const PATHS_DIR = join(MEMORY_DIR, 'paths');
-const DURABLE_PATH = join(MEMORY_DIR, 'MEMORY.md');
+const MEMORY_DIR = join(CODECK_DIR, "memory");
+const DAILY_DIR = join(MEMORY_DIR, "daily");
+const DECISIONS_DIR = join(MEMORY_DIR, "decisions");
+const PATHS_DIR = join(MEMORY_DIR, "paths");
+const DURABLE_PATH = join(MEMORY_DIR, "MEMORY.md");
 
 // Sessions (outside memory dir — raw PTY event logs)
-const SESSIONS_DIR = join(CODECK_DIR, 'sessions');
+const SESSIONS_DIR = join(CODECK_DIR, "sessions");
 
 // Index (outside memory dir — derived/ephemeral)
-const INDEX_DIR = join(CODECK_DIR, 'index');
+const INDEX_DIR = join(CODECK_DIR, "index");
 
 // State (path map, flush state)
-const STATE_DIR = join(CODECK_DIR, 'state');
-const PATHS_MAP_FILE = join(STATE_DIR, 'paths.json');
-const FLUSH_STATE_FILE = join(STATE_DIR, 'flush_state.json');
+const STATE_DIR = join(CODECK_DIR, "state");
+const PATHS_MAP_FILE = join(STATE_DIR, "paths.json");
+const FLUSH_STATE_FILE = join(STATE_DIR, "flush_state.json");
 
 // ── Async file write lock ──
 // Promise-based mutex keyed by filepath. Concurrent writers queue up
@@ -53,241 +74,303 @@ const locks = new Map<string, Promise<void>>();
 
 const LOCK_TIMEOUT_MS = 10000; // 10s max wait to prevent deadlocks
 
-async function withWriteLock<T>(filepath: string, fn: () => T | Promise<T>): Promise<T> {
-  const prev = locks.get(filepath) ?? Promise.resolve();
-  let resolve!: () => void;
-  const next = new Promise<void>(r => { resolve = r; });
-  locks.set(filepath, next);
-  try {
-    // Wait for previous writer with timeout
-    await Promise.race([
-      prev,
-      new Promise<void>((_, reject) =>
-        setTimeout(() => reject(new Error(`Write lock timeout (${LOCK_TIMEOUT_MS}ms) for ${filepath}`)), LOCK_TIMEOUT_MS)
-      ),
-    ]);
-    return await fn();
-  } finally {
-    resolve();
-    if (locks.get(filepath) === next) locks.delete(filepath);
-  }
+async function withWriteLock<T>(
+	filepath: string,
+	fn: () => T | Promise<T>,
+): Promise<T> {
+	const prev = locks.get(filepath) ?? Promise.resolve();
+	let resolve!: () => void;
+	const next = new Promise<void>((r) => {
+		resolve = r;
+	});
+	locks.set(filepath, next);
+	try {
+		// Wait for previous writer with timeout
+		await Promise.race([
+			prev,
+			new Promise<void>((_, reject) =>
+				setTimeout(
+					() =>
+						reject(
+							new Error(
+								`Write lock timeout (${LOCK_TIMEOUT_MS}ms) for ${filepath}`,
+							),
+						),
+					LOCK_TIMEOUT_MS,
+				),
+			),
+		]);
+		return await fn();
+	} finally {
+		resolve();
+		if (locks.get(filepath) === next) locks.delete(filepath);
+	}
 }
 
 // ── Path ID system ──
 
 interface PathMapping {
-  canonicalPath: string;
-  pathId: string;
-  name: string;
-  createdAt: number;
-  renames?: { from: string; at: number }[];
+	canonicalPath: string;
+	pathId: string;
+	name: string;
+	createdAt: number;
+	renames?: { from: string; at: number }[];
 }
 
 function loadPathsMap(): Record<string, PathMapping> {
-  if (!existsSync(PATHS_MAP_FILE)) return {};
-  try { return JSON.parse(readFileSync(PATHS_MAP_FILE, 'utf-8')); } catch { return {}; }
+	if (!existsSync(PATHS_MAP_FILE)) return {};
+	try {
+		return JSON.parse(readFileSync(PATHS_MAP_FILE, "utf-8"));
+	} catch {
+		return {};
+	}
 }
 
 function savePathsMap(map: Record<string, PathMapping>): void {
-  if (!existsSync(STATE_DIR)) mkdirSync(STATE_DIR, { recursive: true });
-  atomicWriteFileSync(PATHS_MAP_FILE, JSON.stringify(map, null, 2));
+	if (!existsSync(STATE_DIR)) mkdirSync(STATE_DIR, { recursive: true });
+	atomicWriteFileSync(PATHS_MAP_FILE, JSON.stringify(map, null, 2));
 }
 
 export function computePathId(canonicalPath: string): string {
-  return createHash('sha256').update(canonicalPath).digest('hex').slice(0, 12);
+	return createHash("sha256").update(canonicalPath).digest("hex").slice(0, 12);
 }
 
 /** Sanitize a pathId from untrusted input. Valid pathIds are 12-char lowercase hex. */
 export function sanitizePathId(raw: string): string | null {
-  const clean = raw.replace(/[^a-f0-9]/g, '').slice(0, 12);
-  return clean.length === 12 ? clean : null;
+	const clean = raw.replace(/[^a-f0-9]/g, "").slice(0, 12);
+	return clean.length === 12 ? clean : null;
 }
 
 export function resolvePathId(canonicalPath: string): string {
-  const absPath = resolve(canonicalPath);
-  const map = loadPathsMap();
-  const pathId = computePathId(absPath);
+	const absPath = resolve(canonicalPath);
+	const map = loadPathsMap();
+	const pathId = computePathId(absPath);
 
-  if (!map[pathId]) {
-    map[pathId] = {
-      canonicalPath: absPath,
-      pathId,
-      name: absPath.split('/').pop() || absPath,
-      createdAt: Date.now(),
-    };
-    savePathsMap(map);
-    // Create path-scoped dirs
-    const pathDir = join(PATHS_DIR, pathId);
-    if (!existsSync(pathDir)) mkdirSync(pathDir, { recursive: true });
-    const pathDailyDir = join(pathDir, 'daily');
-    if (!existsSync(pathDailyDir)) mkdirSync(pathDailyDir, { recursive: true });
-  } else if (map[pathId].canonicalPath !== absPath) {
-    console.error(`[Memory] PathId collision: ${pathId} maps to both "${map[pathId].canonicalPath}" and "${absPath}"`);
-    throw new Error(`PathId collision detected for ${pathId}: already maps to ${map[pathId].canonicalPath}`);
-  }
+	if (!map[pathId]) {
+		map[pathId] = {
+			canonicalPath: absPath,
+			pathId,
+			name: absPath.split("/").pop() || absPath,
+			createdAt: Date.now(),
+		};
+		savePathsMap(map);
+		// Create path-scoped dirs
+		const pathDir = join(PATHS_DIR, pathId);
+		if (!existsSync(pathDir)) mkdirSync(pathDir, { recursive: true });
+		const pathDailyDir = join(pathDir, "daily");
+		if (!existsSync(pathDailyDir)) mkdirSync(pathDailyDir, { recursive: true });
+	} else if (map[pathId].canonicalPath !== absPath) {
+		console.error(
+			`[Memory] PathId collision: ${pathId} maps to both "${map[pathId].canonicalPath}" and "${absPath}"`,
+		);
+		throw new Error(
+			`PathId collision detected for ${pathId}: already maps to ${map[pathId].canonicalPath}`,
+		);
+	}
 
-  return pathId;
+	return pathId;
 }
 
 export function listPathScopes(): PathMapping[] {
-  const map = loadPathsMap();
-  return Object.values(map).sort((a, b) => b.createdAt - a.createdAt);
+	const map = loadPathsMap();
+	return Object.values(map).sort((a, b) => b.createdAt - a.createdAt);
 }
 
 export function getPathMapping(pathId: string): PathMapping | null {
-  const map = loadPathsMap();
-  return map[pathId] || null;
+	const map = loadPathsMap();
+	return map[pathId] || null;
 }
 
 // ── Directory setup ──
 
 export function ensureDirectories(): void {
-  for (const dir of [MEMORY_DIR, DAILY_DIR, DECISIONS_DIR, PATHS_DIR, SESSIONS_DIR, INDEX_DIR, STATE_DIR]) {
-    if (!existsSync(dir)) {
-      mkdirSync(dir, { recursive: true });
-      console.log(`[Memory] Created ${dir}`);
-    }
-  }
+	for (const dir of [
+		MEMORY_DIR,
+		DAILY_DIR,
+		DECISIONS_DIR,
+		PATHS_DIR,
+		SESSIONS_DIR,
+		INDEX_DIR,
+		STATE_DIR,
+	]) {
+		if (!existsSync(dir)) {
+			mkdirSync(dir, { recursive: true });
+			console.log(`[Memory] Created ${dir}`);
+		}
+	}
 
-  // Migrate legacy files
-  migrateLegacy();
+	// Migrate legacy files
+	migrateLegacy();
 
-  // Async cleanup of old session files (fire-and-forget, non-blocking)
-  cleanupOldSessions().catch(err => console.error('[Memory] Session cleanup failed:', err));
+	// Async cleanup of old session files (fire-and-forget, non-blocking)
+	cleanupOldSessions().catch((err) =>
+		console.error("[Memory] Session cleanup failed:", err),
+	);
 }
 
 const SESSION_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
 
 /** Delete JSONL session files older than 30 days. Async, non-blocking. */
 async function cleanupOldSessions(): Promise<void> {
-  if (!existsSync(SESSIONS_DIR)) return;
-  const now = Date.now();
-  const files = await readdirAsync(SESSIONS_DIR);
-  const jsonlFiles = files.filter(f => f.endsWith('.jsonl'));
-  let cleaned = 0;
+	if (!existsSync(SESSIONS_DIR)) return;
+	const now = Date.now();
+	const files = await readdirAsync(SESSIONS_DIR);
+	const jsonlFiles = files.filter((f) => f.endsWith(".jsonl"));
+	let cleaned = 0;
 
-  for (const f of jsonlFiles) {
-    const fullPath = join(SESSIONS_DIR, f);
-    try {
-      const s = await statAsync(fullPath);
-      if (now - s.mtimeMs > SESSION_MAX_AGE_MS) {
-        await unlinkAsync(fullPath);
-        cleaned++;
-      }
-    } catch {
-      // Skip files that can't be stat'd or deleted
-    }
-  }
+	for (const f of jsonlFiles) {
+		const fullPath = join(SESSIONS_DIR, f);
+		try {
+			const s = await statAsync(fullPath);
+			if (now - s.mtimeMs > SESSION_MAX_AGE_MS) {
+				await unlinkAsync(fullPath);
+				cleaned++;
+			}
+		} catch {
+			// Skip files that can't be stat'd or deleted
+		}
+	}
 
-  if (cleaned > 0) {
-    console.log(`[Memory] Cleaned up ${cleaned} session file(s) older than 30 days`);
-  }
+	if (cleaned > 0) {
+		console.log(
+			`[Memory] Cleaned up ${cleaned} session file(s) older than 30 days`,
+		);
+	}
 }
 
 function migrateLegacy(): void {
-  // summary.md → MEMORY.md
-  const summaryPath = join(MEMORY_DIR, 'summary.md');
-  if (!existsSync(DURABLE_PATH) && existsSync(summaryPath)) {
-    writeFileSync(DURABLE_PATH, readFileSync(summaryPath, 'utf-8'));
-    console.log('[Memory] Migrated summary.md → MEMORY.md');
-  }
+	// summary.md → MEMORY.md
+	const summaryPath = join(MEMORY_DIR, "summary.md");
+	if (!existsSync(DURABLE_PATH) && existsSync(summaryPath)) {
+		writeFileSync(DURABLE_PATH, readFileSync(summaryPath, "utf-8"));
+		console.log("[Memory] Migrated summary.md → MEMORY.md");
+	}
 
-  // journal/ → daily/
-  const oldJournalDir = join(MEMORY_DIR, 'journal');
-  if (existsSync(oldJournalDir)) {
-    const files = readdirSync(oldJournalDir).filter(f => f.endsWith('.md'));
-    for (const f of files) {
-      const dest = join(DAILY_DIR, f);
-      if (!existsSync(dest)) {
-        writeFileSync(dest, readFileSync(join(oldJournalDir, f), 'utf-8'));
-      }
-    }
-    if (files.length > 0) console.log(`[Memory] Migrated ${files.length} journal files to daily/`);
-  }
+	// journal/ → daily/
+	const oldJournalDir = join(MEMORY_DIR, "journal");
+	if (existsSync(oldJournalDir)) {
+		const files = readdirSync(oldJournalDir).filter((f) => f.endsWith(".md"));
+		for (const f of files) {
+			const dest = join(DAILY_DIR, f);
+			if (!existsSync(dest)) {
+				writeFileSync(dest, readFileSync(join(oldJournalDir, f), "utf-8"));
+			}
+		}
+		if (files.length > 0)
+			console.log(`[Memory] Migrated ${files.length} journal files to daily/`);
+	}
 
-  // projects/*.md → paths/<pathId>/MEMORY.md
-  const oldProjectsDir = join(MEMORY_DIR, 'projects');
-  if (existsSync(oldProjectsDir)) {
-    const files = readdirSync(oldProjectsDir).filter(f => f.endsWith('.md'));
-    for (const f of files) {
-      const projectName = f.replace(/\.md$/, '');
-      // Use workspace + project name as canonical path for migration
-      const canonicalPath = join(WORKSPACE, projectName);
-      const pathId = resolvePathId(canonicalPath);
-      const destPath = join(PATHS_DIR, pathId, 'MEMORY.md');
-      if (!existsSync(destPath)) {
-        writeFileSync(destPath, readFileSync(join(oldProjectsDir, f), 'utf-8'));
-      }
-    }
-    if (files.length > 0) console.log(`[Memory] Migrated ${files.length} project files to paths/`);
-  }
+	// projects/*.md → paths/<pathId>/MEMORY.md
+	const oldProjectsDir = join(MEMORY_DIR, "projects");
+	if (existsSync(oldProjectsDir)) {
+		const files = readdirSync(oldProjectsDir).filter((f) => f.endsWith(".md"));
+		for (const f of files) {
+			const projectName = f.replace(/\.md$/, "");
+			// Use workspace + project name as canonical path for migration
+			const canonicalPath = join(WORKSPACE, projectName);
+			const pathId = resolvePathId(canonicalPath);
+			const destPath = join(PATHS_DIR, pathId, "MEMORY.md");
+			if (!existsSync(destPath)) {
+				writeFileSync(destPath, readFileSync(join(oldProjectsDir, f), "utf-8"));
+			}
+		}
+		if (files.length > 0)
+			console.log(`[Memory] Migrated ${files.length} project files to paths/`);
+	}
 
-  // Old sessions dir inside memory → new sessions dir
-  const oldSessionsDir = join(MEMORY_DIR, 'sessions');
-  if (existsSync(oldSessionsDir)) {
-    const files = readdirSync(oldSessionsDir).filter(f => f.endsWith('.jsonl'));
-    for (const f of files) {
-      const dest = join(SESSIONS_DIR, f);
-      if (!existsSync(dest)) {
-        writeFileSync(dest, readFileSync(join(oldSessionsDir, f), 'utf-8'));
-      }
-    }
-    if (files.length > 0) console.log(`[Memory] Migrated ${files.length} session files`);
-  }
+	// Old sessions dir inside memory → new sessions dir
+	const oldSessionsDir = join(MEMORY_DIR, "sessions");
+	if (existsSync(oldSessionsDir)) {
+		const files = readdirSync(oldSessionsDir).filter((f) =>
+			f.endsWith(".jsonl"),
+		);
+		for (const f of files) {
+			const dest = join(SESSIONS_DIR, f);
+			if (!existsSync(dest)) {
+				writeFileSync(dest, readFileSync(join(oldSessionsDir, f), "utf-8"));
+			}
+		}
+		if (files.length > 0)
+			console.log(`[Memory] Migrated ${files.length} session files`);
+	}
 }
 
 // ── Durable Memory (MEMORY.md) — global ──
 
-export function getDurableMemory(pathId?: string): { exists: boolean; content: string | null } {
-  const path = pathId ? join(PATHS_DIR, pathId, 'MEMORY.md') : DURABLE_PATH;
-  if (!existsSync(path)) return { exists: false, content: null };
-  return { exists: true, content: readFileSync(path, 'utf-8') };
+export function getDurableMemory(pathId?: string): {
+	exists: boolean;
+	content: string | null;
+} {
+	const path = pathId ? join(PATHS_DIR, pathId, "MEMORY.md") : DURABLE_PATH;
+	if (!existsSync(path)) return { exists: false, content: null };
+	return { exists: true, content: readFileSync(path, "utf-8") };
 }
 
-export async function writeDurableMemory(content: string, pathId?: string): Promise<void> {
-  const path = pathId ? join(PATHS_DIR, pathId, 'MEMORY.md') : DURABLE_PATH;
-  await withWriteLock(path, () => {
-    const dir = pathId ? join(PATHS_DIR, pathId) : MEMORY_DIR;
-    if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
-    atomicWriteFileSync(path, sanitizeSecrets(content));
-  });
+export async function writeDurableMemory(
+	content: string,
+	pathId?: string,
+): Promise<void> {
+	const path = pathId ? join(PATHS_DIR, pathId, "MEMORY.md") : DURABLE_PATH;
+	await withWriteLock(path, () => {
+		const dir = pathId ? join(PATHS_DIR, pathId) : MEMORY_DIR;
+		if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
+		atomicWriteFileSync(path, sanitizeSecrets(content));
+	});
 }
 
-export async function appendToDurableMemory(section: string, entry: string, pathId?: string): Promise<void> {
-  const path = pathId ? join(PATHS_DIR, pathId, 'MEMORY.md') : DURABLE_PATH;
-  await withWriteLock(path, () => {
-    let content = existsSync(path) ? readFileSync(path, 'utf-8') : '';
-    const cleanEntry = sanitizeSecrets(entry);
+export async function appendToDurableMemory(
+	section: string,
+	entry: string,
+	pathId?: string,
+): Promise<void> {
+	const path = pathId ? join(PATHS_DIR, pathId, "MEMORY.md") : DURABLE_PATH;
+	await withWriteLock(path, () => {
+		let content = existsSync(path) ? readFileSync(path, "utf-8") : "";
+		const cleanEntry = sanitizeSecrets(entry);
 
-    const sectionHeader = `## ${section}`;
-    const idx = content.indexOf(sectionHeader);
-    if (idx !== -1) {
-      const nextSection = content.indexOf('\n## ', idx + sectionHeader.length);
-      const insertAt = nextSection !== -1 ? nextSection : content.length;
-      content = content.slice(0, insertAt).trimEnd() + '\n\n' + cleanEntry.trim() + '\n' + content.slice(insertAt);
-    } else {
-      content = content.trimEnd() + '\n\n' + sectionHeader + '\n\n' + cleanEntry.trim() + '\n';
-    }
+		const sectionHeader = `## ${section}`;
+		const idx = content.indexOf(sectionHeader);
+		if (idx !== -1) {
+			const nextSection = content.indexOf("\n## ", idx + sectionHeader.length);
+			const insertAt = nextSection !== -1 ? nextSection : content.length;
+			content =
+				content.slice(0, insertAt).trimEnd() +
+				"\n\n" +
+				cleanEntry.trim() +
+				"\n" +
+				content.slice(insertAt);
+		} else {
+			content =
+				content.trimEnd() +
+				"\n\n" +
+				sectionHeader +
+				"\n\n" +
+				cleanEntry.trim() +
+				"\n";
+		}
 
-    const dir = pathId ? join(PATHS_DIR, pathId) : MEMORY_DIR;
-    if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
-    atomicWriteFileSync(path, content);
-  });
+		const dir = pathId ? join(PATHS_DIR, pathId) : MEMORY_DIR;
+		if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
+		atomicWriteFileSync(path, content);
+	});
 }
 
 // ── Daily journal ──
 
 function dailyPath(date?: string, pathId?: string): string {
-  const d = date || new Date().toISOString().slice(0, 10);
-  if (pathId) return join(PATHS_DIR, pathId, 'daily', `${d}.md`);
-  return join(DAILY_DIR, `${d}.md`);
+	const d = date || new Date().toISOString().slice(0, 10);
+	if (pathId) return join(PATHS_DIR, pathId, "daily", `${d}.md`);
+	return join(DAILY_DIR, `${d}.md`);
 }
 
-export function getDailyEntry(date?: string, pathId?: string): { exists: boolean; date: string; content: string | null } {
-  const d = date || new Date().toISOString().slice(0, 10);
-  const path = dailyPath(d, pathId);
-  if (!existsSync(path)) return { exists: false, date: d, content: null };
-  return { exists: true, date: d, content: readFileSync(path, 'utf-8') };
+export function getDailyEntry(
+	date?: string,
+	pathId?: string,
+): { exists: boolean; date: string; content: string | null } {
+	const d = date || new Date().toISOString().slice(0, 10);
+	const path = dailyPath(d, pathId);
+	if (!existsSync(path)) return { exists: false, date: d, content: null };
+	return { exists: true, date: d, content: readFileSync(path, "utf-8") };
 }
 
 /**
@@ -295,455 +378,619 @@ export function getDailyEntry(date?: string, pathId?: string): { exists: boolean
  * Simple, fast, no embeddings needed.
  */
 function extractKeywords(text: string): Set<string> {
-  return new Set(
-    text.toLowerCase()
-      .replace(/[^a-z0-9\s]/g, ' ')
-      .split(/\s+/)
-      .filter(w => w.length >= 4)
-  );
+	return new Set(
+		text
+			.toLowerCase()
+			.replace(/[^a-z0-9\s]/g, " ")
+			.split(/\s+/)
+			.filter((w) => w.length >= 4),
+	);
 }
 
 /**
  * Jaccard similarity between two keyword sets (0.0 - 1.0).
  */
 function jaccardSimilarity(a: Set<string>, b: Set<string>): number {
-  if (a.size === 0 || b.size === 0) return 0;
-  let intersection = 0;
-  for (const word of a) {
-    if (b.has(word)) intersection++;
-  }
-  const union = a.size + b.size - intersection;
-  return union === 0 ? 0 : intersection / union;
+	if (a.size === 0 || b.size === 0) return 0;
+	let intersection = 0;
+	for (const word of a) {
+		if (b.has(word)) intersection++;
+	}
+	const union = a.size + b.size - intersection;
+	return union === 0 ? 0 : intersection / union;
 }
 
-export async function appendToDaily(entry: string, project?: string, tags?: string[], pathId?: string): Promise<{ date: string }> {
-  const d = new Date().toISOString().slice(0, 10);
-  const path = dailyPath(d, pathId);
+export async function appendToDaily(
+	entry: string,
+	project?: string,
+	tags?: string[],
+	pathId?: string,
+): Promise<{ date: string }> {
+	const d = new Date().toISOString().slice(0, 10);
+	const path = dailyPath(d, pathId);
 
-  await withWriteLock(path, () => {
-    const dir = pathId ? join(PATHS_DIR, pathId, 'daily') : DAILY_DIR;
-    if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
+	await withWriteLock(path, () => {
+		const dir = pathId ? join(PATHS_DIR, pathId, "daily") : DAILY_DIR;
+		if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
 
-    const sanitized = sanitizeSecrets(entry).trim();
+		const sanitized = sanitizeSecrets(entry).trim();
 
-    // Read file once — reused for both dedup check and append
-    const fileExists = existsSync(path);
-    const existing = fileExists ? readFileSync(path, 'utf-8') : '';
+		// Read file once — reused for both dedup check and append
+		const fileExists = existsSync(path);
+		const existing = fileExists ? readFileSync(path, "utf-8") : "";
 
-    // ── Semantic deduplication ──
-    // Check last 10 entries for keyword overlap before writing.
-    // >85% overlap = SKIP (duplicate), 50-85% = MERGE, <50% = WRITE.
-    if (fileExists) {
-      const entries = existing.split(/\n### /).slice(-10);
-      const newKeywords = extractKeywords(sanitized);
+		// ── Semantic deduplication ──
+		// Check last 10 entries for keyword overlap before writing.
+		// >85% overlap = SKIP (duplicate), 50-85% = MERGE, <50% = WRITE.
+		if (fileExists) {
+			const entries = existing.split(/\n### /).slice(-10);
+			const newKeywords = extractKeywords(sanitized);
 
-      if (newKeywords.size > 0) {
-        let maxSimilarity = 0;
-        for (const e of entries) {
-          const sim = jaccardSimilarity(newKeywords, extractKeywords(e));
-          if (sim > maxSimilarity) maxSimilarity = sim;
-        }
+			if (newKeywords.size > 0) {
+				let maxSimilarity = 0;
+				for (const e of entries) {
+					const sim = jaccardSimilarity(newKeywords, extractKeywords(e));
+					if (sim > maxSimilarity) maxSimilarity = sim;
+				}
 
-        if (maxSimilarity > 0.85) {
-          console.log(`[Memory] SKIP daily entry (${(maxSimilarity * 100).toFixed(0)}% overlap with existing)`);
-          return; // Don't write duplicate
-        }
-        if (maxSimilarity > 0.5) {
-          console.log(`[Memory] Writing daily entry with ${(maxSimilarity * 100).toFixed(0)}% overlap (consider consolidation)`);
-        }
-      }
-    }
+				if (maxSimilarity > 0.85) {
+					console.log(
+						`[Memory] SKIP daily entry (${(maxSimilarity * 100).toFixed(0)}% overlap with existing)`,
+					);
+					return; // Don't write duplicate
+				}
+				if (maxSimilarity > 0.5) {
+					console.log(
+						`[Memory] Writing daily entry with ${(maxSimilarity * 100).toFixed(0)}% overlap (consider consolidation)`,
+					);
+				}
+			}
+		}
 
-    const timestamp = new Date().toISOString().slice(11, 19);
-    let line = `### ${timestamp}`;
-    if (project) line += ` [${project}]`;
-    if (tags && tags.length > 0) line += ` ${tags.map(t => `#${t}`).join(' ')}`;
-    line += '\n\n' + sanitized + '\n';
+		const timestamp = new Date().toISOString().slice(11, 19);
+		let line = `### ${timestamp}`;
+		if (project) line += ` [${project}]`;
+		if (tags && tags.length > 0)
+			line += ` ${tags.map((t) => `#${t}`).join(" ")}`;
+		line += "\n\n" + sanitized + "\n";
 
-    const content = fileExists
-      ? existing.trimEnd() + '\n\n' + line
-      : `# Daily — ${d}\n\n` + line;
-    writeFileSync(path, content);
-  });
+		const content = fileExists
+			? existing.trimEnd() + "\n\n" + line
+			: `# Daily — ${d}\n\n` + line;
+		atomicWriteFileSync(path, content);
+	});
 
-  return { date: d };
+	return { date: d };
 }
 
-export function listDailyEntries(pathId?: string): { date: string; size: number }[] {
-  const dir = pathId ? join(PATHS_DIR, pathId, 'daily') : DAILY_DIR;
-  if (!existsSync(dir)) return [];
-  return readdirSync(dir)
-    .filter(f => f.endsWith('.md'))
-    .map(f => ({ date: f.replace('.md', ''), size: statSync(join(dir, f)).size }))
-    .sort((a, b) => b.date.localeCompare(a.date));
+export function listDailyEntries(
+	pathId?: string,
+): { date: string; size: number }[] {
+	const dir = pathId ? join(PATHS_DIR, pathId, "daily") : DAILY_DIR;
+	if (!existsSync(dir)) return [];
+	return readdirSync(dir)
+		.filter((f) => f.endsWith(".md"))
+		.map((f) => ({
+			date: f.replace(".md", ""),
+			size: statSync(join(dir, f)).size,
+		}))
+		.sort((a, b) => b.date.localeCompare(a.date));
 }
 
 // ── Decisions (ADR) — new naming: ADR-YYYYMMDD-<slug>.md ──
 
 function slugify(title: string): string {
-  return title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '').slice(0, 60);
+	return title
+		.toLowerCase()
+		.replace(/[^a-z0-9]+/g, "-")
+		.replace(/(^-|-$)/g, "")
+		.slice(0, 60);
 }
 
 export function createDecision(
-  title: string, context: string, decision: string, consequences: string,
-  project?: string, pathId?: string,
+	title: string,
+	context: string,
+	decision: string,
+	consequences: string,
+	project?: string,
+	pathId?: string,
 ): { filename: string } {
-  const now = new Date();
-  const date = now.toISOString().slice(0, 10).replace(/-/g, '');
-  const time = now.toISOString().slice(11, 19).replace(/:/g, '');
-  const slug = slugify(title);
-  const filename = `ADR-${date}-${time}-${slug}.md`;
+	const now = new Date();
+	const date = now.toISOString().slice(0, 10).replace(/-/g, "");
+	const time = now.toISOString().slice(11, 19).replace(/:/g, "");
+	const slug = slugify(title);
+	const filename = `ADR-${date}-${time}-${slug}.md`;
 
-  let content = `# ${title}\n\n`;
-  content += `**Date**: ${now.toISOString().slice(0, 10)}\n`;
-  if (project) content += `**Project**: ${project}\n`;
-  if (pathId) content += `**Scope**: ${pathId}\n`;
-  content += `**Status**: Accepted\n\n`;
-  content += `## Context\n\n${context.trim()}\n\n`;
-  content += `## Decision\n\n${decision.trim()}\n\n`;
-  content += `## Consequences\n\n${consequences.trim()}\n`;
+	let content = `# ${title}\n\n`;
+	content += `**Date**: ${now.toISOString().slice(0, 10)}\n`;
+	if (project) content += `**Project**: ${project}\n`;
+	if (pathId) content += `**Scope**: ${pathId}\n`;
+	content += `**Status**: Accepted\n\n`;
+	content += `## Context\n\n${context.trim()}\n\n`;
+	content += `## Decision\n\n${decision.trim()}\n\n`;
+	content += `## Consequences\n\n${consequences.trim()}\n`;
 
-  const dir = pathId ? join(PATHS_DIR, pathId, 'decisions') : DECISIONS_DIR;
-  if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
-  writeFileSync(join(dir, filename), sanitizeSecrets(content));
+	const dir = pathId ? join(PATHS_DIR, pathId, "decisions") : DECISIONS_DIR;
+	if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
+	atomicWriteFileSync(join(dir, filename), sanitizeSecrets(content));
 
-  return { filename };
+	return { filename };
 }
 
-export function listDecisions(pathId?: string): { filename: string; title: string; date: string }[] {
-  const dir = pathId ? join(PATHS_DIR, pathId, 'decisions') : DECISIONS_DIR;
-  if (!existsSync(dir)) return [];
-  return readdirSync(dir)
-    .filter(f => f.endsWith('.md'))
-    .map(f => {
-      const content = readFileSync(join(dir, f), 'utf-8');
-      const titleMatch = content.match(/^# (.+)$/m);
-      const dateMatch = content.match(/^\*\*Date\*\*:\s*(.+)$/m);
-      return {
-        filename: f,
-        title: titleMatch ? titleMatch[1].trim() : f,
-        date: dateMatch ? dateMatch[1].trim() : '',
-      };
-    })
-    .sort((a, b) => b.filename.localeCompare(a.filename));
+export function listDecisions(
+	pathId?: string,
+): { filename: string; title: string; date: string }[] {
+	const dir = pathId ? join(PATHS_DIR, pathId, "decisions") : DECISIONS_DIR;
+	if (!existsSync(dir)) return [];
+	return readdirSync(dir)
+		.filter((f) => f.endsWith(".md"))
+		.map((f) => {
+			const content = readFileSync(join(dir, f), "utf-8");
+			const titleMatch = content.match(/^# (.+)$/m);
+			const dateMatch = content.match(/^\*\*Date\*\*:\s*(.+)$/m);
+			return {
+				filename: f,
+				title: titleMatch ? titleMatch[1].trim() : f,
+				date: dateMatch ? dateMatch[1].trim() : "",
+			};
+		})
+		.sort((a, b) => b.filename.localeCompare(a.filename));
 }
 
-export function getDecision(filename: string): { exists: boolean; content: string | null } {
-  const safe = filename.replace(/[^a-zA-Z0-9_\-.]/g, '');
-  const path = join(DECISIONS_DIR, safe);
-  if (!existsSync(path)) return { exists: false, content: null };
-  return { exists: true, content: readFileSync(path, 'utf-8') };
+export function getDecision(filename: string): {
+	exists: boolean;
+	content: string | null;
+} {
+	const safe = filename.replace(/[^a-zA-Z0-9_\-.]/g, "");
+	const path = join(DECISIONS_DIR, safe);
+	if (!existsSync(path)) return { exists: false, content: null };
+	return { exists: true, content: readFileSync(path, "utf-8") };
 }
 
 // ── Path-scoped memory (replaces "projects") ──
 
-export function getPathMemory(pathId: string): { exists: boolean; content: string | null } {
-  return getDurableMemory(pathId);
+export function getPathMemory(pathId: string): {
+	exists: boolean;
+	content: string | null;
+} {
+	return getDurableMemory(pathId);
 }
 
-export async function writePathMemory(pathId: string, content: string): Promise<void> {
-  await writeDurableMemory(content, pathId);
+export async function writePathMemory(
+	pathId: string,
+	content: string,
+): Promise<void> {
+	await writeDurableMemory(content, pathId);
 }
 
 // ── Promote ──
 
 export interface PromoteRequest {
-  content: string;
-  sourceRef?: string;      // file+range OR session event IDs
-  targetScope: 'global' | string; // 'global' or pathId
-  target: 'durable' | 'adr';
-  section?: string;        // for durable: which ## section to append under
-  tags?: string[];
-  // ADR-specific fields
-  title?: string;
-  context?: string;
-  decision?: string;
-  consequences?: string;
+	content: string;
+	sourceRef?: string; // file+range OR session event IDs
+	targetScope: "global" | string; // 'global' or pathId
+	target: "durable" | "adr";
+	section?: string; // for durable: which ## section to append under
+	tags?: string[];
+	// ADR-specific fields
+	title?: string;
+	context?: string;
+	decision?: string;
+	consequences?: string;
 }
 
-export async function promote(req: PromoteRequest): Promise<{ success: boolean; detail: string }> {
-  const ts = new Date().toISOString();
-  const pathId = req.targetScope === 'global' ? undefined : req.targetScope;
+export async function promote(
+	req: PromoteRequest,
+): Promise<{ success: boolean; detail: string }> {
+	const ts = new Date().toISOString();
+	const pathId = req.targetScope === "global" ? undefined : req.targetScope;
 
-  if (req.target === 'adr') {
-    if (!req.title || !req.context || !req.decision || !req.consequences) {
-      return { success: false, detail: 'ADR requires title, context, decision, consequences' };
-    }
-    const { filename } = createDecision(req.title, req.context, req.decision, req.consequences, undefined, pathId);
-    return { success: true, detail: `Created ${filename}` };
-  }
+	if (req.target === "adr") {
+		if (!req.title || !req.context || !req.decision || !req.consequences) {
+			return {
+				success: false,
+				detail: "ADR requires title, context, decision, consequences",
+			};
+		}
+		const { filename } = createDecision(
+			req.title,
+			req.context,
+			req.decision,
+			req.consequences,
+			undefined,
+			pathId,
+		);
+		return { success: true, detail: `Created ${filename}` };
+	}
 
-  // Durable promotion: append with source reference and timestamp
-  let entry = req.content.trim();
-  const meta: string[] = [];
-  if (req.sourceRef) meta.push(`Source: ${req.sourceRef}`);
-  if (req.tags && req.tags.length > 0) meta.push(`Tags: ${req.tags.join(', ')}`);
-  meta.push(`Promoted: ${ts}`);
-  entry += '\n\n<!-- ' + meta.join(' | ') + ' -->';
+	// Durable promotion: append with source reference and timestamp
+	let entry = req.content.trim();
+	const meta: string[] = [];
+	if (req.sourceRef) meta.push(`Source: ${req.sourceRef}`);
+	if (req.tags && req.tags.length > 0)
+		meta.push(`Tags: ${req.tags.join(", ")}`);
+	meta.push(`Promoted: ${ts}`);
+	entry += "\n\n<!-- " + meta.join(" | ") + " -->";
 
-  if (req.section) {
-    await appendToDurableMemory(req.section, entry, pathId);
-  } else {
-    await appendToDurableMemory('Promoted', entry, pathId);
-  }
+	if (req.section) {
+		await appendToDurableMemory(req.section, entry, pathId);
+	} else {
+		await appendToDurableMemory("Promoted", entry, pathId);
+	}
 
-  return { success: true, detail: `Promoted to ${pathId ? `paths/${pathId}` : 'global'} MEMORY.md` };
+	return {
+		success: true,
+		detail: `Promoted to ${pathId ? `paths/${pathId}` : "global"} MEMORY.md`,
+	};
 }
 
 // ── Flush ──
 
 interface FlushState {
-  [sessionOrScope: string]: {
-    lastFlushAt: number;
-    lastFlushBytes: number;
-  };
+	[sessionOrScope: string]: {
+		lastFlushAt: number;
+		lastFlushBytes: number;
+	};
 }
 
 function loadFlushState(): FlushState {
-  if (!existsSync(FLUSH_STATE_FILE)) return {};
-  try { return JSON.parse(readFileSync(FLUSH_STATE_FILE, 'utf-8')); } catch { return {}; }
+	if (!existsSync(FLUSH_STATE_FILE)) return {};
+	try {
+		return JSON.parse(readFileSync(FLUSH_STATE_FILE, "utf-8"));
+	} catch {
+		return {};
+	}
 }
 
 function saveFlushState(state: FlushState): void {
-  if (!existsSync(STATE_DIR)) mkdirSync(STATE_DIR, { recursive: true });
-  atomicWriteFileSync(FLUSH_STATE_FILE, JSON.stringify(state, null, 2));
+	if (!existsSync(STATE_DIR)) mkdirSync(STATE_DIR, { recursive: true });
+	atomicWriteFileSync(FLUSH_STATE_FILE, JSON.stringify(state, null, 2));
 }
 
 const FLUSH_COOLDOWN_MS = 30_000; // 30s minimum between flushes per scope
 
-export async function flush(content: string, scope: string, project?: string, tags?: string[]): Promise<{ success: boolean; date?: string; reason?: string; cooldownRemaining?: number }> {
-  const state = loadFlushState();
-  const now = Date.now();
+export async function flush(
+	content: string,
+	scope: string,
+	project?: string,
+	tags?: string[],
+): Promise<{
+	success: boolean;
+	date?: string;
+	reason?: string;
+	cooldownRemaining?: number;
+}> {
+	const state = loadFlushState();
+	const now = Date.now();
 
-  // Rate limit: at most once per FLUSH_COOLDOWN_MS per scope
-  if (state[scope] && (now - state[scope].lastFlushAt) < FLUSH_COOLDOWN_MS) {
-    const remaining = FLUSH_COOLDOWN_MS - (now - state[scope].lastFlushAt);
-    return { success: false, reason: 'Flush cooldown active', cooldownRemaining: remaining };
-  }
+	// Rate limit: at most once per FLUSH_COOLDOWN_MS per scope
+	if (state[scope] && now - state[scope].lastFlushAt < FLUSH_COOLDOWN_MS) {
+		const remaining = FLUSH_COOLDOWN_MS - (now - state[scope].lastFlushAt);
+		return {
+			success: false,
+			reason: "Flush cooldown active",
+			cooldownRemaining: remaining,
+		};
+	}
 
-  const pathId = scope !== 'global' ? scope : undefined;
-  const allTags = tags ? [...tags, 'flush'] : ['flush'];
-  const result = await appendToDaily(`[FLUSH] ${content}`, project, allTags, pathId);
+	const pathId = scope !== "global" ? scope : undefined;
+	const allTags = tags ? [...tags, "flush"] : ["flush"];
+	const result = await appendToDaily(
+		`[FLUSH] ${content}`,
+		project,
+		allTags,
+		pathId,
+	);
 
-  // Update flush state
-  state[scope] = { lastFlushAt: now, lastFlushBytes: content.length };
-  saveFlushState(state);
+	// Update flush state
+	state[scope] = { lastFlushAt: now, lastFlushBytes: content.length };
+	saveFlushState(state);
 
-  return { success: true, date: result.date };
+	return { success: true, date: result.date };
 }
 
 export function getFlushState(): FlushState {
-  return loadFlushState();
+	return loadFlushState();
 }
 
 // ── Backward compat ──
 
 export function getSummary(): { exists: boolean; content: string | null } {
-  if (existsSync(DURABLE_PATH)) return { exists: true, content: readFileSync(DURABLE_PATH, 'utf-8') };
-  const summaryPath = join(MEMORY_DIR, 'summary.md');
-  if (existsSync(summaryPath)) return { exists: true, content: readFileSync(summaryPath, 'utf-8') };
-  return { exists: false, content: null };
+	if (existsSync(DURABLE_PATH))
+		return { exists: true, content: readFileSync(DURABLE_PATH, "utf-8") };
+	const summaryPath = join(MEMORY_DIR, "summary.md");
+	if (existsSync(summaryPath))
+		return { exists: true, content: readFileSync(summaryPath, "utf-8") };
+	return { exists: false, content: null };
 }
 
-export function getDecisionsLegacy(): { exists: boolean; content: string | null } {
-  const path = join(MEMORY_DIR, 'decisions.md');
-  if (!existsSync(path)) return { exists: false, content: null };
-  return { exists: true, content: readFileSync(path, 'utf-8') };
+export function getDecisionsLegacy(): {
+	exists: boolean;
+	content: string | null;
+} {
+	const path = join(MEMORY_DIR, "decisions.md");
+	if (!existsSync(path)) return { exists: false, content: null };
+	return { exists: true, content: readFileSync(path, "utf-8") };
 }
 
 // Legacy project compat — delegates to path system
 export function listProjects(): string[] {
-  const map = loadPathsMap();
-  return Object.values(map).map(m => m.name);
+	const map = loadPathsMap();
+	return Object.values(map).map((m) => m.name);
 }
 
-export function getProjectMemory(name: string): { exists: boolean; content: string | null } {
-  const map = loadPathsMap();
-  const entry = Object.values(map).find(m => m.name === name);
-  if (!entry) return { exists: false, content: null };
-  return getDurableMemory(entry.pathId);
+export function getProjectMemory(name: string): {
+	exists: boolean;
+	content: string | null;
+} {
+	const map = loadPathsMap();
+	const entry = Object.values(map).find((m) => m.name === name);
+	if (!entry) return { exists: false, content: null };
+	return getDurableMemory(entry.pathId);
 }
 
 // ── Context assembly ──
 
 export function assembleContext(pathId?: string): string {
-  const parts: string[] = [];
+	const parts: string[] = [];
 
-  const durable = getDurableMemory();
-  if (durable.content) parts.push('# Durable Memory\n\n' + durable.content);
+	const durable = getDurableMemory();
+	if (durable.content) parts.push("# Durable Memory\n\n" + durable.content);
 
-  const daily = getDailyEntry();
-  if (daily.content) {
-    parts.push(`# Today's Daily (${daily.date})\n\n` + daily.content);
-  } else {
-    // Fall back to yesterday if today is empty
-    const yesterday = new Date(Date.now() - 86_400_000).toISOString().slice(0, 10);
-    const prev = getDailyEntry(yesterday);
-    if (prev.content) parts.push(`# Yesterday's Daily (${prev.date})\n\n` + prev.content);
-  }
+	const daily = getDailyEntry();
+	if (daily.content) {
+		parts.push(`# Today's Daily (${daily.date})\n\n` + daily.content);
+	} else {
+		// Fall back to yesterday if today is empty
+		const yesterday = new Date(Date.now() - 86_400_000)
+			.toISOString()
+			.slice(0, 10);
+		const prev = getDailyEntry(yesterday);
+		if (prev.content)
+			parts.push(`# Yesterday's Daily (${prev.date})\n\n` + prev.content);
+	}
 
-  if (pathId) {
-    const scoped = getDurableMemory(pathId);
-    if (scoped.content) parts.push(`# Path Memory (${pathId})\n\n` + scoped.content);
-    const scopedDaily = getDailyEntry(undefined, pathId);
-    if (scopedDaily.content) parts.push(`# Path Daily (${pathId}, ${scopedDaily.date})\n\n` + scopedDaily.content);
-  }
+	if (pathId) {
+		const scoped = getDurableMemory(pathId);
+		if (scoped.content)
+			parts.push(`# Path Memory (${pathId})\n\n` + scoped.content);
+		const scopedDaily = getDailyEntry(undefined, pathId);
+		if (scopedDaily.content)
+			parts.push(
+				`# Path Daily (${pathId}, ${scopedDaily.date})\n\n` +
+					scopedDaily.content,
+			);
+	}
 
-  return parts.join('\n\n---\n\n');
+	return parts.join("\n\n---\n\n");
 }
 
 // ── Status ──
 
 export async function getMemoryStatus(): Promise<Record<string, unknown>> {
-  const flushState = loadFlushState();
-  const pathsMap = loadPathsMap();
-  const safeReaddir = (dir: string, ext: string) =>
-    readdirAsync(dir).then(files => files.filter(f => f.endsWith(ext)).length).catch(() => 0);
-  const [dailyCount, decisionsCount, sessionsCount] = await Promise.all([
-    safeReaddir(DAILY_DIR, '.md'),
-    safeReaddir(DECISIONS_DIR, '.md'),
-    safeReaddir(SESSIONS_DIR, '.jsonl'),
-  ]);
-  const pathScopes = Object.keys(pathsMap).length;
+	const flushState = loadFlushState();
+	const pathsMap = loadPathsMap();
+	const safeReaddir = (dir: string, ext: string) =>
+		readdirAsync(dir)
+			.then((files) => files.filter((f) => f.endsWith(ext)).length)
+			.catch(() => 0);
+	const [dailyCount, decisionsCount, sessionsCount] = await Promise.all([
+		safeReaddir(DAILY_DIR, ".md"),
+		safeReaddir(DECISIONS_DIR, ".md"),
+		safeReaddir(SESSIONS_DIR, ".jsonl"),
+	]);
+	const pathScopes = Object.keys(pathsMap).length;
 
-  return {
-    durableExists: existsSync(DURABLE_PATH),
-    dailyCount,
-    decisionsCount,
-    sessionsCount,
-    pathScopes,
-    lastFlush: Object.values(flushState).reduce((max, s) => Math.max(max, s.lastFlushAt || 0), 0) || null,
-  };
+	return {
+		durableExists: existsSync(DURABLE_PATH),
+		dailyCount,
+		decisionsCount,
+		sessionsCount,
+		pathScopes,
+		lastFlush:
+			Object.values(flushState).reduce(
+				(max, s) => Math.max(max, s.lastFlushAt || 0),
+				0,
+			) || null,
+	};
 }
 
 // ── Memory stats (detailed) ──
 
 export async function getMemoryStats(): Promise<Record<string, unknown>> {
-  let totalSize = 0;
-  let fileCount = 0;
-  let oldestDaily: string | null = null;
-  let newestDaily: string | null = null;
+	let totalSize = 0;
+	let fileCount = 0;
+	let oldestDaily: string | null = null;
+	let newestDaily: string | null = null;
 
-  // Helper: safely readdir + stat files with given extension
-  const scanDir = async (dir: string, ext: string): Promise<{ names: string[]; size: number; count: number }> => {
-    try {
-      const files = (await readdirAsync(dir)).filter(f => f.endsWith(ext)).sort();
-      let size = 0;
-      for (const f of files) {
-        try { size += (await statAsync(join(dir, f))).size; } catch { /* ignore */ }
-      }
-      return { names: files, size, count: files.length };
-    } catch { return { names: [], size: 0, count: 0 }; }
-  };
+	// Helper: safely readdir + stat files with given extension
+	const scanDir = async (
+		dir: string,
+		ext: string,
+	): Promise<{ names: string[]; size: number; count: number }> => {
+		try {
+			const files = (await readdirAsync(dir))
+				.filter((f) => f.endsWith(ext))
+				.sort();
+			let size = 0;
+			for (const f of files) {
+				try {
+					size += (await statAsync(join(dir, f))).size;
+				} catch {
+					/* ignore */
+				}
+			}
+			return { names: files, size, count: files.length };
+		} catch {
+			return { names: [], size: 0, count: 0 };
+		}
+	};
 
-  // Scan daily dir
-  const daily = await scanDir(DAILY_DIR, '.md');
-  totalSize += daily.size;
-  fileCount += daily.count;
-  if (daily.names.length > 0) {
-    oldestDaily = daily.names[0].replace('.md', '');
-    newestDaily = daily.names[daily.names.length - 1].replace('.md', '');
-  }
+	// Scan daily dir
+	const daily = await scanDir(DAILY_DIR, ".md");
+	totalSize += daily.size;
+	fileCount += daily.count;
+	if (daily.names.length > 0) {
+		oldestDaily = daily.names[0].replace(".md", "");
+		newestDaily = daily.names[daily.names.length - 1].replace(".md", "");
+	}
 
-  // Scan durable
-  try { totalSize += (await statAsync(DURABLE_PATH)).size; fileCount++; } catch { /* doesn't exist */ }
+	// Scan durable
+	try {
+		totalSize += (await statAsync(DURABLE_PATH)).size;
+		fileCount++;
+	} catch {
+		/* doesn't exist */
+	}
 
-  // Scan decisions
-  const decisions = await scanDir(DECISIONS_DIR, '.md');
-  totalSize += decisions.size;
-  fileCount += decisions.count;
+	// Scan decisions
+	const decisions = await scanDir(DECISIONS_DIR, ".md");
+	totalSize += decisions.size;
+	fileCount += decisions.count;
 
-  // Scan paths (recursive)
-  const scanRecursive = async (dir: string): Promise<void> => {
-    try {
-      const entries = await readdirAsync(dir, { withFileTypes: true });
-      for (const entry of entries) {
-        const full = join(dir, entry.name);
-        if (entry.isDirectory()) { await scanRecursive(full); }
-        else if (entry.name.endsWith('.md')) {
-          try { totalSize += (await statAsync(full)).size; fileCount++; } catch { /* ignore */ }
-        }
-      }
-    } catch { /* ignore */ }
-  };
-  await scanRecursive(PATHS_DIR);
+	// Scan paths (recursive)
+	const scanRecursive = async (dir: string): Promise<void> => {
+		try {
+			const entries = await readdirAsync(dir, { withFileTypes: true });
+			for (const entry of entries) {
+				const full = join(dir, entry.name);
+				if (entry.isDirectory()) {
+					await scanRecursive(full);
+				} else if (entry.name.endsWith(".md")) {
+					try {
+						totalSize += (await statAsync(full)).size;
+						fileCount++;
+					} catch {
+						/* ignore */
+					}
+				}
+			}
+		} catch {
+			/* ignore */
+		}
+	};
+	await scanRecursive(PATHS_DIR);
 
-  // Sessions
-  const sessions = await scanDir(SESSIONS_DIR, '.jsonl');
+	// Sessions
+	const sessions = await scanDir(SESSIONS_DIR, ".jsonl");
 
-  return {
-    totalSizeBytes: totalSize,
-    totalSizeKB: Math.round(totalSize / 1024),
-    fileCount,
-    oldestDaily,
-    newestDaily,
-    sessionCount: sessions.count,
-    sessionsTotalSizeKB: Math.round(sessions.size / 1024),
-  };
+	return {
+		totalSizeBytes: totalSize,
+		totalSizeKB: Math.round(totalSize / 1024),
+		fileCount,
+		oldestDaily,
+		newestDaily,
+		sessionCount: sessions.count,
+		sessionsTotalSizeKB: Math.round(sessions.size / 1024),
+	};
 }
 
 // ── File listing for UI ──
 
-export async function listMemoryFiles(): Promise<{ type: string; path: string; size: number; modified: number }[]> {
-  const files: { type: string; path: string; size: number; modified: number }[] = [];
+export async function listMemoryFiles(): Promise<
+	{ type: string; path: string; size: number; modified: number }[]
+> {
+	const files: {
+		type: string;
+		path: string;
+		size: number;
+		modified: number;
+	}[] = [];
 
-  // Helper: readdir + stat for a directory of files with given extension
-  const scanDir = async (dir: string, ext: string, type: string, prefix: string) => {
-    try {
-      const entries = await readdirAsync(dir);
-      for (const f of entries.filter(x => x.endsWith(ext))) {
-        try {
-          const s = await statAsync(join(dir, f));
-          files.push({ type, path: `${prefix}${f}`, size: s.size, modified: s.mtimeMs });
-        } catch { /* ignore */ }
-      }
-    } catch { /* dir doesn't exist */ }
-  };
+	// Helper: readdir + stat for a directory of files with given extension
+	const scanDir = async (
+		dir: string,
+		ext: string,
+		type: string,
+		prefix: string,
+	) => {
+		try {
+			const entries = await readdirAsync(dir);
+			for (const f of entries.filter((x) => x.endsWith(ext))) {
+				try {
+					const s = await statAsync(join(dir, f));
+					files.push({
+						type,
+						path: `${prefix}${f}`,
+						size: s.size,
+						modified: s.mtimeMs,
+					});
+				} catch {
+					/* ignore */
+				}
+			}
+		} catch {
+			/* dir doesn't exist */
+		}
+	};
 
-  // Durable
-  try {
-    const s = await statAsync(DURABLE_PATH);
-    files.push({ type: 'durable', path: 'MEMORY.md', size: s.size, modified: s.mtimeMs });
-  } catch { /* doesn't exist */ }
+	// Durable
+	try {
+		const s = await statAsync(DURABLE_PATH);
+		files.push({
+			type: "durable",
+			path: "MEMORY.md",
+			size: s.size,
+			modified: s.mtimeMs,
+		});
+	} catch {
+		/* doesn't exist */
+	}
 
-  // Daily + Decisions + Sessions in parallel
-  await Promise.all([
-    scanDir(DAILY_DIR, '.md', 'daily', 'daily/'),
-    scanDir(DECISIONS_DIR, '.md', 'decision', 'decisions/'),
-    scanDir(SESSIONS_DIR, '.jsonl', 'session', 'sessions/'),
-  ]);
+	// Daily + Decisions + Sessions in parallel
+	await Promise.all([
+		scanDir(DAILY_DIR, ".md", "daily", "daily/"),
+		scanDir(DECISIONS_DIR, ".md", "decision", "decisions/"),
+		scanDir(SESSIONS_DIR, ".jsonl", "session", "sessions/"),
+	]);
 
-  // Path scopes
-  try {
-    const pathEntries = await readdirAsync(PATHS_DIR);
-    for (const pid of pathEntries) {
-      const pidDir = join(PATHS_DIR, pid);
-      try {
-        const s = await statAsync(pidDir);
-        if (!s.isDirectory()) continue;
-      } catch { continue; }
-      try {
-        const s = await statAsync(join(pidDir, 'MEMORY.md'));
-        files.push({ type: 'path', path: `paths/${pid}/MEMORY.md`, size: s.size, modified: s.mtimeMs });
-      } catch { /* no MEMORY.md */ }
-      await scanDir(join(pidDir, 'daily'), '.md', 'path-daily', `paths/${pid}/daily/`);
-    }
-  } catch { /* PATHS_DIR doesn't exist */ }
+	// Path scopes
+	try {
+		const pathEntries = await readdirAsync(PATHS_DIR);
+		for (const pid of pathEntries) {
+			const pidDir = join(PATHS_DIR, pid);
+			try {
+				const s = await statAsync(pidDir);
+				if (!s.isDirectory()) continue;
+			} catch {
+				continue;
+			}
+			try {
+				const s = await statAsync(join(pidDir, "MEMORY.md"));
+				files.push({
+					type: "path",
+					path: `paths/${pid}/MEMORY.md`,
+					size: s.size,
+					modified: s.mtimeMs,
+				});
+			} catch {
+				/* no MEMORY.md */
+			}
+			await scanDir(
+				join(pidDir, "daily"),
+				".md",
+				"path-daily",
+				`paths/${pid}/daily/`,
+			);
+		}
+	} catch {
+		/* PATHS_DIR doesn't exist */
+	}
 
-  return files.sort((a, b) => b.modified - a.modified);
+	return files.sort((a, b) => b.modified - a.modified);
 }
 
 // ── Exported paths ──
 
 export const PATHS = {
-  WORKSPACE,
-  CODECK_DIR,
-  MEMORY_DIR,
-  DAILY_DIR,
-  DECISIONS_DIR,
-  PATHS_DIR,
-  SESSIONS_DIR,
-  INDEX_DIR,
-  STATE_DIR,
-  DURABLE_PATH,
+	WORKSPACE,
+	CODECK_DIR,
+	MEMORY_DIR,
+	DAILY_DIR,
+	DECISIONS_DIR,
+	PATHS_DIR,
+	SESSIONS_DIR,
+	INDEX_DIR,
+	STATE_DIR,
+	DURABLE_PATH,
 } as const;

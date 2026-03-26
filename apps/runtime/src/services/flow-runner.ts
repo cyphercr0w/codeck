@@ -8,7 +8,7 @@
  */
 
 import { spawn, type ChildProcess } from "child_process";
-import { existsSync, mkdirSync } from "fs";
+import { existsSync, mkdirSync, readFileSync } from "fs";
 import { appendFile } from "fs/promises";
 import { join } from "path";
 
@@ -22,6 +22,7 @@ import {
 } from "./claude-env.js";
 import { syncToClaudeSettings } from "./permissions.js";
 import { syncCredentialsAfterCLI } from "./auth-anthropic.js";
+import { decryptValue } from "./auth-anthropic/encryption.js";
 
 import type {
 	FlowDefinition,
@@ -229,8 +230,47 @@ function runAgent(
 		const binary = getValidAgentBinary();
 		const oauthEnv = getOAuthEnv();
 		const cleanEnv = buildCleanEnv();
+
+		// Load user env vars (API keys, tokens saved via Integrations UI)
+		const flowUserEnv: Record<string, string> = {};
+		const flowWsDir = join(WORKSPACE, ".codeck");
+		const flowEncEnvPath = join(flowWsDir, ".env.encrypted");
+		const flowDotenvPath = join(flowWsDir, ".env");
+
+		if (existsSync(flowEncEnvPath)) {
+			try {
+				const store = JSON.parse(readFileSync(flowEncEnvPath, "utf-8"));
+				for (const v of store.vars || []) {
+					if (v.key && v.value) flowUserEnv[v.key] = decryptValue(v.value);
+				}
+			} catch {
+				/* fall through to plaintext */
+			}
+		}
+		if (Object.keys(flowUserEnv).length === 0 && existsSync(flowDotenvPath)) {
+			try {
+				const content = readFileSync(flowDotenvPath, "utf-8");
+				for (const line of content.split("\n")) {
+					const trimmed = line.trim();
+					if (!trimmed || trimmed.startsWith("#")) continue;
+					const eqIdx = trimmed.indexOf("=");
+					if (eqIdx > 0) {
+						const key = trimmed.slice(0, eqIdx).trim();
+						const val = trimmed
+							.slice(eqIdx + 1)
+							.trim()
+							.replace(/^["']|["']$/g, "");
+						if (key && val) flowUserEnv[key] = val;
+					}
+				}
+			} catch {
+				/* non-fatal */
+			}
+		}
+
 		const finalEnv: Record<string, string> = {
 			...cleanEnv,
+			...flowUserEnv,
 			...oauthEnv,
 			TERM: "dumb",
 			// Disable nonessential features inside flow agents to avoid hook blocking

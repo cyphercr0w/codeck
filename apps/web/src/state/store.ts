@@ -51,6 +51,7 @@ export type Section =
 	| "filesystem"
 	| "claude"
 	| "flows"
+	| "preview"
 	| "agents"
 	| "integrations"
 	| "config"
@@ -467,6 +468,9 @@ export interface SubagentInfo {
 }
 
 export const activeSubagents = signal<SubagentInfo[]>([]);
+
+// ── Preview state (persists across section changes) ──
+export const previewPort = signal<number | null>(null);
 
 const SUBAGENT_EXPIRE_MS = 10 * 60 * 1000; // 10 min auto-expire
 let subagentGcTimer: ReturnType<typeof setInterval> | null = null;

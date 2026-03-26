@@ -171,6 +171,18 @@
 		{
 			"src": "scripts/decision-guidance.mjs",
 			"dest": "/workspace/.codeck/scripts/decision-guidance.mjs"
+		},
+		{
+			"src": "scripts/consolidation-apply.mjs",
+			"dest": "/workspace/.codeck/scripts/consolidation-apply.mjs"
+		},
+		{
+			"src": "scripts/consolidation-decay.mjs",
+			"dest": "/workspace/.codeck/scripts/consolidation-decay.mjs"
+		},
+		{
+			"src": "scripts/generate-weekly-digest.mjs",
+			"dest": "/workspace/.codeck/scripts/generate-weekly-digest.mjs"
 		}
 	],
 	"directories": [

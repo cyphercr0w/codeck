@@ -14,7 +14,10 @@ import {
 import { randomUUID } from "crypto";
 import { resolve, join } from "path";
 import { realpathSync } from "fs";
-import { execFileSync } from "child_process";
+import { execFile as execFileCb } from "child_process";
+import { promisify } from "util";
+
+const execFile = promisify(execFileCb);
 import { ACTIVE_AGENT } from "./agent.js";
 import { syncToClaudeSettings } from "./permissions.js";
 import {
@@ -394,12 +397,11 @@ function _createConsoleSessionInner(
 	// Start session capture for transcript logging
 	startSessionCapture(id, workDir);
 
-	// Buffer PTY output until a WS client attaches (with size cap).
-	// captureOutput runs here only when unattached; when attached, websocket.ts handles it
-	// to avoid double callback overhead on every PTY byte.
+	// Always capture PTY output for transcript logging (session JSONL).
+	// Buffer output only when no WS client is attached (with size cap).
 	const dataDisposable = pty.onData((data: string) => {
+		captureOutput(id, data);
 		if (!session.attached) {
-			captureOutput(id, data);
 			session.outputBuffer.push(data);
 			session.outputBufferSize += data.length;
 			while (
@@ -459,7 +461,49 @@ export function createShellSession(cwd?: string): ConsoleSession {
 		throw new Error(`Working directory does not exist: ${workDir}`);
 	}
 
-	const finalEnv = { ...buildCleanEnv(), TERM: "xterm-256color" };
+	// Load user env vars (API keys, tokens saved via Integrations UI)
+	const shellUserEnv: Record<string, string> = {};
+	const shellWsDir = join(process.env.WORKSPACE || "/workspace", ".codeck");
+	const shellEncryptedEnvPath = join(shellWsDir, ".env.encrypted");
+	const shellDotenvPath = join(shellWsDir, ".env");
+
+	if (existsSync(shellEncryptedEnvPath)) {
+		try {
+			const store = JSON.parse(readFileSync(shellEncryptedEnvPath, "utf-8"));
+			for (const v of store.vars || []) {
+				if (v.key && v.value) shellUserEnv[v.key] = decryptValue(v.value);
+			}
+		} catch {
+			/* fall through to plaintext */
+		}
+	}
+
+	if (Object.keys(shellUserEnv).length === 0 && existsSync(shellDotenvPath)) {
+		try {
+			const content = readFileSync(shellDotenvPath, "utf-8");
+			for (const line of content.split("\n")) {
+				const trimmed = line.trim();
+				if (!trimmed || trimmed.startsWith("#")) continue;
+				const eqIdx = trimmed.indexOf("=");
+				if (eqIdx > 0) {
+					const key = trimmed.slice(0, eqIdx).trim();
+					const val = trimmed
+						.slice(eqIdx + 1)
+						.trim()
+						.replace(/^["']|["']$/g, "");
+					if (key && val) shellUserEnv[key] = val;
+				}
+			}
+		} catch {
+			/* non-fatal */
+		}
+	}
+
+	const finalEnv = {
+		...buildCleanEnv(),
+		...shellUserEnv,
+		TERM: "xterm-256color",
+	};
 
 	console.log(`[Console] Shell: step1 env built +${Date.now() - t0}ms`);
 
@@ -497,8 +541,8 @@ export function createShellSession(cwd?: string): ConsoleSession {
 	console.log(`[Console] Shell: step3 capture started +${Date.now() - t0}ms`);
 
 	const shellDataDisposable = pty.onData((data: string) => {
+		captureOutput(id, data);
 		if (!session.attached) {
-			captureOutput(id, data);
 			session.outputBuffer.push(data);
 			session.outputBufferSize += data.length;
 			while (
@@ -854,22 +898,19 @@ function saveSessionStateNow(
 	return state;
 }
 
+// Session restore disabled — caused persistent black screen bugs after container restart.
+// Users restore sessions manually via "recent conversations" or "new agent".
+// The save mechanism is kept so sessions.json has data, but restore is never triggered.
 export function hasSavedSessions(): boolean {
-	return existsSync(SESSIONS_STATE_PATH);
+	return false; // Always false — restore disabled
 }
 
-// True only while a session restore from the previous lifecycle is genuinely in progress.
-// Set at module load (if sessions.json exists) and cleared after restoreSavedSessions() runs.
-// Unlike hasSavedSessions(), this flag is NOT affected by saveSessionState() calls during
-// normal operation — prevents new WS clients from seeing pendingRestore:true after startup.
-let _pendingRestore: boolean = existsSync(SESSIONS_STATE_PATH);
-
 export function isPendingRestore(): boolean {
-	return _pendingRestore;
+	return false; // Always false — restore disabled
 }
 
 export function clearPendingRestore(): void {
-	_pendingRestore = false;
+	// no-op
 }
 
 /**
@@ -1014,17 +1055,20 @@ export async function restoreSessionsNow(
 /**
  * Safely update the agent CLI binary and re-resolve the path.
  * Returns the new version string or throws on failure.
+ * Async to avoid blocking the event loop during npm install (5-30s).
  */
-export function updateAgentBinary(): { version: string; binaryPath: string } {
+export async function updateAgentBinary(): Promise<{
+	version: string;
+	binaryPath: string;
+}> {
 	const pkg = "@anthropic-ai/claude-code";
 
-	// Run npm update
+	// Run npm update (async — does not block event loop)
 	console.log(`[Console] Updating ${pkg}...`);
 	try {
-		execFileSync("npm", ["install", "-g", `${pkg}@latest`], {
+		await execFile("npm", ["install", "-g", `${pkg}@latest`], {
 			encoding: "utf8",
 			timeout: 120000,
-			stdio: "pipe",
 		});
 	} catch (e) {
 		const msg = e instanceof Error ? e.message : String(e);
@@ -1040,11 +1084,11 @@ export function updateAgentBinary(): { version: string; binaryPath: string } {
 	// Validate the new binary works
 	let version = "unknown";
 	try {
-		version = execFileSync(newPath, [ACTIVE_AGENT.flags.version], {
+		const result = await execFile(newPath, [ACTIVE_AGENT.flags.version], {
 			encoding: "utf8",
 			timeout: 10000,
-			stdio: "pipe",
-		}).trim();
+		});
+		version = result.stdout.trim();
 	} catch {
 		console.warn("[Console] Could not get version after update");
 	}

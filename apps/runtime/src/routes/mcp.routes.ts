@@ -1,4 +1,5 @@
 import { Router } from "express";
+import { asyncHandler } from "../utils/async-handler.js";
 import { readFile, writeFile } from "fs/promises";
 import { join } from "path";
 
@@ -42,7 +43,7 @@ async function writeClaudeJson(data: ClaudeJson): Promise<void> {
 }
 
 // GET / — List all MCP servers (active + disabled)
-router.get("/", async (_req, res) => {
+router.get("/", asyncHandler(async (_req, res) => {
 	try {
 		const config = await readClaudeJson();
 		const active = config.mcpServers || {};
@@ -71,10 +72,10 @@ router.get("/", async (_req, res) => {
 	} catch (err) {
 		res.status(500).json({ success: false, error: (err as Error).message });
 	}
-});
+}));
 
 // POST / — Add or update an MCP server
-router.post("/", async (req, res) => {
+router.post("/", asyncHandler(async (req, res) => {
 	try {
 		const { name, command, args, env, description } = req.body;
 
@@ -112,10 +113,10 @@ router.post("/", async (req, res) => {
 	} catch (err) {
 		res.status(500).json({ success: false, error: (err as Error).message });
 	}
-});
+}));
 
 // DELETE /:name — Remove an MCP server
-router.delete("/:name", async (req, res) => {
+router.delete("/:name", asyncHandler(async (req, res) => {
 	try {
 		const { name } = req.params;
 		const config = await readClaudeJson();
@@ -146,10 +147,10 @@ router.delete("/:name", async (req, res) => {
 	} catch (err) {
 		res.status(500).json({ success: false, error: (err as Error).message });
 	}
-});
+}));
 
 // POST /:name/toggle — Enable/disable an MCP server
-router.post("/:name/toggle", async (req, res) => {
+router.post("/:name/toggle", asyncHandler(async (req, res) => {
 	try {
 		const { name } = req.params;
 		const config = await readClaudeJson();
@@ -193,7 +194,7 @@ router.post("/:name/toggle", async (req, res) => {
 	} catch (err) {
 		res.status(500).json({ success: false, error: (err as Error).message });
 	}
-});
+}));
 
 // GET /search — Search the official MCP registry
 // Proxied server-side to avoid CORS issues from the browser.
@@ -203,7 +204,7 @@ const REGISTRY_URL = "https://registry.modelcontextprotocol.io/v0.1/servers";
 const searchCache = new Map<string, { data: unknown; ts: number }>();
 const CACHE_TTL = 5 * 60 * 1000; // 5 min
 
-router.get("/search", async (req, res) => {
+router.get("/search", asyncHandler(async (req, res) => {
 	try {
 		const q = String(req.query.q || "").trim();
 		if (!q) {
@@ -315,6 +316,6 @@ router.get("/search", async (req, res) => {
 	} catch (err) {
 		res.status(500).json({ success: false, error: (err as Error).message });
 	}
-});
+}));
 
 export default router;

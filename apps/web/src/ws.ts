@@ -52,6 +52,8 @@ const KNOWN_MSG_TYPES = new Set([
 	"subagent:start",
 	"subagent:output",
 	"subagent:stop",
+	"preview:frame",
+	"preview:error",
 	"session:conversationId",
 	"chat:response:chunk",
 	"chat:response:complete",
@@ -149,6 +151,28 @@ type ExitHandler = (sessionId: string) => void;
 
 let onOutput: OutputHandler | null = null;
 let onExit: ExitHandler | null = null;
+
+// Preview frame callback (CDP screencast)
+type PreviewFrameHandler = (
+	data: string,
+	metadata: Record<string, unknown>,
+) => void;
+let onPreviewFrame: PreviewFrameHandler | null = null;
+
+export function setPreviewFrameHandler(
+	handler: PreviewFrameHandler | null,
+): void {
+	onPreviewFrame = handler;
+}
+
+type PreviewErrorHandler = (error: string, url: string) => void;
+let onPreviewError: PreviewErrorHandler | null = null;
+
+export function setPreviewErrorHandler(
+	handler: PreviewErrorHandler | null,
+): void {
+	onPreviewError = handler;
+}
 
 export function setTerminalHandlers(
 	output: OutputHandler,
@@ -410,6 +434,16 @@ function openWs(wsUrl: string, protocols?: string[]): void {
 					(msg.data as any).agentId,
 					(msg.data as any).duration,
 					(msg.data as any).lastMessage,
+				);
+			} else if (msg.type === "preview:frame" && msg.data) {
+				onPreviewFrame?.(
+					msg.data as string,
+					((raw as any).metadata as Record<string, unknown>) || {},
+				);
+			} else if (msg.type === "preview:error") {
+				onPreviewError?.(
+					((raw as any).error as string) || "Unknown error",
+					((raw as any).url as string) || "",
 				);
 			} else if (msg.type === "session:conversationId") {
 				const sid = msg.sessionId as string;

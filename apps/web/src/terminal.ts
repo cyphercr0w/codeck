@@ -351,9 +351,9 @@ export function destroyTerminal(sessionId: string): void {
 		scrollLocked.delete(sessionId);
 		attachingSession.delete(sessionId);
 		programmaticScrollUntil.delete(sessionId);
-		const raf = pendingScrollRaf.get(sessionId);
-		if (raf) {
-			cancelAnimationFrame(raf);
+		const pending = pendingScrollRaf.get(sessionId);
+		if (pending) {
+			clearTimeout(pending);
 			pendingScrollRaf.delete(sessionId);
 		}
 	}
@@ -511,7 +511,20 @@ export function getTerminalDimensions(
 // Without batching, each write callback calls scrollToBottom() independently,
 // and xterm's internal buffer expansion between callbacks can temporarily move
 // the viewport up — the next scrollToBottom() snaps it back, causing visible jitter.
-const pendingScrollRaf = new Map<string, number>();
+const pendingScrollRaf = new Map<string, ReturnType<typeof setTimeout>>();
+
+// Force repaint all terminals when the page becomes visible again.
+// Browsers throttle/pause timers and rAF in background tabs, so terminal
+// writes accumulate without canvas updates. This flushes them on return.
+if (typeof document !== "undefined") {
+	document.addEventListener("visibilitychange", () => {
+		if (!document.hidden) {
+			for (const [, inst] of terminals) {
+				inst.term.refresh(0, inst.term.rows - 1);
+			}
+		}
+	});
+}
 
 export function writeToTerminal(sessionId: string, data: string): void {
 	const instance = terminals.get(sessionId);
@@ -534,19 +547,22 @@ export function writeToTerminal(sessionId: string, data: string): void {
 		return;
 	}
 
-	// Write data, then schedule a single scroll-to-bottom per animation frame.
-	// Multiple writes within the same frame share one scrollToBottom() call,
-	// eliminating the visible up-down jitter during rapid agent output.
+	// Write data, then schedule a scroll-to-bottom + canvas refresh on a short timer.
+	// Using setTimeout(5ms) instead of requestAnimationFrame because rAF is throttled
+	// to screen refresh rate (16ms at 60Hz) and paused entirely when the tab is hidden,
+	// causing terminal output to visually freeze even though data continues arriving.
+	// The 5ms timer ensures writes are rendered within a single tick while still
+	// batching rapid output to avoid per-write jitter.
 	instance.term.write(sanitized);
 	if (!pendingScrollRaf.has(sessionId)) {
-		const raf = requestAnimationFrame(() => {
+		const timer = setTimeout(() => {
 			pendingScrollRaf.delete(sessionId);
 			if (!scrollLocked.get(sessionId)) {
 				suppressScrollEvents(sessionId);
 				instance.term.scrollToBottom();
 			}
-		});
-		pendingScrollRaf.set(sessionId, raf);
+		}, 5);
+		pendingScrollRaf.set(sessionId, timer);
 	}
 }
 

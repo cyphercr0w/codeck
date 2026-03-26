@@ -204,6 +204,9 @@ function listAllConversations(): Array<{
 // Active chat processes (for cancellation)
 const activeChatProcesses = new Map<string, ChildProcess>();
 
+// Maximum number of concurrent chat processes
+const MAX_CHAT_PROCESSES = 3;
+
 // POST /api/chat/message — Send a message and get streaming response
 // Returns immediately with chatId, streams response via WS events:
 //   chat:response:chunk { chatId, chunk }
@@ -217,6 +220,14 @@ router.post("/message", (req, res) => {
 	}
 	if (message.length > 50000) {
 		res.status(400).json({ error: "Message too long (max 50,000 chars)" });
+		return;
+	}
+
+	// Enforce concurrency limit on active chat processes
+	if (activeChatProcesses.size >= MAX_CHAT_PROCESSES) {
+		res
+			.status(429)
+			.json({ error: "Too many concurrent chat processes. Please wait." });
 		return;
 	}
 

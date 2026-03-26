@@ -18,6 +18,7 @@ import {
 	listSessions,
 	isPendingRestore,
 	readSavedSessions,
+	onAnySessionExit,
 } from "../services/console.js";
 import { getLogBuffer, setWsClients, broadcast } from "./logger.js";
 import {
@@ -119,9 +120,34 @@ function startAuthRecoveryPoller(): void {
 }
 
 export function setupWebSocket(): void {
+	// Register a global session-exit callback so WS cleanup runs for EVERY session
+	// exit — even sessions that never had a WS client attached.  This replaces the
+	// per-session pty.onExit handler that previously caused double-destroy with the
+	// handler in console.ts.
+	onAnySessionExit((sessionId: string, exitCode: number) => {
+		const currentClients = sessionClients.get(sessionId);
+		if (currentClients) {
+			const payload = JSON.stringify({
+				type: "console:exit",
+				sessionId,
+				exitCode,
+			});
+			for (const client of currentClients) {
+				if (client.readyState === WebSocket.OPEN) client.send(payload);
+			}
+		}
+		syncCredentialsAfterCLI();
+		broadcastStatus();
+		sessionExitHandlers.delete(sessionId);
+		sessionHandlers.delete(sessionId);
+		sessionClients.delete(sessionId);
+		sessionMaxDimensions.delete(sessionId);
+		sessionPtyPaused.delete(sessionId);
+	});
+
 	wss = new WebSocketServer({
 		noServer: true,
-		maxPayload: 64 * 1024,
+		maxPayload: 512 * 1024, // 512KB — must fit preview JPEG frames (~100-200KB base64)
 		perMessageDeflate: false,
 		// Accept auth.* subprotocol so browser doesn't reject the connection
 		handleProtocols(protocols) {
@@ -450,34 +476,6 @@ function handleConsoleMessage(
 
 		const sid = msg.sessionId;
 
-		// Exit handler: created once per session, kept alive even when no WS clients
-		if (!sessionExitHandlers.has(sid)) {
-			const exitDisposable = session.pty.onExit(
-				({ exitCode }: { exitCode: number }) => {
-					const currentClients = sessionClients.get(sid);
-					if (currentClients) {
-						const payload = JSON.stringify({
-							type: "console:exit",
-							sessionId: sid,
-							exitCode,
-						});
-						for (const client of currentClients) {
-							if (client.readyState === WebSocket.OPEN) client.send(payload);
-						}
-					}
-					syncCredentialsAfterCLI();
-					broadcastStatus();
-					sessionExitHandlers.delete(sid);
-					sessionHandlers.delete(sid);
-					sessionClients.delete(sid);
-					sessionMaxDimensions.delete(sid);
-					sessionPtyPaused.delete(sid);
-					destroySession(sid);
-				},
-			);
-			sessionExitHandlers.set(sid, exitDisposable);
-		}
-
 		// Data handler: created when the first client attaches
 		if (!sessionHandlers.has(sid)) {
 			// Watermark-based PTY flow control.
@@ -626,12 +624,13 @@ export function handleWsUpgrade(
 	const host = req.headers.host;
 	if (origin && host) {
 		try {
-			const originHost = new URL(origin).host;
+			const originUrl = new URL(origin);
 			const isAllowed =
-				originHost === host ||
-				originHost.includes("localhost") ||
-				originHost.endsWith(".codeck.local") ||
-				originHost === "codeck.local";
+				originUrl.host === host ||
+				originUrl.hostname === "localhost" ||
+				originUrl.hostname === "127.0.0.1" ||
+				originUrl.hostname === "::1" ||
+				originUrl.hostname.endsWith(".local");
 			if (!isAllowed) {
 				console.warn(
 					`[WS] Rejected upgrade: origin "${origin}" does not match host "${host}"`,

@@ -16,48 +16,68 @@ import {
 } from "../services/console.js";
 import { broadcastStatus } from "../web/websocket.js";
 import { broadcast } from "../web/logger.js";
+import { asyncHandler } from "../utils/async-handler.js";
 
 const router = Router();
 
 // Create console session (multi-session, max 5)
-router.post("/create", (req, res) => {
-	if (!isClaudeAuthenticated()) {
-		res.status(400).json({ error: "Claude is not authenticated" });
-		return;
-	}
+// Async: if token is refreshing after container restart, waits up to 10s
+router.post(
+	"/create",
+	asyncHandler(async (req, res) => {
+		if (!isClaudeAuthenticated()) {
+			// Token may be refreshing after container restart — retry for up to 10s
+			let authed = false;
+			for (let i = 0; i < 10; i++) {
+				await new Promise((r) => setTimeout(r, 1000));
+				if (isClaudeAuthenticated()) {
+					authed = true;
+					break;
+				}
+			}
+			if (!authed) {
+				res.status(400).json({ error: "Claude is not authenticated" });
+				return;
+			}
+			console.log(
+				"[Console] Auth succeeded after retry (token refresh was in progress)",
+			);
+		}
 
-	if (getSessionCount() >= MAX_SESSIONS) {
-		res
-			.status(400)
-			.json({ error: `Maximum ${MAX_SESSIONS} simultaneous sessions` });
-		return;
-	}
-
-	const { cwd, resume } = req.body || {};
-
-	// Validate cwd stays within /workspace to prevent path traversal
-	if (cwd && typeof cwd === "string") {
-		const WORKSPACE = process.env.WORKSPACE || "/workspace";
-		const resolved = resolve(cwd);
-		if (!resolved.startsWith(WORKSPACE + sep) && resolved !== WORKSPACE) {
-			res.status(403).json({ error: "Access denied: cwd outside workspace" });
+		if (getSessionCount() >= MAX_SESSIONS) {
+			res
+				.status(400)
+				.json({ error: `Maximum ${MAX_SESSIONS} simultaneous sessions` });
 			return;
 		}
-	}
 
-	try {
-		const session = createConsoleSession({ cwd: cwd || undefined, resume });
-		console.log(
-			`[Console] Session created: ${session.id} (cwd: ${session.cwd}, resume: ${!!resume})`,
-		);
-		broadcastStatus();
-		res.json({ sessionId: session.id, cwd: session.cwd, name: session.name });
-	} catch (e) {
-		const detail = e instanceof Error ? e.message : "Failed to create session";
-		console.log(`[Console] Session creation failed: ${detail}`);
-		res.status(400).json({ error: "Failed to create session" });
-	}
-});
+		const { cwd, resume } = req.body || {};
+
+		// Validate cwd stays within /workspace to prevent path traversal
+		if (cwd && typeof cwd === "string") {
+			const WORKSPACE = process.env.WORKSPACE || "/workspace";
+			const resolved = resolve(cwd);
+			if (!resolved.startsWith(WORKSPACE + sep) && resolved !== WORKSPACE) {
+				res.status(403).json({ error: "Access denied: cwd outside workspace" });
+				return;
+			}
+		}
+
+		try {
+			const session = createConsoleSession({ cwd: cwd || undefined, resume });
+			console.log(
+				`[Console] Session created: ${session.id} (cwd: ${session.cwd}, resume: ${!!resume})`,
+			);
+			broadcastStatus();
+			res.json({ sessionId: session.id, cwd: session.cwd, name: session.name });
+		} catch (e) {
+			const detail =
+				e instanceof Error ? e.message : "Failed to create session";
+			console.log(`[Console] Session creation failed: ${detail}`);
+			res.status(400).json({ error: "Failed to create session" });
+		}
+	}),
+);
 
 // Create shell session — does not require Claude OAuth (shells don't use Claude),
 // but is still protected by password auth middleware in server.ts
@@ -120,21 +140,24 @@ router.get("/sessions", (_req, res) => {
 });
 
 // Check if a directory has resumable conversations
-router.get("/has-conversations", async (req, res) => {
-	const cwd = req.query.cwd as string;
-	if (!cwd) {
-		res.status(400).json({ error: "cwd query param required" });
-		return;
-	}
-	// Validate cwd stays within workspace
-	const WORKSPACE = process.env.WORKSPACE || "/workspace";
-	const resolved = resolve(cwd);
-	if (!resolved.startsWith(WORKSPACE + sep) && resolved !== WORKSPACE) {
-		res.status(403).json({ error: "Access denied: cwd outside workspace" });
-		return;
-	}
-	res.json({ hasConversations: await hasResumableConversations(cwd) });
-});
+router.get(
+	"/has-conversations",
+	asyncHandler(async (req, res) => {
+		const cwd = req.query.cwd as string;
+		if (!cwd) {
+			res.status(400).json({ error: "cwd query param required" });
+			return;
+		}
+		// Validate cwd stays within workspace
+		const WORKSPACE = process.env.WORKSPACE || "/workspace";
+		const resolved = resolve(cwd);
+		if (!resolved.startsWith(WORKSPACE + sep) && resolved !== WORKSPACE) {
+			res.status(403).json({ error: "Access denied: cwd outside workspace" });
+			return;
+		}
+		res.json({ hasConversations: await hasResumableConversations(cwd) });
+	}),
+);
 
 // List recent conversations across all projects (for resume UI)
 // Two-pass approach: stat all files (cheap), sort by mtime, only read top N (expensive).
@@ -388,25 +411,28 @@ const contextBySession = new Map<
 // Destroy console session
 // Restore saved sessions — called when user clicks "Resume" in the restore prompt.
 // Creates the actual PTY processes. Before this, sessions are just metadata.
-router.post("/restore-sessions", async (req, res) => {
-	const { sessions: savedSessions } = req.body;
-	if (!Array.isArray(savedSessions) || savedSessions.length === 0) {
-		res.status(400).json({ error: "sessions array required" });
-		return;
-	}
-	try {
-		const restored = await restoreSessionsNow(savedSessions);
-		console.log(
-			`[Console] Restored ${restored.length}/${savedSessions.length} sessions`,
-		);
-		broadcastStatus();
-		res.json({ success: true, sessions: restored });
-	} catch (e) {
-		res
-			.status(500)
-			.json({ error: "Failed to restore: " + (e as Error).message });
-	}
-});
+router.post(
+	"/restore-sessions",
+	asyncHandler(async (req, res) => {
+		const { sessions: savedSessions } = req.body;
+		if (!Array.isArray(savedSessions) || savedSessions.length === 0) {
+			res.status(400).json({ error: "sessions array required" });
+			return;
+		}
+		try {
+			const restored = await restoreSessionsNow(savedSessions);
+			console.log(
+				`[Console] Restored ${restored.length}/${savedSessions.length} sessions`,
+			);
+			broadcastStatus();
+			res.json({ success: true, sessions: restored });
+		} catch (e) {
+			res
+				.status(500)
+				.json({ error: "Failed to restore: " + (e as Error).message });
+		}
+	}),
+);
 
 router.post("/destroy", (req, res) => {
 	const { sessionId } = req.body;

@@ -16,10 +16,8 @@ import {
 	applyEdgeChanges,
 	Handle,
 	Position,
-	BaseEdge,
-	getBezierPath,
-	EdgeLabelRenderer,
 	MarkerType,
+	useViewport,
 	type Node,
 	type Edge,
 	type OnNodesChange,
@@ -27,61 +25,17 @@ import {
 	type OnConnect,
 	type Connection,
 	type NodeProps,
-	type EdgeProps,
 	type XYPosition,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import { IconPlus, IconX, IconTrash, IconCheck } from "./Icons";
 
-// ── Types (shared with FlowsSection) ──
-
-interface SystemAgent {
-	id: string;
-	name: string;
-	description: string;
-	tools: string[];
-}
-
-interface AgentDef {
-	id: string;
-	name: string;
-	role: string;
-	systemPrompt: string;
-	inputTemplate: string;
-	allowedTools: string[];
-	mcpServers: string[];
-	maxTurns: number;
-	timeoutMs: number;
-	outputParser: "raw" | "structured";
-	structuredOutputSchema?: { decisionField: string; decisionsEnum: string[] };
-	transitions: {
-		default?: string | "END";
-		conditions?: Array<{ when: string; goto: string | "END" }>;
-	};
-}
-
-interface FlowDef {
-	id: string;
-	name: string;
-	description: string;
-	version: string;
-	isTemplate: boolean;
-	createdAt: string;
-	updatedAt: string;
-	entryAgentId: string;
-	agents: Record<string, AgentDef>;
-}
-
-const ALL_TOOLS = [
-	"Read",
-	"Write",
-	"Edit",
-	"Bash",
-	"Glob",
-	"Grep",
-	"WebSearch",
-	"WebFetch",
-];
+import {
+	type SystemAgent,
+	type AgentDef,
+	type FlowDef,
+	ALL_TOOLS,
+} from "./flows/flow-types";
 
 // ── Agent Node Data ──
 
@@ -100,6 +54,7 @@ function AgentNodeComponent({ data, selected }: NodeProps<AgentNode>) {
 	const { agent, isEntry } = data;
 	const toolCount = agent.allowedTools.length;
 	const hasConditions = (agent.transitions.conditions?.length ?? 0) > 0;
+	const defaultTarget = agent.transitions.default;
 
 	return (
 		<div
@@ -130,6 +85,33 @@ function AgentNodeComponent({ data, selected }: NodeProps<AgentNode>) {
 				<span title="Timeout">{Math.round(agent.timeoutMs / 1000)}s</span>
 			</div>
 
+			{/* Transitions summary — shows where this node connects */}
+			<div class="canvas-node-transitions">
+				{defaultTarget && defaultTarget !== "END" && (
+					<span class="canvas-node-transition" title="Default next agent">
+						<span class="canvas-transition-arrow">→</span> {defaultTarget}
+					</span>
+				)}
+				{defaultTarget === "END" && (
+					<span
+						class="canvas-node-transition canvas-node-transition-end"
+						title="Flow ends here"
+					>
+						<span class="canvas-transition-arrow">⏹</span> END
+					</span>
+				)}
+				{hasConditions &&
+					agent.transitions.conditions!.map((c) => (
+						<span
+							key={c.when}
+							class="canvas-node-transition canvas-node-transition-cond"
+							title={`When ${c.when} → ${c.goto}`}
+						>
+							<span class="canvas-transition-arrow">⤷</span> {c.when} → {c.goto}
+						</span>
+					))}
+			</div>
+
 			{/* Default output handle */}
 			<Handle
 				type="source"
@@ -138,7 +120,7 @@ function AgentNodeComponent({ data, selected }: NodeProps<AgentNode>) {
 				className="canvas-handle canvas-handle-out"
 			/>
 
-			{/* Conditional output handles */}
+			{/* Conditional output handles — positioned below default, with labels */}
 			{hasConditions &&
 				agent.transitions.conditions!.map((c, i) => (
 					<Handle
@@ -147,63 +129,184 @@ function AgentNodeComponent({ data, selected }: NodeProps<AgentNode>) {
 						position={Position.Right}
 						id={`cond-${c.when}`}
 						className="canvas-handle canvas-handle-cond"
-						style={{ top: `${60 + (i + 1) * 20}%` }}
+						style={{ top: `${65 + (i + 1) * 18}%` }}
 					/>
 				))}
 		</div>
 	);
 }
 
-// ── Custom Transition Edge ──
+// ── Manual Edge Overlay ──
+// ReactFlow's built-in edge renderer doesn't work with preact/compat.
+// This component draws SVG bezier curves between connected nodes using
+// the ReactFlow viewport transform and node positions.
 
-function TransitionEdge(props: EdgeProps) {
-	const {
-		id,
-		sourceX,
-		sourceY,
-		targetX,
-		targetY,
-		sourcePosition,
-		targetPosition,
-		data,
-		selected,
-	} = props;
+interface EdgeInfo {
+	sourceId: string;
+	targetId: string;
+	sourceHandle: string;
+	label: string;
+	isLoop: boolean;
+	isConditional: boolean;
+}
 
-	const [edgePath, labelX, labelY] = getBezierPath({
-		sourceX,
-		sourceY,
-		sourcePosition,
-		targetX,
-		targetY,
-		targetPosition,
-	});
+function ManualEdgeOverlay({
+	flow,
+	nodes,
+}: {
+	flow: FlowDef;
+	nodes: AgentNode[];
+}) {
+	const { x: vx, y: vy, zoom } = useViewport();
 
-	const label = (data as Record<string, unknown>)?.label as string | undefined;
+	// Build edge list from flow definition
+	const backEdges = useMemo(() => findBackEdges(flow), [flow]);
+	const edgeList: EdgeInfo[] = useMemo(() => {
+		const list: EdgeInfo[] = [];
+		for (const [agentId, agent] of Object.entries(flow.agents)) {
+			if (agent.transitions.default && agent.transitions.default !== "END") {
+				const edgeId = `${agentId}->default->${agent.transitions.default}`;
+				list.push({
+					sourceId: agentId,
+					targetId: agent.transitions.default,
+					sourceHandle: "default",
+					label: backEdges.has(edgeId) ? "↩ loop" : "→ next",
+					isLoop: backEdges.has(edgeId),
+					isConditional: false,
+				});
+			}
+			for (const cond of agent.transitions.conditions || []) {
+				if (cond.goto !== "END") {
+					list.push({
+						sourceId: agentId,
+						targetId: cond.goto,
+						sourceHandle: `cond-${cond.when}`,
+						label: `⤷ ${cond.when}`,
+						isLoop: false,
+						isConditional: true,
+					});
+				}
+			}
+		}
+		return list;
+	}, [flow, backEdges]);
+
+	// Build node position map from current canvas state
+	const nodeMap = useMemo(() => {
+		const map = new Map<
+			string,
+			{ x: number; y: number; w: number; h: number }
+		>();
+		for (const n of nodes) {
+			// Measure node dimensions from DOM if possible, fallback to defaults
+			const el =
+				document.getElementById(`rf-node-${n.id}`) ??
+				document.querySelector(`[data-id="${n.id}"]`);
+			const w = el?.offsetWidth ?? 260;
+			const h = el?.offsetHeight ?? 160;
+			map.set(n.id, { x: n.position.x, y: n.position.y, w, h });
+		}
+		return map;
+	}, [nodes]);
+
+	// Calculate handle Y offset for conditional handles
+	function getSourceY(sourceId: string, handle: string): number {
+		const node = nodeMap.get(sourceId);
+		if (!node) return 0;
+		if (handle === "default") return node.y + node.h * 0.35;
+		// Conditional handles are below the default
+		const agent = flow.agents[sourceId];
+		const conds = agent?.transitions.conditions || [];
+		const idx = conds.findIndex((c) => `cond-${c.when}` === handle);
+		return node.y + node.h * (0.5 + (idx + 1) * 0.12);
+	}
 
 	return (
-		<>
-			<BaseEdge
-				id={id}
-				path={edgePath}
-				style={{
-					stroke: selected ? "var(--accent, #6366f1)" : "var(--border, #333)",
-					strokeWidth: selected ? 2.5 : 1.5,
-				}}
-			/>
-			{label && label !== "default" && (
-				<EdgeLabelRenderer>
-					<div
-						className="canvas-edge-label nodrag nopan"
-						style={{
-							position: "absolute",
-							transform: `translate(-50%, -50%) translate(${labelX}px, ${labelY}px)`,
-						}}
-					>
-						{label}
-					</div>
-				</EdgeLabelRenderer>
-			)}
-		</>
+		<svg
+			class="manual-edge-overlay"
+			style={{
+				position: "absolute",
+				top: 0,
+				left: 0,
+				width: "100%",
+				height: "100%",
+				pointerEvents: "none",
+				zIndex: 1,
+				overflow: "visible",
+			}}
+		>
+			<g transform={`translate(${vx}, ${vy}) scale(${zoom})`}>
+				{edgeList.map((edge, i) => {
+					const src = nodeMap.get(edge.sourceId);
+					const tgt = nodeMap.get(edge.targetId);
+					if (!src || !tgt) return null;
+
+					const x1 = src.x + src.w;
+					const y1 = getSourceY(edge.sourceId, edge.sourceHandle);
+					const x2 = tgt.x;
+					const y2 = tgt.y + tgt.h * 0.35;
+
+					// Bezier control points
+					const dx = Math.abs(x2 - x1) * 0.5;
+					const cx1 = x1 + dx;
+					const cx2 = x2 - dx;
+					// For loops (back-edges), curve above
+					const loopOffset = edge.isLoop ? -80 : 0;
+
+					const path = edge.isLoop
+						? `M ${x1} ${y1} C ${x1 + 100} ${y1 - 80}, ${x2 - 100} ${y2 - 80}, ${x2} ${y2}`
+						: `M ${x1} ${y1} C ${cx1} ${y1}, ${cx2} ${y2}, ${x2} ${y2}`;
+
+					const color = edge.isLoop
+						? "#f59e0b"
+						: edge.isConditional
+							? "#a78bfa"
+							: "#6366f1";
+
+					const midX = (x1 + x2) / 2;
+					const midY = (y1 + y2) / 2 + loopOffset / 2;
+
+					return (
+						<g key={i}>
+							<path
+								d={path}
+								fill="none"
+								stroke={color}
+								stroke-width="2"
+								stroke-dasharray={edge.isLoop ? "8 4" : undefined}
+								opacity="0.8"
+							/>
+							{/* Arrowhead */}
+							<polygon
+								points="-6,-4 0,0 -6,4"
+								fill={color}
+								transform={`translate(${x2}, ${y2}) rotate(0)`}
+								opacity="0.8"
+							/>
+							{/* Label */}
+							<foreignObject
+								x={midX - 50}
+								y={midY - 12}
+								width="100"
+								height="24"
+								style={{ overflow: "visible" }}
+							>
+								<div
+									className={`canvas-edge-label${edge.isLoop ? " canvas-edge-loop" : ""}${edge.isConditional ? " canvas-edge-cond" : ""}`}
+									style={{
+										textAlign: "center",
+										whiteSpace: "nowrap",
+										fontSize: "10px",
+									}}
+								>
+									{edge.label}
+								</div>
+							</foreignObject>
+						</g>
+					);
+				})}
+			</g>
+		</svg>
 	);
 }
 
@@ -259,12 +362,51 @@ function autoLayout(flow: FlowDef): Record<string, XYPosition> {
 
 // ── Convert FlowDef ↔ ReactFlow nodes/edges ──
 
+/** Detect back-edges (loops) via DFS — edges where target is an ancestor of source */
+function findBackEdges(flow: FlowDef): Set<string> {
+	const backEdges = new Set<string>();
+	const WHITE = 0,
+		GRAY = 1,
+		BLACK = 2;
+	const color: Record<string, number> = {};
+	for (const id of Object.keys(flow.agents)) color[id] = WHITE;
+
+	function dfs(id: string) {
+		color[id] = GRAY;
+		const agent = flow.agents[id];
+		if (!agent) return;
+		const targets: Array<{ target: string; handle: string }> = [];
+		if (agent.transitions.default && agent.transitions.default !== "END") {
+			targets.push({ target: agent.transitions.default, handle: "default" });
+		}
+		for (const cond of agent.transitions.conditions || []) {
+			if (cond.goto !== "END")
+				targets.push({ target: cond.goto, handle: `cond-${cond.when}` });
+		}
+		for (const { target, handle } of targets) {
+			if (color[target] === GRAY) {
+				backEdges.add(`${id}->${handle}->${target}`);
+			} else if (color[target] === WHITE) {
+				dfs(target);
+			}
+		}
+		color[id] = BLACK;
+	}
+
+	dfs(flow.entryAgentId);
+	// Handle disconnected nodes
+	for (const id of Object.keys(flow.agents)) {
+		if (color[id] === WHITE) dfs(id);
+	}
+	return backEdges;
+}
+
 function flowToGraph(
 	flow: FlowDef,
-	selectedAgentId: string | null,
 	onSelect: (id: string) => void,
 ): { nodes: AgentNode[]; edges: Edge[] } {
 	const positions = autoLayout(flow);
+	const backEdges = findBackEdges(flow);
 	const nodes: AgentNode[] = [];
 	const edges: Edge[] = [];
 
@@ -278,33 +420,48 @@ function flowToGraph(
 				isEntry: agentId === flow.entryAgentId,
 				onSelect,
 			},
-			selected: agentId === selectedAgentId,
 		});
 
 		if (agent.transitions.default && agent.transitions.default !== "END") {
+			const edgeId = `${agentId}->default->${agent.transitions.default}`;
+			const isLoop = backEdges.has(edgeId);
 			edges.push({
-				id: `${agentId}->default->${agent.transitions.default}`,
+				id: edgeId,
 				source: agentId,
 				target: agent.transitions.default,
 				sourceHandle: "default",
-				type: "transition",
-				data: { label: "default" },
-				markerEnd: { type: MarkerType.ArrowClosed, width: 16, height: 16 },
+				type: "default",
+				label: isLoop ? "↩ loop" : "→ next",
+				style: { stroke: isLoop ? "#f59e0b" : "#6366f1", strokeWidth: 2 },
+				animated: isLoop,
+				markerEnd: {
+					type: MarkerType.ArrowClosed,
+					width: 16,
+					height: 16,
+					color: isLoop ? "#f59e0b" : "#6366f1",
+				},
 			});
 		}
 
 		if (agent.transitions.conditions) {
 			for (const cond of agent.transitions.conditions) {
 				if (cond.goto !== "END") {
+					const edgeId = `${agentId}->cond-${cond.when}->${cond.goto}`;
 					edges.push({
-						id: `${agentId}->cond-${cond.when}->${cond.goto}`,
+						id: edgeId,
 						source: agentId,
 						target: cond.goto,
 						sourceHandle: `cond-${cond.when}`,
-						type: "transition",
+						type: "default",
+						label: `⤷ ${cond.when}`,
+						style: { stroke: "#a78bfa", strokeWidth: 2 },
 						animated: true,
-						data: { label: cond.when },
-						markerEnd: { type: MarkerType.ArrowClosed, width: 16, height: 16 },
+						markerEnd: {
+							type: MarkerType.ArrowClosed,
+							width: 16,
+							height: 16,
+							color: "#a78bfa",
+						},
 					});
 				}
 			}
@@ -317,7 +474,6 @@ function flowToGraph(
 // ── Node/edge type registries (stable reference) ──
 
 const nodeTypes = { agentNode: AgentNodeComponent };
-const edgeTypes = { transition: TransitionEdge };
 
 // ══════════════════════════════════════════
 // ══ MAIN CANVAS COMPONENT
@@ -343,11 +499,9 @@ export function FlowCanvas({
 		setSelectedAgentId((prev) => (prev === id ? null : id));
 	}, []);
 
-	// Build graph representation
-	const graph = useMemo(
-		() => flowToGraph(flow, selectedAgentId, onSelect),
-		[flow, selectedAgentId, onSelect],
-	);
+	// Build graph representation — do NOT depend on selectedAgentId to avoid
+	// full graph rebuild + fitView reset on every node click
+	const graph = useMemo(() => flowToGraph(flow, onSelect), [flow, onSelect]);
 
 	const [nodes, setNodes] = useState<AgentNode[]>(graph.nodes);
 	const [edges, setEdges] = useState<Edge[]>(graph.edges);
@@ -406,11 +560,23 @@ export function FlowCanvas({
 		[flow, onChange],
 	);
 
+	// Clear ReactFlow's internal node selection state
+	const deselectAllNodes = useCallback(() => {
+		setNodes((nds) =>
+			nds.map((n) => (n.selected ? { ...n, selected: false } : n)),
+		);
+	}, []);
+
+	const clearSelection = useCallback(() => {
+		setSelectedAgentId(null);
+		deselectAllNodes();
+	}, [deselectAllNodes]);
+
 	const onNodeClick = useCallback((_: MouseEvent, node: AgentNode) => {
 		setSelectedAgentId((prev) => (prev === node.id ? null : node.id));
 	}, []);
 
-	const onPaneClick = useCallback(() => setSelectedAgentId(null), []);
+	const onPaneClick = useCallback(() => clearSelection(), [clearSelection]);
 
 	// Edge deletion → update flow transitions
 	const onEdgesDelete = useCallback(
@@ -468,10 +634,9 @@ export function FlowCanvas({
 				? Object.keys(updated)[0]
 				: flow.entryAgentId;
 			onChange({ ...flow, agents: updated, entryAgentId: newEntry });
-			if (selectedAgentId && removing.has(selectedAgentId))
-				setSelectedAgentId(null);
+			if (selectedAgentId && removing.has(selectedAgentId)) clearSelection();
 		},
-		[flow, onChange, selectedAgentId],
+		[flow, onChange, selectedAgentId, clearSelection],
 	);
 
 	// ── Agent CRUD ──
@@ -555,7 +720,7 @@ export function FlowCanvas({
 				? Object.keys(updated)[0]
 				: flow.entryAgentId;
 		onChange({ ...flow, agents: updated, entryAgentId: newEntry });
-		setSelectedAgentId(null);
+		clearSelection();
 	}
 
 	function addCondition() {
@@ -663,13 +828,12 @@ export function FlowCanvas({
 							conn.source !== conn.target
 						}
 						nodeTypes={nodeTypes}
-						edgeTypes={edgeTypes}
 						fitView
 						snapToGrid
 						snapGrid={[20, 20]}
 						deleteKeyCode="Delete"
 						defaultEdgeOptions={{
-							type: "transition",
+							type: "default",
 							markerEnd: {
 								type: MarkerType.ArrowClosed,
 								width: 16,
@@ -684,6 +848,7 @@ export function FlowCanvas({
 							pannable
 							style={{ background: "var(--bg-secondary, #111)" }}
 						/>
+						<ManualEdgeOverlay flow={flow} nodes={nodes} />
 					</ReactFlow>
 
 					{/* Add agent FAB */}
@@ -714,7 +879,7 @@ export function FlowCanvas({
 					<div class="flow-canvas-panel">
 						<div class="flow-canvas-panel-head">
 							<h3>{selectedAgent.name}</h3>
-							<button class="btn-icon" onClick={() => setSelectedAgentId(null)}>
+							<button class="btn-icon" onClick={clearSelection}>
 								<IconX size={14} />
 							</button>
 						</div>

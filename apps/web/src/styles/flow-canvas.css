@@ -200,6 +200,40 @@
 	opacity: 0.8;
 }
 
+/* ── Transition summary (inside node) ── */
+
+.canvas-node-transitions {
+	display: flex;
+	flex-direction: column;
+	gap: 3px;
+	margin-top: 8px;
+	padding-top: 8px;
+	border-top: 1px solid var(--border, #2a2a3e);
+}
+
+.canvas-node-transition {
+	font-size: 10px;
+	color: var(--accent, #6366f1);
+	font-family: var(--font-mono, monospace);
+	display: flex;
+	align-items: center;
+	gap: 4px;
+	opacity: 0.85;
+}
+
+.canvas-transition-arrow {
+	font-size: 12px;
+	flex-shrink: 0;
+}
+
+.canvas-node-transition-end {
+	color: var(--text-muted, #666);
+}
+
+.canvas-node-transition-cond {
+	color: var(--warning, #f59e0b);
+}
+
 /* ── Handles ── */
 
 .canvas-handle {
@@ -240,14 +274,27 @@
 /* ── Edge Labels ── */
 
 .canvas-edge-label {
-	background: rgba(251, 191, 36, 0.9);
-	color: #000;
+	background: rgba(99, 102, 241, 0.12);
+	color: #818cf8;
 	font-size: 10px;
 	font-weight: 700;
-	padding: 2px 8px;
-	border-radius: 4px;
+	padding: 3px 10px;
+	border-radius: 10px;
 	pointer-events: all;
 	letter-spacing: 0.3px;
+	border: 1px solid rgba(99, 102, 241, 0.3);
+	font-family: var(--font-mono, monospace);
+	white-space: nowrap;
+}
+.canvas-edge-label.canvas-edge-loop {
+	background: rgba(245, 158, 11, 0.12);
+	color: #f59e0b;
+	border-color: rgba(245, 158, 11, 0.4);
+}
+.canvas-edge-label.canvas-edge-cond {
+	background: rgba(167, 139, 250, 0.12);
+	color: #a78bfa;
+	border-color: rgba(167, 139, 250, 0.3);
 }
 
 /* ── FAB ── */

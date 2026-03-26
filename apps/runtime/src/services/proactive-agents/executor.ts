@@ -1,14 +1,20 @@
-import { spawn, type ChildProcess } from 'child_process';
-import { existsSync, mkdirSync, appendFile } from 'fs';
-import { writeFile as writeFileAsync, chmod as chmodAsync } from 'fs/promises';
-import { join } from 'path';
-import { randomUUID } from 'crypto';
-import { stripVTControlCharacters } from 'util';
-import { getValidAgentBinary, getOAuthEnv, ensureOnboardingComplete, buildCleanEnv } from '../claude-env.js';
-import { syncToClaudeSettings } from '../permissions.js';
-import { sanitizeSecrets } from '../session-writer.js';
-import { syncCredentialsAfterCLI } from '../auth-anthropic.js';
-import type { AgentRuntime, ExecutionResult, BroadcastFn } from './types.js';
+import { spawn, type ChildProcess } from "child_process";
+import { existsSync, mkdirSync, appendFile, readFileSync } from "fs";
+import { writeFile as writeFileAsync, chmod as chmodAsync } from "fs/promises";
+import { join } from "path";
+import { randomUUID } from "crypto";
+import { stripVTControlCharacters } from "util";
+import {
+	getValidAgentBinary,
+	getOAuthEnv,
+	ensureOnboardingComplete,
+	buildCleanEnv,
+} from "../claude-env.js";
+import { syncToClaudeSettings } from "../permissions.js";
+import { sanitizeSecrets } from "../session-writer.js";
+import { syncCredentialsAfterCLI } from "../auth-anthropic.js";
+import { decryptValue } from "../auth-anthropic/encryption.js";
+import type { AgentRuntime, ExecutionResult, BroadcastFn } from "./types.js";
 
 // ── Constants ──
 
@@ -21,281 +27,365 @@ const MAX_LOG_BYTES = 50 * 1024 * 1024; // 50MB per-execution log size limit
  * Returns extracted text or empty string if no text content.
  */
 function extractTextFromStreamJson(line: string): string {
-  try {
-    const obj = JSON.parse(line);
-    // assistant message with content blocks (full message)
-    if (obj.type === 'assistant' && Array.isArray(obj.message?.content)) {
-      const text = obj.message.content
-        .filter((b: any) => b.type === 'text' && b.text)
-        .map((b: any) => b.text)
-        .join('');
-      return text ? text + '\n' : '';
-    }
-    // content_block_delta with text delta (streaming chunks)
-    if (obj.type === 'content_block_delta' && obj.delta?.text) {
-      return obj.delta.text;
-    }
-    // result message (final summary)
-    if (obj.type === 'result' && typeof obj.result === 'string') {
-      return '\n' + obj.result + '\n';
-    }
-    return '';
-  } catch {
-    return '';
-  }
+	try {
+		const obj = JSON.parse(line);
+		// assistant message with content blocks (full message)
+		if (obj.type === "assistant" && Array.isArray(obj.message?.content)) {
+			const text = obj.message.content
+				.filter((b: any) => b.type === "text" && b.text)
+				.map((b: any) => b.text)
+				.join("");
+			return text ? text + "\n" : "";
+		}
+		// content_block_delta with text delta (streaming chunks)
+		if (obj.type === "content_block_delta" && obj.delta?.text) {
+			return obj.delta.text;
+		}
+		// result message (final summary)
+		if (obj.type === "result" && typeof obj.result === "string") {
+			return "\n" + obj.result + "\n";
+		}
+		return "";
+	} catch {
+		return "";
+	}
 }
 
 // ── Execution engine ──
 
 export interface ExecutorDeps {
-  agents: Map<string, AgentRuntime>;
-  cwdLocks: Map<string, string>;
-  broadcastFn: () => BroadcastFn;
-  resolveAgentCwd: (cwd: string) => string;
-  executionsDir: (id: string) => string;
-  saveState: (id: string, state: AgentRuntime['state']) => void;
-  stopCron: (runtime: AgentRuntime) => void;
-  toSummary: (runtime: AgentRuntime) => object;
-  pruneExecutions: (execDir: string) => void;
-  processCwdQueue: (cwd: string) => void;
+	agents: Map<string, AgentRuntime>;
+	cwdLocks: Map<string, string>;
+	broadcastFn: () => BroadcastFn;
+	resolveAgentCwd: (cwd: string) => string;
+	executionsDir: (id: string) => string;
+	saveState: (id: string, state: AgentRuntime["state"]) => void;
+	stopCron: (runtime: AgentRuntime) => void;
+	toSummary: (runtime: AgentRuntime) => object;
+	pruneExecutions: (execDir: string) => void;
+	processCwdQueue: (cwd: string) => void;
 }
 
 export function executeAgent(agentId: string, deps: ExecutorDeps): void {
-  const runtime = deps.agents.get(agentId);
-  if (!runtime) return;
+	const runtime = deps.agents.get(agentId);
+	if (!runtime) return;
 
-  const executionId = randomUUID();
-  const startedAt = Date.now();
-  const timestamp = new Date(startedAt).toISOString().replace(/[:.]/g, '-');
+	const executionId = randomUUID();
+	const startedAt = Date.now();
+	const timestamp = new Date(startedAt).toISOString().replace(/[:.]/g, "-");
 
-  ensureOnboardingComplete();
-  syncToClaudeSettings();
+	ensureOnboardingComplete();
+	syncToClaudeSettings();
 
-  const binary = getValidAgentBinary();
-  const oauthEnv = getOAuthEnv();
-  const cleanEnv = buildCleanEnv();
-  const finalEnv = { ...cleanEnv, ...oauthEnv, TERM: 'dumb' };
+	const binary = getValidAgentBinary();
+	const oauthEnv = getOAuthEnv();
+	const cleanEnv = buildCleanEnv();
 
-  const prompt = runtime.config.objective;
-  const cwd = deps.resolveAgentCwd(runtime.config.cwd);
+	// Load user env vars (API keys, tokens saved via Integrations UI)
+	const agentUserEnv: Record<string, string> = {};
+	const agentWsDir = join(process.env.WORKSPACE || "/workspace", ".codeck");
+	const agentEncEnvPath = join(agentWsDir, ".env.encrypted");
+	const agentDotenvPath = join(agentWsDir, ".env");
 
-  const spawnArgs = ['-p', prompt, '--output-format', 'stream-json', '--verbose', '--no-session-persistence'];
-  if (runtime.config.model) {
-    spawnArgs.unshift('--model', runtime.config.model);
-  }
-  console.log(`[ProactiveAgents] Spawning: ${binary} ${spawnArgs.map(a => a.length > 80 ? a.slice(0, 77) + '...' : a).join(' ')} (cwd: ${cwd})`);
+	if (existsSync(agentEncEnvPath)) {
+		try {
+			const store = JSON.parse(readFileSync(agentEncEnvPath, "utf-8"));
+			for (const v of store.vars || []) {
+				if (v.key && v.value) agentUserEnv[v.key] = decryptValue(v.value);
+			}
+		} catch {
+			/* fall through to plaintext */
+		}
+	}
+	if (Object.keys(agentUserEnv).length === 0 && existsSync(agentDotenvPath)) {
+		try {
+			const content = readFileSync(agentDotenvPath, "utf-8");
+			for (const line of content.split("\n")) {
+				const trimmed = line.trim();
+				if (!trimmed || trimmed.startsWith("#")) continue;
+				const eqIdx = trimmed.indexOf("=");
+				if (eqIdx > 0) {
+					const key = trimmed.slice(0, eqIdx).trim();
+					const val = trimmed
+						.slice(eqIdx + 1)
+						.trim()
+						.replace(/^["']|["']$/g, "");
+					if (key && val) agentUserEnv[key] = val;
+				}
+			}
+		} catch {
+			/* non-fatal */
+		}
+	}
 
-  runtime.outputBuffer = '';
+	const finalEnv = { ...cleanEnv, ...agentUserEnv, ...oauthEnv, TERM: "dumb" };
 
-  const child = spawn(binary, spawnArgs, {
-    cwd,
-    env: finalEnv,
-    stdio: ['ignore', 'pipe', 'pipe'],
-  });
+	const prompt = runtime.config.objective;
+	const cwd = deps.resolveAgentCwd(runtime.config.cwd);
 
-  runtime.currentExecution = child;
-  console.log(`[ProactiveAgents] Agent ${agentId} PID: ${child.pid}`);
+	const spawnArgs = [
+		"-p",
+		prompt,
+		"--output-format",
+		"stream-json",
+		"--verbose",
+		"--no-session-persistence",
+	];
+	if (runtime.config.model) {
+		spawnArgs.unshift("--model", runtime.config.model);
+	}
+	console.log(
+		`[ProactiveAgents] Spawning: ${binary} ${spawnArgs.map((a) => (a.length > 80 ? a.slice(0, 77) + "..." : a)).join(" ")} (cwd: ${cwd})`,
+	);
 
-  deps.broadcastFn()({ type: 'agent:execution:start', data: { agentId, executionId } });
+	runtime.outputBuffer = "";
 
-  // Prepare JSONL log file for raw stream data
-  const execDir = deps.executionsDir(agentId);
-  if (!existsSync(execDir)) mkdirSync(execDir, { recursive: true, mode: 0o700 });
-  const jsonlPath = join(execDir, `${timestamp}.jsonl`);
+	const child = spawn(binary, spawnArgs, {
+		cwd,
+		env: finalEnv,
+		stdio: ["ignore", "pipe", "pipe"],
+	});
 
-  // JSONL stream parser state
-  let lineBuffer = '';
-  let firstChunkReceived = false;
-  let rawBytes = 0;
-  let logBytesWritten = 0;
-  let logTruncated = false;
+	runtime.currentExecution = child;
+	console.log(`[ProactiveAgents] Agent ${agentId} PID: ${child.pid}`);
 
-  const onStdout = (data: Buffer) => {
-    rawBytes += data.length;
-    if (!firstChunkReceived) {
-      firstChunkReceived = true;
-      console.log(`[ProactiveAgents] Agent ${agentId} first output chunk received (${Date.now() - startedAt}ms)`);
-    }
+	deps.broadcastFn()({
+		type: "agent:execution:start",
+		data: { agentId, executionId },
+	});
 
-    const chunk = data.toString();
-    lineBuffer += chunk;
+	// Prepare JSONL log file for raw stream data
+	const execDir = deps.executionsDir(agentId);
+	if (!existsSync(execDir))
+		mkdirSync(execDir, { recursive: true, mode: 0o700 });
+	const jsonlPath = join(execDir, `${timestamp}.jsonl`);
 
-    // Append raw data to JSONL log (sanitize secrets before writing)
-    // Enforce per-execution log size limit to prevent disk exhaustion
-    if (!logTruncated) {
-      const sanitized = sanitizeSecrets(chunk);
-      if (logBytesWritten + sanitized.length > MAX_LOG_BYTES) {
-        const warning = `\n[LOG TRUNCATED: Exceeded ${MAX_LOG_BYTES} byte limit (${Math.round(MAX_LOG_BYTES / 1024 / 1024)}MB)]\n`;
-        appendFile(jsonlPath, warning, () => {});
-        logTruncated = true;
-        console.warn(`[ProactiveAgents] Agent ${agentId} log truncated at ${logBytesWritten} bytes`);
-      } else {
-        appendFile(jsonlPath, sanitized, () => {});
-        logBytesWritten += sanitized.length;
-      }
-    }
+	// JSONL stream parser state
+	let lineBuffer = "";
+	let firstChunkReceived = false;
+	let rawBytes = 0;
+	let logBytesWritten = 0;
+	let logTruncated = false;
 
-    // Process complete lines
-    const lines = lineBuffer.split('\n');
-    lineBuffer = lines.pop() || ''; // Keep incomplete last line in buffer
+	const onStdout = (data: Buffer) => {
+		rawBytes += data.length;
+		if (!firstChunkReceived) {
+			firstChunkReceived = true;
+			console.log(
+				`[ProactiveAgents] Agent ${agentId} first output chunk received (${Date.now() - startedAt}ms)`,
+			);
+		}
 
-    for (const line of lines) {
-      const trimmed = line.trim();
-      if (!trimmed) continue;
+		const chunk = data.toString();
+		lineBuffer += chunk;
 
-      let text = extractTextFromStreamJson(trimmed);
-      if (text) {
-        // Strip leading newlines from very first output chunk
-        if (runtime.outputBuffer.length === 0) text = text.replace(/^\n+/, '');
-        if (text) {
-          // SECURITY: outputBuffer is NOT sanitized — live output shown to authenticated
-          // users during active execution. Sanitization applied on disk persistence.
-          runtime.outputBuffer += text;
-          deps.broadcastFn()({ type: 'agent:output', data: { agentId, text } });
-        }
-      }
-    }
-  };
+		// Append raw data to JSONL log (sanitize secrets before writing)
+		// Enforce per-execution log size limit to prevent disk exhaustion
+		if (!logTruncated) {
+			const sanitized = sanitizeSecrets(chunk);
+			if (logBytesWritten + sanitized.length > MAX_LOG_BYTES) {
+				const warning = `\n[LOG TRUNCATED: Exceeded ${MAX_LOG_BYTES} byte limit (${Math.round(MAX_LOG_BYTES / 1024 / 1024)}MB)]\n`;
+				appendFile(jsonlPath, warning, () => {});
+				logTruncated = true;
+				console.warn(
+					`[ProactiveAgents] Agent ${agentId} log truncated at ${logBytesWritten} bytes`,
+				);
+			} else {
+				appendFile(jsonlPath, sanitized, () => {});
+				logBytesWritten += sanitized.length;
+			}
+		}
 
-  const onStderr = (data: Buffer) => {
-    const raw = data.toString();
-    const sanitized = sanitizeSecrets(stripVTControlCharacters(raw));
-    console.warn(`[ProactiveAgents] Agent ${agentId} stderr: ${sanitized.trim()}`);
-  };
+		// Process complete lines
+		const lines = lineBuffer.split("\n");
+		lineBuffer = lines.pop() || ""; // Keep incomplete last line in buffer
 
-  child.stdout?.on('data', onStdout);
-  child.stderr?.on('data', onStderr);
+		for (const line of lines) {
+			const trimmed = line.trim();
+			if (!trimmed) continue;
 
-  // Timeout — track state explicitly to avoid race conditions
-  let timedOut = false;
-  // SIGKILL grace period after SIGTERM. 15s default for Claude CLI cleanup (logs, API connections).
-  // Configurable via AGENT_SIGKILL_GRACE_MS env var, clamped to 5–60 seconds.
-  const rawGrace = parseInt(process.env.AGENT_SIGKILL_GRACE_MS || '15000', 10);
-  const SIGKILL_GRACE_MS = Math.max(5000, Math.min(Number.isNaN(rawGrace) ? 15000 : rawGrace, 60000));
-  const timeoutHandle = setTimeout(() => {
-    if (runtime.currentExecution === child) {
-      timedOut = true;
-      console.log(`[ProactiveAgents] Agent ${agentId} timed out after ${runtime.config.timeoutMs}ms`);
-      child.kill('SIGTERM');
-      setTimeout(() => {
-        if (runtime.currentExecution === child) child.kill('SIGKILL');
-      }, SIGKILL_GRACE_MS);
-    }
-  }, runtime.config.timeoutMs);
+			let text = extractTextFromStreamJson(trimmed);
+			if (text) {
+				// Strip leading newlines from very first output chunk
+				if (runtime.outputBuffer.length === 0) text = text.replace(/^\n+/, "");
+				if (text) {
+					// SECURITY: outputBuffer is NOT sanitized — live output shown to authenticated
+					// users during active execution. Sanitization applied on disk persistence.
+					runtime.outputBuffer += text;
+					deps.broadcastFn()({ type: "agent:output", data: { agentId, text } });
+				}
+			}
+		}
+	};
 
-  child.on('close', async (exitCode) => {
-    clearTimeout(timeoutHandle);
-    deps.cwdLocks.delete(cwd);
-    runtime.currentExecution = null;
+	const onStderr = (data: Buffer) => {
+		const raw = data.toString();
+		const sanitized = sanitizeSecrets(stripVTControlCharacters(raw));
+		console.warn(
+			`[ProactiveAgents] Agent ${agentId} stderr: ${sanitized.trim()}`,
+		);
+	};
 
-    // Process any remaining data in lineBuffer
-    if (lineBuffer.trim()) {
-      const text = extractTextFromStreamJson(lineBuffer.trim());
-      if (text) {
-        runtime.outputBuffer += text;
-        deps.broadcastFn()({ type: 'agent:output', data: { agentId, text } });
-      }
-    }
+	child.stdout?.on("data", onStdout);
+	child.stderr?.on("data", onStderr);
 
-    const completedAt = Date.now();
-    const durationMs = completedAt - startedAt;
-    const succeeded = exitCode === 0 && !timedOut;
+	// Timeout — track state explicitly to avoid race conditions
+	let timedOut = false;
+	// SIGKILL grace period after SIGTERM. 15s default for Claude CLI cleanup (logs, API connections).
+	// Configurable via AGENT_SIGKILL_GRACE_MS env var, clamped to 5–60 seconds.
+	const rawGrace = parseInt(process.env.AGENT_SIGKILL_GRACE_MS || "15000", 10);
+	const SIGKILL_GRACE_MS = Math.max(
+		5000,
+		Math.min(Number.isNaN(rawGrace) ? 15000 : rawGrace, 60000),
+	);
+	const timeoutHandle = setTimeout(() => {
+		if (runtime.currentExecution === child) {
+			timedOut = true;
+			console.log(
+				`[ProactiveAgents] Agent ${agentId} timed out after ${runtime.config.timeoutMs}ms`,
+			);
+			child.kill("SIGTERM");
+			setTimeout(() => {
+				if (runtime.currentExecution === child) child.kill("SIGKILL");
+			}, SIGKILL_GRACE_MS);
+		}
+	}, runtime.config.timeoutMs);
 
-    const result: ExecutionResult = {
-      executionId,
-      agentId,
-      startedAt,
-      completedAt,
-      durationMs,
-      result: timedOut ? 'timeout' : (succeeded ? 'success' : 'failure'),
-      exitCode,
-      outputLines: runtime.outputBuffer.split('\n').length,
-      error: !succeeded ? `Exit code: ${exitCode}` : undefined,
-    };
+	child.on("close", async (exitCode) => {
+		clearTimeout(timeoutHandle);
+		deps.cwdLocks.delete(cwd);
+		runtime.currentExecution = null;
 
-    // Save clean text log (sanitized, ANSI-stripped for defense-in-depth)
-    const logPath = join(execDir, `${timestamp}.log`);
-    const resultPath = join(execDir, `${timestamp}.result.json`);
-    await writeFileAsync(logPath, sanitizeSecrets(stripVTControlCharacters(runtime.outputBuffer)));
-    await writeFileAsync(resultPath, JSON.stringify(result, null, 2));
+		// Process any remaining data in lineBuffer
+		if (lineBuffer.trim()) {
+			const text = extractTextFromStreamJson(lineBuffer.trim());
+			if (text) {
+				runtime.outputBuffer += text;
+				deps.broadcastFn()({ type: "agent:output", data: { agentId, text } });
+			}
+		}
 
-    // Set restrictive file permissions on all execution files (owner read/write only)
-    try {
-      await chmodAsync(logPath, 0o600);
-      await chmodAsync(resultPath, 0o600);
-      if (existsSync(jsonlPath)) await chmodAsync(jsonlPath, 0o600);
-    } catch { /* ignore permission errors */ }
+		const completedAt = Date.now();
+		const durationMs = completedAt - startedAt;
+		const succeeded = exitCode === 0 && !timedOut;
 
-    // Prune old executions beyond retention limit
-    deps.pruneExecutions(execDir);
+		const result: ExecutionResult = {
+			executionId,
+			agentId,
+			startedAt,
+			completedAt,
+			durationMs,
+			result: timedOut ? "timeout" : succeeded ? "success" : "failure",
+			exitCode,
+			outputLines: runtime.outputBuffer.split("\n").length,
+			error: !succeeded ? `Exit code: ${exitCode}` : undefined,
+		};
 
-    // Sync credentials after CLI execution — CLI may have refreshed/rewritten the token
-    syncCredentialsAfterCLI();
+		// Save clean text log (sanitized, ANSI-stripped for defense-in-depth)
+		const logPath = join(execDir, `${timestamp}.log`);
+		const resultPath = join(execDir, `${timestamp}.result.json`);
+		await writeFileAsync(
+			logPath,
+			sanitizeSecrets(stripVTControlCharacters(runtime.outputBuffer)),
+		);
+		await writeFileAsync(resultPath, JSON.stringify(result, null, 2));
 
-    // Update state
-    runtime.state.lastExecutionAt = completedAt;
-    runtime.state.lastResult = result.result;
-    runtime.state.totalExecutions++;
+		// Set restrictive file permissions on all execution files (owner read/write only)
+		try {
+			await chmodAsync(logPath, 0o600);
+			await chmodAsync(resultPath, 0o600);
+			if (existsSync(jsonlPath)) await chmodAsync(jsonlPath, 0o600);
+		} catch {
+			/* ignore permission errors */
+		}
 
-    if (succeeded) {
-      runtime.state.consecutiveFailures = 0;
-    } else {
-      runtime.state.consecutiveFailures++;
-      if (runtime.state.consecutiveFailures >= runtime.config.maxRetries) {
-        console.log(`[ProactiveAgents] Agent ${agentId} auto-paused after ${runtime.state.consecutiveFailures} consecutive failures`);
-        runtime.state.status = 'error';
-        deps.stopCron(runtime);
-      }
-    }
+		// Prune old executions beyond retention limit
+		deps.pruneExecutions(execDir);
 
-    deps.saveState(agentId, runtime.state);
+		// Sync credentials after CLI execution — CLI may have refreshed/rewritten the token
+		syncCredentialsAfterCLI();
 
-    deps.broadcastFn()({ type: 'agent:execution:complete', data: { agentId, executionId, result: result.result } });
-    deps.broadcastFn()({ type: 'agent:update', data: deps.toSummary(runtime) });
+		// Update state
+		runtime.state.lastExecutionAt = completedAt;
+		runtime.state.lastResult = result.result;
+		runtime.state.totalExecutions++;
 
-    console.log(`[ProactiveAgents] Agent ${agentId} execution complete: ${result.result} (exit: ${exitCode}, ${durationMs}ms, ${rawBytes} raw bytes, ${runtime.outputBuffer.length} text bytes)`);
+		if (succeeded) {
+			runtime.state.consecutiveFailures = 0;
+		} else {
+			runtime.state.consecutiveFailures++;
+			if (runtime.state.consecutiveFailures >= runtime.config.maxRetries) {
+				console.log(
+					`[ProactiveAgents] Agent ${agentId} auto-paused after ${runtime.state.consecutiveFailures} consecutive failures`,
+				);
+				runtime.state.status = "error";
+				deps.stopCron(runtime);
+			}
+		}
 
-    deps.processCwdQueue(cwd);
-  });
+		deps.saveState(agentId, runtime.state);
 
-  child.on('error', async (err) => {
-    clearTimeout(timeoutHandle);
-    deps.cwdLocks.delete(cwd);
-    runtime.currentExecution = null;
+		deps.broadcastFn()({
+			type: "agent:execution:complete",
+			data: { agentId, executionId, result: result.result },
+		});
+		deps.broadcastFn()({ type: "agent:update", data: deps.toSummary(runtime) });
 
-    const completedAt = Date.now();
-    const result: ExecutionResult = {
-      executionId,
-      agentId,
-      startedAt,
-      completedAt,
-      durationMs: completedAt - startedAt,
-      result: 'failure',
-      exitCode: null,
-      outputLines: 0,
-      error: err.message,
-    };
+		console.log(
+			`[ProactiveAgents] Agent ${agentId} execution complete: ${result.result} (exit: ${exitCode}, ${durationMs}ms, ${rawBytes} raw bytes, ${runtime.outputBuffer.length} text bytes)`,
+		);
 
-    if (!existsSync(execDir)) mkdirSync(execDir, { recursive: true, mode: 0o700 });
-    const errorResultPath = join(execDir, `${timestamp}.result.json`);
-    await writeFileAsync(errorResultPath, JSON.stringify(result, null, 2));
-    try { await chmodAsync(errorResultPath, 0o600); } catch { /* ignore */ }
+		deps.processCwdQueue(cwd);
+	});
 
-    runtime.state.lastExecutionAt = completedAt;
-    runtime.state.lastResult = 'failure';
-    runtime.state.totalExecutions++;
-    runtime.state.consecutiveFailures++;
+	child.on("error", async (err) => {
+		clearTimeout(timeoutHandle);
+		deps.cwdLocks.delete(cwd);
+		runtime.currentExecution = null;
 
-    if (runtime.state.consecutiveFailures >= runtime.config.maxRetries) {
-      runtime.state.status = 'error';
-      deps.stopCron(runtime);
-    }
+		const completedAt = Date.now();
+		const result: ExecutionResult = {
+			executionId,
+			agentId,
+			startedAt,
+			completedAt,
+			durationMs: completedAt - startedAt,
+			result: "failure",
+			exitCode: null,
+			outputLines: 0,
+			error: err.message,
+		};
 
-    deps.saveState(agentId, runtime.state);
-    deps.broadcastFn()({ type: 'agent:execution:complete', data: { agentId, executionId, result: 'failure' } });
-    deps.broadcastFn()({ type: 'agent:update', data: deps.toSummary(runtime) });
+		if (!existsSync(execDir))
+			mkdirSync(execDir, { recursive: true, mode: 0o700 });
+		const errorResultPath = join(execDir, `${timestamp}.result.json`);
+		await writeFileAsync(errorResultPath, JSON.stringify(result, null, 2));
+		try {
+			await chmodAsync(errorResultPath, 0o600);
+		} catch {
+			/* ignore */
+		}
 
-    console.log(`[ProactiveAgents] Agent ${agentId} execution error: ${err.message}`);
-    deps.processCwdQueue(cwd);
-  });
+		runtime.state.lastExecutionAt = completedAt;
+		runtime.state.lastResult = "failure";
+		runtime.state.totalExecutions++;
+		runtime.state.consecutiveFailures++;
+
+		if (runtime.state.consecutiveFailures >= runtime.config.maxRetries) {
+			runtime.state.status = "error";
+			deps.stopCron(runtime);
+		}
+
+		deps.saveState(agentId, runtime.state);
+		deps.broadcastFn()({
+			type: "agent:execution:complete",
+			data: { agentId, executionId, result: "failure" },
+		});
+		deps.broadcastFn()({ type: "agent:update", data: deps.toSummary(runtime) });
+
+		console.log(
+			`[ProactiveAgents] Agent ${agentId} execution error: ${err.message}`,
+		);
+		deps.processCwdQueue(cwd);
+	});
 }

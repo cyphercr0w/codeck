@@ -4,7 +4,6 @@ import { showToast } from "../state/store";
 import {
 	IconKey,
 	IconGithub,
-	IconPackage,
 	IconCopy,
 	IconCheck,
 	IconRefresh,
@@ -52,6 +51,8 @@ interface IntegrationDef {
 	tokenUrl?: string;
 	tokenHint?: string;
 	mcpServerName?: string;
+	mcpCommand?: string;
+	mcpArgs?: string[];
 	// For CLI-based OAuth (device flow)
 	cliAuth?: boolean;
 	cliAuthService?: string;
@@ -77,6 +78,8 @@ const INTEGRATIONS: IntegrationDef[] = [
 		tokenUrl: "https://supabase.com/dashboard/account/tokens",
 		tokenHint: "Generate a token at supabase.com → Account → Access Tokens",
 		mcpServerName: "supabase",
+		mcpCommand: "npx",
+		mcpArgs: ["-y", "@supabase/mcp-server-supabase"],
 	},
 	{
 		id: "vercel",
@@ -85,10 +88,12 @@ const INTEGRATIONS: IntegrationDef[] = [
 		icon: () => <IconVercel size={22} />,
 		available: true,
 		tokenBased: true,
-		tokenEnvKey: "VERCEL_API_KEY",
+		tokenEnvKey: "VERCEL_TOKEN",
 		tokenUrl: "https://vercel.com/account/tokens",
 		tokenHint: "Generate a token at vercel.com → Account → Tokens",
 		mcpServerName: "vercel",
+		mcpCommand: "npx",
+		mcpArgs: ["-y", "vercel-mcp@latest"],
 	},
 	{
 		id: "stripe",
@@ -101,6 +106,8 @@ const INTEGRATIONS: IntegrationDef[] = [
 		tokenUrl: "https://dashboard.stripe.com/apikeys",
 		tokenHint: "Copy your Secret Key from the Stripe Dashboard → API Keys",
 		mcpServerName: "stripe",
+		mcpCommand: "npx",
+		mcpArgs: ["-y", "@stripe/mcp"],
 	},
 	{
 		id: "notion",
@@ -114,6 +121,8 @@ const INTEGRATIONS: IntegrationDef[] = [
 		tokenHint:
 			"Create an integration at notion.so/my-integrations and copy the secret",
 		mcpServerName: "notion",
+		mcpCommand: "npx",
+		mcpArgs: ["-y", "@notionhq/mcp-server-notion"],
 	},
 	{
 		id: "google",
@@ -140,6 +149,8 @@ const INTEGRATIONS: IntegrationDef[] = [
 		tokenHint:
 			"Create an API token at Cloudflare Dashboard → Profile → API Tokens",
 		mcpServerName: "cloudflare",
+		mcpCommand: "npx",
+		mcpArgs: ["-y", "@cloudflare/mcp-server-cloudflare"],
 	},
 	{
 		id: "figma",
@@ -153,6 +164,8 @@ const INTEGRATIONS: IntegrationDef[] = [
 		tokenHint:
 			"Generate a personal access token at Figma → Settings → Personal Access Tokens",
 		mcpServerName: "figma",
+		mcpCommand: "npx",
+		mcpArgs: ["-y", "figma-developer-mcp"],
 	},
 ];
 
@@ -341,8 +354,8 @@ function TokenIntegrationDetail({
 				return;
 			}
 
-			// Enable the MCP server if it's disabled
-			if (integ.mcpServerName) {
+			// Create or enable the MCP server
+			if (integ.mcpServerName && integ.mcpCommand) {
 				try {
 					// Check current MCP servers
 					const mcpRes = await apiFetch("/api/mcp-servers");
@@ -353,20 +366,29 @@ function TokenIntegrationDetail({
 					);
 
 					if (server && !server.enabled) {
-						// Enable it
+						// Server exists but is disabled — enable it
 						await apiFetch(
 							`/api/mcp-servers/${encodeURIComponent(integ.mcpServerName!)}/toggle`,
 							{ method: "POST" },
 						);
 					} else if (!server) {
-						// Server doesn't exist yet — add it from disabled list
-						await apiFetch(
-							`/api/mcp-servers/${encodeURIComponent(integ.mcpServerName!)}/toggle`,
-							{ method: "POST" },
-						);
+						// Server doesn't exist — create it with the correct command and env mapping
+						const env: Record<string, string> = {};
+						if (integ.tokenEnvKey) {
+							env[integ.tokenEnvKey] = token.trim();
+						}
+						await apiFetch("/api/mcp-servers", {
+							method: "POST",
+							body: JSON.stringify({
+								name: integ.mcpServerName,
+								command: integ.mcpCommand,
+								args: integ.mcpArgs || [],
+								env,
+							}),
+						});
 					}
 				} catch {
-					/* MCP enable is best-effort */
+					/* MCP setup is best-effort */
 				}
 			}
 
@@ -704,25 +726,52 @@ function GitHubDetail({ onBack }: { onBack: () => void }) {
 		}
 	}
 
+	async function handleDisconnect() {
+		try {
+			await apiFetch("/api/github/logout", { method: "POST" });
+			setGitHub((prev) => ({
+				...prev,
+				authenticated: false,
+				username: null,
+				email: null,
+			}));
+			showToast("GitHub disconnected", "success");
+		} catch {
+			showToast("Failed to disconnect", "error");
+		}
+	}
+
 	return (
 		<div class="integ-detail">
-			<button class="integ-back" onClick={onBack}>
-				<IconChevronLeft size={14} /> Back to Integrations
-			</button>
+			<div class="integ-detail-topbar">
+				<button class="btn btn-xs btn-ghost" onClick={onBack}>
+					<IconChevronLeft size={12} /> Integrations
+				</button>
+				{github.authenticated && (
+					<button
+						class="btn btn-xs btn-ghost danger"
+						onClick={handleDisconnect}
+					>
+						<IconX size={11} /> Disconnect
+					</button>
+				)}
+			</div>
 
 			<div class="integ-detail-header">
 				<div class="integ-detail-icon">
 					<IconGithub size={28} />
 				</div>
-				<div>
+				<div style="flex: 1">
 					<h3 class="integ-detail-name">GitHub</h3>
 					<p class="integ-detail-desc">
 						SSH keys and account authentication for repositories
 					</p>
 				</div>
-				{github.authenticated && (
-					<span class="badge badge-success">Connected</span>
-				)}
+				<span
+					class={`badge ${github.authenticated ? "badge-success" : "badge-muted"}`}
+				>
+					{github.authenticated ? "Connected" : "Not connected"}
+				</span>
 			</div>
 
 			{/* SSH Section */}

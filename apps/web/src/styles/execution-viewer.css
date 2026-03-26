@@ -352,3 +352,100 @@
 .flow-past-execs summary:hover {
 	color: var(--text-primary);
 }
+
+/* ── Execution Row ── */
+
+.flow-execution-row {
+	border: 1px solid var(--border, #222);
+	border-radius: 8px;
+	margin: 6px 0;
+	overflow: hidden;
+}
+
+.flow-execution-header {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	padding: 10px 14px;
+	cursor: pointer;
+	font-size: 13px;
+	transition: background 0.15s;
+}
+.flow-execution-header:hover {
+	background: var(--bg-hover, #1a1a2e);
+}
+
+.flow-execution-status {
+	font-weight: 700;
+	font-size: 14px;
+	width: 20px;
+	text-align: center;
+	flex-shrink: 0;
+}
+
+.flow-execution-time {
+	color: var(--text-muted, #888);
+	font-size: 12px;
+}
+
+.flow-execution-duration {
+	color: var(--text-muted);
+	font-size: 12px;
+	margin-left: auto;
+	font-family: var(--font-mono, monospace);
+}
+
+.flow-execution-details {
+	padding: 8px 14px 14px;
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+	border-top: 1px solid var(--border, #222);
+}
+
+/* Agent card inside execution details */
+.flow-exec-agent-card {
+	border: 1px solid var(--border, #222);
+	border-radius: 6px;
+	overflow: hidden;
+}
+
+.flow-exec-agent-header {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	padding: 8px 12px;
+	background: rgba(255, 255, 255, 0.02);
+	font-size: 13px;
+	font-weight: 600;
+}
+
+.flow-exec-agent-icon {
+	flex-shrink: 0;
+}
+
+.flow-exec-agent-name {
+	color: var(--text-primary, #eee);
+	flex: 1;
+}
+
+.flow-exec-agent-status {
+	font-size: 11px;
+	font-weight: 500;
+	text-transform: uppercase;
+	letter-spacing: 0.5px;
+}
+
+.flow-exec-agent-output {
+	padding: 10px 12px;
+	font-size: 12px;
+	font-family: var(--font-mono, monospace);
+	line-height: 1.6;
+	color: var(--text-secondary, #bbb);
+	white-space: pre-wrap;
+	word-break: break-word;
+	max-height: 300px;
+	overflow-y: auto;
+	border-top: 1px solid var(--border, #222);
+	background: var(--bg-primary, #0a0a1a);
+}

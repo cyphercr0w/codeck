@@ -1,11 +1,12 @@
 import { Router } from 'express';
+import { asyncHandler } from "../utils/async-handler.js";
 import { getClaudeStatus, startClaudeLogin, getLoginState, invalidateAuthCache, cancelLogin, sendLoginCode, logoutClaude } from '../services/auth-anthropic.js';
 import { broadcastStatus } from '../web/websocket.js';
 
 const router = Router();
 
 // Start Claude login
-router.post('/login', async (_req, res) => {
+router.post('/login', asyncHandler(async (_req, res) => {
   const currentState = getLoginState();
   if (currentState.active) {
     res.json({
@@ -35,7 +36,7 @@ router.post('/login', async (_req, res) => {
       broadcastStatus();
     },
   });
-});
+}));
 
 // Claude login status — during an active login, only report authenticated
 // if the login flow itself completed (not from stale cache)
@@ -53,7 +54,7 @@ router.get('/login-status', (_req, res) => {
 });
 
 // Send authentication code
-router.post('/login-code', async (req, res) => {
+router.post('/login-code', asyncHandler(async (req, res) => {
   const { code } = req.body;
   if (!code) {
     res.status(400).json({ success: false, error: 'Code required' });
@@ -65,7 +66,7 @@ router.post('/login-code', async (req, res) => {
     broadcastStatus();
   }
   res.json(result);
-});
+}));
 
 // Cancel Claude login
 router.post('/login-cancel', (_req, res) => {

@@ -26,6 +26,7 @@ import {
 	replaceSession,
 	addLocalLog,
 	sessionStatus,
+	showToast,
 	type View,
 	type Section,
 } from "./state/store";
@@ -58,6 +59,7 @@ import { ToastContainer } from "./components/ToastContainer";
 
 import { AgentsSection } from "./components/AgentsSection";
 import { FlowsSection } from "./components/FlowsSection";
+import { PreviewPanel } from "./components/PreviewPanel";
 import { ChatSection } from "./components/ChatSection";
 import { SettingsSection } from "./components/SettingsSection";
 import { MobileMenu } from "./components/MobileMenu";
@@ -350,7 +352,7 @@ export function App() {
 					setActiveSection(sectionFromUrl());
 					setView("main");
 					if (!hasAccount) loadAccountInfo(signal);
-					if (!hasSessions) restoreSessions();
+					// Session auto-restore disabled — users restore manually via recent conversations
 				}
 			} else {
 				setView("setup");
@@ -484,7 +486,7 @@ export function App() {
 		setPresetConfigured(true);
 		setActiveSection(sectionFromUrl());
 		setView("main");
-		await restoreSessions();
+		// Session auto-restore disabled
 	}
 
 	// ========== Section change ==========
@@ -605,11 +607,12 @@ export function App() {
 			if (data.error) {
 				removeSession(tempId);
 				if (data.error === "Claude is not authenticated") {
-					addLocalLog(
+					showToast(
+						"Claude is authenticating — try again in a few seconds",
 						"error",
-						"Claude session expired — please re-authenticate",
 					);
-					setLoginModalOpen(true);
+				} else {
+					showToast(data.error, "error");
 				}
 				return;
 			}
@@ -734,6 +737,16 @@ export function App() {
 						</div>
 
 						{section === "flows" && <FlowsSection />}
+						{/* PreviewPanel always mounted — iframe survives section switches */}
+						<div
+							style={
+								section !== "preview"
+									? { display: "none" }
+									: { display: "contents" }
+							}
+						>
+							<PreviewPanel />
+						</div>
 						{section === "agents" && <AgentsSection />}
 						{section === "integrations" && <IntegrationsSection />}
 						{section === "config" && <AgentConfigSection />}

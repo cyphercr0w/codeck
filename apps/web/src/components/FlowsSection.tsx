@@ -7,107 +7,18 @@ import {
 	startFlowInChat,
 } from "../state/chat-store";
 import { FlowCanvas } from "./FlowCanvas";
+import { IconPlus, IconPlay, IconEdit } from "./Icons";
+import { ExecutionRow } from "./flows/ExecutionRow";
+import { ActiveFlowBanner } from "./flows/ActiveFlowBanner";
+import { FlowCard } from "./flows/FlowCard";
 import {
-	IconPlus,
-	IconPlay,
-	IconTrash,
-	IconEdit,
-	IconX,
-	IconChevronDown,
-	IconChevronUp,
-	IconCheck,
-} from "./Icons";
+	walkAgents,
+	type SystemAgent,
+	type FlowDef,
+	type FlowExecution,
+} from "./flows/flow-types";
 
-// ── Types ──
-
-interface SystemAgent {
-	id: string;
-	name: string;
-	description: string;
-	tools: string[];
-}
-
-interface AgentDef {
-	id: string;
-	name: string;
-	role: string;
-	systemPrompt: string;
-	inputTemplate: string;
-	allowedTools: string[];
-	mcpServers: string[];
-	maxTurns: number;
-	timeoutMs: number;
-	outputParser: "raw" | "structured";
-	structuredOutputSchema?: { decisionField: string; decisionsEnum: string[] };
-	transitions: {
-		default?: string | "END";
-		conditions?: Array<{ when: string; goto: string | "END" }>;
-	};
-}
-
-interface FlowDef {
-	id: string;
-	name: string;
-	description: string;
-	version: string;
-	isTemplate: boolean;
-	createdAt: string;
-	updatedAt: string;
-	entryAgentId: string;
-	agents: Record<string, AgentDef>;
-}
-
-interface FlowExecution {
-	id: string;
-	flowId: string;
-	status: "pending" | "running" | "completed" | "failed" | "cancelled";
-	currentAgentId: string | null;
-	startedAt: string;
-	completedAt: string | null;
-	initialInput: string;
-	agentResults: Record<
-		string,
-		{ agentId: string; status: string; output: string }
-	>;
-}
-
-const ALL_TOOLS = [
-	"Read",
-	"Write",
-	"Edit",
-	"Bash",
-	"Glob",
-	"Grep",
-	"WebSearch",
-	"WebFetch",
-];
-
-function walkAgents(flow: FlowDef): AgentDef[] {
-	const ordered: AgentDef[] = [];
-	const visited = new Set<string>();
-	const queue: string[] = [flow.entryAgentId];
-	while (queue.length > 0) {
-		const cursor = queue.shift();
-		if (!cursor || visited.has(cursor) || !flow.agents[cursor]) continue;
-		ordered.push(flow.agents[cursor]);
-		visited.add(cursor);
-		// Follow default transition
-		const next = flow.agents[cursor].transitions.default;
-		if (typeof next === "string" && next !== "END") {
-			queue.push(next);
-		}
-		// Follow conditional transitions
-		const conds = flow.agents[cursor].transitions.conditions;
-		if (conds) {
-			for (const cond of conds) {
-				if (cond.goto !== "END") {
-					queue.push(cond.goto);
-				}
-			}
-		}
-	}
-	return ordered;
-}
+// walkAgents, types, ALL_TOOLS imported from ./flows/flow-types
 
 // ── Elapsed Timer ──
 
@@ -148,6 +59,7 @@ export function FlowsSection() {
 	const [systemAgents, setSystemAgents] =
 		useState<SystemAgent[]>(cachedSystemAgents);
 	const [selectedFlowId, setSelectedFlowId] = useState<string | null>(null);
+	const [selectedExecId, setSelectedExecId] = useState<string | null>(null);
 	const [editingFlow, setEditingFlow] = useState<FlowDef | null>(null);
 	// editingAgentId removed — canvas manages selection internally
 	const [runInput, setRunInput] = useState("");
@@ -475,6 +387,7 @@ export function FlowsSection() {
 										onClick={() => {
 											if (f) {
 												setSelectedFlowId(f.id);
+												setSelectedExecId(exec.id);
 												setView("run");
 											}
 										}}
@@ -523,12 +436,14 @@ export function FlowsSection() {
 			<ExecutionViewer
 				flow={selectedFlow}
 				executions={flowExecs}
+				initialExecId={selectedExecId}
 				runInput={runInput}
 				running={running}
 				onInputChange={setRunInput}
 				onRun={() => executeFlow(selectedFlow.id, runInput)}
 				onBack={() => {
 					setSelectedFlowId(null);
+					setSelectedExecId(null);
 					setView("list");
 				}}
 				onEdit={() => {
@@ -549,6 +464,7 @@ export function FlowsSection() {
 function ExecutionViewer({
 	flow,
 	executions,
+	initialExecId,
 	runInput,
 	running,
 	onInputChange,
@@ -558,6 +474,7 @@ function ExecutionViewer({
 }: {
 	flow: FlowDef;
 	executions: FlowExecution[];
+	initialExecId?: string | null;
 	runInput: string;
 	running: boolean;
 	onInputChange: (v: string) => void;
@@ -567,12 +484,23 @@ function ExecutionViewer({
 }) {
 	const [submittedInput, setSubmittedInput] = useState("");
 	const [showInputView, setShowInputView] = useState(false);
+	const [viewingExecId, setViewingExecId] = useState<string | null>(
+		initialExecId ?? null,
+	);
 	const agents = walkAgents(flow);
 	// Reset showInputView when a new execution starts
 	useEffect(() => {
 		if (activeFlowExecution.value?.status === "running")
 			setShowInputView(false);
 	}, [activeFlowExecution.value?.status]);
+
+	// Auto-select most recent execution if nothing is selected and no live flow
+	useEffect(() => {
+		if (!viewingExecId && !activeFlowExecution.value && executions.length > 0) {
+			setViewingExecId(executions[0].id);
+		}
+	}, [executions.length, viewingExecId]);
+
 	const liveFlow = activeFlowExecution.value;
 	const recentExecIds = new Set(executions.map((e) => e.id));
 	const archived =
@@ -589,7 +517,72 @@ function ExecutionViewer({
 	const serverRunning = executions.find((e) => e.status === "running");
 	const isRunning =
 		(liveIsForThisFlow && liveFlow!.status === "running") || !!serverRunning;
-	const src = liveIsForThisFlow ? liveFlow : archived;
+
+	// Build src: prefer live > viewing selected execution > archived
+	const viewingExec = viewingExecId
+		? executions.find((e) => e.id === viewingExecId)
+		: null;
+	const viewingArch = viewingExecId
+		? Object.values(archivedFlows.value).find(
+				(f) => f.executionId === viewingExecId,
+			)
+		: null;
+
+	// Build a full ActiveFlowState from a server-side execution
+	const execStartMs = viewingExec
+		? new Date(viewingExec.startedAt).getTime()
+		: 0;
+	const viewingSrc =
+		viewingExec && !viewingArch
+			? {
+					executionId: viewingExec.id,
+					conversationId: "",
+					flowId: flow.id,
+					flowName: flow.name,
+					initialInput: viewingExec.initialInput || "",
+					status: viewingExec.status as
+						| "running"
+						| "completed"
+						| "failed"
+						| "cancelled",
+					agents: agents.map((a) => ({ id: a.id, name: a.name })),
+					currentAgentId: null as string | null,
+					currentAgentIndex: agents.length,
+					startedAt: execStartMs,
+					completedAt: viewingExec.completedAt
+						? new Date(viewingExec.completedAt).getTime()
+						: null,
+					agentOutputs: Object.fromEntries(
+						Object.entries(viewingExec.agentResults).map(([id, r]) => [
+							id,
+							r.output || "",
+						]),
+					),
+					agentDurations: Object.fromEntries(
+						Object.entries(viewingExec.agentResults).map(([id]) => [id, 1]),
+					),
+					agentDecisions: {} as Record<string, string>,
+					agentStartedAt: {} as Record<string, number>,
+					loopCount: 0,
+					visitLog: Object.entries(viewingExec.agentResults).map(([id, r]) => ({
+						agentId: id,
+						agentName: agents.find((a) => a.id === id)?.name || id,
+						visit: 1,
+						output: r.output || "",
+						duration: undefined as number | undefined,
+						decision: undefined as string | undefined,
+						startedAt: execStartMs,
+						status: (r.status === "completed" ? "completed" : "failed") as
+							| "running"
+							| "completed"
+							| "failed",
+					})),
+				}
+			: null;
+
+	const src = liveIsForThisFlow
+		? liveFlow
+		: (viewingArch ?? viewingSrc ?? archived);
 	const isComplete = !!src && !isRunning;
 	const outputRef = useRef<HTMLDivElement>(null);
 	const [expandedAgents, setExpandedAgents] = useState<Set<string>>(new Set());
@@ -939,642 +932,13 @@ function ExecutionViewer({
 				<details class="flow-past-execs">
 					<summary>Past executions ({executions.length})</summary>
 					{executions.slice(0, 5).map((e) => (
-						<ExecutionRow key={e.id} execution={e} />
+						<ExecutionRow
+							key={e.id}
+							execution={e}
+							onSelect={setViewingExecId}
+						/>
 					))}
 				</details>
-			)}
-		</div>
-	);
-}
-
-// ══════════════════════════════════════════
-// ══ ACTIVE FLOW BANNER
-// ══════════════════════════════════════════
-
-function ActiveFlowBanner({
-	flow,
-	onOpen,
-}: {
-	flow: {
-		flowName: string;
-		agents: Array<{ id: string; name: string }>;
-		currentAgentId: string | null;
-		agentDurations: Record<string, number>;
-		agentOutputs: Record<string, string>;
-		startedAt: number;
-	};
-	onOpen: () => void;
-}) {
-	const [elapsed, setElapsed] = useState(() =>
-		Math.max(0, Math.floor((Date.now() - flow.startedAt) / 1000)),
-	);
-	useEffect(() => {
-		const iv = setInterval(
-			() =>
-				setElapsed(
-					Math.max(0, Math.floor((Date.now() - flow.startedAt) / 1000)),
-				),
-			1000,
-		);
-		return () => clearInterval(iv);
-	}, [flow.startedAt]);
-	const currentAgent = flow.agents.find((a) => a.id === flow.currentAgentId);
-	const doneCount = Object.keys(flow.agentDurations).length;
-	const lastOutput = flow.currentAgentId
-		? flow.agentOutputs[flow.currentAgentId] || ""
-		: "";
-	const lastLine = lastOutput.trim().split("\n").pop()?.slice(0, 120) || "";
-	return (
-		<div class="flow-active-banner" onClick={onOpen}>
-			<div class="flow-active-top">
-				<span class="spinner-sm" />
-				<strong>{flow.flowName}</strong>
-				<span class="flow-active-progress">
-					{doneCount}/{flow.agents.length} agents
-				</span>
-				<span class="flow-active-time">{elapsed}s</span>
-			</div>
-			<div class="flow-active-detail">
-				{currentAgent && (
-					<span class="flow-active-agent">
-						Running: <strong>{currentAgent.name}</strong>
-					</span>
-				)}
-				{lastLine && <span class="flow-active-preview">{lastLine}</span>}
-			</div>
-			<div class="flow-active-nodes">
-				{flow.agents.map((a) => {
-					const isDone = flow.agentDurations[a.id] != null;
-					const isCurrent = flow.currentAgentId === a.id;
-					return (
-						<span
-							key={a.id}
-							class={`flow-active-dot${isDone ? " done" : isCurrent ? " current" : ""}`}
-							title={a.name}
-						/>
-					);
-				})}
-			</div>
-		</div>
-	);
-}
-
-// ══════════════════════════════════════════
-// ══ FLOW CARD
-// ══════════════════════════════════════════
-
-function FlowCard({
-	flow,
-	onSelect,
-	onEdit,
-	onDelete,
-}: {
-	flow: FlowDef;
-	onSelect: () => void;
-	onEdit: () => void;
-	onDelete: () => void;
-}) {
-	const agentCount = Object.keys(flow.agents).length;
-	return (
-		<div class="flow-card" onClick={onSelect}>
-			<div class="flow-card-header">
-				<span class="flow-card-name">{flow.name}</span>
-				{flow.isTemplate && <span class="flow-card-badge">Template</span>}
-			</div>
-			<p class="flow-card-desc">{flow.description}</p>
-			<div class="flow-card-meta">
-				<span>
-					{agentCount} agent{agentCount !== 1 ? "s" : ""}
-				</span>
-				<span>v{flow.version}</span>
-			</div>
-			<div class="flow-card-actions" onClick={(e) => e.stopPropagation()}>
-				<button class="btn-icon" onClick={onEdit} title="Edit">
-					<IconEdit size={14} />
-				</button>
-				{!flow.isTemplate && (
-					<button
-						class="btn-icon btn-danger"
-						onClick={() => {
-							if (confirm(`Delete flow "${flow.name}"?`)) onDelete();
-						}}
-						title="Delete"
-					>
-						<IconTrash size={14} />
-					</button>
-				)}
-			</div>
-		</div>
-	);
-}
-
-// ══════════════════════════════════════════
-// ══ FLOW EDITOR
-// ══════════════════════════════════════════
-
-function FlowEditor({
-	flow,
-	activeAgentId,
-	systemAgents,
-	onAgentSelect,
-	onChange,
-	onSave,
-	onCancel,
-}: {
-	flow: FlowDef;
-	activeAgentId: string | null;
-	systemAgents: SystemAgent[];
-	onAgentSelect: (id: string | null) => void;
-	onChange: (flow: FlowDef) => void;
-	onSave: () => void;
-	onCancel: () => void;
-}) {
-	const agents = Object.values(flow.agents);
-	const activeAgent = activeAgentId ? flow.agents[activeAgentId] : null;
-	const [showAgentPicker, setShowAgentPicker] = useState(false);
-
-	function updateAgent(agentId: string, updates: Partial<AgentDef>) {
-		onChange({
-			...flow,
-			agents: {
-				...flow.agents,
-				[agentId]: { ...flow.agents[agentId], ...updates },
-			},
-		});
-	}
-	function addAgentFromSystem(sa: SystemAgent) {
-		const uniqueId = flow.agents[sa.id]
-			? `${sa.id}-${agents.length + 1}`
-			: sa.id;
-		const last = agents[agents.length - 1];
-		const updated = { ...flow.agents };
-		if (last?.transitions.default === "END")
-			updated[last.id] = {
-				...last,
-				transitions: { ...last.transitions, default: uniqueId },
-			};
-		updated[uniqueId] = {
-			id: uniqueId,
-			name: sa.name,
-			role: sa.description.slice(0, 100),
-			systemPrompt: `You are the ${sa.name} agent. ${sa.description}`,
-			inputTemplate: "{{prev_output}}",
-			allowedTools:
-				sa.tools.length > 0
-					? sa.tools.filter((t) => !t.startsWith("mcp__"))
-					: ["Read", "Write", "Edit", "Bash", "Glob", "Grep"],
-			mcpServers: [],
-			maxTurns: 20,
-			timeoutMs: 300000,
-			outputParser: "raw",
-			transitions: { default: "END" },
-		};
-		onChange({ ...flow, agents: updated });
-		onAgentSelect(uniqueId);
-		setShowAgentPicker(false);
-	}
-	function addBlankAgent() {
-		const id = `agent-${crypto.randomUUID().slice(0, 8)}`;
-		const last = agents[agents.length - 1];
-		const updated = { ...flow.agents };
-		if (last?.transitions.default === "END")
-			updated[last.id] = {
-				...last,
-				transitions: { ...last.transitions, default: id },
-			};
-		updated[id] = {
-			id,
-			name: `Agent ${agents.length + 1}`,
-			role: "Describe this agent's role",
-			systemPrompt: "You are a helpful assistant.",
-			inputTemplate: "{{prev_output}}",
-			allowedTools: ["Read", "Write", "Edit", "Bash"],
-			mcpServers: [],
-			maxTurns: 20,
-			timeoutMs: 300000,
-			outputParser: "raw",
-			transitions: { default: "END" },
-		};
-		onChange({ ...flow, agents: updated });
-		onAgentSelect(id);
-	}
-	function removeAgent(id: string) {
-		if (agents.length <= 1) return;
-		const updated: Record<string, AgentDef> = {};
-		for (const [key, orig] of Object.entries(flow.agents)) {
-			if (key === id) continue;
-			let t = { ...orig.transitions };
-			if (t.default === id) t = { ...t, default: "END" };
-			if (t.conditions)
-				t = {
-					...t,
-					conditions: t.conditions.map((c) =>
-						c.goto === id ? { ...c, goto: "END" } : c,
-					),
-				};
-			updated[key] = { ...orig, transitions: t };
-		}
-		const newEntry =
-			flow.entryAgentId === id ? Object.keys(updated)[0] : flow.entryAgentId;
-		onChange({ ...flow, agents: updated, entryAgentId: newEntry });
-		onAgentSelect(newEntry);
-	}
-
-	return (
-		<div class="flows-section">
-			<div class="flows-header">
-				<button class="btn btn-ghost" onClick={onCancel}>
-					&larr; Cancel
-				</button>
-				<h2>{flow.id ? "Edit Flow" : "New Flow"}</h2>
-				<button class="btn btn-primary" onClick={onSave}>
-					<IconCheck size={14} /> Save
-				</button>
-			</div>
-			<div class="flow-editor">
-				<div class="flow-editor-meta">
-					<div class="form-field">
-						<label>Name</label>
-						<input
-							type="text"
-							value={flow.name}
-							onInput={(e) =>
-								onChange({
-									...flow,
-									name: (e.target as HTMLInputElement).value,
-								})
-							}
-						/>
-					</div>
-					<div class="form-field">
-						<label>Description</label>
-						<input
-							type="text"
-							value={flow.description}
-							onInput={(e) =>
-								onChange({
-									...flow,
-									description: (e.target as HTMLInputElement).value,
-								})
-							}
-						/>
-					</div>
-				</div>
-				<div class="flow-editor-layout">
-					<div class="flow-editor-agents">
-						<div class="flow-editor-agents-header">
-							<h3>Agents</h3>
-							<button
-								class="btn-icon"
-								onClick={() => setShowAgentPicker(true)}
-								title="Add agent"
-							>
-								<IconPlus size={14} />
-							</button>
-						</div>
-						{showAgentPicker && (
-							<AgentPicker
-								systemAgents={systemAgents}
-								onSelect={addAgentFromSystem}
-								onBlank={() => {
-									addBlankAgent();
-									setShowAgentPicker(false);
-								}}
-								onClose={() => setShowAgentPicker(false)}
-							/>
-						)}
-						{agents.map((a, i) => (
-							<div
-								key={a.id}
-								class={`flow-editor-agent-item${activeAgentId === a.id ? " active" : ""}`}
-								onClick={() => onAgentSelect(a.id)}
-							>
-								<span class="flow-editor-agent-num">{i + 1}</span>
-								<div class="flow-editor-agent-info">
-									<span class="flow-editor-agent-name">{a.name}</span>
-									<span class="flow-editor-agent-role">{a.role}</span>
-								</div>
-								{agents.length > 1 && (
-									<button
-										class="btn-icon btn-danger btn-sm"
-										onClick={(e) => {
-											e.stopPropagation();
-											removeAgent(a.id);
-										}}
-										title="Remove"
-									>
-										<IconX size={12} />
-									</button>
-								)}
-							</div>
-						))}
-					</div>
-					{activeAgent && (
-						<AgentEditor
-							agent={activeAgent}
-							allAgentIds={agents.map((a) => a.id)}
-							onChange={(u) => updateAgent(activeAgent.id, u)}
-						/>
-					)}
-				</div>
-			</div>
-		</div>
-	);
-}
-
-// ══════════════════════════════════════════
-// ══ AGENT EDITOR
-// ══════════════════════════════════════════
-
-function AgentEditor({
-	agent,
-	allAgentIds,
-	onChange,
-}: {
-	agent: AgentDef;
-	allAgentIds: string[];
-	onChange: (u: Partial<AgentDef>) => void;
-}) {
-	const [showPrompt, setShowPrompt] = useState(true);
-	return (
-		<div class="flow-agent-editor">
-			<div class="form-field">
-				<label>Name</label>
-				<input
-					type="text"
-					value={agent.name}
-					onInput={(e) =>
-						onChange({ name: (e.target as HTMLInputElement).value })
-					}
-				/>
-			</div>
-			<div class="form-field">
-				<label>Role</label>
-				<input
-					type="text"
-					value={agent.role}
-					onInput={(e) =>
-						onChange({ role: (e.target as HTMLInputElement).value })
-					}
-				/>
-			</div>
-			<div class="form-field">
-				<button
-					class="btn btn-ghost btn-sm"
-					onClick={() => setShowPrompt(!showPrompt)}
-				>
-					System Prompt{" "}
-					{showPrompt ? (
-						<IconChevronUp size={12} />
-					) : (
-						<IconChevronDown size={12} />
-					)}
-				</button>
-				{showPrompt && (
-					<textarea
-						class="flow-agent-prompt"
-						value={agent.systemPrompt}
-						onInput={(e) =>
-							onChange({
-								systemPrompt: (e.target as HTMLTextAreaElement).value,
-							})
-						}
-						rows={8}
-					/>
-				)}
-			</div>
-			<div class="form-field">
-				<label>Input Template</label>
-				<textarea
-					value={agent.inputTemplate}
-					onInput={(e) =>
-						onChange({ inputTemplate: (e.target as HTMLTextAreaElement).value })
-					}
-					rows={3}
-					placeholder="Use {{prev_output}} for previous agent's output"
-				/>
-			</div>
-			<div class="form-field">
-				<label>Tools</label>
-				<div class="flow-agent-tools">
-					{ALL_TOOLS.map((t) => (
-						<label key={t} class="flow-agent-tool-check">
-							<input
-								type="checkbox"
-								checked={agent.allowedTools.includes(t)}
-								onChange={(e) => {
-									const c = (e.target as HTMLInputElement).checked;
-									onChange({
-										allowedTools: c
-											? [...agent.allowedTools, t]
-											: agent.allowedTools.filter((x) => x !== t),
-									});
-								}}
-							/>
-							{t}
-						</label>
-					))}
-				</div>
-			</div>
-			<div class="form-row">
-				<div class="form-field">
-					<label>Max Turns</label>
-					<input
-						type="number"
-						value={agent.maxTurns}
-						onInput={(e) =>
-							onChange({
-								maxTurns: parseInt((e.target as HTMLInputElement).value) || 20,
-							})
-						}
-						min={1}
-						max={200}
-					/>
-				</div>
-				<div class="form-field">
-					<label>Timeout (sec)</label>
-					<input
-						type="number"
-						value={Math.round(agent.timeoutMs / 1000)}
-						onInput={(e) =>
-							onChange({
-								timeoutMs:
-									(parseInt((e.target as HTMLInputElement).value) || 300) *
-									1000,
-							})
-						}
-						min={30}
-						max={3600}
-					/>
-				</div>
-			</div>
-			<div class="form-field">
-				<label>Output Parser</label>
-				<select
-					value={agent.outputParser}
-					onChange={(e) =>
-						onChange({
-							outputParser: (e.target as HTMLSelectElement).value as
-								| "raw"
-								| "structured",
-						})
-					}
-				>
-					<option value="raw">Raw</option>
-					<option value="structured">Structured (DECISION)</option>
-				</select>
-			</div>
-			<div class="form-field">
-				<label>Default Transition</label>
-				<select
-					value={agent.transitions.default || "END"}
-					onChange={(e) =>
-						onChange({
-							transitions: {
-								...agent.transitions,
-								default: (e.target as HTMLSelectElement).value,
-							},
-						})
-					}
-				>
-					<option value="END">END</option>
-					{allAgentIds
-						.filter((id) => id !== agent.id)
-						.map((id) => (
-							<option key={id} value={id}>
-								{id}
-							</option>
-						))}
-				</select>
-			</div>
-		</div>
-	);
-}
-
-// ══════════════════════════════════════════
-// ══ AGENT PICKER
-// ══════════════════════════════════════════
-
-function AgentPicker({
-	systemAgents,
-	onSelect,
-	onBlank,
-	onClose,
-}: {
-	systemAgents: SystemAgent[];
-	onSelect: (a: SystemAgent) => void;
-	onBlank: () => void;
-	onClose: () => void;
-}) {
-	const [search, setSearch] = useState("");
-	const filtered = systemAgents.filter(
-		(a) =>
-			a.name.toLowerCase().includes(search.toLowerCase()) ||
-			a.description.toLowerCase().includes(search.toLowerCase()),
-	);
-	return (
-		<div class="agent-picker">
-			<div class="agent-picker-header">
-				<input
-					type="text"
-					class="agent-picker-search"
-					placeholder="Search agents..."
-					value={search}
-					onInput={(e) => setSearch((e.target as HTMLInputElement).value)}
-					autoFocus
-				/>
-				<button class="btn-icon" onClick={onClose}>
-					<IconX size={14} />
-				</button>
-			</div>
-			<div class="agent-picker-list">
-				<button
-					class="agent-picker-item agent-picker-blank"
-					onClick={() => {
-						onBlank();
-						onClose();
-					}}
-				>
-					<IconPlus size={14} />
-					<div>
-						<strong>Blank Agent</strong>
-						<span>Custom agent from scratch</span>
-					</div>
-				</button>
-				{filtered.map((a) => (
-					<button
-						key={a.id}
-						class="agent-picker-item"
-						onClick={() => onSelect(a)}
-					>
-						<div class="agent-picker-item-info">
-							<strong>{a.name}</strong>
-							<span>{a.description.slice(0, 80)}</span>
-						</div>
-						{a.tools.length > 0 && (
-							<span class="agent-picker-tools">
-								{a.tools.filter((t) => !t.startsWith("mcp__")).length} tools
-							</span>
-						)}
-					</button>
-				))}
-				{filtered.length === 0 && search && (
-					<div class="agent-picker-empty">No agents match "{search}"</div>
-				)}
-			</div>
-		</div>
-	);
-}
-
-// ══════════════════════════════════════════
-// ══ EXECUTION ROW (past executions)
-// ══════════════════════════════════════════
-
-function ExecutionRow({ execution }: { execution: FlowExecution }) {
-	const [expanded, setExpanded] = useState(false);
-	const elapsed = execution.completedAt
-		? new Date(execution.completedAt).getTime() -
-			new Date(execution.startedAt).getTime()
-		: Date.now() - new Date(execution.startedAt).getTime();
-	const statusColor: Record<string, string> = {
-		completed: "var(--success, #22c55e)",
-		failed: "var(--error)",
-		running: "var(--accent)",
-		pending: "var(--text-muted)",
-		cancelled: "var(--text-muted)",
-	};
-	return (
-		<div class="flow-execution-row">
-			<div class="flow-execution-header" onClick={() => setExpanded(!expanded)}>
-				<span
-					class="flow-execution-status"
-					style={{ color: statusColor[execution.status] || "inherit" }}
-				>
-					{execution.status}
-				</span>
-				<span class="flow-execution-time">
-					{new Date(execution.startedAt).toLocaleString()}
-				</span>
-				<span class="flow-execution-duration">
-					{elapsed < 60000
-						? `${Math.round(elapsed / 1000)}s`
-						: `${Math.round(elapsed / 60000)}m`}
-				</span>
-				{expanded ? <IconChevronUp size={14} /> : <IconChevronDown size={14} />}
-			</div>
-			{expanded && (
-				<div class="flow-execution-details">
-					{Object.entries(execution.agentResults).map(([id, r]) => (
-						<div key={id} class="flow-execution-agent">
-							<strong>{id}</strong>: {r.status}
-							{r.output && (
-								<pre class="flow-execution-output">
-									{r.output.slice(0, 500)}
-								</pre>
-							)}
-						</div>
-					))}
-				</div>
 			)}
 		</div>
 	);

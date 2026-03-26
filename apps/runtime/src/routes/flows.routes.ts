@@ -5,6 +5,7 @@
  * Designed to be invoked from both the web UI and a future chat interface.
  */
 import { Router } from "express";
+import { asyncHandler } from "../utils/async-handler.js";
 import type { FlowExecution } from "../types/flow.types.js";
 import {
 	listFlows,
@@ -164,7 +165,7 @@ router.delete("/:id", (req, res) => {
 // ── Flow Execution ──
 
 // Start a new execution
-router.post("/:id/execute", async (req, res) => {
+router.post("/:id/execute", asyncHandler(async (req, res) => {
 	const flow = getFlow(safeId(req.params.id));
 	if (!flow) {
 		res.status(404).json({ error: "Flow not found" });
@@ -264,7 +265,7 @@ router.post("/:id/execute", async (req, res) => {
 			(err as Error).message,
 		);
 	});
-});
+}));
 
 // List executions (optionally filtered by flowId)
 router.get("/executions/list", (req, res) => {

@@ -1,0 +1,191 @@
+/**
+ * PreviewPanel — Live localhost preview via subdomain proxy iframe.
+ *
+ * The iframe loads from a subdomain (p{port}.hostname or preview-{port}.localhost)
+ * which is proxied by the subdomain middleware in the backend. All root-absolute
+ * paths resolve correctly because the iframe has its own origin.
+ *
+ * For self-hosted without wildcard DNS, falls back to dedicated-port proxy.
+ */
+import { useState, useRef } from "preact/hooks";
+import { previewPort } from "../state/store";
+import { IconRefresh, IconX, IconPlay } from "./Icons";
+
+/** Build the iframe URL via subdomain. */
+function buildPreviewUrl(port: number): string {
+	const { protocol, hostname } = window.location;
+	const portSuffix = window.location.port ? `:${window.location.port}` : "";
+	if (hostname === "localhost" || /^\d+\.\d+\.\d+\.\d+$/.test(hostname)) {
+		// Dev / IP: preview-{port}.localhost
+		return `${protocol}//preview-${port}.${hostname}${portSuffix}/`;
+	}
+	// Production: p{port}.{baseDomain} — strip leading subdomain
+	// dev.codeck.xyz → p4321.codeck.xyz (single-level, covered by Universal SSL)
+	const parts = hostname.split(".");
+	const baseDomain = parts.length > 2 ? parts.slice(-2).join(".") : hostname;
+	return `${protocol}//p${port}.${baseDomain}/`;
+}
+
+export function PreviewPanel() {
+	const [inputUrl, setInputUrl] = useState("localhost:3000");
+	const activePort = previewPort.value;
+	const setActivePort = (port: number | null) => {
+		previewPort.value = port;
+	};
+	const [loading, setLoading] = useState(false);
+	const [iframeReady, setIframeReady] = useState(false);
+	const [error, setError] = useState<string | null>(null);
+	const iframeRef = useRef<HTMLIFrameElement>(null);
+
+	function parseUrl(raw: string): { url: string; port: number | null } {
+		let trimmed = raw.trim();
+		if (!trimmed) return { url: "", port: null };
+		if (!/^https?:\/\//.test(trimmed)) trimmed = `http://${trimmed}`;
+		try {
+			const parsed = new URL(trimmed);
+			const host = parsed.hostname;
+			if (host !== "localhost" && host !== "127.0.0.1" && host !== "0.0.0.0") {
+				return { url: trimmed, port: null };
+			}
+			const port = parseInt(parsed.port || "80", 10);
+			return { url: trimmed, port };
+		} catch {
+			return { url: trimmed, port: null };
+		}
+	}
+
+	async function handleOpen() {
+		const { url, port } = parseUrl(inputUrl);
+		if (!url) return;
+		setInputUrl(url);
+		setLoading(true);
+		setError(null);
+
+		if (!port || port === 80) {
+			setError("Enter a localhost URL with a port (e.g., localhost:3000)");
+			setLoading(false);
+			return;
+		}
+
+		// Reachability check via path-based proxy (same origin, always works)
+		try {
+			const res = await fetch(`/preview-proxy/${port}/`, {
+				method: "HEAD",
+				signal: AbortSignal.timeout(5000),
+			});
+			if (!res.ok && res.status !== 304) {
+				setError(`Port ${port} returned ${res.status}`);
+				setLoading(false);
+				return;
+			}
+		} catch {
+			setError(`Nothing running on port ${port} — start a dev server first.`);
+			setLoading(false);
+			return;
+		}
+
+		setIframeReady(false);
+		setActivePort(port);
+		setLoading(false);
+	}
+
+	function handleRefresh() {
+		if (iframeRef.current && activePort) {
+			setIframeReady(false);
+			iframeRef.current.src = buildPreviewUrl(activePort);
+		}
+	}
+
+	function handleStop() {
+		setActivePort(null);
+		setIframeReady(false);
+		setError(null);
+	}
+
+	function handleNavigate() {
+		const { port } = parseUrl(inputUrl);
+		if (port && port !== activePort) {
+			handleStop();
+			setTimeout(() => handleOpen(), 50);
+		} else if (iframeRef.current && activePort) {
+			iframeRef.current.src = buildPreviewUrl(activePort);
+		}
+	}
+
+	return (
+		<div class="preview-panel">
+			<div class="preview-toolbar">
+				{activePort && (
+					<button
+						class="btn btn-xs btn-ghost"
+						onClick={handleRefresh}
+						title="Refresh"
+					>
+						<IconRefresh size={13} />
+					</button>
+				)}
+				<input
+					class="preview-url-input"
+					type="text"
+					placeholder="localhost:3000"
+					value={inputUrl}
+					onInput={(e) => setInputUrl((e.target as HTMLInputElement).value)}
+					onKeyDown={(e) => {
+						if (e.key === "Enter") {
+							activePort ? handleNavigate() : handleOpen();
+						}
+					}}
+				/>
+				{activePort ? (
+					<button
+						class="btn btn-xs btn-ghost danger"
+						onClick={handleStop}
+						title="Stop"
+					>
+						<IconX size={13} />
+					</button>
+				) : (
+					<button
+						class="btn btn-xs btn-primary"
+						onClick={handleOpen}
+						disabled={loading || !inputUrl.trim()}
+					>
+						{loading ? <span class="spinner-sm" /> : <IconPlay size={13} />}
+						Open
+					</button>
+				)}
+			</div>
+
+			{error && <div class="preview-error">{error}</div>}
+
+			{activePort ? (
+				<div class="preview-viewport">
+					{!iframeReady && (
+						<div class="preview-loading">
+							<span class="spinner-sm" />
+							<span>Loading preview...</span>
+						</div>
+					)}
+					<iframe
+						ref={iframeRef}
+						class="preview-iframe"
+						style={{ opacity: iframeReady ? 1 : 0 }}
+						src={buildPreviewUrl(activePort)}
+						title="Site preview"
+						onLoad={() => setIframeReady(true)}
+					/>
+				</div>
+			) : (
+				!error && (
+					<div class="preview-empty">
+						<p>Enter a localhost URL to preview</p>
+						<p class="preview-hint">
+							When the agent starts a dev server, it will appear here
+							automatically.
+						</p>
+					</div>
+				)
+			)}
+		</div>
+	);
+}

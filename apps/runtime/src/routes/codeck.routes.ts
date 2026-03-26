@@ -19,6 +19,7 @@ const execFileAsync = promisify(execFile);
 const WORKSPACE = resolve(process.env.WORKSPACE || "/workspace");
 const AGENT_DATA_DIR = join(WORKSPACE, ".codeck");
 const CLAUDE_JSON_PATH = join(process.env.HOME || "/root", ".claude.json");
+import { asyncHandler } from "../utils/async-handler.js";
 const router = Router();
 
 /**
@@ -76,133 +77,142 @@ async function safePath(
 }
 
 // List directory contents
-router.get("/files", async (req, res) => {
-	const relativePath = (req.query.path || "") as string;
-	const typeFilter = req.query.type as string | undefined;
-	const fullPath = await safePath(AGENT_DATA_DIR, relativePath);
+router.get(
+	"/files",
+	asyncHandler(async (req, res) => {
+		const relativePath = (req.query.path || "") as string;
+		const typeFilter = req.query.type as string | undefined;
+		const fullPath = await safePath(AGENT_DATA_DIR, relativePath);
 
-	if (!fullPath) {
-		res.status(403).json({ error: "Access denied" });
-		return;
-	}
-
-	try {
-		const entries = await readdir(fullPath, { withFileTypes: true });
-
-		let items;
-		if (typeFilter === "dir") {
-			// Fast path: only directories, no stat() calls needed
-			items = entries
-				.filter((e) => e.isDirectory())
-				.map((e) => ({ name: e.name, isDirectory: true as const }));
-		} else {
-			// Full listing with stat for size/modified
-			items = await Promise.all(
-				entries.map(async (e) => {
-					if (e.isDirectory()) {
-						return { name: e.name, isDirectory: true as const, size: 0 };
-					}
-					const itemPath = join(fullPath, e.name);
-					try {
-						const s = await stat(itemPath);
-						return {
-							name: e.name,
-							isDirectory: false as const,
-							size: s.size,
-							modified: s.mtime,
-						};
-					} catch {
-						return { name: e.name, isDirectory: false as const, size: 0 };
-					}
-				}),
-			);
-		}
-
-		// Sort dirs first
-		items.sort((a, b) => {
-			if (a.isDirectory && !b.isDirectory) return -1;
-			if (!a.isDirectory && b.isDirectory) return 1;
-			return a.name.localeCompare(b.name);
-		});
-
-		res.json({ success: true, path: relativePath, items });
-	} catch (err: unknown) {
-		const code = (err as NodeJS.ErrnoException).code;
-		if (code === "ENOENT" || code === "ENOTDIR") {
-			res.json({ success: true, path: relativePath, items: [] });
-		} else {
-			res.status(500).json({ error: "Directory read failed" });
-		}
-	}
-});
-
-// Read file content
-router.get("/files/read", async (req, res) => {
-	const relativePath = req.query.path as string;
-	if (!relativePath) {
-		res.status(400).json({ error: "path required" });
-		return;
-	}
-
-	const fullPath = await safePath(AGENT_DATA_DIR, relativePath);
-
-	if (!fullPath) {
-		res.status(403).json({ error: "Access denied" });
-		return;
-	}
-
-	try {
-		const s = await stat(fullPath);
-		if (s.size > 100 * 1024) {
-			res.json({ success: false, error: "File too large", size: s.size });
+		if (!fullPath) {
+			res.status(403).json({ error: "Access denied" });
 			return;
 		}
-		const content = await readFile(fullPath, "utf-8");
-		res.json({ success: true, content, size: s.size });
-	} catch {
-		res.status(404).json({ error: "File not found" });
-	}
-});
+
+		try {
+			const entries = await readdir(fullPath, { withFileTypes: true });
+
+			let items;
+			if (typeFilter === "dir") {
+				// Fast path: only directories, no stat() calls needed
+				items = entries
+					.filter((e) => e.isDirectory())
+					.map((e) => ({ name: e.name, isDirectory: true as const }));
+			} else {
+				// Full listing with stat for size/modified
+				items = await Promise.all(
+					entries.map(async (e) => {
+						if (e.isDirectory()) {
+							return { name: e.name, isDirectory: true as const, size: 0 };
+						}
+						const itemPath = join(fullPath, e.name);
+						try {
+							const s = await stat(itemPath);
+							return {
+								name: e.name,
+								isDirectory: false as const,
+								size: s.size,
+								modified: s.mtime,
+							};
+						} catch {
+							return { name: e.name, isDirectory: false as const, size: 0 };
+						}
+					}),
+				);
+			}
+
+			// Sort dirs first
+			items.sort((a, b) => {
+				if (a.isDirectory && !b.isDirectory) return -1;
+				if (!a.isDirectory && b.isDirectory) return 1;
+				return a.name.localeCompare(b.name);
+			});
+
+			res.json({ success: true, path: relativePath, items });
+		} catch (err: unknown) {
+			const code = (err as NodeJS.ErrnoException).code;
+			if (code === "ENOENT" || code === "ENOTDIR") {
+				res.json({ success: true, path: relativePath, items: [] });
+			} else {
+				res.status(500).json({ error: "Directory read failed" });
+			}
+		}
+	}),
+);
+
+// Read file content
+router.get(
+	"/files/read",
+	asyncHandler(async (req, res) => {
+		const relativePath = req.query.path as string;
+		if (!relativePath) {
+			res.status(400).json({ error: "path required" });
+			return;
+		}
+
+		const fullPath = await safePath(AGENT_DATA_DIR, relativePath);
+
+		if (!fullPath) {
+			res.status(403).json({ error: "Access denied" });
+			return;
+		}
+
+		try {
+			const s = await stat(fullPath);
+			if (s.size > 100 * 1024) {
+				res.json({ success: false, error: "File too large", size: s.size });
+				return;
+			}
+			const content = await readFile(fullPath, "utf-8");
+			res.json({ success: true, content, size: s.size });
+		} catch {
+			res.status(404).json({ error: "File not found" });
+		}
+	}),
+);
 
 // Write/update file content (for manual edits, especially preferences.md)
-router.put("/files/write", async (req, res) => {
-	const { path: relativePath, content } = req.body;
-	if (!relativePath || typeof content !== "string") {
-		res.status(400).json({ error: "path and content required" });
-		return;
-	}
-
-	const fullPath = await safePath(AGENT_DATA_DIR, relativePath);
-
-	if (!fullPath) {
-		res.status(403).json({ error: "Access denied" });
-		return;
-	}
-
-	// Allow writing to existing files OR creating new files in existing directories
-	// (needed for adding new rules, preferences, etc.)
-	try {
-		await access(fullPath);
-	} catch {
-		// File doesn't exist — check if parent directory exists (allow creation there)
-		const { dirname: dirFn } = await import("path");
-		const parentDir = dirFn(fullPath);
-		try {
-			await access(parentDir);
-		} catch {
-			// Parent dir doesn't exist — create it (for rules/user/ etc.)
-			const { mkdir: mkdirFn } = await import("fs/promises");
-			await mkdirFn(parentDir, { recursive: true });
+router.put(
+	"/files/write",
+	asyncHandler(async (req, res) => {
+		const { path: relativePath, content } = req.body;
+		if (!relativePath || typeof content !== "string") {
+			res.status(400).json({ error: "path and content required" });
+			return;
 		}
-	}
 
-	try {
-		await writeFile(fullPath, content);
-		res.json({ success: true });
-	} catch {
-		res.status(500).json({ error: "Write failed" });
-	}
-});
+		const fullPath = await safePath(AGENT_DATA_DIR, relativePath);
+
+		if (!fullPath) {
+			res.status(403).json({ error: "Access denied" });
+			return;
+		}
+
+		// Allow writing to existing files OR creating new files in existing directories
+		// (needed for adding new rules, preferences, etc.)
+		try {
+			await access(fullPath);
+		} catch {
+			// File doesn't exist — check if parent directory exists (allow creation there)
+			const { dirname: dirFn } = await import("path");
+			const parentDir = dirFn(fullPath);
+			try {
+				await access(parentDir);
+			} catch {
+				// Parent dir doesn't exist — create it (for rules/user/ etc.)
+				const { mkdir: mkdirFn } = await import("fs/promises");
+				await mkdirFn(parentDir, { recursive: true });
+			}
+		}
+
+		try {
+			await writeFile(fullPath, content);
+			res.json({ success: true });
+		} catch {
+			res.status(500).json({ error: "Write failed" });
+		}
+	}),
+);
 
 // ── Environment Variables (.codeck/.env — encrypted at rest) ──
 
@@ -335,173 +345,185 @@ router.delete("/env", (req, res) => {
 
 // ── Memory Export (tar.gz of .codeck/) ──
 
-router.get("/export", async (_req, res) => {
-	try {
-		if (!existsSync(AGENT_DATA_DIR)) {
-			res.status(404).json({ error: "No memory data to export" });
-			return;
-		}
-
-		const timestamp = new Date().toISOString().slice(0, 10);
-		const filename = `codeck-memory-${timestamp}.tar.gz`;
-
-		res.setHeader("Content-Type", "application/gzip");
-		res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
-
-		// Use spawn for proper streaming (execFile buffers stdout which breaks pipes)
-		const tar = spawn(
-			"tar",
-			[
-				"czf",
-				"-",
-				"--no-same-owner",
-				"--exclude=./sessions",
-				"--exclude=./sessions.json",
-				"--exclude=./index",
-				"--exclude=./uploads",
-				"--exclude=./auth.json",
-				"--exclude=./config.json",
-				"--exclude=./daemon-sessions.json",
-				"--exclude=./.codeck-oauth-token",
-				"--exclude=./backups",
-				"--exclude=./agents/*/executions",
-				"--exclude=./.import-tmp-*",
-				"--exclude=./.env",
-				"-C",
-				AGENT_DATA_DIR,
-				".",
-			],
-			{ stdio: ["ignore", "pipe", "pipe"] },
-		);
-
-		tar.stdout.pipe(res);
-		tar.stderr.on("data", (d: Buffer) =>
-			console.warn("[Export]", d.toString().trim()),
-		);
-		tar.on("error", (err) => {
-			console.error("[Export] spawn error:", err.message);
-			if (!res.headersSent) res.status(500).json({ error: "Export failed" });
-		});
-		tar.on("close", (code) => {
-			if (code !== 0 && !res.headersSent) {
-				res.status(500).json({ error: `Export failed (tar exit ${code})` });
+router.get(
+	"/export",
+	asyncHandler(async (_req, res) => {
+		try {
+			if (!existsSync(AGENT_DATA_DIR)) {
+				res.status(404).json({ error: "No memory data to export" });
+				return;
 			}
-		});
-	} catch (err) {
-		console.error("[Export] error:", (err as Error).message);
-		res.status(500).json({ error: "Export failed" });
-	}
-});
+
+			const timestamp = new Date().toISOString().slice(0, 10);
+			const filename = `codeck-memory-${timestamp}.tar.gz`;
+
+			res.setHeader("Content-Type", "application/gzip");
+			res.setHeader(
+				"Content-Disposition",
+				`attachment; filename="${filename}"`,
+			);
+
+			// Use spawn for proper streaming (execFile buffers stdout which breaks pipes)
+			const tar = spawn(
+				"tar",
+				[
+					"czf",
+					"-",
+					"--no-same-owner",
+					"--exclude=./sessions",
+					"--exclude=./sessions.json",
+					"--exclude=./index",
+					"--exclude=./uploads",
+					"--exclude=./auth.json",
+					"--exclude=./config.json",
+					"--exclude=./daemon-sessions.json",
+					"--exclude=./.codeck-oauth-token",
+					"--exclude=./backups",
+					"--exclude=./agents/*/executions",
+					"--exclude=./.import-tmp-*",
+					"--exclude=./.env",
+					"-C",
+					AGENT_DATA_DIR,
+					".",
+				],
+				{ stdio: ["ignore", "pipe", "pipe"] },
+			);
+
+			tar.stdout.pipe(res);
+			tar.stderr.on("data", (d: Buffer) =>
+				console.warn("[Export]", d.toString().trim()),
+			);
+			tar.on("error", (err) => {
+				console.error("[Export] spawn error:", err.message);
+				if (!res.headersSent) res.status(500).json({ error: "Export failed" });
+			});
+			tar.on("close", (code) => {
+				if (code !== 0 && !res.headersSent) {
+					res.status(500).json({ error: `Export failed (tar exit ${code})` });
+				}
+			});
+		} catch (err) {
+			console.error("[Export] error:", (err as Error).message);
+			res.status(500).json({ error: "Export failed" });
+		}
+	}),
+);
 
 // ── Memory Import (tar.gz upload → replace .codeck/) ──
 
 // Increase body limit for this endpoint (max 50MB)
-router.post("/import", async (req, res) => {
-	const { data } = req.body;
-	if (!data || typeof data !== "string") {
-		res.status(400).json({ error: "Base64-encoded tar.gz data required" });
-		return;
-	}
-
-	const buffer = Buffer.from(data, "base64");
-	const MAX_IMPORT_SIZE = 50 * 1024 * 1024; // 50 MB
-	if (buffer.length > MAX_IMPORT_SIZE) {
-		res.status(400).json({
-			error: `Import too large (max ${MAX_IMPORT_SIZE / 1024 / 1024} MB)`,
-		});
-		return;
-	}
-
-	if (buffer.length === 0) {
-		res.status(400).json({ error: "Empty data" });
-		return;
-	}
-
-	// Extract to a temp directory first, then merge into .codeck/
-	const tmpDir = join(AGENT_DATA_DIR, ".import-tmp-" + Date.now());
-	try {
-		await mkdir(tmpDir, { recursive: true });
-
-		// Write buffer to temp file and extract
-		const tmpFile = join(tmpDir, "import.tar.gz");
-		await writeFile(tmpFile, buffer);
-
-		// Extract with tar — use spawn to handle non-zero exit from permission warnings
-		await new Promise<void>((resolve, reject) => {
-			const extract = spawn(
-				"tar",
-				[
-					"xzf",
-					tmpFile,
-					"-C",
-					tmpDir,
-					"--no-same-owner",
-					"--no-same-permissions",
-					"--warning=no-timestamp",
-				],
-				{ stdio: ["ignore", "pipe", "pipe"] },
-			);
-			let stderr = "";
-			extract.stderr.on("data", (d: Buffer) => {
-				stderr += d.toString();
-			});
-			extract.on("error", reject);
-			extract.on("close", () => {
-				// Always resolve — permission warnings cause exit 2 but files ARE extracted
-				if (stderr) console.warn("[Import] tar output:", stderr.slice(0, 500));
-				resolve();
-			});
-		});
-
-		// Remove the temp tar file
-		await rm(tmpFile);
-
-		// Strict allowlist — only import known safe directories/files.
-		// Never import auth.json, config.json, sessions, .env, or unknown entries.
-		const IMPORT_ALLOWLIST = new Set([
-			"memory",
-			"rules",
-			"skills",
-			"preferences.md",
-			"ecc",
-			"agents",
-			"daily",
-		]);
-
-		let imported = 0;
-		for (const entry of await readdir(tmpDir)) {
-			if (!IMPORT_ALLOWLIST.has(entry)) continue; // skip anything not in allowlist
-
-			const src = join(tmpDir, entry);
-			const dest = join(AGENT_DATA_DIR, entry);
-
-			// Remove existing and replace
-			if (existsSync(dest)) {
-				await rm(dest, { recursive: true, force: true });
-			}
-			await execFileAsync("cp", ["-a", src, dest], { timeout: 10_000 });
-			imported++;
+router.post(
+	"/import",
+	asyncHandler(async (req, res) => {
+		const { data } = req.body;
+		if (!data || typeof data !== "string") {
+			res.status(400).json({ error: "Base64-encoded tar.gz data required" });
+			return;
 		}
 
-		// Cleanup temp dir
-		await rm(tmpDir, { recursive: true, force: true });
+		const buffer = Buffer.from(data, "base64");
+		const MAX_IMPORT_SIZE = 50 * 1024 * 1024; // 50 MB
+		if (buffer.length > MAX_IMPORT_SIZE) {
+			res.status(400).json({
+				error: `Import too large (max ${MAX_IMPORT_SIZE / 1024 / 1024} MB)`,
+			});
+			return;
+		}
 
-		res.json({
-			success: true,
-			imported,
-			message: `Imported ${imported} items`,
-		});
-	} catch (err) {
-		// Cleanup on error
+		if (buffer.length === 0) {
+			res.status(400).json({ error: "Empty data" });
+			return;
+		}
+
+		// Extract to a temp directory first, then merge into .codeck/
+		const tmpDir = join(AGENT_DATA_DIR, ".import-tmp-" + Date.now());
 		try {
+			await mkdir(tmpDir, { recursive: true });
+
+			// Write buffer to temp file and extract
+			const tmpFile = join(tmpDir, "import.tar.gz");
+			await writeFile(tmpFile, buffer);
+
+			// Extract with tar — use spawn to handle non-zero exit from permission warnings
+			await new Promise<void>((resolve, reject) => {
+				const extract = spawn(
+					"tar",
+					[
+						"xzf",
+						tmpFile,
+						"-C",
+						tmpDir,
+						"--no-same-owner",
+						"--no-same-permissions",
+						"--warning=no-timestamp",
+					],
+					{ stdio: ["ignore", "pipe", "pipe"] },
+				);
+				let stderr = "";
+				extract.stderr.on("data", (d: Buffer) => {
+					stderr += d.toString();
+				});
+				extract.on("error", reject);
+				extract.on("close", () => {
+					// Always resolve — permission warnings cause exit 2 but files ARE extracted
+					if (stderr)
+						console.warn("[Import] tar output:", stderr.slice(0, 500));
+					resolve();
+				});
+			});
+
+			// Remove the temp tar file
+			await rm(tmpFile);
+
+			// Strict allowlist — only import known safe directories/files.
+			// Never import auth.json, config.json, sessions, .env, or unknown entries.
+			const IMPORT_ALLOWLIST = new Set([
+				"memory",
+				"rules",
+				"skills",
+				"preferences.md",
+				"ecc",
+				"agents",
+				"daily",
+			]);
+
+			let imported = 0;
+			for (const entry of await readdir(tmpDir)) {
+				if (!IMPORT_ALLOWLIST.has(entry)) continue; // skip anything not in allowlist
+
+				const src = join(tmpDir, entry);
+				const dest = join(AGENT_DATA_DIR, entry);
+
+				// Remove existing and replace
+				if (existsSync(dest)) {
+					await rm(dest, { recursive: true, force: true });
+				}
+				await execFileAsync("cp", ["-a", src, dest], { timeout: 10_000 });
+				imported++;
+			}
+
+			// Cleanup temp dir
 			await rm(tmpDir, { recursive: true, force: true });
-		} catch {
-			/* ignore */
+
+			res.json({
+				success: true,
+				imported,
+				message: `Imported ${imported} items`,
+			});
+		} catch (err) {
+			// Cleanup on error
+			try {
+				await rm(tmpDir, { recursive: true, force: true });
+			} catch {
+				/* ignore */
+			}
+			console.error("[Import] Failed:", (err as Error).message);
+			res
+				.status(500)
+				.json({ error: "Import failed: " + (err as Error).message });
 		}
-		console.error("[Import] Failed:", (err as Error).message);
-		res.status(500).json({ error: "Import failed: " + (err as Error).message });
-	}
-});
+	}),
+);
 
 // ── Integration Account Info ──
 // Verifies a token and returns account details for display in the UI.
@@ -512,7 +534,7 @@ const ACCOUNT_CHECKERS: Record<
 		token: string,
 	) => Promise<{ username?: string; email?: string; team?: string }>
 > = {
-	VERCEL_API_KEY: async (token) => {
+	VERCEL_TOKEN: async (token) => {
 		const res = await fetch("https://api.vercel.com/v2/user", {
 			headers: { Authorization: `Bearer ${token}` },
 			signal: AbortSignal.timeout(8000),
@@ -555,28 +577,31 @@ const ACCOUNT_CHECKERS: Record<
 	},
 };
 
-router.get("/integration/:envKey/account", async (req, res) => {
-	const { envKey } = req.params;
-	const checker = ACCOUNT_CHECKERS[envKey];
-	if (!checker) {
-		res.json({
-			connected: false,
-			error: "No account checker for this service",
-		});
-		return;
-	}
-	const vars = parseEnvFile();
-	const token = vars.find((v) => v.key === envKey)?.value;
-	if (!token) {
-		res.json({ connected: false });
-		return;
-	}
-	try {
-		const info = await checker(token);
-		res.json({ connected: true, ...info });
-	} catch {
-		res.json({ connected: false, error: "Failed to verify token" });
-	}
-});
+router.get(
+	"/integration/:envKey/account",
+	asyncHandler(async (req, res) => {
+		const { envKey } = req.params;
+		const checker = ACCOUNT_CHECKERS[envKey];
+		if (!checker) {
+			res.json({
+				connected: false,
+				error: "No account checker for this service",
+			});
+			return;
+		}
+		const vars = parseEnvFile();
+		const token = vars.find((v) => v.key === envKey)?.value;
+		if (!token) {
+			res.json({ connected: false });
+			return;
+		}
+		try {
+			const info = await checker(token);
+			res.json({ connected: true, ...info });
+		} catch {
+			res.json({ connected: false, error: "Failed to verify token" });
+		}
+	}),
+);
 
 export default router;

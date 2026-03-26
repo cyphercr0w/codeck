@@ -47,6 +47,12 @@ import { getPresetStatus } from "../services/preset.js";
 import agentRoutes from "../routes/agent.routes.js";
 import githubRoutes from "../routes/github.routes.js";
 import cliAuthRoutes from "../routes/cli-auth.routes.js";
+import previewRoutes from "../routes/preview.routes.js";
+import previewProxy, {
+	handlePreviewProxyUpgrade,
+	subdomainPreviewMiddleware,
+	handleSubdomainPreviewUpgrade,
+} from "../routes/preview-proxy.js";
 import gitRoutes from "../routes/git.routes.js";
 import sshRoutes from "../routes/ssh.routes.js";
 import filesRoutes from "../routes/files.routes.js";
@@ -92,6 +98,7 @@ import {
 	shutdownEmbeddings,
 } from "../services/embeddings.js";
 import { cleanupOldSessions } from "../services/session-summarizer.js";
+import { asyncHandler } from "../utils/async-handler.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PORT = parseInt(process.env.CODECK_PORT || "80", 10);
@@ -195,6 +202,10 @@ function logMemoryConfig(): void {
 }
 
 export async function startWebServer(): Promise<void> {
+	process.on("unhandledRejection", (reason) => {
+		console.error("[FATAL] Unhandled promise rejection:", reason);
+	});
+
 	installLogInterceptor();
 
 	const app = express();
@@ -205,6 +216,14 @@ export async function startWebServer(): Promise<void> {
 
 	// Disable Nagle's algorithm for low-latency terminal I/O
 	server.on("connection", (socket) => socket.setNoDelay(true));
+
+	// Subdomain preview — BEFORE everything. When Host is preview-{port}.*
+	// (wildcard DNS), proxy the entire request to localhost:{port}.
+	app.use(subdomainPreviewMiddleware);
+
+	// Path-based preview proxy — BEFORE helmet. Used for reachability checks
+	// and as fallback when subdomain isn't available.
+	app.use("/preview-proxy", previewProxy);
 
 	// Security headers FIRST — must apply to ALL responses (static + dynamic)
 	app.use(
@@ -221,9 +240,10 @@ export async function startWebServer(): Promise<void> {
 					fontSrc: ["'self'", "https://fonts.gstatic.com", "data:"], // xterm.js fonts
 					connectSrc: ["'self'", "ws:", "wss:"], // WebSocket connections
 					workerSrc: ["'self'", "blob:"], // xterm.js web workers
+					frameSrc: ["'self'", "http://*.localhost:*", "https://*.codeck.xyz"], // preview subdomains
 					// canvas rendering used by xterm.js — no special directive needed (canvas is default allowed)
 				},
-				reportOnly: true, // Log violations to browser console, don't block
+				reportOnly: false, // Enforcing mode — block CSP violations
 			},
 			// X-Content-Type-Options: nosniff — enabled by helmet defaults
 			// X-Frame-Options: DENY — enabled by helmet defaults (frameguard)
@@ -251,6 +271,9 @@ export async function startWebServer(): Promise<void> {
 		res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate");
 		res.json({ ready: true });
 	});
+
+	// Preview proxy — mounted before auth so the iframe can load without Bearer token.
+	// (preview-proxy mounted above, before helmet)
 
 	// Managed mode: redirect direct browser access to the daemon port.
 	// The daemon proxy always sets X-Codeck-Internal, so its absence means direct access.
@@ -378,7 +401,7 @@ export async function startWebServer(): Promise<void> {
 		res.setHeader("Cache-Control", "no-store");
 		res.json({ configured });
 	});
-	app.post("/api/auth/setup", async (req, res) => {
+	app.post("/api/auth/setup", asyncHandler(async (req, res) => {
 		if (isPasswordConfigured()) {
 			res.status(400).json({ error: "Password already configured" });
 			return;
@@ -395,8 +418,8 @@ export async function startWebServer(): Promise<void> {
 			return;
 		}
 		res.json(await setupPassword(password, req.ip || "unknown"));
-	});
-	app.post("/api/auth/login", async (req, res) => {
+	}));
+	app.post("/api/auth/login", asyncHandler(async (req, res) => {
 		const ip = req.ip || "unknown";
 		const lockout = checkLockout(ip);
 		if (lockout.locked) {
@@ -415,7 +438,7 @@ export async function startWebServer(): Promise<void> {
 			recordFailedLogin(ip);
 			res.status(401).json({ success: false, error: "Incorrect password" });
 		}
-	});
+	}));
 	// WS ticket endpoint — exchange a session token for a short-lived one-time ticket.
 	// The ticket is used in the WebSocket URL instead of the session token,
 	// avoiding long-lived tokens appearing in proxy logs and browser history.
@@ -485,7 +508,7 @@ export async function startWebServer(): Promise<void> {
 	});
 
 	// Password change (protected — requires active session)
-	app.post("/api/auth/change-password", async (req, res) => {
+	app.post("/api/auth/change-password", asyncHandler(async (req, res) => {
 		const { currentPassword, newPassword } = req.body;
 		if (!newPassword || newPassword.length < 8) {
 			res
@@ -502,7 +525,7 @@ export async function startWebServer(): Promise<void> {
 		const result = await changePassword(currentPassword, newPassword);
 		if (result.success) res.json({ success: true, token: result.token });
 		else res.status(401).json({ success: false, error: result.error });
-	});
+	}));
 
 	// Active sessions list
 	app.get("/api/auth/sessions", (req, res) => {
@@ -557,6 +580,7 @@ export async function startWebServer(): Promise<void> {
 	app.use("/api/claude", agentRoutes);
 	app.use("/api/github", githubRoutes);
 	app.use("/api/cli-auth", cliAuthRoutes);
+	app.use("/api/preview", previewRoutes);
 	app.use("/api/git", gitRoutes);
 	app.use("/api/ssh", sshRoutes);
 	app.use("/api/files", filesRoutes);
@@ -627,9 +651,17 @@ export async function startWebServer(): Promise<void> {
 			: server;
 
 	upgradeTarget.on("upgrade", (req, socket, head) => {
+		// Subdomain preview WS (wildcard DNS)
+		if (
+			handleSubdomainPreviewUpgrade(req, socket as import("net").Socket, head)
+		) {
+			return;
+		}
 		const pathname = (req.url || "").split("?")[0];
 		if (pathname.startsWith("/internal/pty/")) {
 			handlePtyUpgrade(req, socket as import("net").Socket, head);
+		} else if (pathname.startsWith("/preview-proxy/")) {
+			handlePreviewProxyUpgrade(req, socket as import("net").Socket, head);
 		} else {
 			handleWsUpgrade(req, socket as import("net").Socket, head);
 		}
@@ -683,17 +715,16 @@ export async function startWebServer(): Promise<void> {
 		ensureMcpServers();
 		initFlowTemplates();
 
-		// Auto-update agent CLI in background (non-blocking)
-		setTimeout(() => {
-			try {
-				const result = updateAgentBinary();
+		// Auto-update agent CLI in background (async — does not block event loop)
+		updateAgentBinary()
+			.then((result) => {
 				console.log(`[Startup] Agent CLI updated: ${result.version}`);
-			} catch (e) {
+			})
+			.catch((e) => {
 				console.log(
 					`[Startup] Agent CLI update skipped: ${(e as Error).message}`,
 				);
-			}
-		}, 0);
+			});
 		initializeEmbeddings().then(() =>
 			initializeIndexer().then(() => initializeSearch()),
 		);

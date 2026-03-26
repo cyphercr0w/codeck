@@ -11,12 +11,16 @@ import { useState, useRef } from "preact/hooks";
 import { previewPort } from "../state/store";
 import { IconRefresh, IconX, IconPlay } from "./Icons";
 
-/** Build the iframe URL via subdomain. */
+/** Build the iframe URL via subdomain or path-based fallback. */
 function buildPreviewUrl(port: number): string {
 	const { protocol, hostname } = window.location;
 	const portSuffix = window.location.port ? `:${window.location.port}` : "";
-	if (hostname === "localhost" || /^\d+\.\d+\.\d+\.\d+$/.test(hostname)) {
-		// Dev / IP: preview-{port}.localhost
+	// IP addresses can't use subdomains — fall back to path-based proxy
+	if (/^\d+\.\d+\.\d+\.\d+$/.test(hostname)) {
+		return `/preview-proxy/${port}/`;
+	}
+	// localhost: preview-{port}.localhost (Chrome/Firefox resolve *.localhost)
+	if (hostname === "localhost") {
 		return `${protocol}//preview-${port}.${hostname}${portSuffix}/`;
 	}
 	// Production: p{port}.{baseDomain} — strip leading subdomain
@@ -105,8 +109,11 @@ export function PreviewPanel() {
 	function handleNavigate() {
 		const { port } = parseUrl(inputUrl);
 		if (port && port !== activePort) {
-			handleStop();
-			setTimeout(() => handleOpen(), 50);
+			setActivePort(null);
+			setIframeReady(false);
+			setError(null);
+			// Open new port after state reset in next microtask
+			Promise.resolve().then(() => handleOpen());
 		} else if (iframeRef.current && activePort) {
 			iframeRef.current.src = buildPreviewUrl(activePort);
 		}

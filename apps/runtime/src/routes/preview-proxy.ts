@@ -12,7 +12,7 @@
  * - WS headers sanitized against response splitting
  */
 import { Router, type Request, type Response } from "express";
-import http, { createServer, IncomingMessage } from "http";
+import http, { IncomingMessage } from "http";
 import type { Socket } from "net";
 import { getActivePorts } from "../services/ports.js";
 
@@ -24,12 +24,23 @@ const BLOCKED_HEADERS = new Set([
 	"content-security-policy-report-only",
 ]);
 
-// Shared deny list — single source of truth
-export const DENIED_PORTS = new Set([80, 9229, 9333, 9222, 35989]);
-
-// Fixed port range for preview proxy — must match Docker EXPOSE / port mapping
-const PREVIEW_PORT_MIN = 15000;
-const PREVIEW_PORT_MAX = 15010;
+// Shared deny list — single source of truth. Covers internal services,
+// debug ports, databases, and container infrastructure.
+export const DENIED_PORTS = new Set([
+	80, // Codeck itself
+	443, // HTTPS
+	2375,
+	2376, // Docker daemon
+	3306, // MySQL
+	5432, // PostgreSQL
+	6379, // Redis
+	8080, // Common internal admin
+	9222, // Chrome DevTools Protocol
+	9229, // Node.js inspector
+	9333, // Codeck internal
+	27017, // MongoDB
+	35989, // Codeck internal
+]);
 
 function validatePort(port: number): boolean {
 	return (
@@ -77,142 +88,6 @@ function writeWsUpgrade(
 	socket.on("error", () => proxySocket.destroy());
 	proxySocket.pipe(socket);
 	socket.pipe(proxySocket);
-}
-
-// ── Dedicated-port proxy server ─────────────────────────────────────
-
-let activeProxy: {
-	server: http.Server;
-	targetPort: number;
-	proxyPort: number;
-} | null = null;
-
-let starting = false;
-
-// ── Public API ──────────────────────────────────────────────────────
-
-export async function startPreviewProxy(targetPort: number): Promise<number> {
-	if (starting) throw new Error("Preview proxy is already starting");
-	starting = true;
-
-	try {
-		await stopPreviewProxy();
-
-		if (!validatePort(targetPort)) {
-			throw new Error("Invalid or denied port");
-		}
-
-		const proxyPort = await new Promise<number>((resolve, reject) => {
-			const server = createServer((req, res) => {
-				const proxyReq = http.request(
-					{
-						hostname: "127.0.0.1",
-						port: targetPort,
-						path: req.url || "/",
-						method: req.method,
-						headers: { ...req.headers, host: `localhost:${targetPort}` },
-					},
-					(proxyRes) => {
-						const headers = stripHeaders(proxyRes);
-						res.writeHead(proxyRes.statusCode || 200, headers);
-						proxyRes.pipe(res);
-					},
-				);
-
-				proxyReq.on("error", () => {
-					if (!res.headersSent) {
-						res.writeHead(502);
-						res.end("Bad Gateway");
-					}
-				});
-
-				if (req.method !== "GET" && req.method !== "HEAD") {
-					req.pipe(proxyReq);
-				} else {
-					proxyReq.end();
-				}
-			});
-
-			// WebSocket upgrades (HMR)
-			server.on("upgrade", (req, socket) => {
-				const proxyReq = http.request({
-					hostname: "127.0.0.1",
-					port: targetPort,
-					path: req.url || "/",
-					method: "GET",
-					headers: { ...req.headers, host: `localhost:${targetPort}` },
-				});
-
-				proxyReq.on("upgrade", (proxyRes, proxySocket, proxyHead) => {
-					writeWsUpgrade(socket as Socket, proxyRes, proxySocket, proxyHead);
-				});
-
-				proxyReq.on("error", () => (socket as Socket).destroy());
-				proxyReq.end();
-			});
-
-			// Try ports in the fixed range (Docker-mapped)
-			const tryPort = (port: number) => {
-				server.once("error", (err: NodeJS.ErrnoException) => {
-					if (err.code === "EADDRINUSE" && port < PREVIEW_PORT_MAX) {
-						tryPort(port + 1);
-					} else {
-						server.close();
-						reject(
-							port >= PREVIEW_PORT_MAX && err.code === "EADDRINUSE"
-								? new Error("All preview ports in use (15000-15010)")
-								: err,
-						);
-					}
-				});
-				server.listen(port, "0.0.0.0", () => {
-					activeProxy = { server, targetPort, proxyPort: port };
-					resolve(port);
-				});
-			};
-			tryPort(PREVIEW_PORT_MIN);
-		});
-
-		console.log(`[Preview] Proxy :${proxyPort} → localhost:${targetPort}`);
-		return proxyPort;
-	} finally {
-		starting = false;
-	}
-}
-
-export function stopPreviewProxy(): Promise<void> {
-	return new Promise((resolve) => {
-		if (!activeProxy) {
-			resolve();
-			return;
-		}
-		const { server, proxyPort } = activeProxy;
-		activeProxy = null;
-		const timeout = setTimeout(() => resolve(), 2000);
-		server.close(() => {
-			clearTimeout(timeout);
-			console.log(`[Preview] Proxy :${proxyPort} stopped`);
-			resolve();
-		});
-	});
-}
-
-export function getPreviewStatus(): {
-	active: boolean;
-	targetPort: number | null;
-	proxyPort: number | null;
-} {
-	if (!activeProxy) return { active: false, targetPort: null, proxyPort: null };
-	return {
-		active: true,
-		targetPort: activeProxy.targetPort,
-		proxyPort: activeProxy.proxyPort,
-	};
-}
-
-/** Check if a port has an active preview session (used by subdomain/path auth). */
-function isActivePreviewPort(port: number): boolean {
-	return activeProxy !== null && activeProxy.targetPort === port;
 }
 
 // ── Subdomain middleware (for Cloudflare / wildcard DNS) ────────────
@@ -323,10 +198,14 @@ router.use("/:port", (req: Request, res: Response) => {
 		return;
 	}
 
-	// Path-based proxy only for reachability checks (HEAD) or active previews
-	if (req.method !== "HEAD" && !isActivePreviewPort(port)) {
-		res.status(403).json({ error: "No active preview for this port" });
-		return;
+	// Path-based proxy: HEAD for reachability checks (any valid port),
+	// other methods require the port to be actively listening
+	if (req.method !== "HEAD") {
+		const activePorts = getActivePorts();
+		if (!activePorts.some((p: { port: number }) => p.port === port)) {
+			res.status(404).json({ error: "No service on this port" });
+			return;
+		}
 	}
 
 	const targetPath =
@@ -376,7 +255,11 @@ export function handlePreviewProxyUpgrade(
 	if (!match) return false;
 
 	const port = parseInt(match[1], 10);
-	if (!validatePort(port) || !isActivePreviewPort(port)) {
+	const activePorts = getActivePorts();
+	if (
+		!validatePort(port) ||
+		!activePorts.some((p: { port: number }) => p.port === port)
+	) {
 		socket.destroy();
 		return true;
 	}

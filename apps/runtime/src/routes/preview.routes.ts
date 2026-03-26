@@ -14,12 +14,7 @@ import {
 	injectKeyPress,
 	takeScreenshot,
 } from "../services/browser-preview.js";
-import {
-	startPreviewProxy,
-	stopPreviewProxy,
-	getPreviewStatus,
-	DENIED_PORTS,
-} from "./preview-proxy.js";
+import { DENIED_PORTS } from "./preview-proxy.js";
 import { asyncHandler } from "../utils/async-handler.js";
 
 const router = Router();
@@ -167,52 +162,6 @@ router.post(
 );
 
 // ── Dedicated-port proxy (iframe preview) ───────────────────────────
-
-// Open a dedicated proxy port for iframe preview
-router.post(
-	"/open",
-	asyncHandler(async (req, res) => {
-		const { port } = req.body || {};
-		if (
-			typeof port !== "number" ||
-			!Number.isFinite(port) ||
-			port < 1 ||
-			port > 65535
-		) {
-			res.status(400).json({ error: "port must be a valid number" });
-			return;
-		}
-		if (DENIED_PORTS.has(port)) {
-			res.status(400).json({ error: "Port denied" });
-			return;
-		}
-		try {
-			const proxyPort = await startPreviewProxy(port);
-			res.json({ success: true, proxyPort });
-		} catch (err) {
-			const msg = err instanceof Error ? err.message : "Unknown error";
-			const safe =
-				msg.includes("preview ports") || msg.includes("Invalid")
-					? msg
-					: "Failed to start preview proxy";
-			res.status(500).json({ error: safe });
-		}
-	}),
-);
-
-// Close the dedicated proxy
-router.post(
-	"/close",
-	asyncHandler(async (_req, res) => {
-		await stopPreviewProxy();
-		res.json({ success: true });
-	}),
-);
-
-// Get proxy status (used by frontend to check if proxy is running)
-router.get("/proxy-status", (_req, res) => {
-	res.json(getPreviewStatus());
-});
 
 // Screenshot (for agent use)
 router.get(

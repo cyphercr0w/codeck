@@ -107,7 +107,7 @@ export async function runFlow(
 			return;
 		}
 
-		if (execution.loopCount > execution.maxLoops) {
+		if (execution.loopCount >= execution.maxLoops) {
 			execution.status = "failed";
 			execution.completedAt = new Date().toISOString();
 			saveExecution(execution);
@@ -299,9 +299,13 @@ function runAgent(
 			flowSettings,
 		];
 
-		// Pass allowed tools if configured
-		if (agent.allowedTools.length > 0) {
-			spawnArgs.push("--allowedTools", agent.allowedTools.join(","));
+		// Pass allowed tools if configured — validate each name to prevent CLI injection
+		const VALID_TOOL = /^[A-Za-z][A-Za-z0-9_]*$/;
+		const safeTools = agent.allowedTools.filter((t: string) =>
+			VALID_TOOL.test(t),
+		);
+		if (safeTools.length > 0) {
+			spawnArgs.push("--allowedTools", safeTools.join(","));
 		}
 
 		// Pass max-turns if configured

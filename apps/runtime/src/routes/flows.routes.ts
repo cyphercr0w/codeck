@@ -165,112 +165,116 @@ router.delete("/:id", (req, res) => {
 // ── Flow Execution ──
 
 // Start a new execution
-router.post("/:id/execute", asyncHandler(async (req, res) => {
-	const flow = getFlow(safeId(req.params.id));
-	if (!flow) {
-		res.status(404).json({ error: "Flow not found" });
-		return;
-	}
-
-	const { input, cwd: rawCwd } = req.body;
-	if (!input || typeof input !== "string") {
-		res.status(400).json({ error: "input (string) is required" });
-		return;
-	}
-
-	// Validate cwd is within /workspace if provided
-	const WORKSPACE = process.env.WORKSPACE || "/workspace";
-	let cwd: string | undefined;
-	if (rawCwd && typeof rawCwd === "string") {
-		const resolved = resolve(rawCwd);
-		if (resolved !== WORKSPACE && !resolved.startsWith(WORKSPACE + "/")) {
-			res
-				.status(400)
-				.json({ error: "cwd must be within the workspace directory" });
+router.post(
+	"/:id/execute",
+	asyncHandler(async (req, res) => {
+		const flow = getFlow(safeId(req.params.id));
+		if (!flow) {
+			res.status(404).json({ error: "Flow not found" });
 			return;
 		}
-		cwd = resolved;
-	}
 
-	// Create execution record
-	const execution: FlowExecution = {
-		id: randomUUID(),
-		flowId: flow.id,
-		flowVersion: flow.version,
-		status: "pending",
-		currentAgentId: null,
-		loopCount: 0,
-		maxLoops: 5,
-		startedAt: new Date().toISOString(),
-		completedAt: null,
-		initialInput: input,
-		agentResults: {},
-	};
+		const { input, cwd: rawCwd } = req.body;
+		if (!input || typeof input !== "string") {
+			res.status(400).json({ error: "input (string) is required" });
+			return;
+		}
 
-	saveExecution(execution);
-
-	// Build ordered agent list for progress tracking.
-	// Walk default transitions first, then collect any agents only reachable
-	// via conditional transitions (e.g. reviewer→implementer on REQUEST_CHANGES).
-	const agentList: Array<{ id: string; name: string; role: string }> = [];
-	{
-		const visited = new Set<string>();
-		const queue: string[] = [flow.entryAgentId];
-		while (queue.length > 0) {
-			const cursor = queue.shift()!;
-			if (visited.has(cursor) || !flow.agents[cursor]) continue;
-			const ag = flow.agents[cursor]!;
-			agentList.push({ id: ag.id, name: ag.name, role: ag.role });
-			visited.add(cursor);
-			// Follow default transition
-			const dflt = ag.transitions.default;
-			if (typeof dflt === "string" && dflt !== "END") {
-				queue.push(dflt);
+		// Validate cwd is within /workspace if provided
+		const WORKSPACE = process.env.WORKSPACE || "/workspace";
+		let cwd: string | undefined;
+		if (rawCwd && typeof rawCwd === "string") {
+			const resolved = resolve(rawCwd);
+			if (resolved !== WORKSPACE && !resolved.startsWith(WORKSPACE + "/")) {
+				res
+					.status(400)
+					.json({ error: "cwd must be within the workspace directory" });
+				return;
 			}
-			// Follow conditional transitions
-			if (ag.transitions.conditions) {
-				for (const cond of ag.transitions.conditions) {
-					if (cond.goto !== "END") {
-						queue.push(cond.goto);
+			cwd = resolved;
+		}
+
+		// Create execution record
+		const execution: FlowExecution = {
+			id: randomUUID(),
+			flowId: flow.id,
+			flowVersion: flow.version,
+			status: "pending",
+			currentAgentId: null,
+			loopCount: 0,
+			maxLoops: 5,
+			startedAt: new Date().toISOString(),
+			completedAt: null,
+			initialInput: input,
+			agentResults: {},
+		};
+
+		saveExecution(execution);
+
+		// Build ordered agent list for progress tracking.
+		// Walk default transitions first, then collect any agents only reachable
+		// via conditional transitions (e.g. reviewer→implementer on REQUEST_CHANGES).
+		const agentList: Array<{ id: string; name: string; role: string }> = [];
+		{
+			const visited = new Set<string>();
+			const queue: string[] = [flow.entryAgentId];
+			while (queue.length > 0) {
+				const cursor = queue.shift()!;
+				if (visited.has(cursor) || !flow.agents[cursor]) continue;
+				const ag = flow.agents[cursor]!;
+				agentList.push({ id: ag.id, name: ag.name, role: ag.role });
+				visited.add(cursor);
+				// Follow default transition
+				const dflt = ag.transitions.default;
+				if (typeof dflt === "string" && dflt !== "END") {
+					queue.push(dflt);
+				}
+				// Follow conditional transitions
+				if (ag.transitions.conditions) {
+					for (const cond of ag.transitions.conditions) {
+						if (cond.goto !== "END") {
+							queue.push(cond.goto);
+						}
 					}
 				}
 			}
 		}
-	}
 
-	// Broadcast flow started event so the frontend can track progress
-	broadcast({
-		type: "chat:flow:started",
-		data: {
-			chatId: "",
-			conversationId: "",
+		// Broadcast flow started event so the frontend can track progress
+		broadcast({
+			type: "chat:flow:started",
+			data: {
+				chatId: "",
+				conversationId: "",
+				executionId: execution.id,
+				flowId: flow.id,
+				flowName: flow.name,
+				agents: agentList,
+				initialInput: input,
+			},
+		});
+
+		res.status(202).json({
 			executionId: execution.id,
 			flowId: flow.id,
-			flowName: flow.name,
-			agents: agentList,
-			initialInput: input,
-		},
-	});
+			status: "pending",
+		});
 
-	res.status(202).json({
-		executionId: execution.id,
-		flowId: flow.id,
-		status: "pending",
-	});
-
-	// Run asynchronously — errors are caught and saved to execution state
-	runFlow(execution, flow, cwd).catch((err: unknown) => {
-		console.error(
-			`[Flows] Execution ${execution.id} failed:`,
-			(err as Error).message,
-		);
-	});
-}));
+		// Run asynchronously — errors are caught and saved to execution state
+		runFlow(execution, flow, cwd).catch((err: unknown) => {
+			console.error(
+				`[Flows] Execution ${execution.id} failed:`,
+				(err as Error).message,
+			);
+		});
+	}),
+);
 
 // List executions (optionally filtered by flowId)
 router.get("/executions/list", (req, res) => {
-	const flowId =
+	const rawFlowId =
 		typeof req.query.flowId === "string" ? req.query.flowId : undefined;
+	const flowId = rawFlowId ? safeId(rawFlowId) : undefined;
 	try {
 		res.json({ executions: listExecutions(flowId) });
 	} catch (e) {
@@ -300,14 +304,10 @@ router.post("/executions/:execId/cancel", (req, res) => {
 		return;
 	}
 
+	// Signal cancellation — runFlow will detect the flag and write final state.
+	// Don't write execution state here to avoid race with the runner loop.
 	cancelExecution(safeId(req.params.execId));
-
-	execution.status = "cancelled";
-	execution.completedAt = new Date().toISOString();
-	saveExecution(execution);
-
-	broadcast({ type: "flow:execution:update", data: execution });
-	res.json({ success: true, status: "cancelled" });
+	res.json({ success: true, status: "cancelling" });
 });
 
 export default router;

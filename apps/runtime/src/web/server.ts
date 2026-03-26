@@ -401,44 +401,52 @@ export async function startWebServer(): Promise<void> {
 		res.setHeader("Cache-Control", "no-store");
 		res.json({ configured });
 	});
-	app.post("/api/auth/setup", asyncHandler(async (req, res) => {
-		if (isPasswordConfigured()) {
-			res.status(400).json({ error: "Password already configured" });
-			return;
-		}
-		const { password } = req.body;
-		if (!password || password.length < 8) {
-			res.status(400).json({ error: "Password must be at least 8 characters" });
-			return;
-		}
-		if (password.length > 256) {
-			res
-				.status(400)
-				.json({ error: "Password must not exceed 256 characters" });
-			return;
-		}
-		res.json(await setupPassword(password, req.ip || "unknown"));
-	}));
-	app.post("/api/auth/login", asyncHandler(async (req, res) => {
-		const ip = req.ip || "unknown";
-		const lockout = checkLockout(ip);
-		if (lockout.locked) {
-			res.status(429).json({
-				success: false,
-				error: "Too many failed attempts. Try again later.",
-				retryAfter: lockout.retryAfter,
-			});
-			return;
-		}
-		const result = await validatePassword(req.body.password, ip);
-		if (result.success) {
-			clearFailedAttempts(ip);
-			res.json({ success: true, token: result.token });
-		} else {
-			recordFailedLogin(ip);
-			res.status(401).json({ success: false, error: "Incorrect password" });
-		}
-	}));
+	app.post(
+		"/api/auth/setup",
+		asyncHandler(async (req, res) => {
+			if (isPasswordConfigured()) {
+				res.status(400).json({ error: "Password already configured" });
+				return;
+			}
+			const { password } = req.body;
+			if (!password || password.length < 8) {
+				res
+					.status(400)
+					.json({ error: "Password must be at least 8 characters" });
+				return;
+			}
+			if (password.length > 256) {
+				res
+					.status(400)
+					.json({ error: "Password must not exceed 256 characters" });
+				return;
+			}
+			res.json(await setupPassword(password, req.ip || "unknown"));
+		}),
+	);
+	app.post(
+		"/api/auth/login",
+		asyncHandler(async (req, res) => {
+			const ip = req.ip || "unknown";
+			const lockout = checkLockout(ip);
+			if (lockout.locked) {
+				res.status(429).json({
+					success: false,
+					error: "Too many failed attempts. Try again later.",
+					retryAfter: lockout.retryAfter,
+				});
+				return;
+			}
+			const result = await validatePassword(req.body.password, ip);
+			if (result.success) {
+				clearFailedAttempts(ip);
+				res.json({ success: true, token: result.token });
+			} else {
+				recordFailedLogin(ip);
+				res.status(401).json({ success: false, error: "Incorrect password" });
+			}
+		}),
+	);
 	// WS ticket endpoint — exchange a session token for a short-lived one-time ticket.
 	// The ticket is used in the WebSocket URL instead of the session token,
 	// avoiding long-lived tokens appearing in proxy logs and browser history.
@@ -480,6 +488,7 @@ export async function startWebServer(): Promise<void> {
 			"/console/subagents",
 			"/flows",
 			"/chat",
+			"/preview/navigate-to",
 		];
 		if (localBypassPaths.some((p) => req.path.startsWith(p))) {
 			const ip = req.ip || "";
@@ -508,24 +517,27 @@ export async function startWebServer(): Promise<void> {
 	});
 
 	// Password change (protected — requires active session)
-	app.post("/api/auth/change-password", asyncHandler(async (req, res) => {
-		const { currentPassword, newPassword } = req.body;
-		if (!newPassword || newPassword.length < 8) {
-			res
-				.status(400)
-				.json({ error: "New password must be at least 8 characters" });
-			return;
-		}
-		if (newPassword.length > 256) {
-			res
-				.status(400)
-				.json({ error: "New password must not exceed 256 characters" });
-			return;
-		}
-		const result = await changePassword(currentPassword, newPassword);
-		if (result.success) res.json({ success: true, token: result.token });
-		else res.status(401).json({ success: false, error: result.error });
-	}));
+	app.post(
+		"/api/auth/change-password",
+		asyncHandler(async (req, res) => {
+			const { currentPassword, newPassword } = req.body;
+			if (!newPassword || newPassword.length < 8) {
+				res
+					.status(400)
+					.json({ error: "New password must be at least 8 characters" });
+				return;
+			}
+			if (newPassword.length > 256) {
+				res
+					.status(400)
+					.json({ error: "New password must not exceed 256 characters" });
+				return;
+			}
+			const result = await changePassword(currentPassword, newPassword);
+			if (result.success) res.json({ success: true, token: result.token });
+			else res.status(401).json({ success: false, error: result.error });
+		}),
+	);
 
 	// Active sessions list
 	app.get("/api/auth/sessions", (req, res) => {

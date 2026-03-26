@@ -92,7 +92,11 @@ function loadFlowFromStorage(): ActiveFlowState | null {
 		const raw = localStorage.getItem(FLOW_STORAGE_KEY);
 		if (!raw) return null;
 		const state = JSON.parse(raw) as ActiveFlowState;
-		// Don't restore stale running flows older than 2 hours
+		// Don't restore completed/cancelled/failed flows
+		if (state.status !== "running") {
+			localStorage.removeItem(FLOW_STORAGE_KEY);
+			return null;
+		}
 		if (state.status === "running" && Date.now() - state.startedAt > 7200000) {
 			localStorage.removeItem(FLOW_STORAGE_KEY);
 			return null;
@@ -116,8 +120,18 @@ function loadArchiveFromStorage(): Record<string, ActiveFlowState> {
 let persistTimer: ReturnType<typeof setTimeout> | null = null;
 
 function persistFlowState(state: ActiveFlowState | null): void {
-	// Throttle writes to max once per second during streaming to avoid
-	// hammering localStorage on every output chunk
+	// Null = cleanup — bypass throttle and write immediately
+	if (state === null) {
+		if (persistTimer) {
+			clearTimeout(persistTimer);
+			persistTimer = null;
+		}
+		try {
+			localStorage.removeItem(FLOW_STORAGE_KEY);
+		} catch {}
+		return;
+	}
+	// Throttle writes to max once per second during streaming
 	if (persistTimer) return;
 	persistTimer = setTimeout(
 		() => {

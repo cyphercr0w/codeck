@@ -23,7 +23,11 @@ import {
 	fetchRecentConversations,
 	pendingRestoredSessions,
 	type PendingSession,
+	previewMode,
+	previewPort,
+	mobilePreviewOpen,
 } from "../state/store";
+import { PreviewPanel } from "./PreviewPanel";
 import { apiFetch } from "../api";
 import {
 	createTerminal,
@@ -50,7 +54,14 @@ import {
 	setOnContextLoaded,
 	type ContextLoadedData,
 } from "../ws";
-import { IconPlus, IconX, IconShell, IconTerminal, IconRefresh } from "./Icons";
+import {
+	IconPlus,
+	IconX,
+	IconShell,
+	IconTerminal,
+	IconRefresh,
+	IconMonitor,
+} from "./Icons";
 import { MobileTerminalToolbar } from "./MobileTerminalToolbar";
 import { UploadOverlay } from "./UploadOverlay";
 import { SubagentPanel } from "./SubagentPanel";
@@ -574,253 +585,336 @@ export function ClaudeSection({
 	}
 
 	const mobile = isMobile.value;
+	const pMode = previewMode.value;
+	const showPreviewSplit =
+		!mobile &&
+		pMode !== "hidden" &&
+		pMode !== "full-terminal" &&
+		previewPort.value !== null;
 
 	return (
-		<div class="content-section">
-			<div class={`claude-content${mobile ? " mobile-terminal" : ""}`}>
-				<div class="terminal-tabs">
-					{sessionList.map((s) => (
-						<button
-							key={s.id}
-							class={`terminal-tab${s.id === activeId ? " active" : ""}${s.loading ? " is-loading" : ""}${s.type === "shell" ? " shell" : ""}`}
-							onClick={() => !s.loading && switchToSession(s.id)}
-							title={s.cwd}
-						>
-							{s.loading ? (
-								<span class="terminal-tab-loading">
-									<span class="spinner-sm" />
-								</span>
-							) : editingTabId === s.id ? (
-								<input
-									ref={editInputRef}
-									class="terminal-tab-edit"
-									value={editValue}
-									onInput={(e) =>
-										setEditValue((e.target as HTMLInputElement).value)
-									}
-									onKeyDown={(e) => {
-										if (e.key === "Enter") commitEdit(s.id);
-										if (e.key === "Escape") cancelEdit();
-									}}
-									onBlur={() => commitEdit(s.id)}
-									onClick={(e) => e.stopPropagation()}
-								/>
-							) : (
-								<span
-									onDblClick={(e) => {
-										e.stopPropagation();
-										startEditingTab(s.id, s.name);
-									}}
-								>
-									<span
-										class={`tab-status-dot ${sessionStatus.value[s.id] || "idle"}`}
-									/>
-									{s.type === "shell" && (
-										<span class="tab-shell-badge">
-											<IconShell size={12} />
-										</span>
-									)}
-									{s.name}
-								</span>
-							)}
-							{!s.loading && (
-								<button
-									class="terminal-tab-close"
-									aria-label={`Close ${s.name} session`}
-									onClick={(e) => {
-										e.stopPropagation();
-										closeSession(s.id);
-									}}
-								>
-									<IconX size={12} />
-								</button>
-							)}
-						</button>
-					))}
-					{(showNewSessionMenu || newTabLoading) && (
-						<button
-							class={`terminal-tab${!activeId || newTabLoading ? " active" : ""}`}
-							onClick={() => {
-								if (!newTabLoading) setActiveSessionId(null);
-							}}
-						>
-							{newTabLoading ? (
-								<>
-									<span class="spinner-sm" style={{ flexShrink: 0 }} />
-									<span>Loading</span>
-								</>
-							) : (
-								<span>New Tab</span>
-							)}
-							{!newTabLoading && (
-								<button
-									class="terminal-tab-close"
-									aria-label="Cancel new session"
-									onClick={(e) => {
-										e.stopPropagation();
-										setShowNewSessionMenu(false);
-										const id =
-											sessionList.length > 0
-												? sessionList[sessionList.length - 1].id
-												: null;
-										if (id) {
-											setActiveSessionId(id);
-											requestAnimationFrame(() => {
-												fitTerminal(id);
-												focusTerminal(id);
-											});
+		<div class="content-section terminal-preview-layout">
+			<div
+				class="terminal-side"
+				style={{ display: pMode === "full-preview" ? "none" : "flex" }}
+			>
+				<div class={`claude-content${mobile ? " mobile-terminal" : ""}`}>
+					<div class="terminal-tabs">
+						{sessionList.map((s) => (
+							<button
+								key={s.id}
+								class={`terminal-tab${s.id === activeId ? " active" : ""}${s.loading ? " is-loading" : ""}${s.type === "shell" ? " shell" : ""}`}
+								onClick={() => !s.loading && switchToSession(s.id)}
+								title={s.cwd}
+							>
+								{s.loading ? (
+									<span class="terminal-tab-loading">
+										<span class="spinner-sm" />
+									</span>
+								) : editingTabId === s.id ? (
+									<input
+										ref={editInputRef}
+										class="terminal-tab-edit"
+										value={editValue}
+										onInput={(e) =>
+											setEditValue((e.target as HTMLInputElement).value)
 										}
-									}}
-								>
-									<IconX size={12} />
-								</button>
-							)}
-						</button>
-					)}
-					{!showNewSessionMenu && !newTabLoading && (
-						<button
-							class="terminal-tab-new"
-							aria-label="New Session"
-							disabled={sessionList.length >= 5}
-							onClick={() => {
-								setShowNewSessionMenu(true);
-								setActiveSessionId(null);
-							}}
-						>
-							<IconPlus size={14} />
-						</button>
-					)}
-				</div>
-				<div
-					class={`terminal-instances${dragOver ? " drag-over" : ""}`}
-					ref={instancesRef}
-					onClick={handleTerminalTap}
-					onDragOver={handleDragOver}
-					onDragLeave={handleDragLeave}
-					onDrop={handleDrop}
-				>
-					{contextBanner && (
-						<div
-							class={`context-loaded-banner${bannerFading ? " fade-out" : ""}`}
-						>
-							Context loaded: {contextBanner.projectName} &middot;{" "}
-							{contextBanner.kb} KB of memory injected
-						</div>
-					)}
-					{(sessionList.length === 0 ||
-						(showNewSessionMenu && !activeId) ||
-						newTabLoading) &&
-						!restoringPending.value && (
-							<div
-								class="claude-empty"
-								onClick={(e) => {
-									if (e.target === e.currentTarget) {
-										// noop — don't dismiss, user can click X on the tab
-									}
+										onKeyDown={(e) => {
+											if (e.key === "Enter") commitEdit(s.id);
+											if (e.key === "Escape") cancelEdit();
+										}}
+										onBlur={() => commitEdit(s.id)}
+										onClick={(e) => e.stopPropagation()}
+									/>
+								) : (
+									<span
+										onDblClick={(e) => {
+											e.stopPropagation();
+											startEditingTab(s.id, s.name);
+										}}
+									>
+										<span
+											class={`tab-status-dot ${sessionStatus.value[s.id] || "idle"}`}
+										/>
+										{s.type === "shell" && (
+											<span class="tab-shell-badge">
+												<IconShell size={12} />
+											</span>
+										)}
+										{s.name}
+									</span>
+								)}
+								{!s.loading && (
+									<button
+										class="terminal-tab-close"
+										aria-label={`Close ${s.name} session`}
+										onClick={(e) => {
+											e.stopPropagation();
+											closeSession(s.id);
+										}}
+									>
+										<IconX size={12} />
+									</button>
+								)}
+							</button>
+						))}
+						{(showNewSessionMenu || newTabLoading) && (
+							<button
+								class={`terminal-tab${!activeId || newTabLoading ? " active" : ""}`}
+								onClick={() => {
+									if (!newTabLoading) setActiveSessionId(null);
 								}}
 							>
 								{newTabLoading ? (
 									<>
-										<div class="spinner-lg" />
-										<div class="claude-empty-title">Loading session...</div>
+										<span class="spinner-sm" style={{ flexShrink: 0 }} />
+										<span>Loading</span>
 									</>
 								) : (
-									<>
-										<div class="claude-empty-icon">
-											<IconTerminal size={48} />
-										</div>
-										<div class="claude-empty-title">
-											{sessionList.length === 0
-												? "Ready when you are"
-												: "New session"}
-										</div>
-										<div class="claude-empty-desc">
-											{sessionList.length === 0
-												? "Start a new session to begin coding with Claude."
-												: "Choose session type:"}
-										</div>
-										<div class="claude-empty-actions">
-											<button
-												class="claude-empty-btn primary"
-												onClick={() => onNewSession()}
-											>
-												New Agent
-											</button>
-											<button
-												class="claude-empty-btn secondary"
-												onClick={() => onNewShell()}
-											>
-												New Shell
-											</button>
-										</div>
-									</>
+									<span>New Tab</span>
 								)}
-								{recentConvos.length > 0 && !newTabLoading && (
-									<div class="claude-recent-convos">
-										<div class="claude-recent-title">Recent conversations</div>
-										{recentConvos.map((c) => {
-											// Check if this conversation is already open by matching conversationId
-											const openSession = sessionList.find(
-												(s) => s.conversationId === c.id,
-											);
-											return (
-												<button
-													key={c.id}
-													class={`claude-recent-item${openSession ? " open" : ""}`}
-													onClick={() => {
-														if (openSession) {
-															// Switch to the existing tab
-															switchToSession(openSession.id);
-														} else {
-															resumeConversation(c.id, c.cwd);
-														}
-													}}
-												>
-													<span class="claude-recent-text">
-														<span class="claude-recent-project">
-															{c.cwd.split("/").pop() || "workspace"}
-														</span>
-														<span class="claude-recent-date">
-															{new Date(c.mtime).toLocaleString(undefined, {
-																month: "short",
-																day: "numeric",
-																hour: "2-digit",
-																minute: "2-digit",
-															})}
-														</span>
-													</span>
-													<span class="claude-recent-meta">
-														{openSession && (
-															<span class="claude-recent-open-badge">OPEN</span>
-														)}
-													</span>
-												</button>
-											);
-										})}
-									</div>
+								{!newTabLoading && (
+									<button
+										class="terminal-tab-close"
+										aria-label="Cancel new session"
+										onClick={(e) => {
+											e.stopPropagation();
+											setShowNewSessionMenu(false);
+											const id =
+												sessionList.length > 0
+													? sessionList[sessionList.length - 1].id
+													: null;
+											if (id) {
+												setActiveSessionId(id);
+												requestAnimationFrame(() => {
+													fitTerminal(id);
+													focusTerminal(id);
+												});
+											}
+										}}
+									>
+										<IconX size={12} />
+									</button>
 								)}
-							</div>
+							</button>
 						)}
-					{activeId &&
-						sessionList.find((s) => s.id === activeId)?.loading &&
-						!getTerminal(activeId) && (
-							<div class="terminal-loading-overlay">
-								<div class="spinner" />
-								<div class="terminal-loading-text">Starting session...</div>
-							</div>
+						{!showNewSessionMenu && !newTabLoading && (
+							<button
+								class="terminal-tab-new"
+								aria-label="New Session"
+								disabled={sessionList.length >= 5}
+								onClick={() => {
+									setShowNewSessionMenu(true);
+									setActiveSessionId(null);
+								}}
+							>
+								<IconPlus size={14} />
+							</button>
 						)}
-					{/* Session restore removed — users use recent conversations or new agent */}
-				</div>
-				{mobile && activeId && <MobileTerminalToolbar />}
-				{dragOver && (
-					<div class="image-drop-indicator">
-						<div class="image-drop-indicator-text">Drop file here</div>
+						<div style={{ flex: 1 }} />
+						{!mobile && (
+							<button
+								class={`terminal-tab-new preview-toggle${pMode !== "hidden" ? " active" : ""}`}
+								onClick={() => {
+									previewMode.value = pMode === "hidden" ? "split" : "hidden";
+								}}
+								title={
+									previewPort.value
+										? `Preview :${previewPort.value}`
+										: "Open Preview"
+								}
+								aria-label="Toggle preview"
+							>
+								<IconMonitor size={14} />
+								{previewPort.value && (
+									<span class="preview-port-badge">{previewPort.value}</span>
+								)}
+							</button>
+						)}
+						{mobile && previewPort.value && (
+							<button
+								class="terminal-tab-new preview-toggle active"
+								onClick={() => {
+									mobilePreviewOpen.value = true;
+								}}
+								title={`Preview :${previewPort.value}`}
+							>
+								<IconMonitor size={14} />
+							</button>
+						)}
 					</div>
-				)}
+					<div
+						class={`terminal-instances${dragOver ? " drag-over" : ""}`}
+						ref={instancesRef}
+						onClick={handleTerminalTap}
+						onDragOver={handleDragOver}
+						onDragLeave={handleDragLeave}
+						onDrop={handleDrop}
+					>
+						{contextBanner && (
+							<div
+								class={`context-loaded-banner${bannerFading ? " fade-out" : ""}`}
+							>
+								Context loaded: {contextBanner.projectName} &middot;{" "}
+								{contextBanner.kb} KB of memory injected
+							</div>
+						)}
+						{(sessionList.length === 0 ||
+							(showNewSessionMenu && !activeId) ||
+							newTabLoading) &&
+							!restoringPending.value && (
+								<div
+									class="claude-empty"
+									onClick={(e) => {
+										if (e.target === e.currentTarget) {
+											// noop — don't dismiss, user can click X on the tab
+										}
+									}}
+								>
+									{newTabLoading ? (
+										<>
+											<div class="spinner-lg" />
+											<div class="claude-empty-title">Loading session...</div>
+										</>
+									) : (
+										<>
+											<div class="claude-empty-icon">
+												<IconTerminal size={48} />
+											</div>
+											<div class="claude-empty-title">
+												{sessionList.length === 0
+													? "Ready when you are"
+													: "New session"}
+											</div>
+											<div class="claude-empty-desc">
+												{sessionList.length === 0
+													? "Start a new session to begin coding with Claude."
+													: "Choose session type:"}
+											</div>
+											<div class="claude-empty-actions">
+												<button
+													class="claude-empty-btn primary"
+													onClick={() => onNewSession()}
+												>
+													New Agent
+												</button>
+												<button
+													class="claude-empty-btn secondary"
+													onClick={() => onNewShell()}
+												>
+													New Shell
+												</button>
+											</div>
+										</>
+									)}
+									{recentConvos.length > 0 && !newTabLoading && (
+										<div class="claude-recent-convos">
+											<div class="claude-recent-title">
+												Recent conversations
+											</div>
+											{recentConvos.map((c) => {
+												// Check if this conversation is already open by matching conversationId
+												const openSession = sessionList.find(
+													(s) => s.conversationId === c.id,
+												);
+												return (
+													<button
+														key={c.id}
+														class={`claude-recent-item${openSession ? " open" : ""}`}
+														onClick={() => {
+															if (openSession) {
+																// Switch to the existing tab
+																switchToSession(openSession.id);
+															} else {
+																resumeConversation(c.id, c.cwd);
+															}
+														}}
+													>
+														<span class="claude-recent-text">
+															<span class="claude-recent-project">
+																{c.cwd.split("/").pop() || "workspace"}
+															</span>
+															<span class="claude-recent-date">
+																{new Date(c.mtime).toLocaleString(undefined, {
+																	month: "short",
+																	day: "numeric",
+																	hour: "2-digit",
+																	minute: "2-digit",
+																})}
+															</span>
+														</span>
+														<span class="claude-recent-meta">
+															{openSession && (
+																<span class="claude-recent-open-badge">
+																	OPEN
+																</span>
+															)}
+														</span>
+													</button>
+												);
+											})}
+										</div>
+									)}
+								</div>
+							)}
+						{activeId &&
+							sessionList.find((s) => s.id === activeId)?.loading &&
+							!getTerminal(activeId) && (
+								<div class="terminal-loading-overlay">
+									<div class="spinner" />
+									<div class="terminal-loading-text">Starting session...</div>
+								</div>
+							)}
+						{/* Session restore removed — users use recent conversations or new agent */}
+					</div>
+					{mobile && activeId && <MobileTerminalToolbar />}
+					{dragOver && (
+						<div class="image-drop-indicator">
+							<div class="image-drop-indicator-text">Drop file here</div>
+						</div>
+					)}
+				</div>
+				<UploadOverlay file={pendingFile} onDone={() => setPendingFile(null)} />
+				{activeId && !mobile && <TerminalStatusBar />}
+				{activeId && <SubagentPanel sessionId={activeId} />}
 			</div>
-			<UploadOverlay file={pendingFile} onDone={() => setPendingFile(null)} />
-			{activeId && !mobile && <TerminalStatusBar />}
-			{activeId && <SubagentPanel sessionId={activeId} />}
+			{showPreviewSplit && (
+				<div
+					class="preview-side"
+					style={{ width: pMode === "full-preview" ? "100%" : "45%" }}
+				>
+					<div class="preview-mode-bar">
+						<button
+							class={`preview-mode-btn${pMode === "split" ? " active" : ""}`}
+							onClick={() => {
+								previewMode.value = "split";
+							}}
+							title="Split view"
+						>
+							&#9636;
+						</button>
+						<button
+							class={`preview-mode-btn${pMode === "full-preview" ? " active" : ""}`}
+							onClick={() => {
+								previewMode.value = "full-preview";
+							}}
+							title="Full preview"
+						>
+							&#9634;
+						</button>
+						<button
+							class="preview-mode-btn"
+							onClick={() => {
+								previewMode.value = "hidden";
+							}}
+							title="Close preview"
+						>
+							<IconX size={13} />
+						</button>
+					</div>
+					<PreviewPanel />
+				</div>
+			)}
 		</div>
 	);
 }

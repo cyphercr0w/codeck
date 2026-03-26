@@ -29,7 +29,6 @@ import {
 	showToast,
 	type View,
 	type Section,
-	previewSplit,
 } from "./state/store";
 import { apiFetch, getAuthToken, clearAuthToken } from "./api";
 import { connectWebSocket, disconnectWebSocket } from "./ws";
@@ -60,7 +59,6 @@ import { ToastContainer } from "./components/ToastContainer";
 
 import { AgentsSection } from "./components/AgentsSection";
 import { FlowsSection } from "./components/FlowsSection";
-import { PreviewPanel } from "./components/PreviewPanel";
 import { ChatSection } from "./components/ChatSection";
 import { SettingsSection } from "./components/SettingsSection";
 import { MobileMenu } from "./components/MobileMenu";
@@ -720,42 +718,18 @@ export function App() {
 						)}
 						{section === "chat" && <ChatSection />}
 						{section === "filesystem" && <FilesSection />}
-						{/* ClaudeSection + PreviewPanel always mounted.
-                Split layout: terminal left, preview right when active.
-                CSS display:none/contents toggles visibility without unmounting. */}
+						{/* ClaudeSection always mounted — preview is integrated within it */}
 						<div
 							style={
 								section !== "claude"
 									? { display: "none" }
-									: { display: "flex", flex: 1, minHeight: 0 }
+									: { display: "contents" }
 							}
 						>
-							<div
-								style={{
-									flex: 1,
-									minWidth: 0,
-									display: "flex",
-									flexDirection: "column",
-								}}
-							>
-								<ClaudeSection
-									onNewSession={handleNewSession}
-									onNewShell={handleNewShell}
-								/>
-							</div>
-							{previewSplit.value && (
-								<div
-									style={{
-										width: "45%",
-										minWidth: 300,
-										borderLeft: "1px solid var(--border)",
-										display: "flex",
-										flexDirection: "column",
-									}}
-								>
-									<PreviewPanel />
-								</div>
-							)}
+							<ClaudeSection
+								onNewSession={handleNewSession}
+								onNewShell={handleNewShell}
+							/>
 						</div>
 
 						{section === "flows" && <FlowsSection />}

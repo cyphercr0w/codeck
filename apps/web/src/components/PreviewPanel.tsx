@@ -8,27 +8,9 @@
  * For self-hosted without wildcard DNS, falls back to dedicated-port proxy.
  */
 import { useState, useRef } from "preact/hooks";
-import { previewPort, previewUrl, previewSplit } from "../state/store";
+import { previewPort, previewUrl, previewMode } from "../state/store";
 import { IconRefresh, IconX, IconPlay } from "./Icons";
-
-/** Build the iframe URL via subdomain or path-based fallback. */
-function buildPreviewUrl(port: number): string {
-	const { protocol, hostname } = window.location;
-	const portSuffix = window.location.port ? `:${window.location.port}` : "";
-	// IP addresses can't use subdomains — fall back to path-based proxy
-	if (/^\d+\.\d+\.\d+\.\d+$/.test(hostname)) {
-		return `/preview-proxy/${port}/`;
-	}
-	// localhost: preview-{port}.localhost (Chrome/Firefox resolve *.localhost)
-	if (hostname === "localhost") {
-		return `${protocol}//preview-${port}.${hostname}${portSuffix}/`;
-	}
-	// Production: p{port}.{baseDomain} — strip leading subdomain
-	// dev.codeck.xyz → p4321.codeck.xyz (single-level, covered by Universal SSL)
-	const parts = hostname.split(".");
-	const baseDomain = parts.length > 2 ? parts.slice(-2).join(".") : hostname;
-	return `${protocol}//p${port}.${baseDomain}/`;
-}
+import { buildPreviewUrl } from "../utils/preview-url";
 
 export function PreviewPanel() {
 	const inputUrl = previewUrl.value;
@@ -38,7 +20,7 @@ export function PreviewPanel() {
 	const activePort = previewPort.value;
 	const setActivePort = (port: number | null) => {
 		previewPort.value = port;
-		previewSplit.value = port !== null;
+		previewMode.value = port !== null ? "split" : "hidden";
 	};
 	const [loading, setLoading] = useState(false);
 	const [iframeReady, setIframeReady] = useState(false);

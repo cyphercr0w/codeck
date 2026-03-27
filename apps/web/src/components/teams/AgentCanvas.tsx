@@ -15,7 +15,6 @@ import {
 	activeTeam,
 	selectedAgentSessionId,
 	selectTeamAgent,
-	type TeamAgent,
 } from "../../state/team-store";
 import {
 	forceSimulation,
@@ -263,7 +262,7 @@ const AgentCanvas: FunctionalComponent<{
 			return;
 		}
 
-		// Build nodes: leader + agents
+		// Build nodes: leader + ALL agents (even pending — shown as gray/unclickable)
 		const nodes: AgentNode[] = [
 			{
 				id: "leader",
@@ -273,16 +272,14 @@ const AgentCanvas: FunctionalComponent<{
 				status: team.status === "running" ? "running" : "idle",
 				sessionId: team.leaderSessionId,
 			},
-			...team.agents
-				.filter((a) => a.sessionId)
-				.map((a) => ({
-					id: a.id,
-					name: a.name,
-					role: a.role,
-					isLeader: false,
-					status: a.status,
-					sessionId: a.sessionId,
-				})),
+			...team.agents.map((a) => ({
+				id: a.id,
+				name: a.name,
+				role: a.role,
+				isLeader: false,
+				status: a.status,
+				sessionId: a.sessionId ?? "",
+			})),
 		];
 
 		// Preserve positions from existing nodes
@@ -505,7 +502,7 @@ const AgentCanvas: FunctionalComponent<{
 			return dx * dx + dy * dy <= r * r;
 		});
 		hoveredRef.current = hit?.id ?? null;
-		canvas.style.cursor = hit ? "pointer" : "default";
+		canvas.style.cursor = hit?.sessionId ? "pointer" : "default";
 	}, []);
 
 	const handleClick = useCallback(
@@ -523,7 +520,7 @@ const AgentCanvas: FunctionalComponent<{
 				return dx * dx + dy * dy <= r * r;
 			});
 
-			if (hit) {
+			if (hit && hit.sessionId) {
 				selectTeamAgent(hit.sessionId);
 				onAgentClick?.(hit.sessionId);
 			}

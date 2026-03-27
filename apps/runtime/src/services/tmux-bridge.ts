@@ -189,18 +189,34 @@ export function launchTeam(
 
 			// Build and send the team creation prompt (literal to prevent injection).
 			// Claude Code treats multi-line pastes as [Pasted text] needing Enter to submit.
-			// Send the text, wait 500ms for Claude to register the paste, then send Enter.
+			// Send the text, wait for Claude to show [Pasted text], then send Enter.
 			const prompt = buildTeamPrompt(template, options.input);
+			const paneTarget = `${tmuxSession}:0.0`;
 			execFileSync(
 				"tmux",
-				["send-keys", "-t", `${tmuxSession}:0.0`, "-l", "--", prompt],
+				["send-keys", "-t", paneTarget, "-l", "--", prompt],
 				{ timeout: 5000 },
 			);
-			// Small delay so Claude registers the paste before we hit Enter
-			await new Promise((r) => setTimeout(r, 500));
-			execFileSync("tmux", ["send-keys", "-t", `${tmuxSession}:0.0`, "Enter"], {
-				timeout: 2000,
-			});
+			// Wait for Claude to register the paste (shows [Pasted text]), then Enter.
+			// Retry Enter up to 3 times — sometimes the first one arrives too early.
+			for (let attempt = 0; attempt < 3; attempt++) {
+				await new Promise((r) => setTimeout(r, 1500));
+				execFileSync("tmux", ["send-keys", "-t", paneTarget, "Enter"], {
+					timeout: 2000,
+				});
+				// Check if Claude started processing (no more [Pasted text] on screen)
+				await new Promise((r) => setTimeout(r, 2000));
+				try {
+					const screen = execFileSync(
+						"tmux",
+						["capture-pane", "-t", paneTarget, "-p"],
+						{ encoding: "utf-8", timeout: 2000 },
+					);
+					if (!screen.includes("[Pasted text")) break;
+				} catch {
+					break;
+				}
+			}
 
 			execution.status = "running";
 			saveTeamExecution(execution);

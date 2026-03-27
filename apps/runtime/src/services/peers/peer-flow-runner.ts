@@ -398,13 +398,36 @@ export async function runPeerFlow(
 			},
 		);
 
+		// Build team roster so the entrypoint knows who to talk to
+		const teamRoster: string[] = [];
+		for (const [agentId, peerId] of peerMap) {
+			if (agentId === flow.entryAgentId) continue;
+			const agent = flow.agents[agentId];
+			teamRoster.push(
+				`  - Agent "${agent.name}" (${agent.role}): peer ID = "${peerId}"`,
+			);
+		}
+
 		const peerInstructions = [
-			"\n\nIMPORTANT INSTRUCTIONS:",
-			"- You are the ENTRYPOINT agent. The user's task is above.",
-			"- Use list_peers to see other agents. Use send_message to delegate work.",
-			"- Other agents will send you results via channel messages.",
-			"- When the overall objective is complete, use report_decision with APPROVE.",
-			"- If something fails irrecoverably, use report_decision with FAILED.",
+			"\n\n## MULTI-AGENT COORDINATION",
+			"You are the ENTRYPOINT agent. You coordinate a team of specialist agents.",
+			"",
+			"YOUR TEAM:",
+			...teamRoster,
+			"",
+			"HOW TO DELEGATE WORK:",
+			'1. Use the send_message tool with to_id="<peer ID>" and message="<instructions>"',
+			"2. The specialist will receive your message and start working",
+			"3. They will send results back to you via channel messages (<channel> tags)",
+			"4. Review their work and iterate if needed",
+			"",
+			"WORKFLOW:",
+			"- Do your analysis first",
+			"- If you find issues that need fixing, send them to the appropriate specialist",
+			"- Wait for their response (it arrives as a <channel> tag)",
+			"- Review their work",
+			"- When everything is resolved, use report_decision with APPROVE",
+			"- If something fails irrecoverably, use report_decision with FAILED",
 		].join("\n");
 
 		const entryPeerId = peerMap.get(flow.entryAgentId)!;
@@ -416,16 +439,25 @@ export async function runPeerFlow(
 			execution.id,
 		);
 
-		// Send system context to non-entrypoint agents so they know their role
+		// Send system context to non-entrypoint agents
+		const entryPeerIdForContext = peerMap.get(flow.entryAgentId)!;
 		for (const [agentId, peerId] of peerMap) {
 			if (agentId === flow.entryAgentId) continue;
 			const agent = flow.agents[agentId];
 			const agentContext = [
 				agent.systemPrompt,
-				"\n\nYou are a specialist agent in a multi-agent flow.",
-				"Wait for messages from other agents via channel notifications.",
-				"When you receive work, do it and send results back using send_message.",
-				"Use report_decision with DONE when you finish all assigned work.",
+				"\n\n## MULTI-AGENT CONTEXT",
+				"You are a specialist agent in a team. You receive work via channel messages.",
+				"",
+				`Your coordinator: peer ID = "${entryPeerIdForContext}" (${entryAgent.name})`,
+				"",
+				"WORKFLOW:",
+				"1. Wait for a channel message with instructions",
+				"2. Do the work described",
+				`3. Send results back using send_message with to_id="${entryPeerIdForContext}"`,
+				"4. You may receive follow-up instructions — keep working until told otherwise",
+				"5. Use report_decision with DONE only when explicitly told you're done",
+				"",
 				`The overall task: ${execution.initialInput}`,
 			].join("\n");
 			sendMessage(orchPeerId, peerId, "prompt", agentContext, execution.id);

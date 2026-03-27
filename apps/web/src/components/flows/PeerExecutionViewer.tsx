@@ -292,9 +292,11 @@ const PeerExecutionViewer: FunctionalComponent<Props> = ({
 		setTimeout(() => ensureTerminalVisible(sid), 150);
 	}
 
-	// Cleanup terminals after flow ends — delay for final output
+	// Cleanup terminals after flow ends — close view and destroy after delay
 	useEffect(() => {
 		if (!flow || flow.status === "running") return;
+		// Close terminal panel so user sees the completion state, not a dead xterm
+		togglePeerTerminal(null);
 		const timer = setTimeout(() => {
 			for (const sid of created.current) {
 				try {

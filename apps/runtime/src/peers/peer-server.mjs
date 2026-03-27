@@ -62,7 +62,11 @@ async function brokerPost(path, body) {
 	if (!contentType.includes("application/json")) {
 		throw new Error(`Broker ${path} returned non-JSON content-type: ${contentType}`);
 	}
-	return res.json();
+	try {
+		return await res.json();
+	} catch (parseErr) {
+		throw new Error(`Broker ${path} returned invalid JSON: ${parseErr instanceof Error ? parseErr.message : parseErr}`);
+	}
 }
 
 // ── MCP Server (using Server, not McpServer — required for channels) ──
@@ -308,11 +312,20 @@ const intervals = [];
 function shutdown() {
 	for (const id of intervals) clearInterval(id);
 	intervals.length = 0;
+	// Force exit after 3s if unregister hangs (broker may be unreachable)
+	const forceTimer = setTimeout(() => {
+		log("Shutdown timeout — forcing exit");
+		process.exit(1);
+	}, 3000);
+	forceTimer.unref();
 	unregister().finally(() => process.exit(0));
 }
 
 process.on("SIGINT", shutdown);
 process.on("SIGTERM", shutdown);
+process.on("unhandledRejection", (err) => {
+	log(`Unhandled rejection: ${err instanceof Error ? err.message : err}`);
+});
 
 // ── Start ──
 // Order matters: connect FIRST so the channel is active, THEN register with broker.
@@ -322,7 +335,12 @@ process.on("SIGTERM", shutdown);
 log("Starting MCP server with claude/channel capability...");
 
 const stdioTransport = new StdioServerTransport();
-await mcp.connect(stdioTransport);
+try {
+	await mcp.connect(stdioTransport);
+} catch (err) {
+	log(`Fatal: MCP transport connection failed: ${err instanceof Error ? err.message : err}`);
+	process.exit(1);
+}
 
 await register();
 
@@ -331,7 +349,9 @@ intervals.push(setInterval(async () => {
 	if (myPeerId) {
 		try {
 			await brokerPost("/heartbeat", { peerId: myPeerId });
-		} catch {}
+		} catch (err) {
+			log(`Heartbeat failed: ${err instanceof Error ? err.message : "unknown"}`);
+		}
 	}
 }, HEARTBEAT_INTERVAL));
 

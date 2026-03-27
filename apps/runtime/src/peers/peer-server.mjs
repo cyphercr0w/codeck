@@ -50,7 +50,8 @@ function log(msg) {
 }
 
 if (!process.env.PEER_EXECUTION_ID || !process.env.PEER_AGENT_ID) {
-	log("WARNING: PEER_EXECUTION_ID or PEER_AGENT_ID not set — broker communication will likely fail");
+	log("FATAL: PEER_EXECUTION_ID and PEER_AGENT_ID are required");
+	process.exit(1);
 }
 
 // ── HTTP helpers ──
@@ -269,6 +270,8 @@ mcp.setRequestHandler(CallToolRequestSchema, async (req) => {
 // ── Background polling + channel push ──
 
 let polling = false;
+let channelPushFailures = 0;
+const MAX_CHANNEL_PUSH_FAILURES = 10;
 async function pollAndPush() {
 	if (!myPeerId || polling || shuttingDown) return;
 	polling = true;
@@ -293,10 +296,15 @@ async function pollAndPush() {
 					},
 				});
 				log(`Pushed message from ${msg.from || "unknown"} via channel`);
+				channelPushFailures = 0;
 			} catch (err) {
-				// Channel push failure usually means stdio transport is broken —
-				// re-queuing would create an infinite loop. Log and drop.
-				log(`Channel push failed for message from ${msg.from || "unknown"}: ${err instanceof Error ? err.message : "unknown"}`);
+				channelPushFailures++;
+				log(`Channel push failed (${channelPushFailures}/${MAX_CHANNEL_PUSH_FAILURES}) for message from ${msg.from || "unknown"}: ${err instanceof Error ? err.message : "unknown"}`);
+				if (channelPushFailures >= MAX_CHANNEL_PUSH_FAILURES) {
+					log("Channel transport broken after repeated push failures — shutting down");
+					shutdown();
+					return;
+				}
 			}
 		}
 	} catch (err) {
@@ -374,6 +382,7 @@ process.on("SIGINT", shutdown);
 process.on("SIGTERM", shutdown);
 process.on("unhandledRejection", (err) => {
 	log(`Unhandled rejection: ${err instanceof Error ? err.message : err}`);
+	shutdown();
 });
 
 // ── Start ──
@@ -392,14 +401,17 @@ try {
 }
 
 await register();
+if (shuttingDown) process.exit(1);
 
 // If registration failed (shutdown triggered), don't start polling
 if (!myPeerId) {
 	log("Registration did not complete — skipping poll/heartbeat setup");
 } else {
 	intervals.push(setInterval(pollAndPush, POLL_INTERVAL));
+	let heartbeatInProgress = false;
 	intervals.push(setInterval(async () => {
-		if (myPeerId) {
+		if (myPeerId && !heartbeatInProgress) {
+			heartbeatInProgress = true;
 			try {
 				await brokerPost("/heartbeat", { peerId: myPeerId });
 				heartbeatFailures = 0;
@@ -410,6 +422,8 @@ if (!myPeerId) {
 					log("Broker unreachable after repeated heartbeat failures — shutting down");
 					shutdown();
 				}
+			} finally {
+				heartbeatInProgress = false;
 			}
 		}
 	}, HEARTBEAT_INTERVAL));

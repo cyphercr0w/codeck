@@ -27,6 +27,7 @@ import {
 	createConsoleSession,
 	destroySession,
 	writeToSession,
+	getSession,
 } from "../console.js";
 import type {
 	FlowDefinition,
@@ -203,8 +204,11 @@ async function createPeerSession(
 	});
 
 	peerSessions.set(key, session.id);
+
+	// Verify the session actually exists in the console service Map
+	const verified = getSession(session.id);
 	console.log(
-		`[PeerRunner] Created session ${session.id} for agent ${agent.id}`,
+		`[PeerRunner] Created session ${session.id} for agent ${agent.id} (verified=${!!verified})`,
 	);
 
 	// Notify frontend so it can attach a terminal to this peer agent

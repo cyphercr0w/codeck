@@ -178,6 +178,8 @@ function drawEdge(
 	const dx = tx - sx;
 	const dy = ty - sy;
 	const dist = Math.sqrt(dx * dx + dy * dy);
+	if (dist < 1) return; // Nodes overlap — skip to avoid NaN
+
 	const curvature = dist * 0.12;
 	const perpX = (-dy / dist) * curvature;
 	const perpY = (dx / dist) * curvature;
@@ -208,6 +210,8 @@ function drawParticle(
 	const dx = tx - sx;
 	const dy = ty - sy;
 	const dist = Math.sqrt(dx * dx + dy * dy);
+	if (dist < 1) return; // Nodes overlap — skip to avoid NaN
+
 	const curvature = dist * 0.12;
 	const perpX = (-dy / dist) * curvature;
 	const perpY = (dx / dist) * curvature;
@@ -258,8 +262,6 @@ const AgentCanvas: FunctionalComponent<{
 			edgesRef.current = [];
 			return;
 		}
-
-		const selected = selectedAgentSessionId.value;
 
 		// Build nodes: leader + agents
 		const nodes: AgentNode[] = [
@@ -399,7 +401,6 @@ const AgentCanvas: FunctionalComponent<{
 			if (canvas.width !== w * dpr || canvas.height !== h * dpr) {
 				canvas.width = w * dpr;
 				canvas.height = h * dpr;
-				ctx.scale(dpr, dpr);
 
 				// Re-center force
 				const centerForce = simRef.current?.force("center") as
@@ -425,10 +426,10 @@ const AgentCanvas: FunctionalComponent<{
 			const nodes = nodesRef.current;
 			const edges = edgesRef.current;
 			const particles = particlesRef.current;
-			const selected = selectedAgentSessionId.value;
 			const hovered = hoveredRef.current;
 
-			// Clear
+			// Reset transform to DPR scale (prevents accumulation on resize)
+			ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 			ctx.clearRect(0, 0, w, h);
 
 			// Draw edges
@@ -476,7 +477,7 @@ const AgentCanvas: FunctionalComponent<{
 				drawNode(
 					ctx,
 					node,
-					node.sessionId === selected,
+					node.sessionId === selectedAgentSessionId.value,
 					node.id === hovered,
 					time,
 				);

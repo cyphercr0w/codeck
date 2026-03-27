@@ -77,12 +77,15 @@ const TeamExecutionViewer: FunctionalComponent = () => {
 		attachSession(terminalSessionId);
 		ensureTerminalVisible(terminalSessionId);
 
-		requestAnimationFrame(() => {
-			fitTerminal(terminalSessionId);
-			focusTerminal(terminalSessionId);
+		const rafId = requestAnimationFrame(() => {
+			if (hasTerminal(terminalSessionId)) {
+				fitTerminal(terminalSessionId);
+				focusTerminal(terminalSessionId);
+			}
 		});
 
 		return () => {
+			cancelAnimationFrame(rafId);
 			if (activeTermRef.current === terminalSessionId) {
 				destroyTerminal(terminalSessionId);
 				activeTermRef.current = null;

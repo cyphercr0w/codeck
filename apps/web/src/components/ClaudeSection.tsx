@@ -898,7 +898,7 @@ export function ClaudeSection({
 				{activeId && !mobile && <TerminalStatusBar />}
 				{activeId && <SubagentPanel sessionId={activeId} />}
 			</div>
-			{showPreviewSplit && (
+			{showPreviewSplit && teamPreviewMode.value === "hidden" && (
 				<div
 					class={`preview-side${pMode === "full-preview" ? " full" : ""}`}
 					style={{ width: pMode === "full-preview" ? "100%" : "45%" }}

@@ -673,6 +673,8 @@ export function registerPeerSession(
 ): void {
 	const flow = activeFlowExecution.value;
 	if (!flow || flow.executionId !== executionId) return;
+	// Ignore orchestrator entries (empty sessionId) and non-agent peers
+	if (!sessionId || agentId.startsWith("orch-")) return;
 	activeFlowExecution.value = {
 		...flow,
 		peerSessions: { ...(flow.peerSessions || {}), [agentId]: sessionId },

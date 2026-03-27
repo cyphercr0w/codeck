@@ -451,13 +451,11 @@ export function FlowsSection() {
 	// ── RUN VIEW (Execution Viewer) ──
 	if (view === "run" && selectedFlow) {
 		const liveFlow = activeFlowExecution.value;
-		const hasPeerSessions =
-			liveFlow &&
-			liveFlow.peerSessions &&
-			Object.keys(liveFlow.peerSessions).length > 0;
 
-		// Use PeerExecutionViewer when flow is running with peer sessions
-		if (hasPeerSessions && liveFlow) {
+		// All flows now use peer mode — show PeerExecutionViewer whenever
+		// there's an active running flow. Don't wait for peerSessions to
+		// populate (they arrive async via WS after agents spawn).
+		if (liveFlow && liveFlow.status === "running") {
 			const goBack = () => {
 				setSelectedFlowId(null);
 				setSelectedExecId(null);

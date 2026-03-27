@@ -451,6 +451,9 @@ function handleConsoleMessage(
 
 	if (msg.type === "console:attach") {
 		const session = getSession(msg.sessionId);
+		console.log(
+			`[WS] console:attach sessionId=${msg.sessionId?.slice(0, 8)} found=${!!session}`,
+		);
 		if (!session) {
 			ws.send(
 				JSON.stringify({

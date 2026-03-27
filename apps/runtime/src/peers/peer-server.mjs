@@ -45,15 +45,33 @@ function log(msg) {
 	console.error(`[codeck-peer:${AGENT_ID}] ${msg}`);
 }
 
+if (!process.env.PEER_EXECUTION_ID || !process.env.PEER_AGENT_ID) {
+	log("WARNING: PEER_EXECUTION_ID or PEER_AGENT_ID not set — broker communication will likely fail");
+}
+
 // ── HTTP helpers ──
 
-/** @param {string} path @param {Record<string, unknown>} body */
-async function brokerPost(path, body) {
-	const res = await fetch(`${BROKER}${path}`, {
-		method: "POST",
-		headers: { "Content-Type": "application/json" },
-		body: JSON.stringify(body),
-	});
+/** @param {string} path @param {Record<string, unknown>} body @param {{ timeoutMs?: number }} [opts] */
+async function brokerPost(path, body, opts) {
+	const timeoutMs = opts?.timeoutMs ?? 10000;
+	const controller = new AbortController();
+	const timer = setTimeout(() => controller.abort(), timeoutMs);
+	let res;
+	try {
+		res = await fetch(`${BROKER}${path}`, {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify(body),
+			signal: controller.signal,
+		});
+	} catch (err) {
+		if (err instanceof Error && err.name === "AbortError") {
+			throw new Error(`Broker ${path} timed out after ${timeoutMs}ms`);
+		}
+		throw err;
+	} finally {
+		clearTimeout(timer);
+	}
 	if (!res.ok) {
 		const text = await res.text().catch(() => "");
 		throw new Error(`Broker ${path} returned ${res.status}: ${text}`);
@@ -168,16 +186,22 @@ mcp.setRequestHandler(CallToolRequestSchema, async (req) => {
 					executionId: EXECUTION_ID,
 					excludePeerId: myPeerId,
 				});
-				if (!peers || peers.length === 0) {
+				if (!Array.isArray(peers) || peers.length === 0) {
 					return { content: [{ type: "text", text: "No other peers connected." }] };
 				}
 				const list = peers
-					.map((p) => `- ${p.peerId} [${p.role}] agent=${p.agentId} — ${p.summary || "no summary"}`)
+					.map((p) => `- ${p.peerId || "?"} [${p.role || "?"}] agent=${p.agentId || "?"} — ${p.summary || "no summary"}`)
 					.join("\n");
 				return { content: [{ type: "text", text: `Active peers:\n${list}` }] };
 			}
 
 			case "send_message": {
+				if (!args.to_id || typeof args.to_id !== "string") {
+					return { content: [{ type: "text", text: "Error: to_id is required and must be a non-empty string." }], isError: true };
+				}
+				if (!args.message || typeof args.message !== "string") {
+					return { content: [{ type: "text", text: "Error: message is required and must be a non-empty string." }], isError: true };
+				}
 				await brokerPost("/send-message", {
 					from: myPeerId,
 					to: args.to_id,
@@ -191,22 +215,29 @@ mcp.setRequestHandler(CallToolRequestSchema, async (req) => {
 			}
 
 			case "set_summary": {
+				if (!args.summary || typeof args.summary !== "string") {
+					return { content: [{ type: "text", text: "Error: summary is required and must be a non-empty string." }], isError: true };
+				}
 				await brokerPost("/set-summary", { peerId: myPeerId, summary: args.summary });
 				return { content: [{ type: "text", text: `Summary updated: "${args.summary}"` }] };
 			}
 
 			case "check_messages": {
 				const result = await brokerPost("/poll-messages", { peerId: myPeerId });
-				if (!result.messages || result.messages.length === 0) {
+				const messages = Array.isArray(result?.messages) ? result.messages : [];
+				if (messages.length === 0) {
 					return { content: [{ type: "text", text: "No new messages." }] };
 				}
-				const msgs = result.messages
-					.map((m) => `[From ${m.from} (${m.type || "message"})]: ${m.payload}`)
+				const msgs = messages
+					.map((m) => `[From ${m.from || "unknown"} (${m.type || "message"})]: ${m.payload || "(empty)"}`)
 					.join("\n\n");
 				return { content: [{ type: "text", text: `Messages received:\n\n${msgs}` }] };
 			}
 
 			case "report_decision": {
+				if (!args.decision || typeof args.decision !== "string") {
+					return { content: [{ type: "text", text: "Error: decision is required and must be a non-empty string." }], isError: true };
+				}
 				const payload = args.summary
 					? `DECISION: ${args.decision}\n${args.summary}`
 					: `DECISION: ${args.decision}`;
@@ -233,36 +264,41 @@ mcp.setRequestHandler(CallToolRequestSchema, async (req) => {
 
 // ── Background polling + channel push ──
 
+let polling = false;
 async function pollAndPush() {
-	if (!myPeerId) return;
+	if (!myPeerId || polling) return;
+	polling = true;
 	try {
-		const result = await brokerPost("/poll-messages", { peerId: myPeerId });
-		if (!result.messages || result.messages.length === 0) return;
+		const result = await brokerPost("/poll-messages", { peerId: myPeerId }, { timeoutMs: 5000 });
+		const messages = Array.isArray(result?.messages) ? result.messages : [];
+		if (messages.length === 0) return;
 
-		for (const msg of result.messages) {
+		for (const msg of messages) {
 			try {
 				// Use server.notification() — the proper channel push method.
 				// This sends a notifications/claude/channel event that Claude acts on.
 				await mcp.notification({
 					method: "notifications/claude/channel",
 					params: {
-						content: msg.payload,
+						content: msg.payload || "",
 						meta: {
-							from_id: msg.from,
+							from_id: msg.from || "unknown",
 							message_type: msg.type,
 							execution_id: msg.executionId,
 						},
 					},
 				});
-				log(`Pushed message from ${msg.from} via channel`);
+				log(`Pushed message from ${msg.from || "unknown"} via channel`);
 			} catch (err) {
 				// Channel push failure usually means stdio transport is broken —
 				// re-queuing would create an infinite loop. Log and drop.
-				log(`Channel push failed for message from ${msg.from}: ${err instanceof Error ? err.message : "unknown"}`);
+				log(`Channel push failed for message from ${msg.from || "unknown"}: ${err instanceof Error ? err.message : "unknown"}`);
 			}
 		}
 	} catch (err) {
 		log(`Broker poll failed: ${err instanceof Error ? err.message : "unknown"}`);
+	} finally {
+		polling = false;
 	}
 }
 
@@ -287,8 +323,9 @@ async function register() {
 		} catch (err) {
 			log(`Registration attempt ${attempt}/${MAX_RETRIES} failed: ${err instanceof Error ? err.message : err}`);
 			if (attempt === MAX_RETRIES) {
-				log("Failed to register with broker after all retries — exiting");
-				process.exit(1);
+				log("Failed to register with broker after all retries — triggering shutdown");
+				shutdown();
+				return;
 			}
 			await new Promise((r) => setTimeout(r, 2000));
 		}
@@ -300,16 +337,21 @@ async function unregister() {
 		try {
 			await brokerPost("/unregister", { peerId: myPeerId });
 			log("Unregistered from broker");
-		} catch {
-			/* best effort */
+		} catch (err) {
+			log(`Unregister failed (best effort): ${err instanceof Error ? err.message : "unknown"}`);
 		}
 	}
 }
 
 /** @type {NodeJS.Timeout[]} */
 const intervals = [];
+let shuttingDown = false;
+let heartbeatFailures = 0;
+const MAX_HEARTBEAT_FAILURES = 5;
 
 function shutdown() {
+	if (shuttingDown) return;
+	shuttingDown = true;
 	for (const id of intervals) clearInterval(id);
 	intervals.length = 0;
 	// Force exit after 3s if unregister hangs (broker may be unreachable)
@@ -318,7 +360,9 @@ function shutdown() {
 		process.exit(1);
 	}, 3000);
 	forceTimer.unref();
-	unregister().finally(() => process.exit(0));
+	unregister()
+		.then(() => mcp.close().catch(() => {}))
+		.finally(() => process.exit(0));
 }
 
 process.on("SIGINT", shutdown);
@@ -344,15 +388,26 @@ try {
 
 await register();
 
-intervals.push(setInterval(pollAndPush, POLL_INTERVAL));
-intervals.push(setInterval(async () => {
-	if (myPeerId) {
-		try {
-			await brokerPost("/heartbeat", { peerId: myPeerId });
-		} catch (err) {
-			log(`Heartbeat failed: ${err instanceof Error ? err.message : "unknown"}`);
+// If registration failed (shutdown triggered), don't start polling
+if (!myPeerId) {
+	log("Registration did not complete — skipping poll/heartbeat setup");
+} else {
+	intervals.push(setInterval(pollAndPush, POLL_INTERVAL));
+	intervals.push(setInterval(async () => {
+		if (myPeerId) {
+			try {
+				await brokerPost("/heartbeat", { peerId: myPeerId });
+				heartbeatFailures = 0;
+			} catch (err) {
+				heartbeatFailures++;
+				log(`Heartbeat failed (${heartbeatFailures}/${MAX_HEARTBEAT_FAILURES}): ${err instanceof Error ? err.message : "unknown"}`);
+				if (heartbeatFailures >= MAX_HEARTBEAT_FAILURES) {
+					log("Broker unreachable after repeated heartbeat failures — shutting down");
+					shutdown();
+				}
+			}
 		}
-	}
-}, HEARTBEAT_INTERVAL));
+	}, HEARTBEAT_INTERVAL));
 
-log(`Ready. Peer ID: ${myPeerId}`);
+	log(`Ready. Peer ID: ${myPeerId}`);
+}

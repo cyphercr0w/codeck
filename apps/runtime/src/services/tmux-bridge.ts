@@ -11,6 +11,8 @@
 
 import { execFileSync } from "child_process";
 import { randomUUID } from "crypto";
+import { writeFileSync, unlinkSync, mkdirSync } from "fs";
+import { join } from "path";
 import { TmuxPtyAdapter } from "./tmux-pty-adapter.js";
 import { registerVirtualSession, destroySession } from "./console.js";
 import { saveTeamExecution } from "./teams.js";
@@ -78,8 +80,9 @@ export function launchTeam(
 	};
 
 	// Env vars that must reach the Claude process inside tmux.
-	// tmux 3.2+ supports -e KEY=VAL on new-session, passing vars to the shell.
-	// Also set-environment -g so teammate panes (split later) inherit them too.
+	// tmux new-session delegates to the tmux SERVER which spawns the shell,
+	// so the shell does NOT inherit this process's env.
+	// Solution: write a temp env file, and tell tmux to start bash sourcing it.
 	const envVars: Record<string, string> = {
 		CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS: "1",
 	};
@@ -88,7 +91,16 @@ export function launchTeam(
 	if (process.env.CLAUDE_API_KEY)
 		envVars.CLAUDE_API_KEY = process.env.CLAUDE_API_KEY;
 
-	// Global tmux env — teammate panes inherit these
+	// Write temp env file (mode 0600 — only root can read)
+	const envDir = "/tmp/team-env";
+	mkdirSync(envDir, { recursive: true, mode: 0o700 });
+	const envFile = join(envDir, `${executionId}.sh`);
+	const envScript = Object.entries(envVars)
+		.map(([k, v]) => `export ${k}='${v.replace(/'/g, "'\\''")}'`)
+		.join("\n");
+	writeFileSync(envFile, envScript + "\n", { mode: 0o600 });
+
+	// Also set tmux global env so teammate panes (split later) inherit them
 	for (const [k, v] of Object.entries(envVars)) {
 		try {
 			execFileSync("tmux", ["set-environment", "-g", k, v], { timeout: 2000 });
@@ -97,13 +109,7 @@ export function launchTeam(
 		}
 	}
 
-	// Build -e flags for new-session (tmux 3.2+)
-	const envFlags = Object.entries(envVars).flatMap(([k, v]) => [
-		"-e",
-		`${k}=${v}`,
-	]);
-
-	// Create tmux session with env vars injected
+	// Create tmux session: source the env file, then drop into interactive bash
 	try {
 		execFileSync(
 			"tmux",
@@ -116,13 +122,18 @@ export function launchTeam(
 				"160",
 				"-y",
 				"40",
-				...envFlags,
+				`bash --rcfile ${envFile}`,
 			],
 			{ timeout: 5000 },
 		);
 	} catch (e) {
 		execution.status = "failed";
 		saveTeamExecution(execution);
+		try {
+			unlinkSync(envFile);
+		} catch {
+			/* ignore */
+		}
 		throw new Error(`Failed to create tmux session: ${(e as Error).message}`);
 	}
 
@@ -284,6 +295,13 @@ export function stopTeam(executionId: string): boolean {
 		});
 	} catch {
 		// Session may already be dead
+	}
+
+	// Clean up env file
+	try {
+		unlinkSync(join("/tmp/team-env", `${executionId}.sh`));
+	} catch {
+		// already removed or never created
 	}
 
 	// Update execution

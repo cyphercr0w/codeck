@@ -732,7 +732,7 @@ export function App() {
 							/>
 						</div>
 
-						{section === "flows" && <TeamsSection />}
+						{section === "teams" && <TeamsSection />}
 						{section === "agents" && <AgentsSection />}
 						{section === "integrations" && <IntegrationsSection />}
 						{section === "config" && <AgentConfigSection />}

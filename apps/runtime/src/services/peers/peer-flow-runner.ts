@@ -444,8 +444,12 @@ export async function runPeerFlow(
 		for (const [agentId, peerId] of peerMap) {
 			if (agentId === flow.entryAgentId) continue;
 			const agent = flow.agents[agentId];
+			const agentPrompt = buildPrompt(agent.systemPrompt, agent.inputTemplate, {
+				prev_output: execution.initialInput,
+				flow_context: execution.initialInput,
+			});
 			const agentContext = [
-				agent.systemPrompt,
+				agentPrompt,
 				"\n\n## MULTI-AGENT CONTEXT",
 				"You are a specialist agent in a team. You receive work via channel messages.",
 				"",

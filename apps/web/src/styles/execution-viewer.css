@@ -745,18 +745,18 @@
 .peer-term-close:hover {
 	color: var(--text);
 }
-/* KEY FIX: xterm needs a container with REAL pixel dimensions.
-   peer-term-body gets flex:1 (the flex parent has explicit height from the layout).
-   peer-term-xterm fills it with absolute positioning so xterm always has dimensions. */
-.peer-term-body {
+/* Terminal instances — SAME pattern as .terminal-instances in terminal.css.
+   Container is position:relative + flex:1. Each instance is position:absolute.
+   This is the ONLY way to give xterm real pixel dimensions. */
+.peer-term-instances {
 	flex: 1;
-	position: relative;
 	min-height: 0;
-	overflow: hidden;
+	position: relative;
 }
-.peer-term-xterm {
+.peer-term-instance {
 	position: absolute;
 	inset: 0;
+	background: #0a0a0b;
 }
 /* Add status text to tiles */
 .peer-tile-state {

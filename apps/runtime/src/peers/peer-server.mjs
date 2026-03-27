@@ -287,8 +287,8 @@ async function register() {
 		} catch (err) {
 			log(`Registration attempt ${attempt}/${MAX_RETRIES} failed: ${err instanceof Error ? err.message : err}`);
 			if (attempt === MAX_RETRIES) {
-				log("Failed to register with broker — continuing without peer messaging");
-				return;
+				log("Failed to register with broker after all retries — exiting");
+				process.exit(1);
 			}
 			await new Promise((r) => setTimeout(r, 2000));
 		}

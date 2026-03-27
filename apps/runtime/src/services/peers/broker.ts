@@ -128,6 +128,13 @@ export function sendMessage(
 		return null;
 	}
 
+	// Prevent cross-execution message injection (#3)
+	const targetPeer = state.peers.get(to);
+	if (targetPeer && targetPeer.executionId !== executionId) {
+		console.warn(`[Broker] Cross-execution send blocked: ${from} -> ${to}`);
+		return null;
+	}
+
 	const msg: PeerMessage = {
 		id: ++state.messageCounter,
 		from,

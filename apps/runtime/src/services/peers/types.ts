@@ -52,8 +52,9 @@ export interface PeerSessionCreatedEvent {
 	data: {
 		executionId: string;
 		agentId: string;
+		agentName: string;
 		sessionId: string;
-		peerId: string;
+		peerId?: string; // Not available at session creation — peer registers later via MCP
 	};
 }
 

@@ -82,6 +82,8 @@ export interface ActiveFlowState {
 	visitLog: AgentVisit[];
 	// Peer session IDs: agentId → PTY session ID (for terminal attachment)
 	peerSessions?: Record<string, string>;
+	// Agents that received at least one broker message (prompt or work)
+	activatedAgents?: Record<string, boolean>;
 }
 
 // ── localStorage persistence for flow state (survives F5) ──
@@ -739,4 +741,16 @@ export function addPeerMessage(
 export function clearPeerMessages(): void {
 	peerMessageLog.value = [];
 	peerMsgCounter = 0;
+}
+
+// Mark an agent as having received work (for status derivation in peer flows)
+export function markAgentActivated(executionId: string, agentId: string): void {
+	const flow = activeFlowExecution.value;
+	if (!flow || flow.executionId !== executionId) return;
+	if (flow.activatedAgents?.[agentId]) return; // already marked
+	activeFlowExecution.value = {
+		...flow,
+		activatedAgents: { ...flow.activatedAgents, [agentId]: true },
+	};
+	flowStateVersion.value++;
 }

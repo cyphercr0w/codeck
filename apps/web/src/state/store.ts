@@ -718,41 +718,60 @@ export function dismissToast(id: number): void {
 	toasts.value = toasts.value.filter((t) => t.id !== id);
 }
 
-// ── Recent Conversations Cache ──
+// ── Recent Project Folders Cache ──
 
-export interface RecentConversation {
-	id: string;
-	title: string;
+export interface RecentFolder {
 	cwd: string;
+	name: string;
 	mtime: number;
+	conversationCount: number;
 }
 
-export const recentConversations = signal<RecentConversation[]>([]);
-let recentConvosFetchedAt = 0;
-const RECENT_CONVOS_TTL = 5 * 60 * 1000; // 5 min cache
+export const recentFolders = signal<RecentFolder[]>([]);
+let recentFoldersFetchedAt = 0;
+let recentFoldersInFlight: Promise<void> | null = null;
+const RECENT_FOLDERS_TTL = 5 * 60 * 1000; // 5 min cache
 
-export async function fetchRecentConversations(
+function isRecentFolder(v: unknown): v is RecentFolder {
+	if (typeof v !== "object" || v === null) return false;
+	const o = v as Record<string, unknown>;
+	return (
+		typeof o.cwd === "string" &&
+		typeof o.name === "string" &&
+		typeof o.mtime === "number" &&
+		typeof o.conversationCount === "number"
+	);
+}
+
+export function fetchRecentFolders(
 	fetchFn: (url: string) => Promise<Response>,
 	force = false,
 ): Promise<void> {
 	const now = Date.now();
 	if (
 		!force &&
-		recentConvosFetchedAt > 0 &&
-		now - recentConvosFetchedAt < RECENT_CONVOS_TTL
+		recentFoldersFetchedAt > 0 &&
+		now - recentFoldersFetchedAt < RECENT_FOLDERS_TTL
 	) {
-		return; // cache still valid
+		return Promise.resolve();
 	}
-	try {
-		const res = await fetchFn("/api/console/recent-conversations");
-		const data = await res.json();
-		if (data.conversations) {
-			recentConversations.value = data.conversations;
-			recentConvosFetchedAt = now;
+	if (recentFoldersInFlight) return recentFoldersInFlight;
+
+	recentFoldersInFlight = (async () => {
+		try {
+			const res = await fetchFn("/api/console/recent-conversations");
+			const data = await res.json();
+			if (Array.isArray(data.folders)) {
+				recentFolders.value = data.folders.filter(isRecentFolder);
+				recentFoldersFetchedAt = Date.now();
+			}
+		} catch {
+			/* non-fatal */
+		} finally {
+			recentFoldersInFlight = null;
 		}
-	} catch {
-		/* non-fatal */
-	}
+	})();
+	return recentFoldersInFlight;
 }
 
 // ── Usage Polling ──

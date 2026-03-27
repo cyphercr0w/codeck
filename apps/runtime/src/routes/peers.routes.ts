@@ -16,6 +16,7 @@ import {
 	sendMessage,
 	broadcastToExecution,
 	getBrokerStats,
+	getPeer,
 } from "../services/peers/broker.js";
 
 const router = Router();
@@ -45,6 +46,8 @@ router.post("/register", (req, res) => {
 });
 
 // Unregister a peer
+// TRUST BOUNDARY: No ownership check — any in-container process can unregister any peer.
+// Acceptable because the container is the security perimeter.
 router.post("/unregister", (req, res) => {
 	const { peerId } = req.body;
 	if (!peerId) {
@@ -81,6 +84,8 @@ router.post("/list-peers", (req, res) => {
 });
 
 // Poll for messages
+// TRUST BOUNDARY: No ownership check on peerId — any in-container process can poll.
+// The container itself is the security perimeter. All peers run inside the same sandbox.
 router.post("/poll-messages", (req, res) => {
 	const { peerId } = req.body;
 	if (!peerId) {
@@ -118,6 +123,21 @@ router.post("/send-message", (req, res) => {
 	if (type && !VALID_MSG_TYPES.has(type)) {
 		res.status(400).json({ error: `invalid message type: ${type}` });
 		return;
+	}
+	// Validate sender identity — prevent orchestrator impersonation
+	const senderId = from || "orchestrator";
+	if (senderId.startsWith("orch-")) {
+		const orchPeer = getPeer(senderId);
+		if (!orchPeer || orchPeer.role !== "orchestrator") {
+			res.status(403).json({ error: "Orchestrator peer not registered" });
+			return;
+		}
+	} else if (senderId !== "orchestrator") {
+		const senderPeer = getPeer(senderId);
+		if (!senderPeer) {
+			res.status(403).json({ error: "Sender peer not registered" });
+			return;
+		}
 	}
 	const msg = sendMessage(
 		from || "orchestrator",

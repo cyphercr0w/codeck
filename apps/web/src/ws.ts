@@ -16,7 +16,7 @@ import {
 	updateSubagentOutput,
 	removeSubagent,
 	syncSubagentsFromServer,
-	fetchRecentConversations,
+	fetchRecentFolders,
 	pendingRestoredSessions,
 	previewPort,
 	previewUrl,
@@ -40,6 +40,7 @@ import {
 	reconcileFlowState,
 	registerPeerSession,
 	addPeerMessage,
+	markAgentActivated,
 } from "./state/chat-store";
 import { apiFetch, getAuthToken } from "./api";
 
@@ -333,8 +334,8 @@ function openWs(wsUrl: string, protocols?: string[]): void {
 						.catch(() => {
 							/* non-fatal */
 						});
-					// Pre-fetch recent conversations so New Tab opens instantly (force — server state may have changed)
-					fetchRecentConversations(apiFetch, true);
+					// Pre-fetch recent folders so New Tab opens instantly (force — server state may have changed)
+					fetchRecentFolders(apiFetch, true);
 					// Reconcile stale flow state — if localStorage says "running" but
 					// the backend says otherwise (crash, restart), clean it up.
 					reconcileFlowState(apiFetch);
@@ -629,6 +630,10 @@ function openWs(wsUrl: string, protocols?: string[]): void {
 						typeof d.messageType === "string" ? d.messageType : "message",
 						typeof d.payload === "string" ? d.payload : "",
 					);
+					// Mark target agent as activated (for status derivation)
+					if (typeof d.toAgentId === "string") {
+						markAgentActivated(d.executionId, d.toAgentId);
+					}
 				}
 			} else if (msg.type === "flow:execution:update" && msg.data) {
 				// Sync frontend state when backend transitions between agents.

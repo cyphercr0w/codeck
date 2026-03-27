@@ -9,6 +9,7 @@
  * poll for messages, and receive them via claude/channel push.
  */
 
+import { randomBytes } from "crypto";
 import type {
 	PeerInfo,
 	PeerMessage,
@@ -28,7 +29,7 @@ const state: BrokerState = {
 // ── Peer lifecycle ──
 
 function generatePeerId(): string {
-	return Math.random().toString(36).slice(2, 10);
+	return randomBytes(6).toString("base64url");
 }
 
 export function registerPeer(
@@ -130,6 +131,18 @@ export function sendMessage(
 		return null;
 	}
 
+	// Validate sender is a registered peer in the same execution or the orchestrator
+	const isOrchestrator = from.startsWith("orch-");
+	if (!isOrchestrator) {
+		const senderPeer = state.peers.get(from);
+		if (!senderPeer || senderPeer.executionId !== executionId) {
+			console.warn(
+				`[Broker] Send from unregistered/cross-execution peer blocked: ${from} -> ${to}`,
+			);
+			return null;
+		}
+	}
+
 	const msg: PeerMessage = {
 		id: ++state.messageCounter,
 		from,
@@ -147,12 +160,17 @@ export function sendMessage(
 	);
 
 	// Broadcast for frontend real-time visibility
+	// Include agentIds so the UI can track which agents are active
+	const fromPeer = state.peers.get(from);
+	const toPeer = state.peers.get(to);
 	broadcast({
 		type: "flow:peer:message",
 		data: {
 			executionId,
 			from,
 			to,
+			fromAgentId: fromPeer?.agentId || from,
+			toAgentId: toPeer?.agentId || to,
 			messageType: type,
 			payload: payload.slice(0, 500),
 		},
@@ -208,13 +226,22 @@ export function cleanupExecution(executionId: string): void {
 	}
 }
 
-/** Remove stale peers that haven't polled in 60 seconds */
+/** Remove stale peers that haven't polled recently */
 export function cleanStalePeers(): void {
 	const now = Date.now();
-	const staleThreshold = 60_000;
+	const staleThreshold = 60_000; // 60s — remove if PID is dead
+	const hardStaleThreshold = 300_000; // 5min — remove unconditionally
 	for (const [id, peer] of state.peers) {
-		if (now - peer.lastPollAt > staleThreshold) {
-			// Verify PID is alive
+		const staleDuration = now - peer.lastPollAt;
+		if (staleDuration > hardStaleThreshold) {
+			// Unconditional removal — MCP server likely crashed while host process lives
+			console.log(
+				`[Broker] Removing hard-stale peer ${id} (no poll for ${Math.round(staleDuration / 1000)}s)`,
+			);
+			state.peers.delete(id);
+			state.queues.delete(id);
+		} else if (staleDuration > staleThreshold) {
+			// Soft stale — only remove if PID is dead
 			try {
 				process.kill(peer.pid, 0);
 			} catch {
@@ -229,7 +256,7 @@ export function cleanStalePeers(): void {
 }
 
 // Run cleanup every 30 seconds
-setInterval(cleanStalePeers, 30_000);
+export const cleanupInterval = setInterval(cleanStalePeers, 30_000);
 
 // ── Stats ──
 

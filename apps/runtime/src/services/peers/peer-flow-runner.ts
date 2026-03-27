@@ -290,6 +290,7 @@ const cancelledExecutions = new Set<string>();
 
 export function cancelPeerExecution(executionId: string): void {
 	cancelledExecutions.add(executionId);
+	const orchPeerId = `orch-${executionId}`;
 	const prefix = `${executionId}|`;
 	for (const key of peerSessions.keys()) {
 		if (key.startsWith(prefix)) {
@@ -297,7 +298,7 @@ export function cancelPeerExecution(executionId: string): void {
 			const peer = findPeerByAgent(executionId, agentId);
 			if (peer) {
 				sendMessage(
-					"orchestrator",
+					orchPeerId,
 					peer.peerId,
 					"system",
 					"CANCELLED",
@@ -306,7 +307,10 @@ export function cancelPeerExecution(executionId: string): void {
 			}
 		}
 	}
-	destroyPeerSessions(executionId);
+	// Do NOT call destroyPeerSessions here — it deletes from cancelledExecutions,
+	// which would prevent the watchdog from seeing the cancellation flag.
+	// The watchdog detects cancelledExecutions.has(), settles with null,
+	// and the finally block in runPeerFlow calls destroyPeerSessions for cleanup.
 }
 
 // ── Main orchestrator (parallel model) ──
@@ -341,6 +345,12 @@ export async function runPeerFlow(
 	});
 
 	const workDir = cwd || WORKSPACE;
+
+	// Validate entrypoint exists in the flow definition
+	if (!flow.agents[flow.entryAgentId]) {
+		throw new Error(`entryAgentId "${flow.entryAgentId}" not found in flow agents`);
+	}
+
 	const agentIds = Object.keys(flow.agents);
 
 	try {
@@ -437,7 +447,10 @@ export async function runPeerFlow(
 			"- If something fails irrecoverably, use report_decision with FAILED",
 		].join("\n");
 
-		const entryPeerId = peerMap.get(flow.entryAgentId)!;
+		const entryPeerId = peerMap.get(flow.entryAgentId);
+		if (!entryPeerId) {
+			throw new Error(`Entry agent "${flow.entryAgentId}" not found in peer map`);
+		}
 		sendMessage(
 			orchPeerId,
 			entryPeerId,
@@ -447,7 +460,7 @@ export async function runPeerFlow(
 		);
 
 		// Send system context to non-entrypoint agents
-		const entryPeerIdForContext = peerMap.get(flow.entryAgentId)!;
+		const entryPeerIdForContext = entryPeerId;
 		for (const [agentId, peerId] of peerMap) {
 			if (agentId === flow.entryAgentId) continue;
 			const agent = flow.agents[agentId];

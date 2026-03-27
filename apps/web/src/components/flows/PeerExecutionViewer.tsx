@@ -22,6 +22,7 @@ import {
 	destroyTerminal,
 	ensureTerminalVisible,
 	fitTerminal,
+	focusTerminal,
 	repaintTerminal,
 	hasTerminal,
 } from "../../terminal";
@@ -51,7 +52,8 @@ function deriveStatus(agentId: string, flow: ActiveFlowState): AgentState {
 	if (!flow.peerSessions?.[agentId]) return "spawning";
 	const dec = flow.agentDecisions[agentId];
 	if (dec) return dec === "FAILED" ? "failed" : "done";
-	if (flow.currentAgentId === agentId) return "working";
+	// In peer model, agents are "working" once they've received a message
+	if (flow.activatedAgents?.[agentId]) return "working";
 	return "idle";
 }
 
@@ -129,6 +131,29 @@ const PeerExecutionViewer: FunctionalComponent<Props> = ({
 		if (flow.peerSessions?.[entryId]) togglePeerTerminal(entryId);
 	}, [flow?.peerSessions, flow?.status, selected]);
 
+	// Cleanup handle for pending ResizeObserver from previous switch
+	const fitCleanup = useRef<(() => void) | null>(null);
+
+	// Robust fit: always defers to next frame so display:block is rendered,
+	// then fit + repaint + focus. Double-rAF ensures browser has painted.
+	function ensureFit(sessionId: string): void {
+		fitCleanup.current?.();
+		fitCleanup.current = null;
+
+		// Double rAF: first waits for style recalc, second for paint.
+		// This is the same pattern browsers use for reliable post-layout work.
+		const raf1 = requestAnimationFrame(() => {
+			const raf2 = requestAnimationFrame(() => {
+				fitTerminal(sessionId);
+				repaintTerminal(sessionId);
+				focusTerminal(sessionId);
+			});
+			fitCleanup.current = () => cancelAnimationFrame(raf2);
+		});
+
+		fitCleanup.current = () => cancelAnimationFrame(raf1);
+	}
+
 	// ── Terminal lifecycle: imperative DOM, same as ClaudeSection ──
 	useEffect(() => {
 		const container = termContainerRef.current;
@@ -149,12 +174,7 @@ const PeerExecutionViewer: FunctionalComponent<Props> = ({
 		if (existing) {
 			existing.style.display = "block";
 			if (hasTerminal(sessionId)) {
-				// xterm loses its canvas when container goes display:none.
-				// fit recalculates dimensions, repaint redraws the buffer.
-				setTimeout(() => {
-					fitTerminal(sessionId);
-					requestAnimationFrame(() => repaintTerminal(sessionId));
-				}, 50);
+				ensureFit(sessionId);
 			}
 			return;
 		}
@@ -171,7 +191,25 @@ const PeerExecutionViewer: FunctionalComponent<Props> = ({
 			createTerminal(sessionId, el);
 			attachSession(sessionId);
 			ensureTerminalVisible(sessionId);
+			ensureFit(sessionId);
 		}
+	}, [selected, flow?.peerSessions]);
+
+	// Re-fit active terminal when container resizes (window resize, panel toggle)
+	useEffect(() => {
+		const container = termContainerRef.current;
+		if (!container) return;
+
+		const ro = new ResizeObserver(() => {
+			if (!selected || !flow?.peerSessions?.[selected]) return;
+			const sid = flow.peerSessions[selected];
+			if (hasTerminal(sid)) {
+				fitTerminal(sid);
+				requestAnimationFrame(() => repaintTerminal(sid));
+			}
+		});
+		ro.observe(container);
+		return () => ro.disconnect();
 	}, [selected, flow?.peerSessions]);
 
 	// Hide all terminals when deselected

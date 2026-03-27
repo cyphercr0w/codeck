@@ -235,6 +235,21 @@ mcp.setRequestHandler(CallToolRequestSchema, async (req) => {
 			case "check_messages": {
 				const result = await brokerPost("/poll-messages", { peerId: myPeerId });
 				const messages = Array.isArray(result?.messages) ? result.messages : [];
+
+				// Drain failedPushBuffer — these are messages that were polled from
+				// the broker but failed channel push. Without this, they'd be lost
+				// since the broker uses delivery-once semantics.
+				while (failedPushBuffer.length > 0) {
+					const failed = failedPushBuffer.shift();
+					if (failed) {
+						messages.push({
+							from: failed.from,
+							type: failed.type,
+							payload: failed.payload,
+						});
+					}
+				}
+
 				if (messages.length === 0) {
 					return { content: [{ type: "text", text: "No new messages." }] };
 				}

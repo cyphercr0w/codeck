@@ -752,11 +752,20 @@
 	flex: 1;
 	min-height: 0;
 	position: relative;
+	overflow: hidden;
 }
 .peer-term-instance {
 	position: absolute;
 	inset: 0;
+	overflow: hidden;
 	background: #0a0a0b;
+}
+/* xterm needs its container to not interfere with pointer events */
+.peer-term-instance .xterm {
+	height: 100%;
+}
+.peer-term-instance .xterm-viewport {
+	overflow-y: auto !important;
 }
 /* Add status text to tiles */
 .peer-tile-state {

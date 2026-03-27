@@ -593,6 +593,17 @@
 	gap: 6px;
 }
 
+.claude-recent-count {
+	font-size: 10px;
+	font-weight: 600;
+	color: var(--text-muted);
+	background: var(--bg-tertiary, rgba(255, 255, 255, 0.06));
+	padding: 1px 5px;
+	border-radius: 3px;
+	min-width: 18px;
+	text-align: center;
+}
+
 .claude-recent-open-badge {
 	font-size: 9px;
 	font-weight: 700;

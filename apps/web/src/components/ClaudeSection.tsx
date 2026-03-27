@@ -20,8 +20,8 @@ import {
 	setContextData,
 	showToast,
 	activeSection,
-	recentConversations,
-	fetchRecentConversations,
+	recentFolders,
+	fetchRecentFolders,
 	pendingRestoredSessions,
 	type PendingSession,
 	previewMode,
@@ -138,7 +138,7 @@ export function ClaudeSection({
 	const [bannerFading, setBannerFading] = useState(false);
 	const [showNewSessionMenu, setShowNewSessionMenu] = useState(false);
 	const [newTabLoading, setNewTabLoading] = useState(false);
-	const recentConvos = recentConversations.value;
+	const recentProjects = recentFolders.value;
 	const sessionList = sessions.value;
 	const activeId = activeSessionId.value;
 
@@ -360,10 +360,10 @@ export function ClaudeSection({
 		}
 	}, [activeId, sessionList.length, showNewSessionMenu, newTabLoading]);
 
-	// Fetch recent conversations (cached 5 min in store, instant on subsequent views)
+	// Fetch recent folders (cached 5 min in store, instant on subsequent views)
 	useEffect(() => {
 		if (sessionList.length === 0 || showNewSessionMenu) {
-			fetchRecentConversations(apiFetch);
+			fetchRecentFolders(apiFetch);
 		}
 	}, [sessionList.length, showNewSessionMenu]);
 
@@ -502,17 +502,18 @@ export function ClaudeSection({
 		setEditingTabId(null);
 	}
 
-	async function resumeConversation(convId: string, cwd: string) {
+	async function continueInFolder(cwd: string) {
 		if (newTabLoading) return; // prevent double-click
 		setNewTabLoading(true);
 
+		let succeeded = false;
 		// Retry once after a short delay — handles the race where a session was
 		// just destroyed but the server hasn't freed the slot yet.
 		for (let attempt = 0; attempt < 2; attempt++) {
 			try {
-				const res = await apiFetch("/api/console/resume", {
+				const res = await apiFetch("/api/console/continue", {
 					method: "POST",
-					body: JSON.stringify({ conversationId: convId, cwd }),
+					body: JSON.stringify({ cwd }),
 				});
 				const data = await res.json();
 				if (data.sessionId) {
@@ -522,16 +523,18 @@ export function ClaudeSection({
 						cwd: data.cwd,
 						name: data.name || cwd.split("/").pop() || "session",
 						createdAt: Date.now(),
-						conversationId: convId,
 					});
 					setActiveSessionId(data.sessionId);
 					mountTerminalForSession(data.sessionId, data.cwd || cwd, data.name);
-					break; // success
+					succeeded = true;
+					break;
 				}
-				if (data.error && attempt === 0) {
-					// First attempt failed (likely MAX_SESSIONS race) — wait and retry
-					await new Promise((r) => setTimeout(r, 500));
-					continue;
+				if (data.error) {
+					if (attempt === 0) {
+						await new Promise((r) => setTimeout(r, 500));
+						continue;
+					}
+					showToast(data.error, "error");
 				}
 			} catch {
 				if (attempt === 0) {
@@ -539,6 +542,10 @@ export function ClaudeSection({
 					continue;
 				}
 			}
+		}
+
+		if (!succeeded) {
+			showToast("Failed to continue session", "error");
 		}
 
 		setNewTabLoading(false);
@@ -824,35 +831,31 @@ export function ClaudeSection({
 											</div>
 										</>
 									)}
-									{recentConvos.length > 0 && !newTabLoading && (
+									{recentProjects.length > 0 && !newTabLoading && (
 										<div class="claude-recent-convos">
-											<div class="claude-recent-title">
-												Recent conversations
-											</div>
-											{recentConvos.map((c) => {
-												// Check if this conversation is already open by matching conversationId
+											<div class="claude-recent-title">Recent projects</div>
+											{recentProjects.map((f) => {
 												const openSession = sessionList.find(
-													(s) => s.conversationId === c.id,
+													(s) => s.cwd === f.cwd,
 												);
 												return (
 													<button
-														key={c.id}
+														key={f.cwd}
 														class={`claude-recent-item${openSession ? " open" : ""}`}
 														onClick={() => {
 															if (openSession) {
-																// Switch to the existing tab
 																switchToSession(openSession.id);
 															} else {
-																resumeConversation(c.id, c.cwd);
+																void continueInFolder(f.cwd);
 															}
 														}}
 													>
 														<span class="claude-recent-text">
 															<span class="claude-recent-project">
-																{c.cwd.split("/").pop() || "workspace"}
+																{f.name}
 															</span>
 															<span class="claude-recent-date">
-																{new Date(c.mtime).toLocaleString(undefined, {
+																{new Date(f.mtime).toLocaleString(undefined, {
 																	month: "short",
 																	day: "numeric",
 																	hour: "2-digit",
@@ -861,6 +864,9 @@ export function ClaudeSection({
 															</span>
 														</span>
 														<span class="claude-recent-meta">
+															<span class="claude-recent-count">
+																{f.conversationCount}
+															</span>
 															{openSession && (
 																<span class="claude-recent-open-badge">
 																	OPEN

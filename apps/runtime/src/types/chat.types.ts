@@ -17,8 +17,6 @@ export interface ChatConversation {
 	createdAt: string;
 	updatedAt: string;
 	messages: ChatMessage[];
-	flowExecutionId?: string;
-	flowStatus?: string;
 }
 
 export interface ConversationSummary {

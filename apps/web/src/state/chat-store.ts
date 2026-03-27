@@ -2,26 +2,13 @@ import { signal } from "@preact/signals";
 
 export interface ChatMessage {
 	id: string;
-	role: "user" | "assistant" | "system" | "flow";
+	role: "user" | "assistant";
 	content: string;
 	timestamp: number;
 	chatId?: string; // links to streaming response
 	streaming?: boolean;
 	streamStartedAt?: number; // when streaming began (for elapsed timer)
 	durationMs?: number; // total response time (set on complete)
-	// Flow-related fields
-	flowType?:
-		| "flow-start"
-		| "agent-active"
-		| "agent-complete"
-		| "flow-complete"
-		| "flow-failed"
-		| "flow-cancelled";
-	flowAgentId?: string;
-	flowAgentName?: string;
-	flowExecutionId?: string;
-	flowProgress?: { current: number; total: number };
-	collapsed?: boolean;
 }
 
 export interface ChatConversation {

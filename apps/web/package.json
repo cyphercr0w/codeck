@@ -11,7 +11,6 @@
     "@preact/signals": "^1.2.0",
     "@xterm/addon-fit": "^0.10.0",
     "@xterm/xterm": "^5.5.0",
-    "@xyflow/react": "^12.10.1",
     "dompurify": "^3.3.1",
     "marked": "^17.0.5",
     "preact": "^10.19.0"

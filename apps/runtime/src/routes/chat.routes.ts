@@ -80,16 +80,17 @@ router.post("/message", async (req, res) => {
 	});
 });
 
-// POST /api/chat/cancel — Cancel an active flow execution
+// POST /api/chat/cancel — Cancel active chat stream or team execution
 router.post("/cancel", (req, res) => {
-	const { executionId } = req.body;
+	const { chatId, executionId } = req.body;
 
-	if (!executionId || typeof executionId !== "string") {
-		res.status(400).json({ error: "executionId (string) is required" });
-		return;
+	// Cancel team execution if provided
+	if (executionId && typeof executionId === "string") {
+		stopTeam(executionId);
 	}
 
-	stopTeam(executionId);
+	// chatId is accepted but chat streaming cancellation is handled
+	// client-side via AbortController — this is a no-op acknowledgment.
 	res.json({ success: true });
 });
 

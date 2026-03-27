@@ -451,16 +451,6 @@ function handleConsoleMessage(
 
 	if (msg.type === "console:attach") {
 		const session = getSession(msg.sessionId);
-		const attachLog = `[WS] console:attach sessionId=${msg.sessionId} found=${!!session} type=${session?.type || "none"}`;
-		console.log(attachLog);
-		// File-based debug log (container stdout is hard to read)
-		import("fs").then((fs) =>
-			fs.promises
-				.writeFile("/workspace/.codeck/peers/debug.log", attachLog + "\n", {
-					flag: "a",
-				})
-				.catch(() => {}),
-		);
 		if (!session) {
 			ws.send(
 				JSON.stringify({

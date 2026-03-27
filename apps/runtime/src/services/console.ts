@@ -858,6 +858,9 @@ function saveSessionStateNow(
 ): SessionsState {
 	const saved: SavedSession[] = [];
 	for (const [, session] of sessions) {
+		// Skip peer sessions — they are ephemeral flow agents, not user sessions.
+		// Including them causes ClaudeSection to mount them as normal terminal tabs.
+		if (session.type === "peer") continue;
 		saved.push({
 			id: session.id,
 			type: session.type,

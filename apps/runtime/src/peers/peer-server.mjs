@@ -82,8 +82,8 @@ async function brokerPost(path, body, opts) {
 		throw new Error(`Broker ${path} returned ${res.status}: ${text}`);
 	}
 	const contentType = res.headers.get("content-type") || "";
-	if (!contentType.includes("application/json")) {
-		throw new Error(`Broker ${path} returned non-JSON content-type: ${contentType}`);
+	if (contentType && !contentType.includes("application/json")) {
+		log(`Warning: Broker ${path} returned content-type "${contentType}" — attempting JSON parse anyway`);
 	}
 	try {
 		return await res.json();
@@ -260,8 +260,12 @@ mcp.setRequestHandler(CallToolRequestSchema, async (req) => {
 				throw new Error(`Unknown tool: ${name}`);
 		}
 	} catch (err) {
+		const rawMsg = err instanceof Error ? err.message : String(err);
+		// Strip internal URLs from error messages to avoid leaking broker address
+		const safeMsg = rawMsg.replace(/https?:\/\/[^\s]+/g, "[internal-url]");
+		log(`Tool ${name} error: ${rawMsg}`);
 		return {
-			content: [{ type: "text", text: `Error: ${err instanceof Error ? err.message : err}` }],
+			content: [{ type: "text", text: `Error: ${safeMsg}` }],
 			isError: true,
 		};
 	}
@@ -281,17 +285,22 @@ async function pollAndPush() {
 		if (messages.length === 0) return;
 
 		for (const msg of messages) {
+			// Validate message shape — broker may return malformed entries
+			if (!msg || typeof msg !== "object") {
+				log(`Skipping invalid message (not an object): ${typeof msg}`);
+				continue;
+			}
 			try {
 				// Use server.notification() — the proper channel push method.
 				// This sends a notifications/claude/channel event that Claude acts on.
 				await mcp.notification({
 					method: "notifications/claude/channel",
 					params: {
-						content: msg.payload || "",
+						content: typeof msg.payload === "string" ? msg.payload : String(msg.payload ?? ""),
 						meta: {
-							from_id: msg.from || "unknown",
-							message_type: msg.type,
-							execution_id: msg.executionId,
+							from_id: typeof msg.from === "string" ? msg.from : "unknown",
+							message_type: typeof msg.type === "string" ? msg.type : "message",
+							execution_id: typeof msg.executionId === "string" ? msg.executionId : EXECUTION_ID,
 						},
 					},
 				});
@@ -327,7 +336,9 @@ async function register() {
 				pid: process.pid,
 				sessionId: SESSION_ID,
 			});
-			if (!result.peerId) throw new Error("No peerId in response");
+			if (!result.peerId || typeof result.peerId !== "string") {
+				throw new Error(`Invalid peerId in response: ${typeof result.peerId}`);
+			}
 			myPeerId = result.peerId;
 			log(`Registered with broker as ${myPeerId} (pid ${process.pid})`);
 			return;
@@ -380,9 +391,15 @@ function shutdown() {
 
 process.on("SIGINT", shutdown);
 process.on("SIGTERM", shutdown);
+let unhandledRejectionCount = 0;
+const MAX_UNHANDLED_REJECTIONS = 3;
 process.on("unhandledRejection", (err) => {
-	log(`Unhandled rejection: ${err instanceof Error ? err.message : err}`);
-	shutdown();
+	unhandledRejectionCount++;
+	log(`Unhandled rejection (${unhandledRejectionCount}/${MAX_UNHANDLED_REJECTIONS}): ${err instanceof Error ? err.message : err}`);
+	if (unhandledRejectionCount >= MAX_UNHANDLED_REJECTIONS) {
+		log("Too many unhandled rejections — shutting down");
+		shutdown();
+	}
 });
 
 // ── Start ──

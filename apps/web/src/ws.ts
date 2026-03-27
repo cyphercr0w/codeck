@@ -357,7 +357,8 @@ function openWs(wsUrl: string, protocols?: string[]): void {
 					(s: any) =>
 						typeof s.id === "string" &&
 						typeof s.cwd === "string" &&
-						typeof s.name === "string",
+						typeof s.name === "string" &&
+						s.type !== "peer", // Peer sessions are managed by PeerExecutionViewer, not ClaudeSection
 				);
 				// Don't auto-mount — let user choose Resume or Discard
 				if (restored.length > 0) {

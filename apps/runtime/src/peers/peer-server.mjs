@@ -35,6 +35,10 @@ const SESSION_ID = process.env.PEER_SESSION_ID || "";
 const ORCH_PEER_ID = `orch-${EXECUTION_ID}`;
 const POLL_INTERVAL = 1000;
 const HEARTBEAT_INTERVAL = 15000;
+const SHUTDOWN_TIMEOUT = 3000;
+const BROKER_TIMEOUT = 10000;
+const POLL_TIMEOUT = 5000;
+const MAX_REGISTRATION_RETRIES = 10;
 
 /** @type {string | null} */
 let myPeerId = null;
@@ -53,7 +57,7 @@ if (!process.env.PEER_EXECUTION_ID || !process.env.PEER_AGENT_ID) {
 
 /** @param {string} path @param {Record<string, unknown>} body @param {{ timeoutMs?: number }} [opts] */
 async function brokerPost(path, body, opts) {
-	const timeoutMs = opts?.timeoutMs ?? 10000;
+	const timeoutMs = opts?.timeoutMs ?? BROKER_TIMEOUT;
 	const controller = new AbortController();
 	const timer = setTimeout(() => controller.abort(), timeoutMs);
 	let res;
@@ -174,7 +178,7 @@ mcp.setRequestHandler(ListToolsRequestSchema, async () => ({ tools }));
 
 // Tool execution
 mcp.setRequestHandler(CallToolRequestSchema, async (req) => {
-	const { name, arguments: args } = req.params;
+	const { name, arguments: args = {} } = req.params;
 	try {
 		if (!myPeerId && name !== "list_peers") {
 			return { content: [{ type: "text", text: "Error: Not registered with broker — peer messaging unavailable." }], isError: true };
@@ -266,10 +270,10 @@ mcp.setRequestHandler(CallToolRequestSchema, async (req) => {
 
 let polling = false;
 async function pollAndPush() {
-	if (!myPeerId || polling) return;
+	if (!myPeerId || polling || shuttingDown) return;
 	polling = true;
 	try {
-		const result = await brokerPost("/poll-messages", { peerId: myPeerId }, { timeoutMs: 5000 });
+		const result = await brokerPost("/poll-messages", { peerId: myPeerId }, { timeoutMs: POLL_TIMEOUT });
 		const messages = Array.isArray(result?.messages) ? result.messages : [];
 		if (messages.length === 0) return;
 
@@ -305,8 +309,7 @@ async function pollAndPush() {
 // ── Lifecycle ──
 
 async function register() {
-	const MAX_RETRIES = 10;
-	for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+	for (let attempt = 1; attempt <= MAX_REGISTRATION_RETRIES; attempt++) {
 		try {
 			const result = await brokerPost("/register", {
 				agentId: AGENT_ID,
@@ -321,13 +324,15 @@ async function register() {
 			log(`Registered with broker as ${myPeerId} (pid ${process.pid})`);
 			return;
 		} catch (err) {
-			log(`Registration attempt ${attempt}/${MAX_RETRIES} failed: ${err instanceof Error ? err.message : err}`);
-			if (attempt === MAX_RETRIES) {
+			log(`Registration attempt ${attempt}/${MAX_REGISTRATION_RETRIES} failed: ${err instanceof Error ? err.message : err}`);
+			if (attempt === MAX_REGISTRATION_RETRIES) {
 				log("Failed to register with broker after all retries — triggering shutdown");
 				shutdown();
 				return;
 			}
-			await new Promise((r) => setTimeout(r, 2000));
+			const backoff = Math.min(2000 * Math.pow(1.5, attempt - 1), 15000);
+			const jitter = Math.random() * 500;
+			await new Promise((r) => setTimeout(r, backoff + jitter));
 		}
 	}
 }
@@ -354,11 +359,11 @@ function shutdown() {
 	shuttingDown = true;
 	for (const id of intervals) clearInterval(id);
 	intervals.length = 0;
-	// Force exit after 3s if unregister hangs (broker may be unreachable)
+	// Force exit if unregister hangs (broker may be unreachable)
 	const forceTimer = setTimeout(() => {
 		log("Shutdown timeout — forcing exit");
 		process.exit(1);
-	}, 3000);
+	}, SHUTDOWN_TIMEOUT);
 	forceTimer.unref();
 	unregister()
 		.then(() => mcp.close().catch(() => {}))

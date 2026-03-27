@@ -93,6 +93,23 @@ const PeerExecutionViewer: FunctionalComponent<Props> = ({
 	const msgs = peerMessageLog.value;
 	void flowStateVersion.value;
 
+	// Clean stale terminals from previous flows on mount
+	useEffect(() => {
+		const container = termContainerRef.current;
+		if (!container) return;
+		container
+			.querySelectorAll(".peer-term-instance")
+			.forEach((c) => c.remove());
+		for (const sid of createdTerms.current) {
+			try {
+				destroyTerminal(sid);
+			} catch {
+				/* */
+			}
+		}
+		createdTerms.current.clear();
+	}, [executionId]);
+
 	// Elapsed timer
 	useEffect(() => {
 		if (!flow || flow.status !== "running") return;

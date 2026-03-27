@@ -138,6 +138,63 @@
 	background: #484f58;
 }
 
+/* ── Split layout: canvas + terminal ── */
+
+.team-content {
+	flex: 1;
+	display: flex;
+	overflow: hidden;
+}
+
+.team-canvas-area {
+	flex: 1;
+	position: relative;
+	overflow: hidden;
+	transition: flex 0.2s ease;
+}
+
+.team-canvas-area.split {
+	flex: 0 0 50%;
+	border-right: 1px solid #1e2430;
+}
+
+.team-terminal-split {
+	flex: 0 0 50%;
+	display: flex;
+	flex-direction: column;
+	overflow: hidden;
+}
+
+.team-terminal-header {
+	display: flex;
+	align-items: center;
+	padding: 6px 12px;
+	background: #11151c;
+	border-bottom: 1px solid #1e2430;
+	flex-shrink: 0;
+}
+
+.team-terminal-agent-name {
+	font-size: 12px;
+	font-weight: 600;
+	color: #3d5afe;
+}
+
+.team-terminal-close {
+	margin-left: auto;
+	background: none;
+	border: none;
+	color: #6b7280;
+	font-size: 16px;
+	cursor: pointer;
+	padding: 0 4px;
+	line-height: 1;
+}
+
+.team-terminal-close:hover {
+	color: #e1e4e8;
+}
+
 .team-terminal-area {
 	flex: 1;
 	position: relative;
@@ -147,6 +204,22 @@
 .team-term-instance {
 	position: absolute;
 	inset: 0;
+}
+
+.team-back-btn {
+	background: none;
+	border: 1px solid #30363d;
+	color: #8b949e;
+	padding: 3px 10px;
+	border-radius: 4px;
+	cursor: pointer;
+	font-size: 11px;
+	font-family: inherit;
+}
+
+.team-back-btn:hover {
+	color: #e1e4e8;
+	border-color: #484f58;
 }
 
 .team-empty {

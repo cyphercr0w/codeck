@@ -30,6 +30,8 @@ import {
 } from "../state/store";
 import { PreviewPanel } from "./PreviewPanel";
 import { MobilePreviewSheet } from "./MobilePreviewSheet";
+import { activeTeam, teamPreviewMode } from "../state/team-store";
+import TeamExecutionViewer from "./teams/TeamExecutionViewer";
 import { apiFetch } from "../api";
 import {
 	createTerminal,
@@ -960,6 +962,73 @@ export function ClaudeSection({
 				</div>
 			)}
 			{mobile && <MobilePreviewSheet />}
+			{/* Team preview panel — shown when a team is active */}
+			{activeTeam.value && teamPreviewMode.value !== "hidden" && !mobile && (
+				<div
+					class={`preview-side${teamPreviewMode.value === "full" ? " full" : ""}`}
+					style={{ width: teamPreviewMode.value === "full" ? "100%" : "45%" }}
+				>
+					<div class="preview-mode-bar">
+						<span style="font-size:11px;color:#3d5afe;font-weight:600;padding:0 8px;">
+							TEAM: {activeTeam.value.templateName}
+						</span>
+						<button
+							class={`preview-mode-btn${teamPreviewMode.value === "split" ? " active" : ""}`}
+							onClick={() => {
+								teamPreviewMode.value = "split";
+							}}
+							title="Split view"
+						>
+							<svg
+								width="14"
+								height="14"
+								viewBox="0 0 24 24"
+								fill="none"
+								stroke="currentColor"
+								stroke-width="1.5"
+								stroke-linecap="round"
+								stroke-linejoin="round"
+							>
+								<rect x="3" y="3" width="18" height="18" rx="2" />
+								<line x1="12" y1="3" x2="12" y2="21" />
+							</svg>
+						</button>
+						<button
+							class={`preview-mode-btn${teamPreviewMode.value === "full" ? " active" : ""}`}
+							onClick={() => {
+								teamPreviewMode.value = "full";
+							}}
+							title="Full preview"
+						>
+							<svg
+								width="14"
+								height="14"
+								viewBox="0 0 24 24"
+								fill="none"
+								stroke="currentColor"
+								stroke-width="1.5"
+								stroke-linecap="round"
+								stroke-linejoin="round"
+							>
+								<polyline points="15 3 21 3 21 9" />
+								<polyline points="9 21 3 21 3 15" />
+								<line x1="21" y1="3" x2="14" y2="10" />
+								<line x1="3" y1="21" x2="10" y2="14" />
+							</svg>
+						</button>
+						<button
+							class="preview-mode-btn"
+							onClick={() => {
+								teamPreviewMode.value = "hidden";
+							}}
+							title="Close team preview"
+						>
+							<IconX size={13} />
+						</button>
+					</div>
+					<TeamExecutionViewer />
+				</div>
+			)}
 		</div>
 	);
 }

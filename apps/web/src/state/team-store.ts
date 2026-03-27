@@ -31,6 +31,8 @@ export interface ActiveTeam {
 
 export const activeTeam = signal<ActiveTeam | null>(null);
 export const selectedAgentSessionId = signal<string | null>(null);
+/** Controls team preview panel visibility in terminal section */
+export const teamPreviewMode = signal<"hidden" | "split" | "full">("hidden");
 
 // ── Event Handlers (called from ws.ts) ──
 
@@ -53,8 +55,9 @@ export function onTeamLaunched(data: {
 		status: "running",
 		startedAt: Date.now(),
 	};
-	// Select leader by default
 	selectedAgentSessionId.value = data.leaderSessionId;
+	// Auto-show preview panel in terminal section
+	teamPreviewMode.value = "split";
 }
 
 export function onTeamAgentDetected(data: {
@@ -122,4 +125,5 @@ export function selectTeamAgent(sessionId: string): void {
 export function clearActiveTeam(): void {
 	activeTeam.value = null;
 	selectedAgentSessionId.value = null;
+	teamPreviewMode.value = "hidden";
 }

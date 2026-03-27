@@ -1,15 +1,15 @@
 /**
- * TeamExecutionViewer — Agent tabs + terminal viewer for Agent Teams.
+ * TeamExecutionViewer — Canvas visualization + expandable agent terminal.
  *
- * Shows a tab bar with each team agent (leader + teammates).
- * Each tab renders an xterm.js terminal connected to the agent's tmux pane
- * via the standard console:attach/output WebSocket pipeline.
+ * Default: full-canvas view showing all agents as nodes with status badges.
+ * Click agent: expands to 50% canvas (left) + 50% terminal (right).
+ * Back/Escape: collapses terminal, returns to canvas-only.
  *
- * Terminal mounting uses imperative DOM (same pattern as ClaudeSection).
+ * Only ONE terminal is ever rendered at a time to keep rendering simple.
  */
 
 import { type FunctionalComponent } from "preact";
-import { useEffect, useRef } from "preact/hooks";
+import { useEffect, useRef, useState, useCallback } from "preact/hooks";
 import {
 	activeTeam,
 	selectedAgentSessionId,
@@ -21,89 +21,104 @@ import {
 	destroyTerminal,
 	ensureTerminalVisible,
 	fitTerminal,
-	repaintTerminal,
 	focusTerminal,
 	hasTerminal,
 } from "../../terminal";
 import { attachSession } from "../../ws";
 import { stopTeamExecution } from "../../services/teams-service";
+import AgentCanvas from "./AgentCanvas";
 import "../../styles/team-viewer.css";
 
 const TeamExecutionViewer: FunctionalComponent = () => {
 	const team = activeTeam.value;
 	const selectedSession = selectedAgentSessionId.value;
+	const [terminalOpen, setTerminalOpen] = useState(false);
+	const [terminalSessionId, setTerminalSessionId] = useState<string | null>(
+		null,
+	);
 	const termContainerRef = useRef<HTMLDivElement>(null);
-	const createdTerms = useRef(new Set<string>());
-	const fitCleanup = useRef<(() => void) | null>(null);
+	const activeTermRef = useRef<string | null>(null);
 
-	// ── Terminal lifecycle ──
+	// ── Open terminal for an agent ──
+	const openTerminal = useCallback((sessionId: string) => {
+		if (activeTermRef.current && activeTermRef.current !== sessionId) {
+			destroyTerminal(activeTermRef.current);
+		}
+		setTerminalSessionId(sessionId);
+		setTerminalOpen(true);
+		selectTeamAgent(sessionId);
+	}, []);
+
+	// ── Close terminal ──
+	const closeTerminal = useCallback(() => {
+		if (activeTermRef.current) {
+			destroyTerminal(activeTermRef.current);
+			activeTermRef.current = null;
+		}
+		setTerminalOpen(false);
+		setTerminalSessionId(null);
+	}, []);
+
+	// ── Mount/unmount terminal when sessionId changes ──
 	useEffect(() => {
 		const container = termContainerRef.current;
-		if (!container || !selectedSession) return;
+		if (!container || !terminalOpen || !terminalSessionId) return;
 
-		const termId = `team-term-${selectedSession}`;
+		// Remove previous children safely (no innerHTML)
+		while (container.firstChild) container.removeChild(container.firstChild);
 
-		// Hide all terminal instances
-		container.querySelectorAll(".team-term-instance").forEach((c) => {
-			(c as HTMLElement).style.display = "none";
-		});
-
-		// Show existing or create new
-		const existing = document.getElementById(termId);
-		if (existing) {
-			existing.style.display = "block";
-			if (hasTerminal(selectedSession)) {
-				fitCleanup.current?.();
-				const raf = requestAnimationFrame(() => {
-					fitTerminal(selectedSession);
-					repaintTerminal(selectedSession);
-					focusTerminal(selectedSession);
-				});
-				fitCleanup.current = () => cancelAnimationFrame(raf);
-			}
-			return;
-		}
-
-		// Create terminal element — imperative DOM
 		const el = document.createElement("div");
-		el.id = termId;
 		el.className = "team-term-instance";
-		el.style.cssText = "position:absolute;inset:0;display:block;";
+		el.style.cssText = "position:absolute;inset:0;";
 		container.appendChild(el);
 
-		if (!createdTerms.current.has(selectedSession)) {
-			createdTerms.current.add(selectedSession);
-			createTerminal(selectedSession, el);
-			attachSession(selectedSession);
-			ensureTerminalVisible(selectedSession);
-			requestAnimationFrame(() => {
-				fitTerminal(selectedSession);
-				focusTerminal(selectedSession);
-			});
-		}
-	}, [selectedSession]);
+		activeTermRef.current = terminalSessionId;
+		createTerminal(terminalSessionId, el);
+		attachSession(terminalSessionId);
+		ensureTerminalVisible(terminalSessionId);
 
-	// ── Resize observer ──
+		requestAnimationFrame(() => {
+			fitTerminal(terminalSessionId);
+			focusTerminal(terminalSessionId);
+		});
+
+		return () => {
+			if (activeTermRef.current === terminalSessionId) {
+				destroyTerminal(terminalSessionId);
+				activeTermRef.current = null;
+			}
+		};
+	}, [terminalSessionId, terminalOpen]);
+
+	// ── Resize terminal on container resize ──
 	useEffect(() => {
 		const container = termContainerRef.current;
-		if (!container || !selectedSession) return;
+		if (!container || !terminalOpen || !terminalSessionId) return;
 
 		const observer = new ResizeObserver(() => {
-			if (selectedSession && hasTerminal(selectedSession)) {
-				fitTerminal(selectedSession);
-			}
+			if (hasTerminal(terminalSessionId)) fitTerminal(terminalSessionId);
 		});
 		observer.observe(container);
 		return () => observer.disconnect();
-	}, [selectedSession]);
+	}, [terminalSessionId, terminalOpen]);
+
+	// ── Keyboard: Escape closes terminal ──
+	useEffect(() => {
+		if (!terminalOpen) return;
+		const handler = (e: KeyboardEvent) => {
+			if (e.key === "Escape") closeTerminal();
+		};
+		window.addEventListener("keydown", handler);
+		return () => window.removeEventListener("keydown", handler);
+	}, [terminalOpen, closeTerminal]);
 
 	// ── Cleanup on unmount ──
 	useEffect(() => {
 		return () => {
-			for (const sid of createdTerms.current) {
-				destroyTerminal(sid);
+			if (activeTermRef.current) {
+				destroyTerminal(activeTermRef.current);
+				activeTermRef.current = null;
 			}
-			createdTerms.current.clear();
 		};
 	}, []);
 
@@ -111,44 +126,34 @@ const TeamExecutionViewer: FunctionalComponent = () => {
 		return <div class="team-empty">No active team</div>;
 	}
 
-	const allSessions = [
-		{
-			id: "leader",
-			name: "Leader",
-			role: "Team Lead",
-			sessionId: team.leaderSessionId,
-			status:
-				team.status === "running" || team.status === "launching"
-					? ("running" as const)
-					: ("idle" as const),
-			isLeader: true,
-		},
-		...team.agents
-			.filter((a) => a.sessionId)
-			.map((a) => ({
-				id: a.id,
-				name: a.name,
-				role: a.role,
-				sessionId: a.sessionId,
-				status: a.status,
-				isLeader: false,
-			})),
-	];
-
 	const isRunning = team.status === "running" || team.status === "launching";
+	const agentCount = team.agents.filter((a) => a.sessionId).length + 1;
+
+	const termAgentName = terminalSessionId
+		? terminalSessionId === team.leaderSessionId
+			? "Leader"
+			: (team.agents.find((a) => a.sessionId === terminalSessionId)?.name ??
+				"Agent")
+		: "";
 
 	return (
 		<div class="team-viewer">
+			{/* Header */}
 			<div class="team-header">
 				<span class="team-header-title">{team.templateName}</span>
 				<span class="team-header-count">
-					{allSessions.length} agent{allSessions.length !== 1 ? "s" : ""}
+					{agentCount} agent{agentCount !== 1 ? "s" : ""}
 				</span>
 				{isRunning && (
 					<span class="team-header-status">
 						<span class="team-dot-pulse" />
 						Running
 					</span>
+				)}
+				{terminalOpen && (
+					<button class="team-back-btn" onClick={closeTerminal}>
+						&#8592; Canvas
+					</button>
 				)}
 				{isRunning ? (
 					<button
@@ -161,7 +166,7 @@ const TeamExecutionViewer: FunctionalComponent = () => {
 							}
 						}}
 					>
-						Stop Team
+						Stop
 					</button>
 				) : (
 					<button class="team-close-btn" onClick={() => clearActiveTeam()}>
@@ -170,27 +175,26 @@ const TeamExecutionViewer: FunctionalComponent = () => {
 				)}
 			</div>
 
-			<div class="team-tabs">
-				{allSessions.map((agent) => {
-					const isActive = agent.sessionId === selectedSession;
-					return (
-						<div
-							key={agent.id}
-							class={`team-tab${isActive ? " active" : ""}`}
-							onClick={() =>
-								agent.sessionId && selectTeamAgent(agent.sessionId)
-							}
-						>
-							<span
-								class={`team-tab-dot${agent.isLeader ? " leader" : ""}${agent.status === "pending" ? " pending" : ""}`}
-							/>
-							{agent.name}
-						</div>
-					);
-				})}
-			</div>
+			{/* Content area */}
+			<div class="team-content">
+				{/* Canvas — always rendered, shrinks when terminal open */}
+				<div class={`team-canvas-area${terminalOpen ? " split" : ""}`}>
+					<AgentCanvas onAgentClick={openTerminal} />
+				</div>
 
-			<div ref={termContainerRef} class="team-terminal-area" />
+				{/* Terminal — only when an agent is selected */}
+				{terminalOpen && (
+					<div class="team-terminal-split">
+						<div class="team-terminal-header">
+							<span class="team-terminal-agent-name">{termAgentName}</span>
+							<button class="team-terminal-close" onClick={closeTerminal}>
+								&#215;
+							</button>
+						</div>
+						<div ref={termContainerRef} class="team-terminal-area" />
+					</div>
+				)}
+			</div>
 		</div>
 	);
 };

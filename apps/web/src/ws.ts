@@ -608,6 +608,11 @@ function openWs(wsUrl: string, protocols?: string[]): void {
 					typeof d.sessionId === "string"
 				) {
 					registerPeerSession(d.executionId, d.agentId, d.sessionId);
+					// Eagerly attach the session so output starts flowing immediately.
+					// The terminal DOM element may not exist yet, but attachSession
+					// ensures console:output data is buffered by writeToTerminal once
+					// the xterm instance is created later.
+					attachSession(d.sessionId);
 				}
 			} else if (msg.type === "flow:peer:message" && msg.data) {
 				const d = msg.data as Record<string, unknown>;

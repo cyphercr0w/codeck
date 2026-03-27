@@ -675,6 +675,14 @@ export function registerPeerSession(
 	if (!flow || flow.executionId !== executionId) return;
 	// Ignore orchestrator entries (empty sessionId) and non-agent peers
 	if (!sessionId || agentId.startsWith("orch-")) return;
+	// Always use the latest session ID — the correct one arrives from PeerRunner
+	// after createConsoleSession succeeds. Log for debugging.
+	const existing = flow.peerSessions?.[agentId];
+	if (existing && existing !== sessionId) {
+		console.warn(
+			`[PeerSession] Replacing ${agentId}: ${existing.slice(0, 8)} -> ${sessionId.slice(0, 8)}`,
+		);
+	}
 	activeFlowExecution.value = {
 		...flow,
 		peerSessions: { ...(flow.peerSessions || {}), [agentId]: sessionId },

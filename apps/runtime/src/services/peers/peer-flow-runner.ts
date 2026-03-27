@@ -207,9 +207,12 @@ async function createPeerSession(
 
 	// Verify the session actually exists in the console service Map
 	const verified = getSession(session.id);
-	console.log(
-		`[PeerRunner] Created session ${session.id} for agent ${agent.id} (verified=${!!verified})`,
-	);
+	const logMsg = `[PeerRunner] Created session ${session.id} for agent ${agent.id} (verified=${!!verified})`;
+	console.log(logMsg);
+	// Write to file for debugging (console.log goes to container stdout which is hard to read)
+	writeFile(join(WORKSPACE, ".codeck", "peers", "debug.log"), logMsg + "\n", {
+		flag: "a",
+	}).catch(() => {});
 
 	// Notify frontend so it can attach a terminal to this peer agent
 	broadcast({

@@ -50,16 +50,11 @@ export function registerPeer(
 		`[Broker] Registered peer ${peerId} (agent=${info.agentId}, exec=${info.executionId}, pid=${info.pid})`,
 	);
 
-	// Broadcast to frontend
-	broadcast({
-		type: "flow:peer:session_created",
-		data: {
-			executionId: info.executionId,
-			agentId: info.agentId,
-			sessionId: info.sessionId,
-			peerId,
-		},
-	});
+	// NOTE: Do NOT broadcast flow:peer:session_created here.
+	// peer-flow-runner.ts already broadcasts it with the correct console session ID.
+	// The broker's info.sessionId is PEER_SESSION_ID (MCP env var), which is different
+	// from the console session ID used for terminal attachment. Broadcasting here
+	// would overwrite the correct ID with the wrong one.
 
 	return peer;
 }

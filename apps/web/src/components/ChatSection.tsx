@@ -13,9 +13,6 @@ import {
 	renameConversation,
 	deleteConversation,
 	chatModel,
-	chatUseTools,
-	activeFlowExecution,
-	archivedFlows,
 } from "../state/chat-store";
 import { showToast } from "../state/store";
 import { apiFetch } from "../api";
@@ -359,13 +356,10 @@ export function ChatSection() {
 					message: fullMessage,
 					conversationId: activeConversationId.value,
 					model: chatModel.value,
-					useTools: chatUseTools.value,
 				}),
 			});
 			const data = await res.json();
-			// Only create an assistant streaming bubble for regular chat/CLI responses,
-			// not for flow executions (flows use FlowProgressMessage instead)
-			if (data.chatId && data.status !== "flow-started") {
+			if (data.chatId) {
 				addAssistantMessage(data.chatId);
 			}
 			// Set the active conversation ID so subsequent messages go to the same conversation
@@ -497,9 +491,6 @@ export function ChatSection() {
 								</svg>
 							</button>
 						</div>
-						<div class="chat-input-footer">
-							<ToolsToggle />
-						</div>
 					</div>
 				</div>
 			</div>
@@ -556,19 +547,6 @@ export function ChatSection() {
 				</div>
 				<div class="chat-messages" ref={messagesRef}>
 					{messages.map((m) => {
-						// Flow messages render the timeline component
-						if (m.role === "flow") {
-							return (
-								<div key={m.id} class="chat-msg chat-msg-flow">
-									<FlowProgressMessage executionId={m.flowExecutionId} />
-									{!m.streaming && m.durationMs != null && (
-										<div class="chat-msg-meta">
-											{formatDuration(m.durationMs)}
-										</div>
-									)}
-								</div>
-							);
-						}
 						return (
 							<div key={m.id} class={`chat-msg chat-msg-${m.role}`}>
 								{m.role === "assistant" && m.content ? (
@@ -676,7 +654,6 @@ export function ChatSection() {
 					</button>
 				</div>
 				<div class="chat-input-footer">
-					<ToolsToggle />
 					<ChatModelSelector />
 				</div>
 			</div>
@@ -713,111 +690,6 @@ function MarkdownContent({
 			{/* Content is sanitized via DOMPurify.sanitize() above */}
 			<div dangerouslySetInnerHTML={{ __html: html }} />
 			{streaming && content && <span class="chat-cursor">{"\u2588"}</span>}
-		</div>
-	);
-}
-
-// ── Flow Progress Timeline ──
-function FlowProgressMessage({ executionId }: { executionId?: string }) {
-	const flow =
-		activeFlowExecution.value?.executionId === executionId
-			? activeFlowExecution.value
-			: executionId
-				? archivedFlows.value[executionId]
-				: activeFlowExecution.value;
-	if (!flow) return null;
-
-	const isComplete =
-		flow.status === "completed" ||
-		flow.status === "failed" ||
-		flow.status === "cancelled";
-	const statusIcon = isComplete
-		? flow.status === "completed"
-			? "\u2713"
-			: "\u2717"
-		: "\u25B6";
-	const statusClass = isComplete
-		? flow.status === "completed"
-			? "flow-done"
-			: "flow-error"
-		: "flow-running";
-
-	return (
-		<div class={`flow-progress ${statusClass}`}>
-			<div class="flow-progress-header">
-				<span class="flow-progress-icon">{statusIcon}</span>
-				<span class="flow-progress-name">{flow.flowName}</span>
-				{!isComplete && <ElapsedTimer startedAt={flow.startedAt} />}
-				{isComplete && flow.startedAt && (
-					<span class="flow-progress-duration">
-						{formatDuration((flow.completedAt || Date.now()) - flow.startedAt)}
-					</span>
-				)}
-			</div>
-			<div class="flow-progress-steps">
-				{flow.agents.map((agent, i) => {
-					const isCurrentAgent = flow.currentAgentId === agent.id;
-					const hasOutput = !!flow.agentOutputs[agent.id];
-					const duration = flow.agentDurations[agent.id];
-					const isDone =
-						duration != null || (flow.currentAgentIndex > i && !isCurrentAgent);
-
-					let stepIcon = "\u25CB"; // empty circle
-					let stepClass = "flow-step-pending";
-					if (isDone) {
-						stepIcon = "\u2713";
-						stepClass = "flow-step-done";
-					} else if (isCurrentAgent) {
-						stepIcon = "\u25CF"; // filled circle
-						stepClass = "flow-step-active";
-					}
-
-					return (
-						<div key={agent.id} class={`flow-step ${stepClass}`}>
-							<div class="flow-step-header">
-								<span class="flow-step-icon">{stepIcon}</span>
-								<span class="flow-step-name">{agent.name}</span>
-								<span class="flow-step-role">{agent.role}</span>
-								{isCurrentAgent && !isDone && (
-									<span class="flow-step-spinner">
-										<span class="spinner-sm" />
-									</span>
-								)}
-								{duration != null && (
-									<span class="flow-step-duration">
-										{formatDuration(duration)}
-									</span>
-								)}
-							</div>
-							{isCurrentAgent && hasOutput && (
-								<div class="flow-step-output">
-									{(flow.agentOutputs[agent.id] || "").slice(-500)}
-									<span class="chat-cursor">{"\u2588"}</span>
-								</div>
-							)}
-							{isDone && hasOutput && !isCurrentAgent && (
-								<FlowStepCollapsible
-									output={flow.agentOutputs[agent.id] || ""}
-								/>
-							)}
-						</div>
-					);
-				})}
-			</div>
-		</div>
-	);
-}
-
-function FlowStepCollapsible({ output }: { output: string }) {
-	const [expanded, setExpanded] = useState(false);
-	const preview = output.slice(0, 150).replace(/\n/g, " ");
-	return (
-		<div class="flow-step-collapsible">
-			<button class="flow-step-toggle" onClick={() => setExpanded(!expanded)}>
-				{expanded ? "\u25BC" : "\u25B6"} {expanded ? "Hide" : "Show"} output
-			</button>
-			{!expanded && <div class="flow-step-preview">{preview}...</div>}
-			{expanded && <div class="flow-step-output">{output}</div>}
 		</div>
 	);
 }
@@ -901,51 +773,6 @@ function ChatModelSelector() {
 					))}
 				</div>
 			)}
-		</div>
-	);
-}
-
-// ── Helper: tools toggle ──
-function ToolsToggle() {
-	const active = chatUseTools.value;
-	return (
-		<div class="chat-mode-switch">
-			<button
-				class={`chat-mode-btn${!active ? " selected" : ""}`}
-				onClick={() => {
-					chatUseTools.value = false;
-				}}
-			>
-				<svg
-					width="12"
-					height="12"
-					viewBox="0 0 24 24"
-					fill="none"
-					stroke="currentColor"
-					stroke-width="2"
-				>
-					<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
-				</svg>
-				Chat
-			</button>
-			<button
-				class={`chat-mode-btn${active ? " selected" : ""}`}
-				onClick={() => {
-					chatUseTools.value = true;
-				}}
-			>
-				<svg
-					width="12"
-					height="12"
-					viewBox="0 0 24 24"
-					fill="none"
-					stroke="currentColor"
-					stroke-width="2"
-				>
-					<path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z" />
-				</svg>
-				Agent
-			</button>
 		</div>
 	);
 }

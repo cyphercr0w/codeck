@@ -84,7 +84,6 @@ import mcpRoutes from "../routes/mcp.routes.js";
 import hooksRoutes from "../routes/hooks.routes.js";
 import flowsRoutes from "../routes/flows.routes.js";
 import peersRoutes from "../routes/peers.routes.js";
-import changesRoutes from "../routes/changes.routes.js";
 import chatRoutes from "../routes/chat.routes.js";
 import {
 	initProactiveAgents,
@@ -491,7 +490,6 @@ export async function startWebServer(): Promise<void> {
 			"/flows",
 			"/chat",
 			"/peers",
-			"/changes",
 			"/preview/navigate-to",
 		];
 		if (localBypassPaths.some((p) => req.path.startsWith(p))) {
@@ -615,7 +613,6 @@ export async function startWebServer(): Promise<void> {
 	app.use("/api/hooks", hooksRoutes);
 	app.use("/api/flows", flowsRoutes);
 	app.use("/api/peers", peersRoutes);
-	app.use("/api/changes", changesRoutes);
 	app.use("/api/chat", chatRoutes);
 
 	// Account endpoint

@@ -11,32 +11,19 @@ import {
 } from "../services/conversation-storage.js";
 import type { ChatConversation, ChatMessage } from "../types/chat.types.js";
 import { handleApiDirectMode } from "../services/chat-api-handler.js";
-import {
-	handleAgentMode,
-	activeChatProcesses,
-	MAX_CHAT_PROCESSES,
-	cancelExecution,
-} from "../services/chat-agent-handler.js";
+import { cancelExecution } from "../services/flow-runner.js";
 
 const router = Router();
 
 // POST /api/chat/message — Send a message and get streaming response
 router.post("/message", async (req, res) => {
-	const { message, context, conversationId, model, useTools } = req.body;
+	const { message, context, conversationId, model } = req.body;
 	if (!message || typeof message !== "string") {
 		res.status(400).json({ error: "message (string) is required" });
 		return;
 	}
 	if (message.length > 50000) {
 		res.status(400).json({ error: "Message too long (max 50,000 chars)" });
-		return;
-	}
-
-	// Enforce concurrency limit on active chat processes
-	if (activeChatProcesses.size >= MAX_CHAT_PROCESSES) {
-		res
-			.status(429)
-			.json({ error: "Too many concurrent chat processes. Please wait." });
 		return;
 	}
 
@@ -48,9 +35,6 @@ router.post("/message", async (req, res) => {
 
 	// Validate model — must be a string
 	const safeModel = typeof model === "string" ? model : "";
-
-	// Validate useTools — strict boolean check (#14)
-	const agentMode = useTools === true;
 
 	const chatId = randomUUID();
 	const now = new Date().toISOString();
@@ -88,68 +72,24 @@ router.post("/message", async (req, res) => {
 	};
 	await writeConversation(conversation);
 
-	// Build prompt with conversation history for continuity.
-	// Use structured delimiters to prevent prompt injection via stored messages.
-	let prompt = "";
-	const prevMessages = conversation.messages.slice(-11, -1);
-	if (prevMessages.length > 0) {
-		prompt += "<conversation-history>\n";
-		for (const msg of prevMessages) {
-			const tag = msg.role === "user" ? "human" : "assistant";
-			prompt += `<${tag}>${msg.content}</${tag}>\n`;
-		}
-		prompt += "</conversation-history>\n\n";
-	}
-	if (safeContext) {
-		prompt += `<user-context>${safeContext}</user-context>\n\n`;
-	}
-	prompt += message;
-
-	if (!agentMode) {
-		handleApiDirectMode(res, {
-			chatId,
-			conversation,
-			model: safeModel,
-			context: safeContext,
-		});
-	} else {
-		handleAgentMode(res, {
-			chatId,
-			conversation,
-			prompt,
-			message,
-			model: safeModel,
-		});
-	}
+	handleApiDirectMode(res, {
+		chatId,
+		conversation,
+		model: safeModel,
+		context: safeContext,
+	});
 });
 
-// POST /api/chat/cancel — Cancel an active chat or flow execution
+// POST /api/chat/cancel — Cancel an active flow execution
 router.post("/cancel", (req, res) => {
-	const { chatId, executionId } = req.body;
+	const { executionId } = req.body;
 
-	// Cancel a flow execution
-	if (executionId && typeof executionId === "string") {
-		cancelExecution(executionId);
-		res.json({ success: true });
+	if (!executionId || typeof executionId !== "string") {
+		res.status(400).json({ error: "executionId (string) is required" });
 		return;
 	}
 
-	// Validate chatId type (#7)
-	if (!chatId || typeof chatId !== "string") {
-		res.status(400).json({ error: "chatId (string) is required" });
-		return;
-	}
-
-	const proc = activeChatProcesses.get(chatId);
-	if (!proc) {
-		res.status(404).json({ error: "Chat not found or already completed" });
-		return;
-	}
-	proc.kill("SIGTERM");
-	setTimeout(() => {
-		if (!proc.killed) proc.kill("SIGKILL");
-	}, 3000);
-	activeChatProcesses.delete(chatId);
+	cancelExecution(executionId);
 	res.json({ success: true });
 });
 

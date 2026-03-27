@@ -537,50 +537,6 @@ export function togglePreview(): void {
 	}
 }
 
-// ── File Changes tracking ──
-
-export interface FileDiffData {
-	path: string;
-	status: "added" | "modified" | "deleted";
-	additions: number;
-	deletions: number;
-	hunks: Array<{
-		oldStart: number;
-		oldLines: number;
-		newStart: number;
-		newLines: number;
-		lines: Array<{
-			type: "add" | "del" | "ctx";
-			content: string;
-			oldLineNo?: number;
-			newLineNo?: number;
-		}>;
-	}>;
-	timestamp: number;
-}
-
-export const sessionChanges = signal<FileDiffData[]>([]);
-export const changesOpen = signal(false);
-export const selectedChangePath = signal<string | null>(null);
-
-export function addFileChange(sessionId: string, diff: FileDiffData): void {
-	const activeId = activeSessionId.value;
-	if (sessionId !== activeId) return; // Only show changes for the active session
-	const current = [...sessionChanges.value];
-	const existing = current.findIndex((d) => d.path === diff.path);
-	if (existing >= 0) {
-		current[existing] = diff;
-	} else {
-		current.push(diff);
-	}
-	sessionChanges.value = current;
-}
-
-export function clearChanges(): void {
-	sessionChanges.value = [];
-	selectedChangePath.value = null;
-}
-
 const SUBAGENT_EXPIRE_MS = 10 * 60 * 1000; // 10 min auto-expire
 let subagentGcTimer: ReturnType<typeof setInterval> | null = null;
 

@@ -24,10 +24,6 @@ import {
 	mobilePreviewOpen,
 	isMobile,
 	showToast,
-	addFileChange,
-	clearChanges,
-	activeSessionId,
-	type FileDiffData,
 } from "./state/store";
 import {
 	appendToAssistant,
@@ -83,8 +79,6 @@ const KNOWN_MSG_TYPES = new Set([
 	"flow:peer:session_created",
 	"flow:peer:message",
 	"flow:peer:summary",
-	"changes:file",
-	"changes:window",
 ]);
 
 /** Runtime validation for incoming WebSocket messages */
@@ -592,17 +586,6 @@ function openWs(wsUrl: string, protocols?: string[]): void {
 							? s
 							: "completed";
 					completeFlowExecution(d.id, validStatus);
-				}
-			} else if (msg.type === "changes:file" && msg.data) {
-				const sessionId = msg.sessionId;
-				if (typeof sessionId === "string" && typeof msg.data === "object") {
-					addFileChange(sessionId, msg.data as FileDiffData);
-				}
-			} else if (msg.type === "changes:window") {
-				// New diff window — clear current changes only for the active session
-				const sid = msg.sessionId;
-				if (typeof sid === "string" && sid === activeSessionId.value) {
-					clearChanges();
 				}
 			} else if (msg.type === "flow:peer:session_created" && msg.data) {
 				const d = msg.data as Record<string, unknown>;

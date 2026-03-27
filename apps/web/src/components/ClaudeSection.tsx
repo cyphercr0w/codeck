@@ -27,7 +27,6 @@ import {
 	previewMode,
 	previewPort,
 	mobilePreviewOpen,
-	changesOpen,
 } from "../state/store";
 import { PreviewPanel } from "./PreviewPanel";
 import { MobilePreviewSheet } from "./MobilePreviewSheet";
@@ -68,7 +67,6 @@ import {
 import { MobileTerminalToolbar } from "./MobileTerminalToolbar";
 import { UploadOverlay } from "./UploadOverlay";
 import { SubagentPanel } from "./SubagentPanel";
-import { ChangesPanel, ChangesToggle } from "./ChangesPanel";
 
 const MAX_UPLOAD_SIZE = 10 * 1024 * 1024; // 10 MB
 
@@ -610,10 +608,8 @@ export function ClaudeSection({
 
 	const mobile = isMobile.value;
 	const pMode = previewMode.value;
-	const cOpen = changesOpen.value;
 	const showPreviewSplit =
 		!mobile && pMode !== "hidden" && pMode !== "full-terminal";
-	const showChangesPanel = !mobile && cOpen && pMode === "hidden";
 
 	return (
 		<div class="content-section terminal-preview-layout">
@@ -765,7 +761,6 @@ export function ClaudeSection({
 								<IconMonitor size={14} />
 							</button>
 						)}
-						{!mobile && <ChangesToggle />}
 					</div>
 					<div
 						class={`terminal-instances${dragOver ? " drag-over" : ""}`}
@@ -962,11 +957,6 @@ export function ClaudeSection({
 						</button>
 					</div>
 					<PreviewPanel />
-				</div>
-			)}
-			{showChangesPanel && (
-				<div class="preview-side" style={{ width: "45%" }}>
-					<ChangesPanel />
 				</div>
 			)}
 			{mobile && <MobilePreviewSheet />}

@@ -134,8 +134,9 @@ async function generateMcpConfig(
 const peerSessions = new Map<string, string>(); // "executionId:agentId" -> sessionId
 const autoConfirmTimers = new Map<string, ReturnType<typeof setTimeout>[]>(); // "executionId:agentId" -> timer ids
 
+// Use pipe separator — agent IDs may contain colons from user-authored flow definitions
 function sessionKey(executionId: string, agentId: string): string {
-	return `${executionId}:${agentId}`;
+	return `${executionId}|${agentId}`;
 }
 
 async function createPeerSession(
@@ -143,6 +144,11 @@ async function createPeerSession(
 	executionId: string,
 	cwd: string,
 ): Promise<string> {
+	// Abort early if flow was cancelled during parallel spawn
+	if (cancelledExecutions.has(executionId)) {
+		throw new Error(`Execution ${executionId} cancelled during spawn`);
+	}
+
 	const key = sessionKey(executionId, agent.id);
 
 	// Reuse existing session (loop revisit — agent keeps context)
@@ -234,8 +240,9 @@ async function createPeerSession(
 }
 
 function destroyPeerSessions(executionId: string): void {
+	const prefix = `${executionId}|`;
 	for (const [key, sessionId] of peerSessions) {
-		if (key.startsWith(`${executionId}:`)) {
+		if (key.startsWith(prefix)) {
 			// Clear any pending auto-confirm timers for this session
 			const timers = autoConfirmTimers.get(key);
 			if (timers) {
@@ -276,9 +283,10 @@ const cancelledExecutions = new Set<string>();
 
 export function cancelPeerExecution(executionId: string): void {
 	cancelledExecutions.add(executionId);
+	const prefix = `${executionId}|`;
 	for (const key of peerSessions.keys()) {
-		if (key.startsWith(`${executionId}:`)) {
-			const agentId = key.split(":")[1];
+		if (key.startsWith(prefix)) {
+			const agentId = key.slice(prefix.length);
 			const peer = findPeerByAgent(executionId, agentId);
 			if (peer) {
 				sendMessage(

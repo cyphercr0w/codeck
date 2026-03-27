@@ -9,7 +9,7 @@
  */
 
 import { h, type FunctionalComponent } from "preact";
-import { useEffect, useRef, useState, useCallback } from "preact/hooks";
+import { useEffect, useRef, useState } from "preact/hooks";
 import {
 	activeFlowExecution,
 	openPeerTerminal,
@@ -64,7 +64,15 @@ function AgentTile({
 			</div>
 			<div class="peer-tile-role">{role}</div>
 			{decision && (
-				<div class={`peer-tile-decision ${decision.toLowerCase()}`}>
+				<div
+					class={`peer-tile-decision ${
+						["approve", "done", "failed", "request_changes", "loop"].includes(
+							decision.toLowerCase(),
+						)
+							? decision.toLowerCase()
+							: ""
+					}`}
+				>
 					{decision}
 				</div>
 			)}
@@ -238,11 +246,13 @@ const PeerExecutionViewer: FunctionalComponent<Props> = ({
 	// Auto-select entrypoint when first session appears
 	useEffect(() => {
 		if (!flow || flow.status !== "running" || selected) return;
-		const entrySession = flow.peerSessions?.[flow.agents[0]?.id];
+		if (flow.agents.length === 0) return;
+		const entryId = flow.agents[0].id;
+		const entrySession = flow.peerSessions?.[entryId];
 		if (entrySession) {
-			togglePeerTerminal(flow.agents[0].id);
+			togglePeerTerminal(entryId);
 		}
-	}, [flow?.peerSessions, selected]);
+	}, [flow?.peerSessions, flow?.status, selected]);
 
 	// Fit terminal when switching
 	useEffect(() => {
@@ -253,31 +263,34 @@ const PeerExecutionViewer: FunctionalComponent<Props> = ({
 		}
 	}, [selected]);
 
-	// Setup terminal for an agent
-	const setupTerm = useCallback(
-		(agentId: string, el: HTMLDivElement | null) => {
-			if (!el || !flow?.peerSessions) return;
-			const sid = flow.peerSessions[agentId];
-			if (!sid || created.current.has(sid)) return;
-			created.current.add(sid);
-			createTerminal(sid, el);
-			attachSession(sid);
-			ensureTerminalVisible(sid);
-		},
-		[flow?.peerSessions],
-	);
+	// Setup terminal for an agent — reads from signal directly to avoid stale closures.
+	// No useCallback: the ref callback must always see the latest peerSessions.
+	function setupTerm(agentId: string, el: HTMLDivElement | null): void {
+		if (!el) return;
+		const current = activeFlowExecution.value;
+		if (!current?.peerSessions) return;
+		const sid = current.peerSessions[agentId];
+		if (!sid || created.current.has(sid)) return;
+		created.current.add(sid);
+		createTerminal(sid, el);
+		attachSession(sid);
+		ensureTerminalVisible(sid);
+	}
 
-	// Cleanup on flow end
+	// Cleanup terminals after flow ends — delay to let final output drain
 	useEffect(() => {
 		if (!flow || flow.status === "running") return;
-		for (const sid of created.current) {
-			try {
-				destroyTerminal(sid);
-			} catch {
-				/* */
+		const timer = setTimeout(() => {
+			for (const sid of created.current) {
+				try {
+					destroyTerminal(sid);
+				} catch {
+					/* */
+				}
 			}
-		}
-		created.current.clear();
+			created.current.clear();
+		}, 3000);
+		return () => clearTimeout(timer);
 	}, [flow?.status]);
 
 	if (!flow || flow.executionId !== executionId) {

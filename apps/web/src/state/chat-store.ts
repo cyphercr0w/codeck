@@ -393,6 +393,10 @@ export function startFlowInChat(
 		status: "running",
 	};
 
+	// Clear peer state from previous runs
+	clearPeerMessages();
+	openPeerTerminal.value = null;
+
 	activeFlowExecution.value = {
 		executionId,
 		conversationId,

@@ -1,11 +1,12 @@
 /**
  * PeerExecutionViewer — Mission Control for parallel agent flows.
  *
- * Layout:
- *   [Agent Strip]  — horizontal tiles showing each agent's state
- *   [Terminal]      — xterm.js for the selected agent (interactive)
- *   [Message Log]   — collapsible drawer showing inter-agent messages
- *   [Status Bar]    — flow progress, elapsed time, cancel button
+ * Key fixes from v1:
+ * - xterm container uses absolute positioning inside a relative parent with
+ *   explicit height (calc-based) so xterm always has real pixel dimensions
+ * - Agent names resolved from flow.agents array, not peerSessions map
+ * - Unicode chars as literal strings, not escape sequences
+ * - Back button for navigation
  */
 
 import { h, type FunctionalComponent } from "preact";
@@ -28,18 +29,43 @@ import {
 } from "../../terminal";
 import { attachSession } from "../../ws";
 
-// ── Agent Tile ──
+// ── Helpers ──
 
-interface AgentTileProps {
-	name: string;
-	role: string;
-	isEntry: boolean;
-	isActive: boolean;
-	hasSession: boolean;
-	status: "spawning" | "idle" | "working" | "done" | "failed";
-	decision?: string;
-	onClick: () => void;
+type AgentState = "spawning" | "idle" | "working" | "done" | "failed";
+
+const SAFE_DECISION_CLASSES = new Set([
+	"approve",
+	"done",
+	"failed",
+	"request_changes",
+	"loop",
+]);
+
+function deriveStatus(agentId: string, flow: ActiveFlowState): AgentState {
+	if (!flow.peerSessions?.[agentId]) return "spawning";
+	const dec = flow.agentDecisions[agentId];
+	if (dec) return dec === "FAILED" ? "failed" : "done";
+	if (flow.currentAgentId === agentId) return "working";
+	return "idle";
 }
+
+function agentNameById(
+	id: string,
+	agents: Array<{ id: string; name: string }>,
+): string {
+	if (id.startsWith("orch-")) return "Orchestrator";
+	const match = agents.find((a) => a.id === id);
+	if (match) return match.name;
+	return id.length > 10 ? id.slice(0, 8) + ".." : id;
+}
+
+function fmtDuration(seconds: number): string {
+	const m = Math.floor(seconds / 60);
+	const s = seconds % 60;
+	return m > 0 ? `${m}m ${s}s` : `${s}s`;
+}
+
+// ── Agent Tile ──
 
 function AgentTile({
 	name,
@@ -50,7 +76,24 @@ function AgentTile({
 	status,
 	decision,
 	onClick,
-}: AgentTileProps): h.JSX.Element {
+}: {
+	name: string;
+	role: string;
+	isEntry: boolean;
+	isActive: boolean;
+	hasSession: boolean;
+	status: AgentState;
+	decision?: string;
+	onClick: () => void;
+}): h.JSX.Element {
+	const statusLabels: Record<AgentState, string> = {
+		spawning: "Starting...",
+		idle: "Waiting",
+		working: "Working",
+		done: "Done",
+		failed: "Failed",
+	};
+
 	return (
 		<button
 			class={`peer-tile ${status} ${isActive ? "selected" : ""} ${!hasSession ? "no-session" : ""}`}
@@ -63,15 +106,10 @@ function AgentTile({
 				{isEntry && <span class="peer-tile-badge">ENTRY</span>}
 			</div>
 			<div class="peer-tile-role">{role}</div>
+			<div class="peer-tile-state">{statusLabels[status]}</div>
 			{decision && (
 				<div
-					class={`peer-tile-decision ${
-						["approve", "done", "failed", "request_changes", "loop"].includes(
-							decision.toLowerCase(),
-						)
-							? decision.toLowerCase()
-							: ""
-					}`}
+					class={`peer-tile-decision ${SAFE_DECISION_CLASSES.has(decision.toLowerCase()) ? decision.toLowerCase() : ""}`}
 				>
 					{decision}
 				</div>
@@ -82,19 +120,17 @@ function AgentTile({
 
 // ── Message Log ──
 
-interface MessageLogProps {
-	messages: PeerMessageEntry[];
-	agentNames: Map<string, string>;
-	expanded: boolean;
-	onToggle: () => void;
-}
-
 function MessageLog({
 	messages,
-	agentNames,
+	agents,
 	expanded,
 	onToggle,
-}: MessageLogProps): h.JSX.Element {
+}: {
+	messages: PeerMessageEntry[];
+	agents: Array<{ id: string; name: string }>;
+	expanded: boolean;
+	onToggle: () => void;
+}): h.JSX.Element {
 	const endRef = useRef<HTMLDivElement>(null);
 
 	useEffect(() => {
@@ -103,26 +139,16 @@ function MessageLog({
 		}
 	}, [messages.length, expanded]);
 
-	const name = (id: string): string => {
-		if (id.startsWith("orch-")) return "Orchestrator";
-		return agentNames.get(id) || id;
-	};
-
 	return (
 		<div class={`peer-msglog ${expanded ? "open" : ""}`}>
 			<button class="peer-msglog-bar" onClick={onToggle}>
-				<span>{expanded ? "\u25BC" : "\u25B2"}</span>
-				<span>
-					Messages
-					{messages.length > 0 && ` (${messages.length})`}
-				</span>
+				<span>{expanded ? "\u25BC" : "\u25B6"}</span>
+				<span>Messages {messages.length > 0 && `(${messages.length})`}</span>
 			</button>
 			{expanded && (
 				<div class="peer-msglog-list">
 					{messages.length === 0 && (
-						<div class="peer-msglog-empty">
-							Agents haven't exchanged messages yet
-						</div>
+						<div class="peer-msglog-empty">No agent messages yet</div>
 					)}
 					{messages.map((m) => (
 						<div key={m.id} class={`peer-msg ${m.type}`}>
@@ -134,14 +160,16 @@ function MessageLog({
 								})}
 							</span>
 							<span class="peer-msg-route">
-								{name(m.from)} {"\u2192"} {name(m.to)}
+								<strong>{agentNameById(m.from, agents)}</strong>
+								{" \u2192 "}
+								<strong>{agentNameById(m.to, agents)}</strong>
 							</span>
 							{m.type === "decision" && (
 								<span class="peer-msg-tag">decision</span>
 							)}
 							<div class="peer-msg-body">
 								{m.payload.length > 200
-									? m.payload.slice(0, 200) + "\u2026"
+									? m.payload.slice(0, 200) + "..."
 									: m.payload}
 							</div>
 						</div>
@@ -158,9 +186,11 @@ function MessageLog({
 function StatusBar({
 	flow,
 	onCancel,
+	onBack,
 }: {
 	flow: ActiveFlowState;
 	onCancel: () => void;
+	onBack: () => void;
 }): h.JSX.Element {
 	const [elapsed, setElapsed] = useState(0);
 
@@ -173,30 +203,22 @@ function StatusBar({
 		return () => clearInterval(t);
 	}, [flow.status, flow.startedAt]);
 
-	const fmt = (s: number): string => {
-		const m = Math.floor(s / 60);
-		return m > 0 ? `${m}m ${s % 60}s` : `${s}s`;
-	};
-
 	const sessions = Object.keys(flow.peerSessions || {}).length;
 	const total = flow.agents.length;
 
 	if (flow.status !== "running") {
-		const icon =
-			flow.status === "completed"
-				? "\u2713"
-				: flow.status === "cancelled"
-					? "\u2014"
-					: "\u2717";
 		const dur = flow.completedAt
-			? fmt(Math.floor((flow.completedAt - flow.startedAt) / 1000))
+			? fmtDuration(Math.floor((flow.completedAt - flow.startedAt) / 1000))
 			: "";
 		return (
 			<div class={`peer-status ${flow.status}`}>
 				<span>
-					{icon} {flow.status}
-					{dur && ` \u00B7 ${dur}`}
+					{flow.status === "completed" ? "\u2713" : "\u2717"} {flow.status}{" "}
+					{dur && `\xB7 ${dur}`}
 				</span>
+				<button class="peer-status-btn" onClick={onBack}>
+					Back to flows
+				</button>
 			</div>
 		);
 	}
@@ -205,9 +227,9 @@ function StatusBar({
 		<div class="peer-status running">
 			<span class="peer-status-pulse" />
 			<span>
-				{sessions}/{total} agents \u00B7 {fmt(elapsed)}
+				{sessions}/{total} agents \xB7 {fmtDuration(elapsed)}
 			</span>
-			<button class="peer-status-cancel" onClick={onCancel}>
+			<button class="peer-status-btn danger" onClick={onCancel}>
 				Cancel
 			</button>
 		</div>
@@ -219,11 +241,13 @@ function StatusBar({
 interface Props {
 	executionId: string;
 	onCancel: () => void;
+	onBack: () => void;
 }
 
 const PeerExecutionViewer: FunctionalComponent<Props> = ({
 	executionId,
 	onCancel,
+	onBack,
 }) => {
 	const created = useRef<Set<string>>(new Set());
 	const [logOpen, setLogOpen] = useState(false);
@@ -231,40 +255,30 @@ const PeerExecutionViewer: FunctionalComponent<Props> = ({
 	const flow = activeFlowExecution.value;
 	const selected = openPeerTerminal.value;
 	const msgs = peerMessageLog.value;
-	// Subscribe to version signal to trigger re-renders on state changes
 	void flowStateVersion.value;
-
-	// Build peerId → name map
-	const nameMap = new Map<string, string>();
-	if (flow?.peerSessions) {
-		for (const a of flow.agents) {
-			const pid = flow.peerSessions[a.id];
-			if (pid) nameMap.set(pid, a.name);
-		}
-	}
 
 	// Auto-select entrypoint when first session appears
 	useEffect(() => {
 		if (!flow || flow.status !== "running" || selected) return;
 		if (flow.agents.length === 0) return;
 		const entryId = flow.agents[0].id;
-		const entrySession = flow.peerSessions?.[entryId];
-		if (entrySession) {
+		if (flow.peerSessions?.[entryId]) {
 			togglePeerTerminal(entryId);
 		}
 	}, [flow?.peerSessions, flow?.status, selected]);
 
-	// Fit terminal when switching
+	// Fit terminal when switching agents — use timeout for layout settle
 	useEffect(() => {
 		if (!selected || !flow?.peerSessions) return;
 		const sid = flow.peerSessions[selected];
-		if (sid && hasTerminal(sid)) {
-			requestAnimationFrame(() => fitTerminal(sid));
-		}
+		if (!sid || !hasTerminal(sid)) return;
+		const t = setTimeout(() => {
+			fitTerminal(sid);
+		}, 80);
+		return () => clearTimeout(t);
 	}, [selected]);
 
-	// Setup terminal for an agent — reads from signal directly to avoid stale closures.
-	// No useCallback: the ref callback must always see the latest peerSessions.
+	// Create and attach terminal for an agent
 	function setupTerm(agentId: string, el: HTMLDivElement | null): void {
 		if (!el) return;
 		const current = activeFlowExecution.value;
@@ -274,10 +288,11 @@ const PeerExecutionViewer: FunctionalComponent<Props> = ({
 		created.current.add(sid);
 		createTerminal(sid, el);
 		attachSession(sid);
-		ensureTerminalVisible(sid);
+		// ensureTerminalVisible polls until container has dimensions
+		setTimeout(() => ensureTerminalVisible(sid), 150);
 	}
 
-	// Cleanup terminals after flow ends — delay to let final output drain
+	// Cleanup terminals after flow ends — delay for final output
 	useEffect(() => {
 		if (!flow || flow.status === "running") return;
 		const timer = setTimeout(() => {
@@ -285,31 +300,29 @@ const PeerExecutionViewer: FunctionalComponent<Props> = ({
 				try {
 					destroyTerminal(sid);
 				} catch {
-					/* */
+					/* dead */
 				}
 			}
 			created.current.clear();
-		}, 3000);
+		}, 5000);
 		return () => clearTimeout(timer);
 	}, [flow?.status]);
 
 	if (!flow || flow.executionId !== executionId) {
-		return <div class="peer-viewer">Loading flow...</div>;
+		return (
+			<div class="peer-viewer">
+				<div class="peer-terminal-empty">Loading flow...</div>
+			</div>
+		);
 	}
-
-	const agentStatus = (
-		id: string,
-	): "spawning" | "idle" | "working" | "done" | "failed" => {
-		if (!flow.peerSessions?.[id]) return "spawning";
-		const dec = flow.agentDecisions[id];
-		if (dec) return dec === "FAILED" ? "failed" : "done";
-		if (flow.currentAgentId === id) return "working";
-		return "idle";
-	};
 
 	return (
 		<div class="peer-viewer">
+			{/* Agent Strip */}
 			<div class="peer-strip">
+				<button class="peer-back-btn" onClick={onBack} title="Back">
+					{"\u2190"}
+				</button>
 				{flow.agents.map((a, i) => (
 					<AgentTile
 						key={a.id}
@@ -318,63 +331,68 @@ const PeerExecutionViewer: FunctionalComponent<Props> = ({
 						isEntry={i === 0}
 						isActive={selected === a.id}
 						hasSession={!!flow.peerSessions?.[a.id]}
-						status={agentStatus(a.id)}
+						status={deriveStatus(a.id, flow)}
 						decision={flow.agentDecisions[a.id]}
 						onClick={() => togglePeerTerminal(a.id)}
 					/>
 				))}
 			</div>
 
+			{/* Terminal Area — relative parent with calc height, xterm fills via absolute */}
 			<div class="peer-terminal-area">
 				{!selected && (
 					<div class="peer-terminal-empty">
 						{flow.status === "running"
-							? "Select an agent to view its terminal"
+							? "Click an agent tile to view its live terminal"
 							: `Flow ${flow.status}`}
 					</div>
 				)}
-				{flow.agents.map((a) => {
-					const sid = flow.peerSessions?.[a.id];
-					const vis = selected === a.id;
-					return (
-						<div
-							key={a.id}
-							class="peer-term-wrap"
-							style={{ display: vis ? "flex" : "none" }}
-						>
-							<div class="peer-term-header">
-								<span>
-									{a.name}
-									<span class={`peer-term-status ${agentStatus(a.id)}`}>
-										{agentStatus(a.id)}
+				{selected &&
+					flow.agents.map((a) => {
+						const sid = flow.peerSessions?.[a.id];
+						if (selected !== a.id) return null;
+						return (
+							<div key={a.id} class="peer-term-wrap">
+								<div class="peer-term-header">
+									<span class="peer-term-label">
+										{a.name}
+										<span class={`peer-term-badge ${deriveStatus(a.id, flow)}`}>
+											{deriveStatus(a.id, flow)}
+										</span>
 									</span>
-								</span>
-								<button
-									class="peer-term-close"
-									onClick={() => togglePeerTerminal(null)}
-								>
-									{"\u2715"}
-								</button>
+									<button
+										class="peer-term-close"
+										onClick={() => togglePeerTerminal(null)}
+									>
+										{"\u2715"}
+									</button>
+								</div>
+								{/* This is the KEY fix: the xterm container must have absolute positioning
+							    inside a relative parent that has explicit dimensions from the flex layout.
+							    Without this, flex:1 + min-height:0 collapses to 0px and xterm renders nothing. */}
+								<div class="peer-term-body">
+									<div
+										class="peer-term-xterm"
+										ref={(el) => {
+											if (el && sid) setupTerm(a.id, el);
+										}}
+									/>
+								</div>
 							</div>
-							<div
-								class="peer-term-xterm"
-								ref={(el) => {
-									if (el && sid && vis) setupTerm(a.id, el);
-								}}
-							/>
-						</div>
-					);
-				})}
+						);
+					})}
 			</div>
 
+			{/* Message Log */}
 			<MessageLog
 				messages={msgs}
-				agentNames={nameMap}
+				agents={flow.agents}
 				expanded={logOpen}
 				onToggle={() => setLogOpen(!logOpen)}
 			/>
 
-			<StatusBar flow={flow} onCancel={onCancel} />
+			{/* Status Bar */}
+			<StatusBar flow={flow} onCancel={onCancel} onBack={onBack} />
 		</div>
 	);
 };

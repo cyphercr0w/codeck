@@ -700,8 +700,12 @@
 	font-weight: 600;
 	flex-shrink: 0;
 }
-.peer-term-status {
-	margin-left: 8px;
+.peer-term-label {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+}
+.peer-term-badge {
 	font-size: 0.65rem;
 	font-weight: 500;
 	padding: 1px 6px;
@@ -709,20 +713,26 @@
 	background: var(--bg);
 	border: 1px solid var(--border);
 }
-.peer-term-status.working {
+.peer-term-badge.working {
 	color: var(--accent);
 	border-color: var(--accent);
+	animation: peer-dot-blink 1s infinite;
 }
-.peer-term-status.idle {
+.peer-term-badge.idle {
 	color: var(--text-dim, #888);
 }
-.peer-term-status.done {
+.peer-term-badge.done {
 	color: #22c55e;
 	border-color: #22c55e;
 }
-.peer-term-status.failed {
+.peer-term-badge.failed {
 	color: #ef4444;
 	border-color: #ef4444;
+}
+.peer-term-badge.spawning {
+	color: #f59e0b;
+	border-color: #f59e0b;
+	animation: peer-dot-blink 1s infinite;
 }
 .peer-term-close {
 	background: none;
@@ -735,10 +745,51 @@
 .peer-term-close:hover {
 	color: var(--text);
 }
-.peer-term-xterm {
+/* KEY FIX: xterm needs a container with REAL pixel dimensions.
+   peer-term-body gets flex:1 (the flex parent has explicit height from the layout).
+   peer-term-xterm fills it with absolute positioning so xterm always has dimensions. */
+.peer-term-body {
 	flex: 1;
 	position: relative;
 	min-height: 0;
+	overflow: hidden;
+}
+.peer-term-xterm {
+	position: absolute;
+	inset: 0;
+}
+/* Add status text to tiles */
+.peer-tile-state {
+	font-size: 0.65rem;
+	color: var(--text-dim, #666);
+	margin-top: 2px;
+}
+.peer-tile.working .peer-tile-state {
+	color: var(--accent);
+}
+.peer-tile.done .peer-tile-state {
+	color: #22c55e;
+}
+.peer-tile.failed .peer-tile-state {
+	color: #ef4444;
+}
+/* Back button in strip */
+.peer-back-btn {
+	flex-shrink: 0;
+	width: 32px;
+	height: 32px;
+	border-radius: 6px;
+	border: 1px solid var(--border);
+	background: var(--bg);
+	color: var(--text);
+	cursor: pointer;
+	font-size: 1rem;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+}
+.peer-back-btn:hover {
+	background: var(--bg-secondary);
 }
 
 /* ── Message Log ── */
@@ -842,7 +893,7 @@
 	background: var(--accent);
 	animation: peer-dot-blink 1s infinite;
 }
-.peer-status-cancel {
+.peer-status-btn {
 	margin-left: auto;
 	padding: 3px 10px;
 	border: 1px solid var(--border);
@@ -853,7 +904,10 @@
 	font-size: 0.75rem;
 	font-family: inherit;
 }
-.peer-status-cancel:hover {
+.peer-status-btn:hover {
+	background: var(--bg-secondary);
+}
+.peer-status-btn.danger:hover {
 	background: color-mix(in srgb, #ef4444 10%, transparent);
 	border-color: #ef4444;
 	color: #ef4444;

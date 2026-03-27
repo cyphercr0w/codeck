@@ -458,6 +458,11 @@ export function FlowsSection() {
 
 		// Use PeerExecutionViewer when flow is running with peer sessions
 		if (hasPeerSessions && liveFlow) {
+			const goBack = () => {
+				setSelectedFlowId(null);
+				setSelectedExecId(null);
+				setView("list");
+			};
 			return (
 				<PeerExecutionViewer
 					executionId={liveFlow.executionId}
@@ -470,9 +475,9 @@ export function FlowsSection() {
 						} catch {
 							/* */
 						}
-						setSelectedFlowId(null);
-						setView("list");
+						goBack();
 					}}
+					onBack={goBack}
 				/>
 			);
 		}

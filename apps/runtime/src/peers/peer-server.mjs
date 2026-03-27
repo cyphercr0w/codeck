@@ -104,7 +104,7 @@ const tools = [
 				message: { type: "string", description: "Message to send" },
 				message_type: {
 					type: "string",
-					enum: ["response", "decision", "prompt"],
+					enum: ["prompt", "response", "decision", "route", "system"],
 					description: "Message type (default: response)",
 				},
 			},
@@ -155,7 +155,7 @@ mcp.setRequestHandler(CallToolRequestSchema, async (req) => {
 	const { name, arguments: args } = req.params;
 	try {
 		if (!myPeerId && name !== "list_peers") {
-			return { content: [{ type: "text", text: "Error: Not registered with broker — peer messaging unavailable." }] };
+			return { content: [{ type: "text", text: "Error: Not registered with broker — peer messaging unavailable." }], isError: true };
 		}
 
 		switch (name) {
@@ -174,7 +174,7 @@ mcp.setRequestHandler(CallToolRequestSchema, async (req) => {
 			}
 
 			case "send_message": {
-				const result = await brokerPost("/send-message", {
+				await brokerPost("/send-message", {
 					from: myPeerId,
 					to: args.to_id,
 					type: args.message_type || "response",
@@ -182,7 +182,7 @@ mcp.setRequestHandler(CallToolRequestSchema, async (req) => {
 					executionId: EXECUTION_ID,
 				});
 				return {
-					content: [{ type: "text", text: result.ok ? `Message sent to ${args.to_id}.` : `Send failed: ${result.error || "unknown"}` }],
+					content: [{ type: "text", text: `Message sent to ${args.to_id}.` }],
 				};
 			}
 
@@ -222,6 +222,7 @@ mcp.setRequestHandler(CallToolRequestSchema, async (req) => {
 	} catch (err) {
 		return {
 			content: [{ type: "text", text: `Error: ${err instanceof Error ? err.message : err}` }],
+			isError: true,
 		};
 	}
 });
@@ -251,23 +252,13 @@ async function pollAndPush() {
 				});
 				log(`Pushed message from ${msg.from} via channel`);
 			} catch (err) {
-				log(`Channel push failed: ${err instanceof Error ? err.message : "unknown"}`);
-				// Re-queue the message so it's not lost — broker will re-deliver next poll
-				try {
-					await brokerPost("/send-message", {
-						from: msg.from,
-						to: myPeerId,
-						type: msg.type,
-						payload: msg.payload,
-						executionId: msg.executionId,
-					});
-				} catch {
-					log(`Re-queue also failed — message from ${msg.from} lost`);
-				}
+				// Channel push failure usually means stdio transport is broken —
+				// re-queuing would create an infinite loop. Log and drop.
+				log(`Channel push failed for message from ${msg.from}: ${err instanceof Error ? err.message : "unknown"}`);
 			}
 		}
-	} catch {
-		// Broker unreachable — will retry next poll
+	} catch (err) {
+		log(`Broker poll failed: ${err instanceof Error ? err.message : "unknown"}`);
 	}
 }
 
@@ -311,14 +302,17 @@ async function unregister() {
 	}
 }
 
-process.on("SIGINT", async () => {
-	await unregister();
-	process.exit(0);
-});
-process.on("SIGTERM", async () => {
-	await unregister();
-	process.exit(0);
-});
+/** @type {NodeJS.Timeout[]} */
+const intervals = [];
+
+function shutdown() {
+	for (const id of intervals) clearInterval(id);
+	intervals.length = 0;
+	unregister().finally(() => process.exit(0));
+}
+
+process.on("SIGINT", shutdown);
+process.on("SIGTERM", shutdown);
 
 // ── Start ──
 // Order matters: connect FIRST so the channel is active, THEN register with broker.
@@ -332,13 +326,13 @@ await mcp.connect(stdioTransport);
 
 await register();
 
-setInterval(pollAndPush, POLL_INTERVAL);
-setInterval(async () => {
+intervals.push(setInterval(pollAndPush, POLL_INTERVAL));
+intervals.push(setInterval(async () => {
 	if (myPeerId) {
 		try {
 			await brokerPost("/heartbeat", { peerId: myPeerId });
 		} catch {}
 	}
-}, HEARTBEAT_INTERVAL);
+}, HEARTBEAT_INTERVAL));
 
 log(`Ready. Peer ID: ${myPeerId}`);

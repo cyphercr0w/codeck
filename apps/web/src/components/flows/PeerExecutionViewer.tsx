@@ -22,6 +22,7 @@ import {
 	destroyTerminal,
 	ensureTerminalVisible,
 	fitTerminal,
+	repaintTerminal,
 	hasTerminal,
 } from "../../terminal";
 import { attachSession } from "../../ws";
@@ -143,12 +144,17 @@ const PeerExecutionViewer: FunctionalComponent<Props> = ({
 			(c as HTMLElement).style.display = "none";
 		});
 
-		// If terminal element already exists, just show it
+		// If terminal element already exists, just show it and repaint
 		const existing = document.getElementById(termId);
 		if (existing) {
 			existing.style.display = "block";
 			if (hasTerminal(sessionId)) {
-				setTimeout(() => fitTerminal(sessionId), 50);
+				// xterm loses its canvas when container goes display:none.
+				// fit recalculates dimensions, repaint redraws the buffer.
+				setTimeout(() => {
+					fitTerminal(sessionId);
+					requestAnimationFrame(() => repaintTerminal(sessionId));
+				}, 50);
 			}
 			return;
 		}

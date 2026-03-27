@@ -43,6 +43,11 @@ const MAX_REGISTRATION_RETRIES = 10;
 /** @type {string | null} */
 let myPeerId = null;
 
+/** Messages that failed channel push — recoverable via check_messages tool */
+/** @type {Array<{from: string, type: string, payload: string, failedAt: number}>} */
+const failedPushBuffer = [];
+const MAX_FAILED_BUFFER = 50;
+
 // ── Logging ──
 
 function log(msg) {
@@ -309,8 +314,17 @@ async function pollAndPush() {
 			} catch (err) {
 				channelPushFailures++;
 				log(`Channel push failed (${channelPushFailures}/${MAX_CHANNEL_PUSH_FAILURES}) for message from ${msg.from || "unknown"}: ${err instanceof Error ? err.message : "unknown"}`);
+				// Buffer failed message so check_messages can recover it
+				if (failedPushBuffer.length < MAX_FAILED_BUFFER) {
+					failedPushBuffer.push({
+						from: typeof msg.from === "string" ? msg.from : "unknown",
+						type: typeof msg.type === "string" ? msg.type : "message",
+						payload: typeof msg.payload === "string" ? msg.payload : String(msg.payload ?? ""),
+						failedAt: Date.now(),
+					});
+				}
 				if (channelPushFailures >= MAX_CHANNEL_PUSH_FAILURES) {
-					log("Channel transport broken after repeated push failures — shutting down");
+					log(`Channel transport broken — ${messages.length - messages.indexOf(msg) - 1} remaining messages dropped`);
 					shutdown();
 					return;
 				}

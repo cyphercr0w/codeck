@@ -77,11 +77,47 @@ export function launchTeam(
 		initialPrompt: options.input || "",
 	};
 
-	// Create tmux session
+	// Env vars that must reach the Claude process inside tmux.
+	// tmux 3.2+ supports -e KEY=VAL on new-session, passing vars to the shell.
+	// Also set-environment -g so teammate panes (split later) inherit them too.
+	const envVars: Record<string, string> = {
+		CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS: "1",
+	};
+	if (process.env.ANTHROPIC_API_KEY)
+		envVars.ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
+	if (process.env.CLAUDE_API_KEY)
+		envVars.CLAUDE_API_KEY = process.env.CLAUDE_API_KEY;
+
+	// Global tmux env — teammate panes inherit these
+	for (const [k, v] of Object.entries(envVars)) {
+		try {
+			execFileSync("tmux", ["set-environment", "-g", k, v], { timeout: 2000 });
+		} catch {
+			// non-fatal
+		}
+	}
+
+	// Build -e flags for new-session (tmux 3.2+)
+	const envFlags = Object.entries(envVars).flatMap(([k, v]) => [
+		"-e",
+		`${k}=${v}`,
+	]);
+
+	// Create tmux session with env vars injected
 	try {
 		execFileSync(
 			"tmux",
-			["new-session", "-d", "-s", tmuxSession, "-x", "160", "-y", "40"],
+			[
+				"new-session",
+				"-d",
+				"-s",
+				tmuxSession,
+				"-x",
+				"160",
+				"-y",
+				"40",
+				...envFlags,
+			],
 			{ timeout: 5000 },
 		);
 	} catch (e) {
@@ -92,7 +128,6 @@ export function launchTeam(
 
 	// Launch Claude with Agent Teams in the tmux session
 	const claudeCmd = [
-		"CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1",
 		"claude",
 		"--teammate-mode",
 		"tmux",

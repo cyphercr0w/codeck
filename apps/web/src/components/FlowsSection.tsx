@@ -19,6 +19,7 @@ import {
 	type FlowExecution,
 } from "./flows/flow-types";
 import PeerExecutionViewer from "./flows/PeerExecutionViewer";
+import { TeamsSection } from "./teams/TeamsSection";
 
 // walkAgents, types, ALL_TOOLS imported from ./flows/flow-types
 
@@ -79,6 +80,7 @@ export function FlowsSection() {
 	const [runInput, setRunInput] = useState("");
 	const [running, setRunning] = useState(false);
 	const [view, setView] = useState<"list" | "edit" | "run">("list");
+	const [subTab, setSubTab] = useState<"flows" | "teams">("flows");
 
 	const liveFlow = activeFlowExecution.value;
 	const isAnyFlowRunning = liveFlow?.status === "running";
@@ -291,142 +293,173 @@ export function FlowsSection() {
 			<div class="flows-section">
 				<div class="flows-header">
 					<h2>Orchestrator</h2>
-					<button class="btn btn-primary" onClick={createNewFlow}>
-						<IconPlus size={14} /> New Flow
-					</button>
+					<div style="display:flex;gap:2px;background:#161b22;border-radius:6px;padding:2px;margin-left:12px;">
+						<button
+							class={`btn btn-sm ${subTab === "flows" ? "btn-tab-active" : "btn-tab"}`}
+							onClick={() => setSubTab("flows")}
+						>
+							Flows
+						</button>
+						<button
+							class={`btn btn-sm ${subTab === "teams" ? "btn-tab-active" : "btn-tab"}`}
+							onClick={() => setSubTab("teams")}
+						>
+							Teams
+						</button>
+					</div>
+					<div style="margin-left:auto;">
+						{subTab === "flows" && (
+							<button class="btn btn-primary" onClick={createNewFlow}>
+								<IconPlus size={14} /> New Flow
+							</button>
+						)}
+					</div>
 				</div>
 
-				{/* Active execution — always first, prominent */}
-				{isAnyFlowRunning && liveFlow && (
-					<ActiveFlowBanner
-						flow={liveFlow}
-						onOpen={() => {
-							const f =
-								flows.find((fl) => fl.id === liveFlow.flowId) ??
-								flows.find((fl) => fl.name === liveFlow.flowName);
-							if (f) {
-								setSelectedFlowId(f.id);
-								setView("run");
-							}
-						}}
-					/>
-				)}
-				{!isAnyFlowRunning &&
-					executions.some((e) => e.status === "running") && (
-						<div class="flow-active-banner flow-active-stale">
-							<span class="spinner-sm" />
-							<span>A flow is running in the background.</span>
-							<button
-								class="btn btn-ghost"
-								onClick={() => {
-									const r = executions.find((e) => e.status === "running");
-									const f = r ? flows.find((fl) => fl.id === r.flowId) : null;
+				{subTab === "teams" ? (
+					<TeamsSection />
+				) : (
+					<>
+						{/* Flows content */}
+
+						{/* Active execution — always first, prominent */}
+						{isAnyFlowRunning && liveFlow && (
+							<ActiveFlowBanner
+								flow={liveFlow}
+								onOpen={() => {
+									const f =
+										flows.find((fl) => fl.id === liveFlow.flowId) ??
+										flows.find((fl) => fl.name === liveFlow.flowName);
 									if (f) {
 										setSelectedFlowId(f.id);
 										setView("run");
 									}
 								}}
-							>
-								View
-							</button>
-						</div>
-					)}
-
-				{/* Templates — primary */}
-				{templates.length > 0 && (
-					<div class="flows-group">
-						<h3 class="flows-group-title">Flow Templates</h3>
-						<div class="flows-grid">
-							{templates.map((f) => (
-								<FlowCard
-									key={f.id}
-									flow={f}
-									onSelect={() => {
-										setSelectedFlowId(f.id);
-										setView("run");
-									}}
-									onEdit={() => {
-										setEditingFlow({ ...f });
-										setView("edit");
-									}}
-									onDelete={() => deleteFlow(f.id)}
-								/>
-							))}
-						</div>
-					</div>
-				)}
-				{userFlows.length > 0 && (
-					<div class="flows-group">
-						<h3 class="flows-group-title">My Flows</h3>
-						<div class="flows-grid">
-							{userFlows.map((f) => (
-								<FlowCard
-									key={f.id}
-									flow={f}
-									onSelect={() => {
-										setSelectedFlowId(f.id);
-										setView("run");
-									}}
-									onEdit={() => {
-										setEditingFlow({ ...f });
-										setView("edit");
-									}}
-									onDelete={() => deleteFlow(f.id)}
-								/>
-							))}
-						</div>
-					</div>
-				)}
-				{flows.length === 0 && (
-					<div class="flows-empty">
-						<p>No flows yet. Create one or wait for templates to load.</p>
-					</div>
-				)}
-
-				{/* Recent activity — last */}
-				{recentExecs.length > 0 && (
-					<div class="flows-group">
-						<h3 class="flows-group-title">Recent Executions</h3>
-						<div class="flows-recent-list">
-							{recentExecs.map((exec) => {
-								const f = flows.find((fl) => fl.id === exec.flowId);
-								const elapsed = exec.completedAt
-									? Math.round(
-											(new Date(exec.completedAt).getTime() -
-												new Date(exec.startedAt).getTime()) /
-												1000,
-										)
-									: 0;
-								const agentCount = Object.keys(exec.agentResults || {}).length;
-								return (
-									<div
-										key={exec.id}
-										class="flows-recent-item"
+							/>
+						)}
+						{!isAnyFlowRunning &&
+							executions.some((e) => e.status === "running") && (
+								<div class="flow-active-banner flow-active-stale">
+									<span class="spinner-sm" />
+									<span>A flow is running in the background.</span>
+									<button
+										class="btn btn-ghost"
 										onClick={() => {
+											const r = executions.find((e) => e.status === "running");
+											const f = r
+												? flows.find((fl) => fl.id === r.flowId)
+												: null;
 											if (f) {
 												setSelectedFlowId(f.id);
-												setSelectedExecId(exec.id);
 												setView("run");
 											}
 										}}
 									>
-										<span class={`flows-recent-status ${exec.status}`}>
-											{exec.status === "completed" ? "\u2713" : "\u2717"}
-										</span>
-										<div class="flows-recent-info">
-											<span class="flows-recent-name">
-												{f?.name || "Unknown flow"}
-											</span>
-											<span class="flows-recent-meta">
-												{agentCount} agents &middot; {formatDuration(elapsed)}{" "}
-												&middot; {new Date(exec.startedAt).toLocaleString()}
-											</span>
-										</div>
-									</div>
-								);
-							})}
-						</div>
-					</div>
+										View
+									</button>
+								</div>
+							)}
+
+						{/* Templates — primary */}
+						{templates.length > 0 && (
+							<div class="flows-group">
+								<h3 class="flows-group-title">Flow Templates</h3>
+								<div class="flows-grid">
+									{templates.map((f) => (
+										<FlowCard
+											key={f.id}
+											flow={f}
+											onSelect={() => {
+												setSelectedFlowId(f.id);
+												setView("run");
+											}}
+											onEdit={() => {
+												setEditingFlow({ ...f });
+												setView("edit");
+											}}
+											onDelete={() => deleteFlow(f.id)}
+										/>
+									))}
+								</div>
+							</div>
+						)}
+						{userFlows.length > 0 && (
+							<div class="flows-group">
+								<h3 class="flows-group-title">My Flows</h3>
+								<div class="flows-grid">
+									{userFlows.map((f) => (
+										<FlowCard
+											key={f.id}
+											flow={f}
+											onSelect={() => {
+												setSelectedFlowId(f.id);
+												setView("run");
+											}}
+											onEdit={() => {
+												setEditingFlow({ ...f });
+												setView("edit");
+											}}
+											onDelete={() => deleteFlow(f.id)}
+										/>
+									))}
+								</div>
+							</div>
+						)}
+						{flows.length === 0 && (
+							<div class="flows-empty">
+								<p>No flows yet. Create one or wait for templates to load.</p>
+							</div>
+						)}
+
+						{/* Recent activity — last */}
+						{recentExecs.length > 0 && (
+							<div class="flows-group">
+								<h3 class="flows-group-title">Recent Executions</h3>
+								<div class="flows-recent-list">
+									{recentExecs.map((exec) => {
+										const f = flows.find((fl) => fl.id === exec.flowId);
+										const elapsed = exec.completedAt
+											? Math.round(
+													(new Date(exec.completedAt).getTime() -
+														new Date(exec.startedAt).getTime()) /
+														1000,
+												)
+											: 0;
+										const agentCount = Object.keys(
+											exec.agentResults || {},
+										).length;
+										return (
+											<div
+												key={exec.id}
+												class="flows-recent-item"
+												onClick={() => {
+													if (f) {
+														setSelectedFlowId(f.id);
+														setSelectedExecId(exec.id);
+														setView("run");
+													}
+												}}
+											>
+												<span class={`flows-recent-status ${exec.status}`}>
+													{exec.status === "completed" ? "\u2713" : "\u2717"}
+												</span>
+												<div class="flows-recent-info">
+													<span class="flows-recent-name">
+														{f?.name || "Unknown flow"}
+													</span>
+													<span class="flows-recent-meta">
+														{agentCount} agents &middot;{" "}
+														{formatDuration(elapsed)} &middot;{" "}
+														{new Date(exec.startedAt).toLocaleString()}
+													</span>
+												</div>
+											</div>
+										);
+									})}
+								</div>
+							</div>
+						)}
+					</>
 				)}
 			</div>
 		);

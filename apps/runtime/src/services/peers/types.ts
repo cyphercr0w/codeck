@@ -64,7 +64,9 @@ export interface PeerMessageEvent {
 		executionId: string;
 		from: string;
 		to: string;
+		fromAgentId: string;
+		toAgentId: string;
 		messageType: PeerMessageType;
-		payload: string;
+		messageId: number;
 	};
 }

@@ -40,6 +40,11 @@ import {
 	updatePeerSummary,
 } from "./state/chat-store";
 import { apiFetch, getAuthToken } from "./api";
+import {
+	onTeamLaunched,
+	onTeamAgentDetected,
+	onTeamStopped,
+} from "./state/team-store";
 
 // Known WebSocket message types — reject anything not in this set
 const KNOWN_MSG_TYPES = new Set([
@@ -79,6 +84,9 @@ const KNOWN_MSG_TYPES = new Set([
 	"flow:peer:session_created",
 	"flow:peer:message",
 	"flow:peer:summary",
+	"team:launched",
+	"team:agent:detected",
+	"team:stopped",
 ]);
 
 /** Runtime validation for incoming WebSocket messages */
@@ -642,6 +650,51 @@ function openWs(wsUrl: string, protocols?: string[]): void {
 						d.currentAgentId,
 						typeof d.loopCount === "number" ? d.loopCount : undefined,
 					);
+				}
+			} else if (msg.type === "team:launched" && msg.data) {
+				const d = msg.data as Record<string, unknown>;
+				if (
+					typeof d.executionId === "string" &&
+					typeof d.leaderSessionId === "string" &&
+					typeof d.templateName === "string" &&
+					Array.isArray(d.agents)
+				) {
+					onTeamLaunched({
+						executionId: d.executionId,
+						templateName: d.templateName,
+						leaderSessionId: d.leaderSessionId,
+						agents: d.agents as Array<{
+							id: string;
+							name: string;
+							role: string;
+						}>,
+					});
+					attachSession(d.leaderSessionId);
+				}
+			} else if (msg.type === "team:agent:detected" && msg.data) {
+				const d = msg.data as Record<string, unknown>;
+				if (
+					typeof d.executionId === "string" &&
+					typeof d.sessionId === "string" &&
+					typeof d.agentId === "string" &&
+					typeof d.name === "string" &&
+					typeof d.role === "string" &&
+					typeof d.tmuxPane === "string"
+				) {
+					onTeamAgentDetected({
+						executionId: d.executionId,
+						agentId: d.agentId,
+						name: d.name,
+						role: d.role,
+						sessionId: d.sessionId,
+						tmuxPane: d.tmuxPane,
+					});
+					attachSession(d.sessionId);
+				}
+			} else if (msg.type === "team:stopped" && msg.data) {
+				const d = msg.data as Record<string, unknown>;
+				if (typeof d.executionId === "string" && typeof d.status === "string") {
+					onTeamStopped({ executionId: d.executionId, status: d.status });
 				}
 			}
 		} catch (err) {

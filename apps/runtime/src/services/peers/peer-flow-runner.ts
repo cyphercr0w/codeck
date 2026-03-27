@@ -334,7 +334,7 @@ export async function runPeerFlow(
 	broadcast({ type: "flow:execution:update", data: execution });
 
 	const orchPeerId = `orch-${execution.id}`;
-	registerPeer({
+	const orchPeer = registerPeer({
 		fixedPeerId: orchPeerId,
 		agentId: orchPeerId,
 		executionId: execution.id,
@@ -343,12 +343,25 @@ export async function runPeerFlow(
 		pid: process.pid,
 		sessionId: "",
 	});
+	if (!orchPeer) {
+		console.error(
+			`[PeerRunner] Max peer limit reached — cannot register orchestrator for ${execution.id}`,
+		);
+		execution.status = "failed";
+		execution.completedAt = new Date().toISOString();
+		execution.currentAgentId = null;
+		saveExecution(execution);
+		broadcast({ type: "flow:execution:complete", data: execution });
+		return;
+	}
 
 	const workDir = cwd || WORKSPACE;
 
 	// Validate entrypoint exists in the flow definition
 	if (!flow.agents[flow.entryAgentId]) {
-		throw new Error(`entryAgentId "${flow.entryAgentId}" not found in flow agents`);
+		throw new Error(
+			`entryAgentId "${flow.entryAgentId}" not found in flow agents`,
+		);
 	}
 
 	const agentIds = Object.keys(flow.agents);
@@ -449,7 +462,9 @@ export async function runPeerFlow(
 
 		const entryPeerId = peerMap.get(flow.entryAgentId);
 		if (!entryPeerId) {
-			throw new Error(`Entry agent "${flow.entryAgentId}" not found in peer map`);
+			throw new Error(
+				`Entry agent "${flow.entryAgentId}" not found in peer map`,
+			);
 		}
 		sendMessage(
 			orchPeerId,

@@ -85,11 +85,13 @@ import hooksRoutes from "../routes/hooks.routes.js";
 import flowsRoutes from "../routes/flows.routes.js";
 import peersRoutes from "../routes/peers.routes.js";
 import chatRoutes from "../routes/chat.routes.js";
+import teamsRoutes from "../routes/teams.routes.js";
 import {
 	initProactiveAgents,
 	shutdownProactiveAgents,
 } from "../services/proactive-agents.js";
 import { initFlowTemplates } from "../services/flows.js";
+import { initTeamTemplates } from "../services/teams.js";
 import {
 	initConsolidationCron,
 	shutdownConsolidationCron,
@@ -490,6 +492,7 @@ export async function startWebServer(): Promise<void> {
 			"/flows",
 			"/chat",
 			"/peers",
+			"/teams",
 			"/preview/navigate-to",
 		];
 		if (localBypassPaths.some((p) => req.path.startsWith(p))) {
@@ -614,6 +617,7 @@ export async function startWebServer(): Promise<void> {
 	app.use("/api/flows", flowsRoutes);
 	app.use("/api/peers", peersRoutes);
 	app.use("/api/chat", chatRoutes);
+	app.use("/api/teams", teamsRoutes);
 
 	// Account endpoint
 	app.get("/api/account", (_req, res) => {
@@ -729,6 +733,7 @@ export async function startWebServer(): Promise<void> {
 		ensureDirectories();
 		ensureMcpServers();
 		initFlowTemplates();
+		initTeamTemplates();
 
 		// Auto-update agent CLI in background (async — does not block event loop)
 		updateAgentBinary()

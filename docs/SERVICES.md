@@ -697,3 +697,56 @@ Autonomous, scheduled agents using `claude -p` in non-interactive mode.
 - Default: 5 minutes, configurable per agent
 - Grace period: 15s between SIGTERM and SIGKILL
 - Exit code 0 = success, non-zero = failure, timeout flag = timeout
+
+---
+
+## `services/teams.ts` — Agent Team Templates
+
+CRUD for team templates. Teams define parallel agent groups (no sequential transitions). Stored as JSON in `/workspace/.codeck/teams/templates/`.
+
+### Exports
+
+- `listTeamTemplates()` → `TeamTemplate[]`
+- `getTeamTemplate(id)` → `TeamTemplate | null`
+- `createTeamTemplate(data)` → `TeamTemplate`
+- `updateTeamTemplate(id, data)` → `TeamTemplate | null`
+- `deleteTeamTemplate(id)` → `boolean`
+- `saveTeamExecution(execution)` → void
+- `getTeamExecution(id)` → `TeamExecution | null`
+- `listTeamExecutions()` → `TeamExecution[]`
+- `initTeamTemplates()` — creates built-in templates (Security Audit, Code Review)
+
+---
+
+## `services/tmux-bridge.ts` — Agent Teams Orchestration
+
+Launches Claude Code with `--teammate-mode tmux`, detects new tmux panes as teammates spawn, and bridges each pane to the console session infrastructure via `TmuxPtyAdapter`.
+
+### Exports
+
+- `launchTeam(template, options)` → `TeamExecution` — creates tmux session, starts Claude, sends team prompt
+- `launchAdHocTeam(agents, options)` → `TeamExecution` — launch without saved template
+- `stopTeam(executionId)` → `boolean` — kills tmux session, cleans up sessions
+- `getActiveTeamExecutions()` → `TeamExecution[]`
+
+### Architecture
+
+1. Creates tmux session (`team-{execId}`)
+2. Starts `claude --teammate-mode tmux --permission-mode acceptEdits`
+3. `waitForClaudeReady()` polls pane for `❯` prompt, handles API key confirmation
+4. Sends team creation prompt built from template agents
+5. `startPaneWatcher()` polls `tmux list-panes` every 2s for new teammates
+6. `bridgeNewPane()` creates `TmuxPtyAdapter` + `registerVirtualSession()` per pane
+7. Broadcasts `team:agent:detected` WS events so frontend attaches xterm.js
+
+---
+
+## `services/tmux-pty-adapter.ts` — IPty Wrapper for tmux Panes
+
+Implements the IPty interface by wrapping tmux commands. Allows tmux panes to be registered as console sessions using the existing WebSocket pipeline.
+
+- **Output**: `tmux pipe-pane -O` → temp file → `tail -f` → `onData()` callbacks
+- **Input**: `tmux send-keys -t pane -l` for literals, special key mapping for Enter/Ctrl+C/arrows
+- **Resize**: `tmux resize-pane -t pane -x cols -y rows`
+- **Liveness**: polls `tmux display-message` every 5s, auto-destroys on pane death
+- **Cleanup**: stops pipe-pane, kills tail process, removes temp file

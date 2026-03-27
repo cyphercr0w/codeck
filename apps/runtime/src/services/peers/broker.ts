@@ -18,6 +18,9 @@ import type {
 } from "./types.js";
 import { broadcast } from "../../web/logger.js";
 
+/** Strip control characters from user-supplied strings before logging */
+const sanitizeLog = (s: string): string => s.replace(/[\x00-\x1f\x7f]/g, "?");
+
 // ── Singleton state ──
 
 const state: BrokerState = {
@@ -28,6 +31,8 @@ const state: BrokerState = {
 
 // ── Peer lifecycle ──
 
+const MAX_PEERS = 100;
+
 function generatePeerId(): string {
 	return randomBytes(6).toString("base64url");
 }
@@ -36,7 +41,14 @@ export function registerPeer(
 	info: Omit<PeerInfo, "peerId" | "registeredAt" | "lastPollAt"> & {
 		fixedPeerId?: string;
 	},
-): PeerInfo {
+): PeerInfo | null {
+	if (state.peers.size >= MAX_PEERS) {
+		console.warn(
+			`[Broker] Max peer limit (${MAX_PEERS}) reached — rejecting registration for agent=${info.agentId}`,
+		);
+		return null;
+	}
+
 	const peerId = info.fixedPeerId || generatePeerId();
 	const peer: PeerInfo = {
 		...info,
@@ -48,7 +60,7 @@ export function registerPeer(
 	state.queues.set(peerId, []);
 
 	console.log(
-		`[Broker] Registered peer ${peerId} (agent=${info.agentId}, exec=${info.executionId}, pid=${info.pid})`,
+		`[Broker] Registered peer ${peerId} (agent=${sanitizeLog(info.agentId)}, exec=${sanitizeLog(info.executionId)}, pid=${info.pid})`,
 	);
 
 	// NOTE: Do NOT broadcast flow:peer:session_created here.
@@ -111,6 +123,8 @@ export function findPeerByAgent(
 
 // ── Messaging ──
 
+const MAX_QUEUE_DEPTH = 1000;
+
 export function sendMessage(
 	from: string,
 	to: string,
@@ -121,6 +135,13 @@ export function sendMessage(
 	const queue = state.queues.get(to);
 	if (!queue) {
 		console.warn(`[Broker] Cannot send to ${to} — peer not found`);
+		return null;
+	}
+
+	if (queue.length >= MAX_QUEUE_DEPTH) {
+		console.warn(
+			`[Broker] Queue full for ${to} (${queue.length} messages) — dropping message from ${from}`,
+		);
 		return null;
 	}
 
@@ -156,11 +177,11 @@ export function sendMessage(
 	queue.push(msg);
 
 	console.log(
-		`[Broker] Message #${msg.id}: ${from} -> ${to} [${type}] (${payload.slice(0, 80)}${payload.length > 80 ? "..." : ""})`,
+		`[Broker] Message #${msg.id}: ${from} -> ${to} [${type}] (${sanitizeLog(payload.slice(0, 80))}${payload.length > 80 ? "..." : ""})`,
 	);
 
-	// Broadcast for frontend real-time visibility
-	// Include agentIds so the UI can track which agents are active
+	// Broadcast metadata-only event for frontend real-time visibility
+	// Payloads may contain sensitive data — do not forward to WebSocket clients
 	const fromPeer = state.peers.get(from);
 	const toPeer = state.peers.get(to);
 	broadcast({
@@ -172,7 +193,7 @@ export function sendMessage(
 			fromAgentId: fromPeer?.agentId || from,
 			toAgentId: toPeer?.agentId || to,
 			messageType: type,
-			payload: payload.slice(0, 500),
+			messageId: msg.id,
 		},
 	});
 
@@ -255,8 +276,9 @@ export function cleanStalePeers(): void {
 	}
 }
 
-// Run cleanup every 30 seconds
+// Run cleanup every 30 seconds — unref so it doesn't block process exit
 export const cleanupInterval = setInterval(cleanStalePeers, 30_000);
+cleanupInterval.unref();
 
 // ── Stats ──
 

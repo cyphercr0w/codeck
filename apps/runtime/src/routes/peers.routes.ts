@@ -35,14 +35,22 @@ router.post("/register", (req, res) => {
 		res.status(400).json({ error: "agentId and executionId are required" });
 		return;
 	}
+	// Validate pid: must be a plausible process ID (integer, > 1, < 4194304)
+	// Reject pid=1 (init) to prevent stale-peer cleanup evasion via PID spoofing
+	const pidValue =
+		Number.isInteger(pid) && pid > 1 && pid < 4_194_304 ? pid : process.pid;
 	const peer = registerPeer({
 		agentId,
 		executionId,
 		role: role || agentId,
 		summary: summary || "",
-		pid: pid || process.pid,
+		pid: pidValue,
 		sessionId: sessionId || "",
 	});
+	if (!peer) {
+		res.status(503).json({ error: "Max peer limit reached" });
+		return;
+	}
 	res.json({ peerId: peer.peerId });
 });
 
@@ -67,13 +75,20 @@ router.post("/heartbeat", (req, res) => {
 });
 
 // Update summary — also broadcast to frontend for real-time node graph
+const MAX_SUMMARY_LENGTH = 500;
+
 router.post("/set-summary", (req, res) => {
 	const { peerId, summary } = req.body;
 	if (!peerId) {
 		res.status(400).json({ error: "peerId is required" });
 		return;
 	}
-	updateSummary(peerId, summary || "");
+	// Sanitize: enforce string type, length cap, strip HTML tags
+	const rawSummary = typeof summary === "string" ? summary : "";
+	const safeSummary = rawSummary
+		.slice(0, MAX_SUMMARY_LENGTH)
+		.replace(/<[^>]*>/g, "");
+	updateSummary(peerId, safeSummary);
 	const peer = getPeer(peerId);
 	if (peer) {
 		broadcast({
@@ -81,7 +96,7 @@ router.post("/set-summary", (req, res) => {
 			data: {
 				executionId: peer.executionId,
 				agentId: peer.agentId,
-				summary: summary || "",
+				summary: safeSummary,
 			},
 		});
 	}
@@ -172,12 +187,32 @@ router.post("/broadcast", (req, res) => {
 		res.status(400).json({ error: "payload and executionId are required" });
 		return;
 	}
-	broadcastToExecution(
-		from || "orchestrator",
-		type || "system",
-		payload,
-		executionId,
-	);
+	if (typeof payload !== "string" || payload.length > MAX_PAYLOAD) {
+		res
+			.status(400)
+			.json({ error: `payload must be a string under ${MAX_PAYLOAD} bytes` });
+		return;
+	}
+	if (type && !VALID_MSG_TYPES.has(type)) {
+		res.status(400).json({ error: `invalid message type: ${type}` });
+		return;
+	}
+	// Validate sender identity — same check as /send-message
+	const senderId = from || "orchestrator";
+	if (senderId.startsWith("orch-")) {
+		const orchPeer = getPeer(senderId);
+		if (!orchPeer || orchPeer.role !== "orchestrator") {
+			res.status(403).json({ error: "Orchestrator peer not registered" });
+			return;
+		}
+	} else if (senderId !== "orchestrator") {
+		const senderPeer = getPeer(senderId);
+		if (!senderPeer) {
+			res.status(403).json({ error: "Sender peer not registered" });
+			return;
+		}
+	}
+	broadcastToExecution(senderId, type || "system", payload, executionId);
 	res.json({ ok: true });
 });
 

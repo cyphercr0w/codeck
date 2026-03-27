@@ -49,7 +49,7 @@ export const MAX_SESSIONS = parseInt(process.env.MAX_SESSIONS || "5", 10);
 
 interface ConsoleSession {
 	id: string;
-	type: "agent" | "shell" | "peer";
+	type: "agent" | "shell" | "peer" | "team-agent";
 	pty: IPty;
 	cwd: string;
 	name: string;
@@ -89,7 +89,7 @@ interface CreateSessionOptions {
 	// Peer orchestration: additional args and env for agent PTY sessions
 	extraArgs?: string[];
 	extraEnv?: Record<string, string>;
-	sessionType?: "agent" | "shell" | "peer";
+	sessionType?: "agent" | "shell" | "peer" | "team-agent";
 }
 
 /**
@@ -702,7 +702,7 @@ export function listSessions(): Array<{
 	// not by ClaudeSection. Including them causes them to appear as
 	// terminal tabs and triggers stale console:attach calls.
 	return Array.from(sessions.values())
-		.filter((s) => s.type !== "peer")
+		.filter((s) => s.type !== "peer" && s.type !== "team-agent")
 		.map((s) => ({
 			id: s.id,
 			type: s.type,
@@ -826,7 +826,7 @@ const SESSIONS_STATE_PATH = resolve(
 
 interface SavedSession {
 	id: string;
-	type: "agent" | "shell" | "peer";
+	type: "agent" | "shell" | "peer" | "team-agent";
 	cwd: string;
 	name: string;
 	reason: string;
@@ -1128,4 +1128,49 @@ export async function flushAllSessions(timeoutMs = 10000): Promise<void> {
 		session.pty.write("/compact\n");
 	}
 	await new Promise((r) => setTimeout(r, timeoutMs));
+}
+
+// ── Team-Agent Virtual Sessions ──
+
+/**
+ * Minimal PTY interface for virtual sessions (TmuxPtyAdapter).
+ * Only the methods actually used by the WebSocket pipeline.
+ */
+interface VirtualPty {
+	onData(callback: (data: string) => void): { dispose(): void };
+	onExit(callback: (e: { exitCode: number; signal?: number }) => void): {
+		dispose(): void;
+	};
+	write(data: string): void;
+	resize(cols: number, rows: number): void;
+	kill(signal?: string): void;
+	pause?(): void;
+	resume?(): void;
+	pid: number;
+	cols: number;
+	rows: number;
+}
+
+/**
+ * Register an external PTY-like object as a console session.
+ * Used by tmux-bridge to register TmuxPtyAdapter instances
+ * so the WebSocket pipeline can stream their output.
+ */
+export function registerVirtualSession(
+	id: string,
+	pty: VirtualPty,
+	options: { cwd: string; name: string },
+): void {
+	const session: ConsoleSession = {
+		id,
+		type: "team-agent",
+		pty: pty as unknown as IPty, // VirtualPty covers all methods the WS pipeline uses
+		cwd: options.cwd,
+		name: options.name,
+		createdAt: Date.now(),
+		outputBuffer: [],
+		outputBufferSize: 0,
+		attached: false,
+	};
+	sessions.set(id, session);
 }

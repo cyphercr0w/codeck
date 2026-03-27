@@ -698,14 +698,19 @@ export function listSessions(): Array<{
 	createdAt: number;
 	conversationId?: string;
 }> {
-	return Array.from(sessions.values()).map((s) => ({
-		id: s.id,
-		type: s.type,
-		cwd: s.cwd,
-		name: s.name,
-		createdAt: s.createdAt,
-		conversationId: s.conversationId,
-	}));
+	// Filter out peer sessions — they are managed by PeerExecutionViewer,
+	// not by ClaudeSection. Including them causes them to appear as
+	// terminal tabs and triggers stale console:attach calls.
+	return Array.from(sessions.values())
+		.filter((s) => s.type !== "peer")
+		.map((s) => ({
+			id: s.id,
+			type: s.type,
+			cwd: s.cwd,
+			name: s.name,
+			createdAt: s.createdAt,
+			conversationId: s.conversationId,
+		}));
 }
 
 /**

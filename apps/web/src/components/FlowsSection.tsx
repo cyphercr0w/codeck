@@ -18,6 +18,7 @@ import {
 	type FlowDef,
 	type FlowExecution,
 } from "./flows/flow-types";
+import PeerExecutionViewer from "./flows/PeerExecutionViewer";
 
 // walkAgents, types, ALL_TOOLS imported from ./flows/flow-types
 
@@ -187,7 +188,7 @@ export function FlowsSection() {
 			const res = await apiFetch(`/api/flows/${flowId}/execute`, {
 				method: "POST",
 				headers: { "Content-Type": "application/json" },
-				body: JSON.stringify({ input }),
+				body: JSON.stringify({ input, mode: "peers" }),
 			});
 			if (!res.ok) throw new Error(`HTTP ${res.status}`);
 			const data = await res.json();
@@ -449,6 +450,33 @@ export function FlowsSection() {
 
 	// ── RUN VIEW (Execution Viewer) ──
 	if (view === "run" && selectedFlow) {
+		const liveFlow = activeFlowExecution.value;
+		const hasPeerSessions =
+			liveFlow &&
+			liveFlow.peerSessions &&
+			Object.keys(liveFlow.peerSessions).length > 0;
+
+		// Use PeerExecutionViewer when flow is running with peer sessions
+		if (hasPeerSessions && liveFlow) {
+			return (
+				<PeerExecutionViewer
+					executionId={liveFlow.executionId}
+					onCancel={async () => {
+						try {
+							await apiFetch(
+								`/api/flows/executions/${liveFlow.executionId}/cancel`,
+								{ method: "POST" },
+							);
+						} catch {
+							/* */
+						}
+						setSelectedFlowId(null);
+						setView("list");
+					}}
+				/>
+			);
+		}
+
 		return (
 			<ExecutionViewer
 				flow={selectedFlow}

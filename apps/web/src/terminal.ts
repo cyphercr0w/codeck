@@ -15,6 +15,11 @@ interface TerminalInstance {
 
 const terminals = new Map<string, TerminalInstance>();
 
+/** Check if a terminal instance exists for this session. */
+export function hasTerminal(sessionId: string): boolean {
+	return terminals.has(sessionId);
+}
+
 // File paste callback — set by ClaudeSection to handle uploads (images, videos, large text).
 let onFilePaste: ((file: File) => void) | null = null;
 

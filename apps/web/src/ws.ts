@@ -38,6 +38,8 @@ import {
 	completeFlowExecution,
 	updateFlowFromExecution,
 	reconcileFlowState,
+	registerPeerSession,
+	addPeerMessage,
 } from "./state/chat-store";
 import { apiFetch, getAuthToken } from "./api";
 
@@ -597,6 +599,30 @@ function openWs(wsUrl: string, protocols?: string[]): void {
 				const sid = msg.sessionId;
 				if (typeof sid === "string" && sid === activeSessionId.value) {
 					clearChanges();
+				}
+			} else if (msg.type === "flow:peer:session_created" && msg.data) {
+				const d = msg.data as Record<string, unknown>;
+				if (
+					typeof d.executionId === "string" &&
+					typeof d.agentId === "string" &&
+					typeof d.sessionId === "string"
+				) {
+					registerPeerSession(d.executionId, d.agentId, d.sessionId);
+				}
+			} else if (msg.type === "flow:peer:message" && msg.data) {
+				const d = msg.data as Record<string, unknown>;
+				if (
+					typeof d.executionId === "string" &&
+					typeof d.from === "string" &&
+					typeof d.to === "string"
+				) {
+					addPeerMessage(
+						d.executionId,
+						d.from,
+						d.to,
+						typeof d.messageType === "string" ? d.messageType : "message",
+						typeof d.payload === "string" ? d.payload : "",
+					);
 				}
 			} else if (msg.type === "flow:execution:update" && msg.data) {
 				// Sync frontend state when backend transitions between agents.

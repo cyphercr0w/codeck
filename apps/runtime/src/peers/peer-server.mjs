@@ -32,7 +32,7 @@ const BROKER = process.env.BROKER_URL || "http://localhost/api/peers";
 const AGENT_ID = process.env.PEER_AGENT_ID || "unknown";
 const EXECUTION_ID = process.env.PEER_EXECUTION_ID || "";
 const SESSION_ID = process.env.PEER_SESSION_ID || "";
-const ORCH_PEER_ID = process.env.PEER_ORCH_ID || `orch-${EXECUTION_ID}`;
+const ORCH_PEER_ID = `orch-${EXECUTION_ID}`;
 const POLL_INTERVAL = 1000;
 const HEARTBEAT_INTERVAL = 15000;
 
@@ -55,7 +55,12 @@ async function brokerPost(path, body) {
 		body: JSON.stringify(body),
 	});
 	if (!res.ok) {
-		throw new Error(`Broker ${path} returned ${res.status}`);
+		const text = await res.text().catch(() => "");
+		throw new Error(`Broker ${path} returned ${res.status}: ${text}`);
+	}
+	const contentType = res.headers.get("content-type") || "";
+	if (!contentType.includes("application/json")) {
+		throw new Error(`Broker ${path} returned non-JSON content-type: ${contentType}`);
 	}
 	return res.json();
 }
@@ -149,6 +154,10 @@ mcp.setRequestHandler(ListToolsRequestSchema, async () => ({ tools }));
 mcp.setRequestHandler(CallToolRequestSchema, async (req) => {
 	const { name, arguments: args } = req.params;
 	try {
+		if (!myPeerId && name !== "list_peers") {
+			return { content: [{ type: "text", text: "Error: Not registered with broker — peer messaging unavailable." }] };
+		}
+
 		switch (name) {
 			case "list_peers": {
 				const peers = await brokerPost("/list-peers", {
@@ -243,6 +252,18 @@ async function pollAndPush() {
 				log(`Pushed message from ${msg.from} via channel`);
 			} catch (err) {
 				log(`Channel push failed: ${err instanceof Error ? err.message : "unknown"}`);
+				// Re-queue the message so it's not lost — broker will re-deliver next poll
+				try {
+					await brokerPost("/send-message", {
+						from: msg.from,
+						to: myPeerId,
+						type: msg.type,
+						payload: msg.payload,
+						executionId: msg.executionId,
+					});
+				} catch {
+					log(`Re-queue also failed — message from ${msg.from} lost`);
+				}
 			}
 		}
 	} catch {

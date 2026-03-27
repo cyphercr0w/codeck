@@ -80,6 +80,8 @@ export interface ActiveFlowState {
 	completedAt: number | null;
 	// Ordered log of every agent visit — each loop gets its own entry
 	visitLog: AgentVisit[];
+	// Peer session IDs: agentId → PTY session ID (for terminal attachment)
+	peerSessions?: Record<string, string>;
 }
 
 // ── localStorage persistence for flow state (survives F5) ──
@@ -168,6 +170,8 @@ export const archivedFlows = signal<Record<string, ActiveFlowState>>(
 );
 // Incremented on every flow state change to trigger re-renders without remapping chatMessages
 export const flowStateVersion = signal(0);
+// Which peer agent's terminal is currently open (null = none)
+export const openPeerTerminal = signal<string | null>(null);
 
 /**
  * On WS reconnect, check if the locally-stored "running" flow is actually
@@ -651,5 +655,74 @@ export function completeFlowExecution(
 	);
 	if (!stillStreaming) chatStreaming.value = false;
 	activeFlowExecution.value = null;
+	openPeerTerminal.value = null;
 	persistFlowState(null);
+}
+
+/**
+ * Register a peer session for an agent — called when flow:peer:session_created arrives.
+ */
+export function registerPeerSession(
+	executionId: string,
+	agentId: string,
+	sessionId: string,
+): void {
+	const flow = activeFlowExecution.value;
+	if (!flow || flow.executionId !== executionId) return;
+	activeFlowExecution.value = {
+		...flow,
+		peerSessions: { ...(flow.peerSessions || {}), [agentId]: sessionId },
+	};
+	flowStateVersion.value++;
+	persistFlowState(activeFlowExecution.value);
+}
+
+/**
+ * Toggle which peer terminal is displayed. Same agent → close. Different → switch.
+ */
+export function togglePeerTerminal(agentId: string | null): void {
+	openPeerTerminal.value = openPeerTerminal.value === agentId ? null : agentId;
+}
+
+// ── Peer message log (inter-agent communication) ──
+
+export interface PeerMessageEntry {
+	id: number;
+	timestamp: number;
+	from: string;
+	to: string;
+	type: string;
+	payload: string;
+	executionId: string;
+}
+
+export const peerMessageLog = signal<PeerMessageEntry[]>([]);
+let peerMsgCounter = 0;
+
+export function addPeerMessage(
+	executionId: string,
+	from: string,
+	to: string,
+	messageType: string,
+	payload: string,
+): void {
+	const flow = activeFlowExecution.value;
+	if (!flow || flow.executionId !== executionId) return;
+	peerMessageLog.value = [
+		...peerMessageLog.value,
+		{
+			id: ++peerMsgCounter,
+			timestamp: Date.now(),
+			from,
+			to,
+			type: messageType,
+			payload,
+			executionId,
+		},
+	];
+}
+
+export function clearPeerMessages(): void {
+	peerMessageLog.value = [];
+	peerMsgCounter = 0;
 }

@@ -32,14 +32,12 @@ import type {
 	FlowDefinition,
 	FlowExecution,
 	AgentDefinition,
-	AgentResult,
 } from "../../types/flow.types.js";
 
 // ── Constants ──
 
 const WORKSPACE = process.env.WORKSPACE || "/workspace";
-const POLL_INTERVAL = 2000;
-const DECISION_TIMEOUT = 300_000; // 5 min default
+const BROKER_URL = process.env.BROKER_URL || "http://localhost/api/peers";
 
 // Sanitize agent IDs to prevent path traversal (#4)
 const SAFE_ID = /^[a-zA-Z0-9_-]+$/;
@@ -64,54 +62,8 @@ function buildPrompt(
 	return prompt;
 }
 
-function parseStructuredDecision(
-	output: string,
-	schema: { decisionField: string; decisionsEnum: string[] },
-): string | undefined {
-	const decisionPattern = /DECISION:\s*(\w+)/i;
-	const match = output.match(decisionPattern);
-	if (match) {
-		const candidate = match[1].toUpperCase();
-		if (schema.decisionsEnum.includes(candidate)) return candidate;
-	}
-	const lines = output.split("\n").reverse();
-	for (const line of lines) {
-		const upperLine = line.toUpperCase();
-		for (const decision of schema.decisionsEnum) {
-			const escaped = decision.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-			const wordPattern = new RegExp(`\\b${escaped}\\b`);
-			if (wordPattern.test(upperLine)) {
-				const trimmed = upperLine.trim();
-				if (
-					trimmed === decision ||
-					trimmed.startsWith(`${decision}:`) ||
-					trimmed.startsWith(`${decision} `) ||
-					trimmed.endsWith(decision)
-				) {
-					return decision;
-				}
-			}
-		}
-	}
-	return undefined;
-}
-
-function resolveTransition(
-	transitions: AgentDefinition["transitions"],
-	decision: string | undefined,
-): string | null {
-	if (decision && transitions.conditions) {
-		for (const condition of transitions.conditions) {
-			if (condition.when === decision) {
-				return condition.goto === "END" ? null : condition.goto;
-			}
-		}
-	}
-	if (transitions.default) {
-		return transitions.default === "END" ? null : transitions.default;
-	}
-	return null;
-}
+// parseStructuredDecision and resolveTransition removed —
+// parallel model uses watchdog instead of sequential transitions.
 
 // ── MCP config generation ──
 
@@ -157,7 +109,7 @@ async function generateMcpConfig(
 					PEER_AGENT_ID: safeAgent,
 					PEER_EXECUTION_ID: executionId,
 					PEER_SESSION_ID: sessionId,
-					BROKER_URL: "http://localhost/api/peers",
+					BROKER_URL,
 				},
 			},
 		},
@@ -180,6 +132,7 @@ async function generateMcpConfig(
 // ── Session management ──
 
 const peerSessions = new Map<string, string>(); // "executionId:agentId" -> sessionId
+const autoConfirmTimers = new Map<string, ReturnType<typeof setTimeout>[]>(); // "executionId:agentId" -> timer ids
 
 function sessionKey(executionId: string, agentId: string): string {
 	return `${executionId}:${agentId}`;
@@ -248,18 +201,34 @@ async function createPeerSession(
 		`[PeerRunner] Created session ${session.id} for agent ${agent.id}`,
 	);
 
+	// Notify frontend so it can attach a terminal to this peer agent
+	broadcast({
+		type: "flow:peer:session_created",
+		data: {
+			executionId,
+			agentId: agent.id,
+			agentName: agent.name,
+			sessionId: session.id,
+		},
+	});
+
 	// Auto-confirm the --dangerously-load-development-channels interactive prompt.
 	// Claude shows a selection menu that requires Enter to proceed.
 	// Send Enter at staggered intervals to handle variable startup time.
+	// Timers are tracked so they can be cleared on early session teardown.
+	const timers: ReturnType<typeof setTimeout>[] = [];
 	for (const delayMs of [1500, 3000, 5000]) {
-		setTimeout(() => {
-			try {
-				writeToSession(session.id, "\r");
-			} catch {
-				/* session may already be dead — non-fatal */
-			}
-		}, delayMs);
+		timers.push(
+			setTimeout(() => {
+				try {
+					writeToSession(session.id, "\r");
+				} catch {
+					/* session may already be dead — non-fatal */
+				}
+			}, delayMs),
+		);
 	}
+	autoConfirmTimers.set(key, timers);
 
 	return session.id;
 }
@@ -267,6 +236,12 @@ async function createPeerSession(
 function destroyPeerSessions(executionId: string): void {
 	for (const [key, sessionId] of peerSessions) {
 		if (key.startsWith(`${executionId}:`)) {
+			// Clear any pending auto-confirm timers for this session
+			const timers = autoConfirmTimers.get(key);
+			if (timers) {
+				for (const t of timers) clearTimeout(t);
+				autoConfirmTimers.delete(key);
+			}
 			try {
 				destroySession(sessionId);
 			} catch {
@@ -293,58 +268,7 @@ function destroyPeerSessions(executionId: string): void {
 
 // ── Orchestrator message handling ──
 
-/**
- * Wait for a decision message from a specific agent.
- * Uses a per-execution orchestrator peerId to avoid cross-execution interference (#1, #14).
- * Checks cancellation flag to abort early (#6).
- * Re-queues non-decision messages to avoid data loss (#5).
- */
-function waitForDecision(
-	orchPeerId: string,
-	executionId: string,
-	timeoutMs: number,
-): Promise<string | null> {
-	return new Promise((resolve) => {
-		const start = Date.now();
-		const effectiveTimeout = Math.max(timeoutMs, 30_000);
-
-		const check = () => {
-			// Abort if cancelled (#6)
-			if (cancelledExecutions.has(executionId)) {
-				resolve(null);
-				return;
-			}
-
-			const messages = pollMessages(orchPeerId);
-			for (const msg of messages) {
-				if (msg.executionId === executionId && msg.type === "decision") {
-					resolve(msg.payload);
-					return;
-				}
-				// Re-queue non-decision messages to avoid data loss (#5)
-				// (shouldn't happen in practice but defensive)
-				if (msg.type !== "decision") {
-					sendMessage(
-						msg.from,
-						orchPeerId,
-						msg.type,
-						msg.payload,
-						msg.executionId,
-					);
-				}
-			}
-
-			if (Date.now() - start > effectiveTimeout) {
-				resolve(null);
-				return;
-			}
-
-			setTimeout(check, POLL_INTERVAL);
-		};
-
-		check();
-	});
-}
+// waitForDecision removed — parallel model uses watchForCompletion watchdog instead.
 
 // ── Cancellation ──
 
@@ -370,7 +294,15 @@ export function cancelPeerExecution(executionId: string): void {
 	destroyPeerSessions(executionId);
 }
 
-// ── Main orchestrator ──
+// ── Main orchestrator (parallel model) ──
+//
+// All agents spawn simultaneously. The entrypoint receives the user's prompt.
+// Agents communicate freely via the broker — they coordinate themselves.
+// The orchestrator is a watchdog: it waits for a terminal decision (APPROVE/DONE)
+// or a global timeout, then tears down all sessions.
+
+const WATCHDOG_POLL = 3000;
+const GLOBAL_TIMEOUT = 600_000; // 10 min max flow runtime
 
 export async function runPeerFlow(
 	execution: FlowExecution,
@@ -382,173 +314,260 @@ export async function runPeerFlow(
 	saveExecution(execution);
 	broadcast({ type: "flow:execution:update", data: execution });
 
-	// Register orchestrator with a fixed per-execution peerId (#1, #14)
-	// This ensures pollMessages(orchPeerId) finds the correct queue.
 	const orchPeerId = `orch-${execution.id}`;
 	registerPeer({
 		fixedPeerId: orchPeerId,
 		agentId: orchPeerId,
 		executionId: execution.id,
 		role: "orchestrator",
-		summary: "Flow orchestrator",
+		summary: "Flow orchestrator (watchdog)",
 		pid: process.pid,
 		sessionId: "",
 	});
 
-	let currentAgentId: string | null = flow.entryAgentId;
-	let prevOutput: string = execution.initialInput;
-	const agentVisitCounts = new Map<string, number>();
 	const workDir = cwd || WORKSPACE;
+	const agentIds = Object.keys(flow.agents);
 
 	try {
-		while (currentAgentId && currentAgentId !== "END") {
-			if (cancelledExecutions.has(execution.id)) {
-				cancelledExecutions.delete(execution.id);
-				execution.status = "cancelled";
-				execution.completedAt = new Date().toISOString();
-				execution.currentAgentId = null;
-				saveExecution(execution);
-				broadcast({ type: "flow:execution:complete", data: execution });
-				return;
-			}
+		// ── Phase 1: Spawn ALL agents in parallel ──
+		console.log(
+			`[PeerRunner] Spawning ${agentIds.length} agents in parallel...`,
+		);
 
-			const agent = flow.agents[currentAgentId];
-			if (!agent) {
-				execution.status = "failed";
-				execution.completedAt = new Date().toISOString();
-				saveExecution(execution);
-				broadcast({ type: "flow:execution:update", data: execution });
-				console.error(`[PeerRunner] Agent not found: ${currentAgentId}`);
-				return;
-			}
-
-			const visits = (agentVisitCounts.get(currentAgentId) || 0) + 1;
-			agentVisitCounts.set(currentAgentId, visits);
-			if (visits > 1 && currentAgentId === flow.entryAgentId) {
-				execution.loopCount++;
-			}
-
-			const maxAgentVisits = agent.maxVisits ?? 10;
-			if (
-				visits > maxAgentVisits ||
-				execution.loopCount >= execution.maxLoops
-			) {
-				execution.status = "failed";
-				execution.completedAt = new Date().toISOString();
-				saveExecution(execution);
-				broadcast({ type: "flow:execution:update", data: execution });
-				console.error(
-					`[PeerRunner] Max visits/loops exceeded for ${currentAgentId}`,
+		const spawnResults = await Promise.allSettled(
+			agentIds.map(async (agentId) => {
+				const agent = flow.agents[agentId];
+				await createPeerSession(agent, execution.id, workDir);
+				const peer = await waitForPeerRegistration(
+					execution.id,
+					agentId,
+					60_000,
 				);
-				return;
-			}
+				if (!peer) {
+					throw new Error(`Agent ${agentId} failed to register within 60s`);
+				}
+				return { agentId, peer };
+			}),
+		);
 
-			execution.currentAgentId = currentAgentId;
+		// Check if any agent failed to start
+		const failedAgents = spawnResults.filter((r) => r.status === "rejected");
+		if (failedAgents.length > 0) {
+			const reasons = failedAgents
+				.map((r) =>
+					r.status === "rejected" ? (r.reason as Error).message : "",
+				)
+				.join("; ");
+			console.error(`[PeerRunner] Agent spawn failures: ${reasons}`);
+			execution.status = "failed";
+			execution.completedAt = new Date().toISOString();
+			execution.currentAgentId = null;
 			saveExecution(execution);
-			broadcast({ type: "flow:execution:update", data: execution });
+			broadcast({ type: "flow:execution:complete", data: execution });
+			return;
+		}
 
-			await createPeerSession(agent, execution.id, workDir);
-
-			const peer = await waitForPeerRegistration(
-				execution.id,
-				agent.id,
-				60_000,
-			);
-			if (!peer) {
-				console.error(
-					`[PeerRunner] Agent ${agent.id} failed to register within 30s`,
-				);
-				execution.status = "failed";
-				execution.completedAt = new Date().toISOString();
-				saveExecution(execution);
-				broadcast({ type: "flow:execution:update", data: execution });
-				return;
+		// Build peer lookup from successful spawns
+		const peerMap = new Map<string, string>(); // agentId → peerId
+		for (const r of spawnResults) {
+			if (r.status === "fulfilled") {
+				peerMap.set(r.value.agentId, r.value.peer.peerId);
 			}
+		}
 
-			const prompt = buildPrompt(agent.systemPrompt, agent.inputTemplate, {
-				prev_output: prevOutput,
+		console.log(
+			`[PeerRunner] All ${agentIds.length} agents registered. Sending entrypoint prompt.`,
+		);
+
+		// ── Phase 2: Send initial prompt to entrypoint ──
+		const entryAgent = flow.agents[flow.entryAgentId];
+		const prompt = buildPrompt(
+			entryAgent.systemPrompt,
+			entryAgent.inputTemplate,
+			{
+				prev_output: execution.initialInput,
 				flow_context: execution.initialInput,
-			});
+			},
+		);
 
-			const peerInstructions = `\n\nIMPORTANT: When you finish your work, use the report_decision tool to report your decision.`;
-			const fullPrompt = prompt + peerInstructions;
+		const peerInstructions = [
+			"\n\nIMPORTANT INSTRUCTIONS:",
+			"- You are the ENTRYPOINT agent. The user's task is above.",
+			"- Use list_peers to see other agents. Use send_message to delegate work.",
+			"- Other agents will send you results via channel messages.",
+			"- When the overall objective is complete, use report_decision with APPROVE.",
+			"- If something fails irrecoverably, use report_decision with FAILED.",
+		].join("\n");
 
-			// Deliver prompt via broker → peer-server polls → channel push into Claude session.
-			// Channel messages trigger Claude to act (they are NOT passive context).
-			// Ref: https://code.claude.com/docs/en/channels-reference
-			sendMessage(orchPeerId, peer.peerId, "prompt", fullPrompt, execution.id);
+		const entryPeerId = peerMap.get(flow.entryAgentId)!;
+		sendMessage(
+			orchPeerId,
+			entryPeerId,
+			"prompt",
+			prompt + peerInstructions,
+			execution.id,
+		);
 
-			const agentStartedAt = new Date().toISOString(); // Correct startedAt (#8)
-
-			console.log(
-				`[PeerRunner] Sent prompt to ${agent.id} via PTY (peer ${peer.peerId}, visit ${visits})`,
-			);
-
-			const decisionPayload = await waitForDecision(
-				orchPeerId,
-				execution.id,
-				agent.timeoutMs || DECISION_TIMEOUT,
-			);
-
-			const completedAt = new Date().toISOString();
-			const result: AgentResult = {
-				agentId: agent.id,
-				status: decisionPayload ? "completed" : "failed",
-				startedAt: agentStartedAt, // (#8 fixed)
-				completedAt,
-				output: decisionPayload || `Agent ${agent.id} timed out.`,
-			};
-
-			let decision: string | undefined;
-			if (
-				agent.outputParser === "structured" &&
-				agent.structuredOutputSchema &&
-				decisionPayload
-			) {
-				decision = parseStructuredDecision(
-					decisionPayload,
-					agent.structuredOutputSchema,
-				);
-				result.structuredDecision = decision;
-			}
-
-			const resultKey = visits > 1 ? `${agent.id}:${visits}` : agent.id;
-			execution.agentResults[resultKey] = result;
-
-			broadcast({
-				type: "flow:agent:complete",
-				data: { executionId: execution.id, agentId: agent.id, result },
-			});
-			saveExecution(execution);
-
-			if (!decisionPayload) {
-				execution.status = "failed";
-				execution.completedAt = new Date().toISOString();
-				execution.currentAgentId = null;
-				saveExecution(execution);
-				broadcast({ type: "flow:execution:update", data: execution });
-				return;
-			}
-
-			currentAgentId = resolveTransition(agent.transitions, decision);
-			prevOutput = decisionPayload;
+		// Send system context to non-entrypoint agents so they know their role
+		for (const [agentId, peerId] of peerMap) {
+			if (agentId === flow.entryAgentId) continue;
+			const agent = flow.agents[agentId];
+			const agentContext = [
+				agent.systemPrompt,
+				"\n\nYou are a specialist agent in a multi-agent flow.",
+				"Wait for messages from other agents via channel notifications.",
+				"When you receive work, do it and send results back using send_message.",
+				"Use report_decision with DONE when you finish all assigned work.",
+				`The overall task: ${execution.initialInput}`,
+			].join("\n");
+			sendMessage(orchPeerId, peerId, "prompt", agentContext, execution.id);
 		}
 
-		if (execution.status === "running") {
+		console.log(`[PeerRunner] All prompts delivered. Watchdog active.`);
+
+		// ── Phase 3: Watchdog — wait for terminal decision ──
+		const finalDecision = await watchForCompletion(
+			orchPeerId,
+			execution.id,
+			flow,
+			peerMap,
+		);
+
+		// ── Phase 4: Record results ──
+		const completedAt = new Date().toISOString();
+
+		if (finalDecision) {
 			execution.status = "completed";
+			execution.agentResults.final = {
+				agentId: finalDecision.agentId,
+				status: "completed",
+				startedAt: execution.startedAt,
+				completedAt,
+				output: finalDecision.payload,
+				structuredDecision: finalDecision.decision,
+			};
+		} else {
+			execution.status = cancelledExecutions.has(execution.id)
+				? "cancelled"
+				: "failed";
 		}
-		execution.completedAt = new Date().toISOString();
+
+		execution.completedAt = completedAt;
 		execution.currentAgentId = null;
 		saveExecution(execution);
 		broadcast({ type: "flow:execution:complete", data: execution });
 
-		console.log(
-			`[PeerRunner] Execution ${execution.id} completed: ${execution.status}`,
-		);
+		console.log(`[PeerRunner] Execution ${execution.id} ${execution.status}`);
 	} finally {
-		// Always clean up sessions — even on unhandled exceptions (#7)
 		destroyPeerSessions(execution.id);
 	}
+}
+
+// ── Watchdog: monitors for completion signal ──
+
+interface FinalDecision {
+	agentId: string;
+	payload: string;
+	decision: string;
+}
+
+function watchForCompletion(
+	orchPeerId: string,
+	executionId: string,
+	_flow: FlowDefinition,
+	peerMap: Map<string, string>,
+): Promise<FinalDecision | null> {
+	return new Promise((resolve) => {
+		const start = Date.now();
+		let settled = false;
+		let timerId: ReturnType<typeof setTimeout> | null = null;
+
+		// Reverse map: peerId → agentId
+		const peerToAgent = new Map<string, string>();
+		for (const [agentId, peerId] of peerMap) {
+			peerToAgent.set(peerId, agentId);
+		}
+
+		const settle = (value: FinalDecision | null) => {
+			if (settled) return;
+			settled = true;
+			if (timerId !== null) clearTimeout(timerId);
+			resolve(value);
+		};
+
+		const check = () => {
+			if (settled) return;
+
+			if (cancelledExecutions.has(executionId)) {
+				settle(null);
+				return;
+			}
+
+			// Poll orchestrator queue for decision messages from any agent
+			const messages = pollMessages(orchPeerId);
+			for (const msg of messages) {
+				if (msg.executionId !== executionId) continue;
+				if (msg.type === "decision") {
+					const agentId = peerToAgent.get(msg.from) || msg.from;
+					const decisionMatch = msg.payload.match(/DECISION:\s*(\w+)/i);
+					const decision = decisionMatch
+						? decisionMatch[1].toUpperCase()
+						: "DONE";
+
+					// Terminal decisions: APPROVE, DONE, FAILED
+					if (["APPROVE", "DONE", "FAILED"].includes(decision)) {
+						console.log(`[PeerRunner] Agent ${agentId} reported ${decision}`);
+						broadcast({
+							type: "flow:agent:complete",
+							data: {
+								executionId,
+								agentId,
+								result: {
+									agentId,
+									status: decision === "FAILED" ? "failed" : "completed",
+									output: msg.payload,
+									structuredDecision: decision,
+								},
+							},
+						});
+						settle({ agentId, payload: msg.payload, decision });
+						return;
+					}
+
+					// Non-terminal decisions (REQUEST_CHANGES, LOOP) — log but keep watching
+					console.log(
+						`[PeerRunner] Agent ${agentId} reported non-terminal: ${decision}`,
+					);
+					broadcast({
+						type: "flow:agent:complete",
+						data: {
+							executionId,
+							agentId,
+							result: {
+								agentId,
+								status: "completed",
+								output: msg.payload,
+								structuredDecision: decision,
+							},
+						},
+					});
+				}
+			}
+
+			// Global timeout
+			if (Date.now() - start > GLOBAL_TIMEOUT) {
+				console.error(
+					`[PeerRunner] Global timeout (${GLOBAL_TIMEOUT / 1000}s) reached`,
+				);
+				settle(null);
+				return;
+			}
+
+			timerId = setTimeout(check, WATCHDOG_POLL);
+		};
+
+		check();
+	});
 }
 
 // ── Helper: wait for peer to register ──
@@ -560,17 +579,28 @@ function waitForPeerRegistration(
 ): Promise<ReturnType<typeof findPeerByAgent>> {
 	return new Promise((resolve) => {
 		const start = Date.now();
+		let settled = false;
+		let timerId: ReturnType<typeof setTimeout> | null = null;
+
+		const settle = (value: ReturnType<typeof findPeerByAgent>) => {
+			if (settled) return;
+			settled = true;
+			if (timerId !== null) clearTimeout(timerId);
+			resolve(value);
+		};
+
 		const check = () => {
+			if (settled) return;
 			const peer = findPeerByAgent(executionId, agentId);
 			if (peer) {
-				resolve(peer);
+				settle(peer);
 				return;
 			}
 			if (Date.now() - start > timeoutMs) {
-				resolve(undefined);
+				settle(undefined);
 				return;
 			}
-			setTimeout(check, 500);
+			timerId = setTimeout(check, 500);
 		};
 		check();
 	});

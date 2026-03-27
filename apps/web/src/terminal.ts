@@ -431,12 +431,15 @@ export function repaintTerminal(sessionId: string): void {
  * fitAddon.fit() silently no-ops (0x0 container). This function polls with rAF
  * until the container is visible, then triggers the full fit→resize→repaint cycle.
  *
- * @param maxWaitMs - Maximum time to wait for dimensions (default 2000ms)
+ * @param maxWaitMs - Maximum time to wait for dimensions (default 10000ms)
  * @returns cleanup function that cancels pending polls
  */
+// IntersectionObserver fallback for terminals that become visible after the rAF poll expires
+const pendingObservers = new Map<string, IntersectionObserver>();
+
 export function ensureTerminalVisible(
 	sessionId: string,
-	maxWaitMs = 2000,
+	maxWaitMs = 10000,
 ): () => void {
 	const instance = terminals.get(sessionId);
 	if (!instance) return () => {};
@@ -486,6 +489,29 @@ export function ensureTerminalVisible(
 
 		if (Date.now() < deadline) {
 			requestAnimationFrame(poll);
+		} else {
+			// Poll expired — use IntersectionObserver as final fallback
+			// This catches the case where the terminal tab is opened much later
+			const observer = new IntersectionObserver(
+				(entries) => {
+					if (cancelled) {
+						observer.disconnect();
+						return;
+					}
+					for (const entry of entries) {
+						if (entry.isIntersecting && entry.intersectionRatio > 0) {
+							observer.disconnect();
+							fitAndStabilize();
+							return;
+						}
+					}
+				},
+				{ threshold: 0.01 },
+			);
+			const inst = terminals.get(sessionId);
+			if (inst) observer.observe(inst.container);
+			// Store observer for cleanup
+			pendingObservers.set(sessionId, observer);
 		}
 	}
 
@@ -494,6 +520,11 @@ export function ensureTerminalVisible(
 	return () => {
 		cancelled = true;
 		if (stabilizeTimer) clearTimeout(stabilizeTimer);
+		const observer = pendingObservers.get(sessionId);
+		if (observer) {
+			observer.disconnect();
+			pendingObservers.delete(sessionId);
+		}
 	};
 }
 

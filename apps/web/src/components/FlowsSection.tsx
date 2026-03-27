@@ -5,6 +5,7 @@ import {
 	activeFlowExecution,
 	archivedFlows,
 	startFlowInChat,
+	reconcileFlowState,
 } from "../state/chat-store";
 import { FlowCanvas } from "./FlowCanvas";
 import { IconPlus, IconPlay, IconEdit } from "./Icons";
@@ -21,6 +22,18 @@ import {
 // walkAgents, types, ALL_TOOLS imported from ./flows/flow-types
 
 // ── Elapsed Timer ──
+
+/** Format seconds into human-readable duration (e.g. 45s, 2m 30s, 1h 5m) */
+function formatDuration(seconds: number): string {
+	const s = Math.round(seconds);
+	if (s < 60) return `${s}s`;
+	const m = Math.floor(s / 60);
+	const rem = s % 60;
+	if (m < 60) return rem > 0 ? `${m}m ${rem}s` : `${m}m`;
+	const h = Math.floor(m / 60);
+	const remM = m % 60;
+	return remM > 0 ? `${h}h ${remM}m` : `${h}h`;
+}
 
 function FlowTimer({ startedAt }: { startedAt?: number }) {
 	const [elapsed, setElapsed] = useState(() =>
@@ -74,6 +87,9 @@ export function FlowsSection() {
 		// Always refresh in background, but show cached data instantly
 		loadFlows();
 		loadExecutions();
+		// Reconcile stale flow state — if localStorage says "running" but the
+		// backend says otherwise (crash, restart), clean it up immediately.
+		reconcileFlowState(apiFetch);
 		if (!cacheLoaded) {
 			loadSystemAgents();
 			cacheLoaded = true;
@@ -170,6 +186,7 @@ export function FlowsSection() {
 		try {
 			const res = await apiFetch(`/api/flows/${flowId}/execute`, {
 				method: "POST",
+				headers: { "Content-Type": "application/json" },
 				body: JSON.stringify({ input }),
 			});
 			if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -400,8 +417,8 @@ export function FlowsSection() {
 												{f?.name || "Unknown flow"}
 											</span>
 											<span class="flows-recent-meta">
-												{agentCount} agents &middot; {elapsed}s &middot;{" "}
-												{new Date(exec.startedAt).toLocaleString()}
+												{agentCount} agents &middot; {formatDuration(elapsed)}{" "}
+												&middot; {new Date(exec.startedAt).toLocaleString()}
 											</span>
 										</div>
 									</div>
@@ -488,25 +505,25 @@ function ExecutionViewer({
 		initialExecId ?? null,
 	);
 	const agents = walkAgents(flow);
+	const liveFlow = activeFlowExecution.value;
+
 	// Reset showInputView when a new execution starts
 	useEffect(() => {
 		if (activeFlowExecution.value?.status === "running")
 			setShowInputView(false);
 	}, [activeFlowExecution.value?.status]);
 
-	// Auto-select most recent execution if nothing is selected and no live flow
+	// When a live flow completes, switch to viewing it so the result stays visible
 	useEffect(() => {
-		if (!viewingExecId && !activeFlowExecution.value && executions.length > 0) {
-			setViewingExecId(executions[0].id);
+		if (
+			liveFlow &&
+			liveFlow.status !== "running" &&
+			liveFlow.flowId === flow.id
+		) {
+			setViewingExecId(liveFlow.executionId);
 		}
-	}, [executions.length, viewingExecId]);
-
-	const liveFlow = activeFlowExecution.value;
+	}, [liveFlow?.status]);
 	const recentExecIds = new Set(executions.map((e) => e.id));
-	const archived =
-		Object.values(archivedFlows.value)
-			.filter((f) => recentExecIds.has(f.executionId))
-			.sort((a, b) => b.startedAt - a.startedAt)[0] ?? null;
 
 	// Check both live signal AND server executions for running state
 	const liveIsForThisFlow =
@@ -559,7 +576,13 @@ function ExecutionViewer({
 						]),
 					),
 					agentDurations: Object.fromEntries(
-						Object.entries(viewingExec.agentResults).map(([id]) => [id, 1]),
+						Object.entries(viewingExec.agentResults).map(([id, r]) => [
+							id,
+							r.startedAt && r.completedAt
+								? new Date(r.completedAt).getTime() -
+									new Date(r.startedAt).getTime()
+								: 0,
+						]),
 					),
 					agentDecisions: {} as Record<string, string>,
 					agentStartedAt: {} as Record<string, number>,
@@ -580,9 +603,11 @@ function ExecutionViewer({
 				}
 			: null;
 
+	// Only show execution data when: live flow is running, or user explicitly selected one.
+	// Never auto-show old executions — the default view is the input prompt.
 	const src = liveIsForThisFlow
 		? liveFlow
-		: (viewingArch ?? viewingSrc ?? archived);
+		: (viewingArch ?? viewingSrc ?? null);
 	const isComplete = !!src && !isRunning;
 	const outputRef = useRef<HTMLDivElement>(null);
 	const [expandedAgents, setExpandedAgents] = useState<Set<string>>(new Set());
@@ -616,8 +641,13 @@ function ExecutionViewer({
 		<div class="exec-viewer">
 			{/* Zone 1: Pipeline */}
 			<div class="exec-pipeline">
-				<button class="btn btn-ghost exec-back" onClick={onBack}>
-					&larr;
+				<button
+					class="btn btn-ghost exec-back"
+					onClick={onBack}
+					title="Back to flows"
+					aria-label="Back to flows"
+				>
+					&larr; Back
 				</button>
 				<div class="exec-pipeline-nodes">
 					{agents.map((agent, i) => {
@@ -644,10 +674,9 @@ function ExecutionViewer({
 											)}
 										{isDone && (
 											<span class="exec-node-dur">
-												{Math.round(
+												{formatDuration(
 													(src?.agentDurations[agent.id] || 0) / 1000,
 												)}
-												s
 											</span>
 										)}
 									</div>
@@ -804,7 +833,7 @@ function ExecutionViewer({
 										{isActive && <FlowTimer startedAt={visit.startedAt} />}
 										{isDone && visit.duration != null && (
 											<span class="exec-log-dur">
-												{Math.round(visit.duration / 1000)}s
+												{formatDuration(visit.duration / 1000)}
 											</span>
 										)}
 										{visit.decision && (
@@ -848,14 +877,15 @@ function ExecutionViewer({
 						);
 					})}
 					{isComplete && src && (
-						<div class="exec-log-entry exec-log-summary">
+						<div
+							class={`exec-log-entry exec-log-summary${src.status !== "completed" ? " exec-log-failed" : ""}`}
+						>
 							<span>{src.status === "completed" ? "\u2713" : "\u2717"}</span>
 							<strong>
 								Flow {src.status} in{" "}
-								{Math.round(
+								{formatDuration(
 									((src.completedAt || Date.now()) - src.startedAt) / 1000,
 								)}
-								s
 								{src.loopCount > 0 &&
 									` \u2014 ${src.loopCount} loop${src.loopCount > 1 ? "s" : ""}`}
 							</strong>
@@ -870,11 +900,33 @@ function ExecutionViewer({
 					<>
 						<textarea
 							class="exec-input"
-							placeholder="Describe what you want this flow to do..."
+							placeholder={
+								flow.name.includes("Review")
+									? "What file or area should be reviewed? e.g. 'Review apps/runtime/src/services/flow-runner.ts for bugs and security issues'"
+									: flow.name.includes("TDD")
+										? "What feature or behavior should be implemented? e.g. 'Add pagination to the conversation listing endpoint'"
+										: flow.name.includes("Fullstack") ||
+												flow.name.includes("Production")
+											? "Describe the feature to build end-to-end. e.g. 'Build a user settings page with theme toggle and notification preferences'"
+											: "Describe what you want this flow to do..."
+							}
 							value={runInput}
 							onInput={(e) =>
 								onInputChange((e.target as HTMLTextAreaElement).value)
 							}
+							onKeyDown={(e) => {
+								if (
+									(e.metaKey || e.ctrlKey) &&
+									e.key === "Enter" &&
+									runInput.trim() &&
+									!running
+								) {
+									e.preventDefault();
+									setSubmittedInput(runInput);
+									setShowInputView(false);
+									onRun();
+								}
+							}}
 							rows={3}
 						/>
 						<button
@@ -890,12 +942,19 @@ function ExecutionViewer({
 						</button>
 					</>
 				)}
+				{running && !isRunning && (
+					<div class="exec-status-bar">
+						<span class="spinner-sm" />
+						<span>Starting flow — initializing agents...</span>
+					</div>
+				)}
 				{isRunning && (
 					<div class="exec-status-bar">
 						<span class="spinner-sm" />
 						{src ? (
 							<span>
-								Agent {(src.currentAgentIndex || 0) + 1}/{agents.length} —{" "}
+								Step {src.visitLog.length}
+								{src.loopCount > 0 && ` (loop ${src.loopCount})`} —{" "}
 								<strong>
 									{agents.find((a) => a.id === src.currentAgentId)?.name ||
 										"..."}
@@ -917,6 +976,7 @@ function ExecutionViewer({
 						<button
 							class="btn btn-primary"
 							onClick={() => {
+								setViewingExecId(null);
 								setShowInputView(true);
 								onInputChange("");
 							}}

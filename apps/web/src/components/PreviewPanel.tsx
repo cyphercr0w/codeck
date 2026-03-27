@@ -9,7 +9,7 @@
  */
 import { useState, useRef } from "preact/hooks";
 import { previewPort, previewUrl, previewMode } from "../state/store";
-import { IconRefresh, IconX, IconPlay } from "./Icons";
+import { IconRefresh, IconX, IconPlay, IconExternalLink } from "./Icons";
 import { buildPreviewUrl } from "../utils/preview-url";
 
 export function PreviewPanel() {
@@ -109,13 +109,24 @@ export function PreviewPanel() {
 		<div class="preview-panel">
 			<div class="preview-toolbar">
 				{activePort && (
-					<button
-						class="btn btn-xs btn-ghost"
-						onClick={handleRefresh}
-						title="Refresh"
-					>
-						<IconRefresh size={13} />
-					</button>
+					<>
+						<button
+							class="btn btn-xs btn-ghost"
+							onClick={handleRefresh}
+							title="Refresh"
+						>
+							<IconRefresh size={13} />
+						</button>
+						<a
+							class="btn btn-xs btn-ghost"
+							href={buildPreviewUrl(activePort)}
+							target="_blank"
+							rel="noopener noreferrer"
+							title="Open in new window"
+						>
+							<IconExternalLink size={13} />
+						</a>
+					</>
 				)}
 				<input
 					class="preview-url-input"

@@ -18,6 +18,10 @@ import {
 	saveExecution,
 } from "../services/flows.js";
 import { runFlow, cancelExecution } from "../services/flow-runner.js";
+import {
+	runPeerFlow,
+	cancelPeerExecution,
+} from "../services/peers/peer-flow-runner.js";
 import { broadcast } from "../web/logger.js";
 import { randomUUID } from "crypto";
 import { readdirSync, readFileSync, existsSync } from "fs";
@@ -174,7 +178,8 @@ router.post(
 			return;
 		}
 
-		const { input, cwd: rawCwd } = req.body;
+		const { input, cwd: rawCwd, mode } = req.body;
+		const usePeers = mode === "peers";
 		if (!input || typeof input !== "string") {
 			res.status(400).json({ error: "input (string) is required" });
 			return;
@@ -261,7 +266,8 @@ router.post(
 		});
 
 		// Run asynchronously — errors are caught and saved to execution state
-		runFlow(execution, flow, cwd).catch((err: unknown) => {
+		const runner = usePeers ? runPeerFlow : runFlow;
+		runner(execution, flow, cwd).catch((err: unknown) => {
 			console.error(
 				`[Flows] Execution ${execution.id} failed:`,
 				(err as Error).message,
@@ -306,7 +312,9 @@ router.post("/executions/:execId/cancel", (req, res) => {
 
 	// Signal cancellation — runFlow will detect the flag and write final state.
 	// Don't write execution state here to avoid race with the runner loop.
+	// Cancel both classic and peer modes — only one will have an active execution.
 	cancelExecution(safeId(req.params.execId));
+	cancelPeerExecution(safeId(req.params.execId));
 	res.json({ success: true, status: "cancelling" });
 });
 

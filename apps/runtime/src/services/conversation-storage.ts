@@ -1,30 +1,15 @@
-import {
-	readFileSync,
-	writeFileSync,
-	mkdirSync,
-	readdirSync,
-	existsSync,
-} from "fs";
+import { readFile, writeFile, mkdir, readdir, unlink } from "fs/promises";
 import { join } from "path";
+import type {
+	ChatConversation,
+	ConversationSummary,
+} from "../types/chat.types.js";
 
-// --- Types ---
-
-export interface ChatMessage {
-	id: string;
-	role: "user" | "assistant";
-	content: string;
-	timestamp: number;
-}
-
-export interface ChatConversation {
-	id: string;
-	name: string;
-	createdAt: string;
-	updatedAt: string;
-	messages: ChatMessage[];
-	flowExecutionId?: string;
-	flowStatus?: string;
-}
+export type {
+	ChatMessage,
+	ChatConversation,
+	ConversationSummary,
+} from "../types/chat.types.js";
 
 // --- Constants ---
 
@@ -39,8 +24,8 @@ export const MODEL_MAP: Readonly<Record<string, string>> = {
 
 // --- Functions ---
 
-export function ensureConversationsDir(): void {
-	mkdirSync(CONVERSATIONS_DIR, { recursive: true });
+export async function ensureConversationsDir(): Promise<void> {
+	await mkdir(CONVERSATIONS_DIR, { recursive: true });
 }
 
 export function conversationPath(id: string): string {
@@ -50,28 +35,62 @@ export function conversationPath(id: string): string {
 	return join(CONVERSATIONS_DIR, `${safeId}.json`);
 }
 
-export function readConversation(id: string): ChatConversation | null {
+/**
+ * Validate that parsed JSON has the required ChatConversation shape.
+ * Returns null if validation fails.
+ */
+function validateConversation(data: unknown): ChatConversation | null {
+	if (
+		typeof data !== "object" ||
+		data === null ||
+		typeof (data as ChatConversation).id !== "string" ||
+		typeof (data as ChatConversation).name !== "string" ||
+		!Array.isArray((data as ChatConversation).messages)
+	) {
+		return null;
+	}
+	return data as ChatConversation;
+}
+
+export async function readConversation(
+	id: string,
+): Promise<ChatConversation | null> {
 	let filePath: string;
 	try {
 		filePath = conversationPath(id);
 	} catch {
 		return null;
 	}
-	if (!existsSync(filePath)) return null;
 	try {
-		const data = readFileSync(filePath, "utf-8");
-		return JSON.parse(data) as ChatConversation;
-	} catch {
+		const data = await readFile(filePath, "utf-8");
+		return validateConversation(JSON.parse(data));
+	} catch (err: unknown) {
+		// ENOENT = file doesn't exist — return null (not an error)
+		if (
+			err instanceof Error &&
+			"code" in err &&
+			(err as NodeJS.ErrnoException).code === "ENOENT"
+		) {
+			return null;
+		}
+		// Other errors (corrupted JSON, permissions) — also return null
 		return null;
 	}
 }
 
-export function writeConversation(conversation: ChatConversation): void {
-	ensureConversationsDir();
+export async function writeConversation(
+	conversation: ChatConversation,
+): Promise<void> {
+	await ensureConversationsDir();
 	const filePath = conversationPath(conversation.id);
-	writeFileSync(filePath, JSON.stringify(conversation, null, 2), {
+	await writeFile(filePath, JSON.stringify(conversation, null, 2), {
 		mode: 0o600,
 	});
+}
+
+export async function deleteConversation(id: string): Promise<void> {
+	const filePath = conversationPath(id);
+	await unlink(filePath);
 }
 
 // ── Per-conversation write serialization ──
@@ -102,37 +121,39 @@ export function autoName(message: string): string {
 	return message.slice(0, 50).replace(/\n/g, " ").trim() || "Untitled";
 }
 
-export function listAllConversations(): Array<{
-	id: string;
-	name: string;
-	createdAt: string;
-	updatedAt: string;
-	messageCount: number;
-}> {
-	ensureConversationsDir();
-	const files = readdirSync(CONVERSATIONS_DIR).filter((f) =>
+export async function listAllConversations(
+	limit?: number,
+	offset = 0,
+): Promise<ConversationSummary[]> {
+	await ensureConversationsDir();
+	const files = (await readdir(CONVERSATIONS_DIR)).filter((f) =>
 		f.endsWith(".json"),
 	);
-	const conversations = files
-		.map((f) => {
-			try {
-				const data = readFileSync(join(CONVERSATIONS_DIR, f), "utf-8");
-				const conv = JSON.parse(data) as ChatConversation;
-				return {
+	const conversations: ConversationSummary[] = [];
+	for (const f of files) {
+		try {
+			const data = await readFile(join(CONVERSATIONS_DIR, f), "utf-8");
+			const conv = validateConversation(JSON.parse(data));
+			if (conv) {
+				conversations.push({
 					id: conv.id,
 					name: conv.name,
 					createdAt: conv.createdAt,
 					updatedAt: conv.updatedAt,
 					messageCount: conv.messages.length,
-				};
-			} catch {
-				return null;
+				});
 			}
-		})
-		.filter((c): c is NonNullable<typeof c> => c !== null);
+		} catch {
+			// skip corrupted files
+		}
+	}
 	// Sort newest first
 	conversations.sort(
 		(a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime(),
 	);
-	return conversations;
+	// Apply pagination
+	const start = Math.max(0, offset);
+	return limit !== undefined
+		? conversations.slice(start, start + limit)
+		: conversations.slice(start);
 }

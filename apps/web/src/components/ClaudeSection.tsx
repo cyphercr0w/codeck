@@ -15,6 +15,7 @@ import {
 	setSessionStatus,
 	clearSessionStatus,
 	claudeUsage,
+	usageStale,
 	contextData,
 	setContextData,
 	showToast,
@@ -26,6 +27,7 @@ import {
 	previewMode,
 	previewPort,
 	mobilePreviewOpen,
+	changesOpen,
 } from "../state/store";
 import { PreviewPanel } from "./PreviewPanel";
 import { MobilePreviewSheet } from "./MobilePreviewSheet";
@@ -66,6 +68,7 @@ import {
 import { MobileTerminalToolbar } from "./MobileTerminalToolbar";
 import { UploadOverlay } from "./UploadOverlay";
 import { SubagentPanel } from "./SubagentPanel";
+import { ChangesPanel, ChangesToggle } from "./ChangesPanel";
 
 const MAX_UPLOAD_SIZE = 10 * 1024 * 1024; // 10 MB
 
@@ -600,8 +603,10 @@ export function ClaudeSection({
 
 	const mobile = isMobile.value;
 	const pMode = previewMode.value;
+	const cOpen = changesOpen.value;
 	const showPreviewSplit =
 		!mobile && pMode !== "hidden" && pMode !== "full-terminal";
+	const showChangesPanel = !mobile && cOpen && pMode === "hidden";
 
 	return (
 		<div class="content-section terminal-preview-layout">
@@ -753,6 +758,7 @@ export function ClaudeSection({
 								<IconMonitor size={14} />
 							</button>
 						)}
+						{!mobile && <ChangesToggle />}
 					</div>
 					<div
 						class={`terminal-instances${dragOver ? " drag-over" : ""}`}
@@ -891,7 +897,7 @@ export function ClaudeSection({
 			</div>
 			{showPreviewSplit && (
 				<div
-					class="preview-side"
+					class={`preview-side${pMode === "full-preview" ? " full" : ""}`}
 					style={{ width: pMode === "full-preview" ? "100%" : "45%" }}
 				>
 					<div class="preview-mode-bar">
@@ -952,6 +958,11 @@ export function ClaudeSection({
 					<PreviewPanel />
 				</div>
 			)}
+			{showChangesPanel && (
+				<div class="preview-side" style={{ width: "45%" }}>
+					<ChangesPanel />
+				</div>
+			)}
 			{mobile && <MobilePreviewSheet />}
 		</div>
 	);
@@ -959,6 +970,7 @@ export function ClaudeSection({
 
 function TerminalStatusBar() {
 	const usage = claudeUsage.value;
+	const stale = usageStale.value;
 	const rawCtx = contextData.value;
 	// Show context data for up to 10 min after last update — covers idle periods
 	// between user messages. Only hide if truly stale (session ended/compacted).
@@ -1076,6 +1088,14 @@ function TerminalStatusBar() {
 							</span>
 						)}
 					</div>
+				)}
+				{stale && usage && (
+					<span
+						class="tsb-stale"
+						title="Usage data may be outdated — could not refresh"
+					>
+						&#9888;
+					</span>
 				)}
 				{/* Model indicator (read-only — use /model in terminal to switch) */}
 				{ctx?.model && (

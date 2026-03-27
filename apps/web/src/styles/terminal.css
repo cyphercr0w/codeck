@@ -272,6 +272,13 @@
 	opacity: 0.6;
 }
 
+.tsb-stale {
+	font-size: 11px;
+	color: var(--warning, #f59e0b);
+	cursor: help;
+	opacity: 0.8;
+}
+
 .tsb-refresh {
 	display: flex;
 	align-items: center;
@@ -676,4 +683,3 @@
 	background: var(--bg-hover);
 	border-color: var(--text-muted);
 }
-

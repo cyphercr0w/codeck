@@ -301,6 +301,10 @@
 		var(--bg-secondary)
 	);
 }
+.exec-log-summary.exec-log-failed {
+	border-color: var(--error);
+	background: color-mix(in srgb, var(--error) 8%, var(--bg-secondary));
+}
 
 /* Zone 3: Controls */
 .exec-controls {
@@ -448,4 +452,56 @@
 	overflow-y: auto;
 	border-top: 1px solid var(--border, #222);
 	background: var(--bg-primary, #0a0a1a);
+}
+
+/* ── Animations ── */
+
+@keyframes flow-node-pulse {
+	0%,
+	100% {
+		box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 40%, transparent);
+	}
+	50% {
+		box-shadow: 0 0 12px 4px color-mix(in srgb, var(--accent) 20%, transparent);
+	}
+}
+@keyframes flow-node-done {
+	0% {
+		transform: scale(0.92);
+		opacity: 0.6;
+	}
+	60% {
+		transform: scale(1.04);
+	}
+	100% {
+		transform: scale(1);
+		opacity: 1;
+	}
+}
+@keyframes flow-log-fadein {
+	0% {
+		opacity: 0;
+		transform: translateY(6px);
+	}
+	100% {
+		opacity: 1;
+		transform: translateY(0);
+	}
+}
+@keyframes flow-progress-bar {
+	0% {
+		background-position: 200% 0;
+	}
+	100% {
+		background-position: -200% 0;
+	}
+}
+@keyframes flow-pulse {
+	0%,
+	100% {
+		box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 30%, transparent);
+	}
+	50% {
+		box-shadow: 0 0 8px 2px color-mix(in srgb, var(--accent) 15%, transparent);
+	}
 }

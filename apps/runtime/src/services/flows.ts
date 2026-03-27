@@ -397,7 +397,7 @@ export function initFlowTemplates(): void {
 				console.log(`[Flows] Cleaned zombie execution: ${exec.id}`);
 			}
 		}
-	} catch {
-		/* non-fatal */
+	} catch (err) {
+		console.error("[Flows] Zombie cleanup failed:", (err as Error).message);
 	}
 }

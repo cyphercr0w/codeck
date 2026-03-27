@@ -49,7 +49,7 @@ export const MAX_SESSIONS = parseInt(process.env.MAX_SESSIONS || "5", 10);
 
 interface ConsoleSession {
 	id: string;
-	type: "agent" | "shell";
+	type: "agent" | "shell" | "peer";
 	pty: IPty;
 	cwd: string;
 	name: string;
@@ -86,6 +86,10 @@ interface CreateSessionOptions {
 	useContinue?: boolean; // use --continue (resumes most recent conv for cwd, no picker)
 	continuationPrompt?: string;
 	conversationId?: string;
+	// Peer orchestration: additional args and env for agent PTY sessions
+	extraArgs?: string[];
+	extraEnv?: Record<string, string>;
+	sessionType?: "agent" | "shell" | "peer";
 }
 
 /**
@@ -311,10 +315,11 @@ function _createConsoleSessionInner(
 		}
 	}
 
-	const finalEnv = {
+	const finalEnv: Record<string, string> = {
 		...buildCleanEnv(),
 		...userEnv,
 		...oauthEnv,
+		...(opts.extraEnv || {}),
 		TERM: "xterm-256color",
 		CODECK_SESSION_ID: id, // Must be LAST — prevents oauthEnv from overwriting
 	};
@@ -335,6 +340,11 @@ function _createConsoleSessionInner(
 			// User-initiated: use --resume (shows interactive picker)
 			args.push(ACTIVE_AGENT.flags.resume);
 		}
+	}
+
+	// Append extra args for peer sessions (MCP config, channel flags, etc.)
+	if (opts.extraArgs) {
+		args.push(...opts.extraArgs);
 	}
 
 	// Inject memory context into workspace CLAUDE.md before spawning
@@ -372,7 +382,7 @@ function _createConsoleSessionInner(
 	const name = workDir.split("/").pop() || workDir;
 	const session: ConsoleSession = {
 		id,
-		type: "agent",
+		type: opts.sessionType === "peer" ? "peer" : "agent",
 		pty,
 		cwd: workDir,
 		name,
@@ -811,7 +821,7 @@ const SESSIONS_STATE_PATH = resolve(
 
 interface SavedSession {
 	id: string;
-	type: "agent" | "shell";
+	type: "agent" | "shell" | "peer";
 	cwd: string;
 	name: string;
 	reason: string;

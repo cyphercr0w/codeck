@@ -169,6 +169,38 @@ export const archivedFlows = signal<Record<string, ActiveFlowState>>(
 // Incremented on every flow state change to trigger re-renders without remapping chatMessages
 export const flowStateVersion = signal(0);
 
+/**
+ * On WS reconnect, check if the locally-stored "running" flow is actually
+ * still running on the backend. If the server says it's done (failed/cancelled
+ * after a crash), clean up the stale frontend state.
+ */
+export async function reconcileFlowState(
+	apiFetchFn: (url: string, options?: RequestInit) => Promise<Response>,
+): Promise<void> {
+	const flow = activeFlowExecution.value;
+	if (!flow || flow.status !== "running") return;
+	try {
+		const res = await apiFetchFn(`/api/flows/executions/${flow.executionId}`);
+		if (!res.ok) {
+			// Execution not found — clean up
+			completeFlowExecution(flow.executionId, "failed");
+			return;
+		}
+		const exec = (await res.json()) as { status?: string };
+		if (exec.status && exec.status !== "running" && exec.status !== "pending") {
+			const status =
+				exec.status === "completed" ||
+				exec.status === "failed" ||
+				exec.status === "cancelled"
+					? exec.status
+					: "failed";
+			completeFlowExecution(flow.executionId, status);
+		}
+	} catch {
+		// Network error — keep current state, will retry on next reconnect
+	}
+}
+
 export type ApiFetchFn = (
 	url: string,
 	options?: RequestInit,
@@ -395,6 +427,56 @@ export function startFlowInChat(
 			},
 		];
 	}
+}
+
+/**
+ * Handle flow:execution:update from backend.
+ * Creates a new "running" visit entry when the backend transitions to a new agent,
+ * bridging the gap between agent:complete and the first agent:output.
+ */
+export function updateFlowFromExecution(
+	executionId: string,
+	currentAgentId: string,
+	loopCount?: number,
+): void {
+	const flow = activeFlowExecution.value;
+	if (!flow || flow.executionId !== executionId) return;
+	// Already tracking this agent — no update needed
+	if (flow.currentAgentId === currentAgentId) return;
+
+	const agentDef = flow.agents.find((a) => a.id === currentAgentId);
+	const idx = flow.agents.findIndex((a) => a.id === currentAgentId);
+
+	// Create a new "running" visit entry so the UI shows immediate feedback.
+	// Skip if appendFlowAgentOutput already created one (race: output arrived first).
+	const visitLog = [...flow.visitLog];
+	const lastVisit = visitLog[visitLog.length - 1];
+	const alreadyTracking =
+		lastVisit?.agentId === currentAgentId && lastVisit?.status === "running";
+	if (!alreadyTracking) {
+		const priorVisits = visitLog.filter(
+			(v) => v.agentId === currentAgentId,
+		).length;
+		visitLog.push({
+			agentId: currentAgentId,
+			agentName: agentDef?.name || currentAgentId,
+			visit: priorVisits + 1,
+			output: "",
+			startedAt: Date.now(),
+			status: "running",
+		});
+	}
+
+	activeFlowExecution.value = {
+		...flow,
+		currentAgentId,
+		currentAgentIndex: idx >= 0 ? idx : flow.currentAgentIndex,
+		loopCount: loopCount ?? flow.loopCount,
+		agentStartedAt: { ...flow.agentStartedAt, [currentAgentId]: Date.now() },
+		visitLog,
+	};
+	persistFlowState(activeFlowExecution.value);
+	flowStateVersion.value++;
 }
 
 export function appendFlowAgentOutput(

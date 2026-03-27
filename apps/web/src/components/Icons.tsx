@@ -1051,6 +1051,26 @@ export function IconFlow({ size = 18, ...props }: IconProps) {
 	);
 }
 
+export function IconExternalLink({ size = 18, ...props }: IconProps) {
+	return (
+		<svg
+			width={size}
+			height={size}
+			viewBox="0 0 24 24"
+			fill="none"
+			stroke="currentColor"
+			stroke-width="2"
+			stroke-linecap="round"
+			stroke-linejoin="round"
+			{...props}
+		>
+			<path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6" />
+			<polyline points="15 3 21 3 21 9" />
+			<line x1="10" y1="14" x2="21" y2="3" />
+		</svg>
+	);
+}
+
 // File icon resolver - returns appropriate icon component for file extensions
 export function getFileIcon(name: string, size = 16): preact.JSX.Element {
 	const ext = name.split(".").pop()?.toLowerCase() || "";

@@ -1,218 +1,27 @@
 import { Router } from "express";
-import { spawn, ChildProcess } from "child_process";
 import { randomUUID } from "crypto";
 import {
-	readFileSync,
-	writeFileSync,
-	mkdirSync,
-	readdirSync,
-	unlinkSync,
-	existsSync,
-} from "fs";
-import { join } from "path";
-import { lookup } from "dns/promises";
-import { broadcast } from "../web/logger.js";
+	ensureConversationsDir,
+	readConversation,
+	writeConversation,
+	deleteConversation,
+	conversationPath,
+	listAllConversations,
+	autoName,
+} from "../services/conversation-storage.js";
+import type { ChatConversation, ChatMessage } from "../types/chat.types.js";
+import { handleApiDirectMode } from "../services/chat-api-handler.js";
 import {
-	buildCleanEnv,
-	getOAuthEnv,
-	getValidAgentBinary,
-} from "../services/claude-env.js";
-import { classifyIntent } from "../services/intent-classifier.js";
-import { getFlow, saveExecution } from "../services/flows.js";
-import { runFlow, cancelExecution } from "../services/flow-runner.js";
-import type { FlowExecution } from "../types/flow.types.js";
+	handleAgentMode,
+	activeChatProcesses,
+	MAX_CHAT_PROCESSES,
+	cancelExecution,
+} from "../services/chat-agent-handler.js";
 
 const router = Router();
 
-// --- Conversation persistence ---
-
-interface ChatMessage {
-	id: string;
-	role: "user" | "assistant";
-	content: string;
-	timestamp: number;
-}
-
-interface ChatConversation {
-	id: string;
-	name: string;
-	createdAt: string;
-	updatedAt: string;
-	messages: ChatMessage[];
-	flowExecutionId?: string;
-	flowStatus?: string;
-}
-
-const CONVERSATIONS_DIR = "/workspace/.codeck/chat/conversations";
-
-// Map client model names to API model IDs (module-level constant)
-const MODEL_MAP: Readonly<Record<string, string>> = {
-	haiku: "claude-haiku-4-5-20251001",
-	sonnet: "claude-sonnet-4-5-20250514",
-	opus: "claude-opus-4-0-20250115",
-};
-
-// ── SSRF protection: block requests to private/reserved IP ranges ──
-
-function isPrivateIP(ip: string): boolean {
-	// Normalize IPv6-mapped IPv4 (e.g., ::ffff:127.0.0.1 → 127.0.0.1)
-	// Lowercase early so IPv6 unique-local checks (fc/fd) work regardless of case
-	const normalized = ip.replace(/^::ffff:/i, "").toLowerCase();
-
-	// IPv4 private/reserved ranges
-	const parts = normalized.split(".").map(Number);
-	if (parts.length === 4 && parts.every((p) => p >= 0 && p <= 255)) {
-		if (parts[0] === 127) return true; // 127.0.0.0/8 loopback
-		if (parts[0] === 10) return true; // 10.0.0.0/8 private
-		if (parts[0] === 172 && parts[1] >= 16 && parts[1] <= 31) return true; // 172.16.0.0/12 private
-		if (parts[0] === 192 && parts[1] === 168) return true; // 192.168.0.0/16 private
-		if (parts[0] === 169 && parts[1] === 254) return true; // 169.254.0.0/16 link-local
-		if (parts[0] === 100 && parts[1] >= 64 && parts[1] <= 127) return true; // 100.64.0.0/10 CGNAT (RFC 6598)
-		if (parts[0] === 198 && (parts[1] === 18 || parts[1] === 19)) return true; // 198.18.0.0/15 benchmark
-		if (parts[0] >= 240) return true; // 240.0.0.0/4 reserved + 255.255.255.255 broadcast
-		if (parts[0] === 0) return true; // 0.0.0.0/8
-	}
-
-	// IPv6 loopback and link-local
-	if (normalized === "::1" || normalized === "::") return true;
-	if (normalized.startsWith("fe80:")) return true;
-	if (normalized.startsWith("fc") || normalized.startsWith("fd")) return true;
-
-	return false;
-}
-
-async function assertNotPrivateURL(urlStr: string): Promise<void> {
-	const parsed = new URL(urlStr);
-	const hostname = parsed.hostname;
-	// Reject IP literals directly
-	if (/^\d{1,3}(\.\d{1,3}){3}$/.test(hostname) || hostname.startsWith("[")) {
-		const ip = hostname.replace(/^\[|\]$/g, "");
-		if (isPrivateIP(ip)) {
-			throw new Error("Requests to private/internal IP addresses are blocked");
-		}
-	}
-	// Resolve hostname and check ALL addresses (IPv4 + IPv6) to prevent
-	// attackers from having a public A record but a private AAAA record.
-	// Note: TOCTOU/DNS-rebinding risk remains (fetch does its own resolution).
-	// Full mitigation requires a custom DNS-pinning fetch agent.
-	const results = await lookup(hostname, { all: true });
-	for (const { address } of results) {
-		if (isPrivateIP(address)) {
-			throw new Error("Requests to private/internal IP addresses are blocked");
-		}
-	}
-}
-
-function ensureConversationsDir(): void {
-	mkdirSync(CONVERSATIONS_DIR, { recursive: true });
-}
-
-function conversationPath(id: string): string {
-	// Sanitize id to prevent path traversal
-	const safeId = id.replace(/[^a-zA-Z0-9\-]/g, "");
-	if (!safeId) throw new Error("Invalid conversation ID");
-	return join(CONVERSATIONS_DIR, `${safeId}.json`);
-}
-
-function readConversation(id: string): ChatConversation | null {
-	let filePath: string;
-	try {
-		filePath = conversationPath(id);
-	} catch {
-		return null;
-	}
-	if (!existsSync(filePath)) return null;
-	try {
-		const data = readFileSync(filePath, "utf-8");
-		return JSON.parse(data) as ChatConversation;
-	} catch {
-		return null;
-	}
-}
-
-function writeConversation(conversation: ChatConversation): void {
-	ensureConversationsDir();
-	const filePath = conversationPath(conversation.id);
-	writeFileSync(filePath, JSON.stringify(conversation, null, 2), {
-		mode: 0o600,
-	});
-}
-
-// ── Per-conversation write serialization ──
-// Prevents read-modify-write race conditions on concurrent requests
-const conversationLocks = new Map<string, Promise<void>>();
-
-function withConversationLock<T>(
-	conversationId: string,
-	fn: () => Promise<T>,
-): Promise<T> {
-	const prev = conversationLocks.get(conversationId) ?? Promise.resolve();
-	const settle = prev.catch(() => {}).then(fn);
-	const tail = settle.then(
-		() => {},
-		() => {},
-	);
-	conversationLocks.set(conversationId, tail);
-	// Clean up when this is still the latest entry
-	tail.then(() => {
-		if (conversationLocks.get(conversationId) === tail) {
-			conversationLocks.delete(conversationId);
-		}
-	});
-	return settle;
-}
-
-function autoName(message: string): string {
-	return message.slice(0, 50).replace(/\n/g, " ").trim() || "Untitled";
-}
-
-function listAllConversations(): Array<{
-	id: string;
-	name: string;
-	createdAt: string;
-	updatedAt: string;
-	messageCount: number;
-}> {
-	ensureConversationsDir();
-	const files = readdirSync(CONVERSATIONS_DIR).filter((f) =>
-		f.endsWith(".json"),
-	);
-	const conversations = files
-		.map((f) => {
-			try {
-				const data = readFileSync(join(CONVERSATIONS_DIR, f), "utf-8");
-				const conv = JSON.parse(data) as ChatConversation;
-				return {
-					id: conv.id,
-					name: conv.name,
-					createdAt: conv.createdAt,
-					updatedAt: conv.updatedAt,
-					messageCount: conv.messages.length,
-				};
-			} catch {
-				return null;
-			}
-		})
-		.filter((c): c is NonNullable<typeof c> => c !== null);
-	// Sort newest first
-	conversations.sort(
-		(a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime(),
-	);
-	return conversations;
-}
-
-// Active chat processes (for cancellation)
-const activeChatProcesses = new Map<string, ChildProcess>();
-
-// Maximum number of concurrent chat processes
-const MAX_CHAT_PROCESSES = 3;
-
 // POST /api/chat/message — Send a message and get streaming response
-// Returns immediately with chatId, streams response via WS events:
-//   chat:response:chunk { chatId, chunk }
-//   chat:response:complete { chatId, fullResponse }
-// Accepts optional conversationId to append to an existing conversation
-router.post("/message", (req, res) => {
+router.post("/message", async (req, res) => {
 	const { message, context, conversationId, model, useTools } = req.body;
 	if (!message || typeof message !== "string") {
 		res.status(400).json({ error: "message (string) is required" });
@@ -231,14 +40,17 @@ router.post("/message", (req, res) => {
 		return;
 	}
 
-	// Ensure conversations directory exists before any file operations.
-	// On first use after a fresh install the directory may not exist yet,
-	// and readConversation / writeConversation both depend on it.
-	ensureConversationsDir();
+	await ensureConversationsDir();
 
 	// Validate context if provided
 	const safeContext =
 		typeof context === "string" && context.length <= 50000 ? context : "";
+
+	// Validate model — must be a string
+	const safeModel = typeof model === "string" ? model : "";
+
+	// Validate useTools — strict boolean check (#14)
+	const agentMode = useTools === true;
 
 	const chatId = randomUUID();
 	const now = new Date().toISOString();
@@ -246,7 +58,7 @@ router.post("/message", (req, res) => {
 	// Resolve or create conversation
 	let conversation: ChatConversation;
 	if (conversationId && typeof conversationId === "string") {
-		const existing = readConversation(conversationId);
+		const existing = await readConversation(conversationId);
 		if (!existing) {
 			res.status(404).json({ error: "Conversation not found" });
 			return;
@@ -262,672 +74,53 @@ router.post("/message", (req, res) => {
 		};
 	}
 
-	// Append user message to conversation
+	// Append user message (immutable — #9)
 	const userMessage: ChatMessage = {
 		id: randomUUID(),
 		role: "user",
 		content: message,
 		timestamp: Date.now(),
 	};
-	conversation.messages.push(userMessage);
-	conversation.updatedAt = now;
-	writeConversation(conversation);
+	conversation = {
+		...conversation,
+		messages: [...conversation.messages, userMessage],
+		updatedAt: now,
+	};
+	await writeConversation(conversation);
 
-	// Build prompt with conversation history for continuity
+	// Build prompt with conversation history for continuity.
+	// Use structured delimiters to prevent prompt injection via stored messages.
 	let prompt = "";
-	// Include previous messages as context (up to 10 most recent for speed)
-	const prevMessages = conversation.messages.slice(-11, -1); // exclude the message we just added
+	const prevMessages = conversation.messages.slice(-11, -1);
 	if (prevMessages.length > 0) {
-		prompt += "Previous conversation:\n";
+		prompt += "<conversation-history>\n";
 		for (const msg of prevMessages) {
-			const label = msg.role === "user" ? "User" : "Assistant";
-			prompt += `${label}: ${msg.content}\n\n`;
+			const tag = msg.role === "user" ? "human" : "assistant";
+			prompt += `<${tag}>${msg.content}</${tag}>\n`;
 		}
-		prompt += "---\n\n";
+		prompt += "</conversation-history>\n\n";
 	}
 	if (safeContext) {
-		prompt += `${safeContext}\n\n`;
+		prompt += `<user-context>${safeContext}</user-context>\n\n`;
 	}
-	prompt += `User: ${message}`;
+	prompt += message;
 
-	const chatModel =
-		MODEL_MAP[typeof model === "string" ? model : ""] || MODEL_MAP.haiku;
-
-	// ── API Direct mode (with web search tool) ──
-	if (!useTools) {
-		// Build messages array for the API
-		const apiMessages: Array<{ role: string; content: any }> =
-			conversation.messages.slice(-11).map((m: ChatMessage) => ({
-				role: m.role as "user" | "assistant",
-				content: m.content,
-			}));
-
-		const oauthToken = getOAuthEnv().CLAUDE_CODE_OAUTH_TOKEN;
-		if (!oauthToken) {
-			res
-				.status(401)
-				.json({ error: "Not authenticated — please re-login in Terminal" });
-			return;
-		}
-
-		res.status(202).json({
+	if (!agentMode) {
+		handleApiDirectMode(res, {
 			chatId,
-			conversationId: conversation.id,
-			status: "streaming",
+			conversation,
+			model: safeModel,
+			context: safeContext,
 		});
-
-		// Tools available in chat mode
-		const chatTools = [
-			{
-				name: "web_search",
-				description:
-					"Search the web for current information. Use when the user asks about recent events, needs facts you're unsure about, or asks you to look something up. Returns search result snippets.",
-				input_schema: {
-					type: "object" as const,
-					properties: {
-						query: {
-							type: "string",
-							description: "The search query",
-						},
-					},
-					required: ["query"],
-				},
-			},
-			{
-				name: "web_fetch",
-				description:
-					"Fetch the content of a specific URL. Use after web_search to read full articles, documentation pages, or any webpage the user asks about. Returns the text content of the page.",
-				input_schema: {
-					type: "object" as const,
-					properties: {
-						url: {
-							type: "string",
-							description: "The URL to fetch",
-						},
-					},
-					required: ["url"],
-				},
-			},
-		];
-
-		const systemPrompt =
-			'You are Claude Haiku 4.5, a fast and helpful assistant inside Codeck, a cloud sandbox for coding. You have two tools: web_search (search the web) and web_fetch (read a specific URL). Use web_search proactively when the user asks about recent events, facts, or anything you are uncertain about. After searching, use web_fetch to read full articles or documentation for detailed answers. If the user asks you to modify files, write code to disk, run tests, deploy, or perform any action that requires filesystem or terminal access, tell them: "Switch to Agent mode using the toggle below to enable file access and code execution." Be concise, direct, and helpful. Answer in the same language the user writes in.';
-
-		// Agentic loop: call API, handle tool_use, send results back
-		(async () => {
-			let fullResponse = "";
-			let loopMessages = [...apiMessages];
-			const MAX_TOOL_ROUNDS = 5;
-
-			try {
-				for (let round = 0; round <= MAX_TOOL_ROUNDS; round++) {
-					const useStream = true;
-					const apiRes = await fetch("https://api.anthropic.com/v1/messages", {
-						method: "POST",
-						headers: {
-							"Content-Type": "application/json",
-							"x-api-key": oauthToken,
-							"anthropic-version": "2023-06-01",
-						},
-						body: JSON.stringify({
-							model: chatModel,
-							max_tokens: 4096,
-							stream: useStream,
-							system: systemPrompt,
-							tools: chatTools,
-							messages: loopMessages,
-						}),
-						signal: AbortSignal.timeout(120000),
-					});
-
-					if (!apiRes.ok || !apiRes.body) {
-						let errDetail = `HTTP ${apiRes.status}`;
-						try {
-							const errBody = await apiRes.text();
-							const errJson = JSON.parse(errBody);
-							errDetail = errJson?.error?.message || errBody.slice(0, 200);
-						} catch {
-							/* use status code */
-						}
-						console.error(`[Chat] API error for ${chatId}: ${errDetail}`);
-						broadcast({
-							type: "chat:response:complete",
-							data: {
-								chatId,
-								fullResponse: "",
-								exitCode: 1,
-								error: errDetail,
-								conversationId: conversation.id,
-							},
-						});
-						return;
-					}
-
-					// Parse SSE stream — collect text and tool_use blocks
-					const reader = apiRes.body.getReader();
-					const decoder = new TextDecoder();
-					let sseBuffer = "";
-					let roundText = "";
-					const toolUseBlocks: Array<{
-						id: string;
-						name: string;
-						input: any;
-					}> = [];
-					let currentToolId = "";
-					let currentToolName = "";
-					let currentToolInput = "";
-
-					while (true) {
-						const { done, value } = await reader.read();
-						if (done) break;
-
-						sseBuffer += decoder.decode(value, { stream: true });
-						const lines = sseBuffer.split("\n");
-						sseBuffer = lines.pop() || "";
-
-						for (const line of lines) {
-							if (!line.startsWith("data: ")) continue;
-							const jsonStr = line.slice(6);
-							if (jsonStr === "[DONE]") continue;
-
-							try {
-								const event = JSON.parse(jsonStr);
-								if (
-									event.type === "content_block_delta" &&
-									event.delta?.type === "text_delta" &&
-									event.delta?.text
-								) {
-									roundText += event.delta.text;
-									fullResponse += event.delta.text;
-									broadcast({
-										type: "chat:response:chunk",
-										data: {
-											chatId,
-											chunk: event.delta.text,
-										},
-									});
-								} else if (
-									event.type === "content_block_start" &&
-									event.content_block?.type === "tool_use"
-								) {
-									currentToolId = event.content_block.id || "";
-									currentToolName = event.content_block.name || "";
-									currentToolInput = "";
-								} else if (
-									event.type === "content_block_delta" &&
-									event.delta?.type === "input_json_delta" &&
-									event.delta?.partial_json
-								) {
-									currentToolInput += event.delta.partial_json;
-								} else if (
-									event.type === "content_block_stop" &&
-									currentToolId
-								) {
-									let parsedInput = {};
-									try {
-										parsedInput = JSON.parse(currentToolInput);
-									} catch {
-										/* best effort */
-									}
-									toolUseBlocks.push({
-										id: currentToolId,
-										name: currentToolName,
-										input: parsedInput,
-									});
-									currentToolId = "";
-									currentToolName = "";
-									currentToolInput = "";
-								}
-							} catch {
-								/* skip unparseable */
-							}
-						}
-					}
-
-					// If no tool_use, we're done
-					if (toolUseBlocks.length === 0) break;
-
-					// Execute tools and prepare tool_result messages
-					const assistantContent: any[] = [];
-					if (roundText)
-						assistantContent.push({
-							type: "text",
-							text: roundText,
-						});
-					for (const tu of toolUseBlocks) {
-						assistantContent.push({
-							type: "tool_use",
-							id: tu.id,
-							name: tu.name,
-							input: tu.input,
-						});
-					}
-
-					loopMessages.push({
-						role: "assistant",
-						content: assistantContent,
-					});
-
-					const toolResults: any[] = [];
-					for (const tu of toolUseBlocks) {
-						let result = "";
-						if (tu.name === "web_search" && tu.input?.query) {
-							try {
-								broadcast({
-									type: "chat:response:chunk",
-									data: {
-										chatId,
-										chunk: `\n\n🔍 Searching: ${tu.input.query}...\n\n`,
-									},
-								});
-								fullResponse += `\n\n🔍 Searching: ${tu.input.query}...\n\n`;
-								const searchRes = await fetch(
-									`https://html.duckduckgo.com/html/?q=${encodeURIComponent(tu.input.query)}`,
-									{
-										headers: {
-											"User-Agent": "Codeck/1.0",
-										},
-										signal: AbortSignal.timeout(10000),
-									},
-								);
-								const html = await searchRes.text();
-								// Extract titles, URLs, and snippets from DDG HTML results
-								const titles =
-									html
-										.match(
-											/<a class="result__a"[^>]*href="([^"]*)"[^>]*>(.*?)<\/a>/gs,
-										)
-										?.map((s) => {
-											const hrefMatch = s.match(/href="([^"]*)"/);
-											const textMatch = s.match(/>([^<]*)<\/a>/);
-											return `${textMatch?.[1]?.trim() || ""}: ${hrefMatch?.[1] || ""}`;
-										})
-										.slice(0, 8) || [];
-								const snippets =
-									html
-										.match(/<a class="result__snippet"[^>]*>(.*?)<\/a>/gs)
-										?.map((s) => s.replace(/<[^>]*>/g, "").trim())
-										.slice(0, 8) || [];
-								const combined = titles
-									.map((t, i) => `${t}\n${snippets[i] || ""}`)
-									.join("\n\n");
-								result = combined || "No results found for this query.";
-							} catch (e) {
-								result = `Search failed: ${(e as Error).message}`;
-							}
-						} else if (tu.name === "web_fetch" && tu.input?.url) {
-							try {
-								const urlStr = String(tu.input.url);
-								// Validate protocol and block private/internal IPs (SSRF protection)
-								const parsed = new URL(urlStr);
-								if (!["http:", "https:"].includes(parsed.protocol)) {
-									result = "Only HTTP/HTTPS URLs are supported.";
-								} else {
-									await assertNotPrivateURL(urlStr);
-									broadcast({
-										type: "chat:response:chunk",
-										data: {
-											chatId,
-											chunk: `\n\n📄 Reading: ${urlStr.slice(0, 80)}...\n\n`,
-										},
-									});
-									fullResponse += `\n\n📄 Reading: ${urlStr.slice(0, 80)}...\n\n`;
-									// Use redirect: "manual" to prevent SSRF bypass via
-									// redirect to private/internal IPs. Validate each hop.
-									const MAX_REDIRECTS = 3;
-									let currentUrl = urlStr;
-									let fetchRes: Response | null = null;
-									for (let hop = 0; hop <= MAX_REDIRECTS; hop++) {
-										fetchRes = await fetch(currentUrl, {
-											headers: {
-												"User-Agent": "Codeck/1.0 (Web Fetch)",
-												Accept: "text/html,text/plain,application/json",
-											},
-											signal: AbortSignal.timeout(15000),
-											redirect: "manual",
-										});
-										if (fetchRes.status >= 300 && fetchRes.status < 400) {
-											const location = fetchRes.headers.get("location");
-											if (!location) break;
-											const nextUrl = new URL(location, currentUrl).href;
-											await assertNotPrivateURL(nextUrl);
-											currentUrl = nextUrl;
-											continue;
-										}
-										break;
-									}
-									if (!fetchRes) {
-										result = "Fetch failed: no response received";
-									} else if (!fetchRes.ok) {
-										result = `HTTP ${fetchRes.status}: ${fetchRes.statusText}`;
-									} else {
-										const contentType =
-											fetchRes.headers.get("content-type") || "";
-										const body = await fetchRes.text();
-										if (contentType.includes("text/html")) {
-											// Strip HTML tags, scripts, styles — extract text content
-											const text = body
-												.replace(/<script[^>]*>[\s\S]*?<\/script>/gi, "")
-												.replace(/<style[^>]*>[\s\S]*?<\/style>/gi, "")
-												.replace(/<[^>]*>/g, " ")
-												.replace(/\s+/g, " ")
-												.trim();
-											result = text.slice(0, 8000);
-										} else {
-											result = body.slice(0, 8000);
-										}
-									}
-								}
-							} catch (e) {
-								result = `Fetch failed: ${(e as Error).message}`;
-							}
-						} else {
-							result = `Tool ${tu.name} is not available.`;
-						}
-						toolResults.push({
-							type: "tool_result",
-							tool_use_id: tu.id,
-							content: result,
-						});
-					}
-
-					loopMessages.push({
-						role: "user",
-						content: toolResults,
-					});
-
-					// Continue the loop — next round will process tool results
-				}
-
-				// Save to conversation (strip tool status messages from stored content)
-				const cleanResponse = fullResponse
-					.replace(/\n*🔍 Searching: [^\n]*\.\.\.\n*/g, "")
-					.replace(/\n*📄 Reading: [^\n]*\.\.\.\n*/g, "")
-					.trim();
-				await withConversationLock(conversation.id, async () => {
-					const freshConv = readConversation(conversation.id);
-					if (freshConv && cleanResponse) {
-						freshConv.messages.push({
-							id: randomUUID(),
-							role: "assistant",
-							content: cleanResponse,
-							timestamp: Date.now(),
-						});
-						freshConv.updatedAt = new Date().toISOString();
-						writeConversation(freshConv);
-					}
-				});
-
-				broadcast({
-					type: "chat:response:complete",
-					data: {
-						chatId,
-						fullResponse,
-						exitCode: 0,
-						conversationId: conversation.id,
-					},
-				});
-			} catch (err) {
-				const errMsg = (err as Error).message || "Unknown error";
-				console.error(`[Chat] API error for ${chatId}:`, errMsg);
-				broadcast({
-					type: "chat:response:complete",
-					data: {
-						chatId,
-						fullResponse: "",
-						exitCode: 1,
-						error: errMsg,
-						conversationId: conversation.id,
-					},
-				});
-			}
-		})();
-
-		return;
+	} else {
+		handleAgentMode(res, {
+			chatId,
+			conversation,
+			prompt,
+			message,
+			model: safeModel,
+		});
 	}
-
-	// ── Agent mode — classify intent and route to flow or CLI ──
-	(async () => {
-		try {
-			const intent = await classifyIntent(message);
-			console.log(
-				`[Chat] Intent: ${intent.category} (${intent.confidence}) flow=${intent.flowTemplateId || "none"}`,
-			);
-
-			// If intent maps to a flow template, trigger flow execution
-			if (intent.flowTemplateId) {
-				const flow = getFlow(intent.flowTemplateId);
-				if (flow) {
-					const execution: FlowExecution = {
-						id: randomUUID(),
-						flowId: flow.id,
-						flowVersion: flow.version,
-						status: "pending",
-						currentAgentId: null,
-						loopCount: 0,
-						maxLoops: 5,
-						startedAt: new Date().toISOString(),
-						completedAt: null,
-						initialInput: message,
-						agentResults: {},
-					};
-
-					saveExecution(execution);
-
-					// Link flow to conversation
-					conversation.flowExecutionId = execution.id;
-					conversation.flowStatus = "running";
-					writeConversation(conversation);
-
-					// Build ordered agent list by walking the graph from entryAgentId
-					const agentList: Array<{ id: string; name: string; role: string }> =
-						[];
-					{
-						const visited = new Set<string>();
-						let cursor: string | undefined = flow.entryAgentId;
-						while (cursor && !visited.has(cursor)) {
-							const def = flow.agents[cursor] as
-								| import("../types/flow.types.js").AgentDefinition
-								| undefined;
-							if (!def) break;
-							agentList.push({ id: def.id, name: def.name, role: def.role });
-							visited.add(cursor);
-							const next = def.transitions.default;
-							cursor =
-								typeof next === "string" && next !== "END" ? next : undefined;
-						}
-					}
-
-					// Broadcast flow started event for chat UI
-					broadcast({
-						type: "chat:flow:started",
-						data: {
-							chatId,
-							conversationId: conversation.id,
-							executionId: execution.id,
-							flowId: flow.id,
-							flowName: flow.name,
-							agents: agentList,
-						},
-					});
-
-					res.status(202).json({
-						chatId,
-						conversationId: conversation.id,
-						executionId: execution.id,
-						status: "flow-started",
-						flowName: flow.name,
-						flowAgents: agentList.map((a) => a.name),
-					});
-
-					// Run flow async — save result to conversation on completion
-					const workspace = process.env.WORKSPACE || "/workspace";
-					runFlow(execution, flow, workspace)
-						.then(() =>
-							withConversationLock(conversation.id, async () => {
-								const freshConv = readConversation(conversation.id);
-								if (freshConv) {
-									const finalExec = { ...execution };
-									const outputs = Object.values(finalExec.agentResults)
-										.filter((r) => r.output)
-										.map(
-											(r) => `**${r.agentId}**:\n${r.output.slice(0, 2000)}`,
-										);
-									if (outputs.length > 0) {
-										freshConv.messages.push({
-											id: randomUUID(),
-											role: "assistant",
-											content: `Flow "${flow.name}" completed.\n\n${outputs.join("\n\n---\n\n")}`,
-											timestamp: Date.now(),
-										});
-									}
-									freshConv.flowStatus = "completed";
-									freshConv.updatedAt = new Date().toISOString();
-									writeConversation(freshConv);
-								}
-							}),
-						)
-						.catch((err: unknown) => {
-							console.error(
-								`[Chat] Flow execution ${execution.id} failed:`,
-								(err as Error).message,
-							);
-							return withConversationLock(conversation.id, async () => {
-								const freshConv = readConversation(conversation.id);
-								if (freshConv) {
-									freshConv.flowStatus = "failed";
-									freshConv.updatedAt = new Date().toISOString();
-									writeConversation(freshConv);
-								}
-							});
-						});
-
-					return;
-				}
-				// Flow template not found — fall through to single CLI
-				console.warn(
-					`[Chat] Flow template ${intent.flowTemplateId} not found, falling back to CLI`,
-				);
-			}
-
-			// Fallback: single CLI spawn (for CHAT category or missing template)
-			const cliModel = model || "haiku";
-			const binary = getValidAgentBinary();
-			const env = { ...buildCleanEnv(), ...getOAuthEnv(), TERM: "dumb" };
-
-			const child = spawn(
-				binary,
-				[
-					"-p",
-					prompt,
-					"--output-format",
-					"text",
-					"--no-session-persistence",
-					"--model",
-					cliModel,
-					"--allowedTools",
-					"Read,Write,Edit,Bash,Glob,Grep,WebSearch,WebFetch",
-					"--max-turns",
-					"3",
-				],
-				{
-					env,
-					cwd: process.env.WORKSPACE || "/workspace",
-					stdio: ["ignore", "pipe", "pipe"],
-				},
-			);
-
-			activeChatProcesses.set(chatId, child);
-
-			let fullResponse = "";
-
-			child.stdout.on("data", (chunk: Buffer) => {
-				const text = chunk.toString();
-				fullResponse += text;
-				broadcast({
-					type: "chat:response:chunk",
-					data: { chatId, chunk: text },
-				});
-			});
-
-			child.stderr.on("data", (chunk: Buffer) => {
-				console.warn(
-					`[Chat] stderr for ${chatId}: ${chunk.toString().slice(0, 200)}`,
-				);
-			});
-
-			child.on("error", (err) => {
-				console.error(`[Chat] spawn error for ${chatId}:`, err.message);
-				activeChatProcesses.delete(chatId);
-				broadcast({
-					type: "chat:response:complete",
-					data: {
-						chatId,
-						fullResponse: "",
-						exitCode: 1,
-						error: `Process error: ${err.message}`,
-						conversationId: conversation.id,
-					},
-				});
-			});
-
-			const timeout = setTimeout(() => {
-				child.kill("SIGTERM");
-				setTimeout(() => {
-					if (!child.killed) child.kill("SIGKILL");
-				}, 5000);
-			}, 300000);
-
-			child.on("close", async (code) => {
-				clearTimeout(timeout);
-				activeChatProcesses.delete(chatId);
-
-				// Await save before broadcasting complete — prevents race where
-				// client reloads conversation before the response is persisted.
-				if (fullResponse.trim()) {
-					try {
-						await withConversationLock(conversation.id, async () => {
-							const freshConv = readConversation(conversation.id);
-							if (freshConv) {
-								freshConv.messages.push({
-									id: randomUUID(),
-									role: "assistant",
-									content: fullResponse,
-									timestamp: Date.now(),
-								});
-								freshConv.updatedAt = new Date().toISOString();
-								writeConversation(freshConv);
-							}
-						});
-					} catch (err) {
-						console.error(
-							`[Chat] Failed to save conversation ${conversation.id}:`,
-							(err as Error).message,
-						);
-					}
-				}
-
-				broadcast({
-					type: "chat:response:complete",
-					data: {
-						chatId,
-						fullResponse,
-						exitCode: code,
-						conversationId: conversation.id,
-					},
-				});
-			});
-
-			res.status(202).json({
-				chatId,
-				conversationId: conversation.id,
-				status: "streaming",
-			});
-		} catch (err) {
-			console.error("[Chat] Agent mode error:", (err as Error).message);
-			res.status(500).json({ error: "Failed to process agent request" });
-		}
-	})();
 });
 
 // POST /api/chat/cancel — Cancel an active chat or flow execution
@@ -938,6 +131,12 @@ router.post("/cancel", (req, res) => {
 	if (executionId && typeof executionId === "string") {
 		cancelExecution(executionId);
 		res.json({ success: true });
+		return;
+	}
+
+	// Validate chatId type (#7)
+	if (!chatId || typeof chatId !== "string") {
+		res.status(400).json({ error: "chatId (string) is required" });
 		return;
 	}
 
@@ -956,10 +155,10 @@ router.post("/cancel", (req, res) => {
 
 // --- Conversation CRUD endpoints ---
 
-// GET /api/chat/conversations — List all conversations (newest first, no messages)
-router.get("/conversations", (_req, res) => {
+// GET /api/chat/conversations — List all conversations (newest first)
+router.get("/conversations", async (_req, res) => {
 	try {
-		const conversations = listAllConversations();
+		const conversations = await listAllConversations();
 		res.json({ conversations });
 	} catch (err) {
 		console.error("[Chat] Failed to list conversations:", err);
@@ -968,9 +167,9 @@ router.get("/conversations", (_req, res) => {
 });
 
 // GET /api/chat/conversations/:id — Get a conversation with all messages
-router.get("/conversations/:id", (req, res) => {
+router.get("/conversations/:id", async (req, res) => {
 	const { id } = req.params;
-	const conversation = readConversation(id);
+	const conversation = await readConversation(id);
 	if (!conversation) {
 		res.status(404).json({ error: "Conversation not found" });
 		return;
@@ -979,7 +178,7 @@ router.get("/conversations/:id", (req, res) => {
 });
 
 // POST /api/chat/conversations — Create a new empty conversation
-router.post("/conversations", (req, res) => {
+router.post("/conversations", async (req, res) => {
 	const { name } = req.body;
 	const now = new Date().toISOString();
 	const conversation: ChatConversation = {
@@ -993,7 +192,7 @@ router.post("/conversations", (req, res) => {
 		messages: [],
 	};
 	try {
-		writeConversation(conversation);
+		await writeConversation(conversation);
 		res.status(201).json({ id: conversation.id, name: conversation.name });
 	} catch (err) {
 		console.error("[Chat] Failed to create conversation:", err);
@@ -1002,41 +201,53 @@ router.post("/conversations", (req, res) => {
 });
 
 // PUT /api/chat/conversations/:id/name — Rename a conversation
-router.put("/conversations/:id/name", (req, res) => {
+router.put("/conversations/:id/name", async (req, res) => {
 	const { id } = req.params;
 	const { name } = req.body;
 	if (!name || typeof name !== "string" || !name.trim()) {
 		res.status(400).json({ error: "name (non-empty string) is required" });
 		return;
 	}
-	const conversation = readConversation(id);
+	const conversation = await readConversation(id);
 	if (!conversation) {
 		res.status(404).json({ error: "Conversation not found" });
 		return;
 	}
-	conversation.name = name.trim().slice(0, 200);
-	conversation.updatedAt = new Date().toISOString();
+	const updated: ChatConversation = {
+		...conversation,
+		name: name.trim().slice(0, 200),
+		updatedAt: new Date().toISOString(),
+	};
 	try {
-		writeConversation(conversation);
-		res.json({ id: conversation.id, name: conversation.name });
+		await writeConversation(updated);
+		res.json({ id: updated.id, name: updated.name });
 	} catch (err) {
 		console.error("[Chat] Failed to rename conversation:", err);
 		res.status(500).json({ error: "Failed to rename conversation" });
 	}
 });
 
-// DELETE /api/chat/conversations/:id — Delete a conversation
-router.delete("/conversations/:id", (req, res) => {
+// DELETE /api/chat/conversations/:id — Delete a conversation (#13: try/catch for conversationPath)
+router.delete("/conversations/:id", async (req, res) => {
 	const { id } = req.params;
-	const filePath = conversationPath(id);
-	if (!existsSync(filePath)) {
-		res.status(404).json({ error: "Conversation not found" });
+	try {
+		conversationPath(id); // validate ID format
+	} catch {
+		res.status(400).json({ error: "Invalid conversation ID" });
 		return;
 	}
 	try {
-		unlinkSync(filePath);
+		await deleteConversation(id);
 		res.json({ success: true });
-	} catch (err) {
+	} catch (err: unknown) {
+		if (
+			err instanceof Error &&
+			"code" in err &&
+			(err as NodeJS.ErrnoException).code === "ENOENT"
+		) {
+			res.status(404).json({ error: "Conversation not found" });
+			return;
+		}
 		console.error("[Chat] Failed to delete conversation:", err);
 		res.status(500).json({ error: "Failed to delete conversation" });
 	}

@@ -24,6 +24,10 @@ import {
 	mobilePreviewOpen,
 	isMobile,
 	showToast,
+	addFileChange,
+	clearChanges,
+	activeSessionId,
+	type FileDiffData,
 } from "./state/store";
 import {
 	appendToAssistant,
@@ -32,6 +36,8 @@ import {
 	appendFlowAgentOutput,
 	completeFlowAgent,
 	completeFlowExecution,
+	updateFlowFromExecution,
+	reconcileFlowState,
 } from "./state/chat-store";
 import { apiFetch, getAuthToken } from "./api";
 
@@ -64,11 +70,16 @@ const KNOWN_MSG_TYPES = new Set([
 	"session:conversationId",
 	"chat:response:chunk",
 	"chat:response:complete",
+	"chat:response:error",
 	"chat:flow:started",
 	"flow:execution:update",
 	"flow:agent:output",
 	"flow:agent:complete",
 	"flow:execution:complete",
+	"flow:peer:session_created",
+	"flow:peer:message",
+	"changes:file",
+	"changes:window",
 ]);
 
 /** Runtime validation for incoming WebSocket messages */
@@ -322,6 +333,9 @@ function openWs(wsUrl: string, protocols?: string[]): void {
 						});
 					// Pre-fetch recent conversations so New Tab opens instantly (force — server state may have changed)
 					fetchRecentConversations(apiFetch, true);
+					// Reconcile stale flow state — if localStorage says "running" but
+					// the backend says otherwise (crash, restart), clean it up.
+					reconcileFlowState(apiFetch);
 				}
 				if (!msg.data.pendingRestore) {
 					setRestoringPending(false);
@@ -482,6 +496,16 @@ function openWs(wsUrl: string, protocols?: string[]): void {
 				if (typeof d.chatId === "string" && typeof d.chunk === "string") {
 					appendToAssistant(d.chatId, d.chunk);
 				}
+			} else if (msg.type === "chat:response:error" && msg.data) {
+				// Error during streaming — complete the assistant message with error
+				const d = msg.data as Record<string, unknown>;
+				if (typeof d.chatId === "string") {
+					completeAssistant(
+						d.chatId,
+						1,
+						typeof d.error === "string" ? d.error : "Unknown error",
+					);
+				}
 			} else if (msg.type === "chat:response:complete" && msg.data) {
 				const d = msg.data as Record<string, unknown>;
 				if (typeof d.chatId === "string") {
@@ -563,8 +587,29 @@ function openWs(wsUrl: string, protocols?: string[]): void {
 							: "completed";
 					completeFlowExecution(d.id, validStatus);
 				}
-			} else if (msg.type === "flow:execution:update") {
-				// Status updates handled implicitly by agent:output/complete
+			} else if (msg.type === "changes:file" && msg.data) {
+				const sessionId = msg.sessionId;
+				if (typeof sessionId === "string" && typeof msg.data === "object") {
+					addFileChange(sessionId, msg.data as FileDiffData);
+				}
+			} else if (msg.type === "changes:window") {
+				// New diff window — clear current changes only for the active session
+				const sid = msg.sessionId;
+				if (typeof sid === "string" && sid === activeSessionId.value) {
+					clearChanges();
+				}
+			} else if (msg.type === "flow:execution:update" && msg.data) {
+				// Sync frontend state when backend transitions between agents.
+				// Without this, the frontend has a gap between agent:complete and the
+				// first agent:output where no "running" entry exists in the visitLog.
+				const d = msg.data as Record<string, unknown>;
+				if (typeof d.id === "string" && typeof d.currentAgentId === "string") {
+					updateFlowFromExecution(
+						d.id,
+						d.currentAgentId,
+						typeof d.loopCount === "number" ? d.loopCount : undefined,
+					);
+				}
 			}
 		} catch (err) {
 			console.warn("[WS] Failed to parse message:", err);

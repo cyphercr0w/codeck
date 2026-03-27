@@ -113,6 +113,10 @@
 	display: flex;
 	flex-direction: column;
 }
+.preview-side.full {
+	max-width: 100%;
+	border-left: none;
+}
 
 /* ── Preview Mode Bar ── */
 

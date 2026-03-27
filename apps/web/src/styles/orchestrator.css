@@ -248,6 +248,10 @@
 	align-items: center;
 	gap: 8px;
 }
+.flow-card-icon {
+	font-size: 18px;
+	line-height: 1;
+}
 .flow-card-name {
 	font-weight: 600;
 	font-size: 14px;
@@ -342,4 +346,3 @@
 	border: 1px solid var(--border);
 	color: var(--text-muted);
 }
-

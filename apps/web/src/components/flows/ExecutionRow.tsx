@@ -19,8 +19,13 @@ const STATUS_COLOR: Record<string, string> = {
 };
 
 function formatDuration(ms: number): string {
-	if (ms < 60000) return `${Math.round(ms / 1000)}s`;
-	return `${Math.round(ms / 60000)}m`;
+	const s = Math.round(ms / 1000);
+	if (s < 60) return `${s}s`;
+	const m = Math.floor(s / 60);
+	const rem = s % 60;
+	if (m < 60) return rem > 0 ? `${m}m ${rem}s` : `${m}m`;
+	const h = Math.floor(m / 60);
+	return `${h}h ${m % 60}m`;
 }
 
 export function ExecutionRow({
@@ -68,7 +73,16 @@ export function ExecutionRow({
 										<IconX size={12} />
 									)}
 								</span>
-								<span class="flow-exec-agent-name">{id}</span>
+								<span class="flow-exec-agent-name">
+									{id
+										.split(":")[0]
+										.split("-")
+										.map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+										.join(" ")}
+									{id.includes(":") && (
+										<span style="opacity:0.5"> (pass {id.split(":")[1]})</span>
+									)}
+								</span>
 								<span
 									class="flow-exec-agent-status"
 									style={{ color: STATUS_COLOR[r.status] || "inherit" }}

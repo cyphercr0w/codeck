@@ -350,6 +350,7 @@ function runAgent(
 		let activeToolName = "";
 		let activeToolInput = "";
 		let insideToolUse = false;
+		const toolCallLog: string[] = []; // Track all tool calls for fallback summary
 
 		// Timeout handler — guard against zero/negative values
 		const effectiveTimeout = Math.max(agent.timeoutMs, 5000);
@@ -435,6 +436,9 @@ function runAgent(
 					const line = summary
 						? `\n[${activeToolName}: ${summary}]\n`
 						: `\n[${activeToolName}]\n`;
+					toolCallLog.push(
+						summary ? `${activeToolName}: ${summary}` : activeToolName,
+					);
 					activeToolName = "";
 					activeToolInput = "";
 					insideToolUse = false;
@@ -534,12 +538,26 @@ function runAgent(
 
 			const status: AgentStatus = succeeded ? "completed" : "failed";
 
+			let finalOutput = outputBuffer.trim();
+
+			// Guardrail: if agent produced no text output (only tool summaries
+			// or completely empty), generate a fallback summary so the user
+			// always sees something.
+			const textOnly = finalOutput
+				.replace(/\n?\[[\w]+:?[^\]]*\]\n?/g, "")
+				.trim();
+			if (!textOnly && toolCallLog.length > 0) {
+				finalOutput = `Agent completed silently. Actions performed:\n${toolCallLog.map((t) => `  - ${t}`).join("\n")}`;
+			} else if (!finalOutput) {
+				finalOutput = `Agent completed with no output (exit code: ${exitCode}).`;
+			}
+
 			const result: AgentResult = {
 				agentId: agent.id,
 				status,
 				startedAt,
 				completedAt,
-				output: outputBuffer.trim(),
+				output: finalOutput,
 			};
 
 			if (timedOut) {

@@ -13,9 +13,20 @@ export function FlowCard({
 	onDelete: () => void;
 }) {
 	const agentCount = Object.keys(flow.agents).length;
+	// Template-specific icons
+	const icon = flow.name.includes("Review")
+		? "\uD83D\uDD0D"
+		: flow.name.includes("TDD")
+			? "\uD83E\uDDEA"
+			: flow.name.includes("Fullstack") || flow.name.includes("Builder")
+				? "\uD83C\uDFD7\uFE0F"
+				: flow.name.includes("Production") || flow.name.includes("Prompt")
+					? "\uD83D\uDE80"
+					: "\u2699\uFE0F";
 	return (
 		<div class="flow-card" onClick={onSelect}>
 			<div class="flow-card-header">
+				<span class="flow-card-icon">{icon}</span>
 				<span class="flow-card-name">{flow.name}</span>
 				{flow.isTemplate && <span class="flow-card-badge">Template</span>}
 			</div>

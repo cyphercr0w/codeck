@@ -47,7 +47,14 @@ export interface FlowExecution {
 	initialInput: string;
 	agentResults: Record<
 		string,
-		{ agentId: string; status: string; output: string }
+		{
+			agentId: string;
+			status: string;
+			output: string;
+			startedAt?: string;
+			completedAt?: string | null;
+			structuredDecision?: string;
+		}
 	>;
 }
 

@@ -421,10 +421,30 @@ export interface ClaudeUsageData {
 	sevenDay: { percent: number; resetsAt: string | null } | null;
 }
 
-export const claudeUsage = signal<ClaudeUsageData | null>(null);
+// Load cached usage from localStorage on startup
+const USAGE_CACHE_KEY = "codeck:usageCache";
+function loadCachedUsage(): ClaudeUsageData | null {
+	try {
+		const raw = localStorage.getItem(USAGE_CACHE_KEY);
+		return raw ? JSON.parse(raw) : null;
+	} catch {
+		return null;
+	}
+}
+
+export const claudeUsage = signal<ClaudeUsageData | null>(loadCachedUsage());
+export const usageStale = signal(!!loadCachedUsage()); // true if showing cached data
+export const usageLastUpdated = signal<number>(0);
 
 export function setClaudeUsage(data: ClaudeUsageData): void {
 	claudeUsage.value = data;
+	usageStale.value = false;
+	usageLastUpdated.value = Date.now();
+	try {
+		localStorage.setItem(USAGE_CACHE_KEY, JSON.stringify(data));
+	} catch {
+		/* localStorage full */
+	}
 }
 
 // ── Context Data (from statusline) ──
@@ -515,6 +535,50 @@ export function togglePreview(): void {
 	} else {
 		previewMode.value = "hidden";
 	}
+}
+
+// ── File Changes tracking ──
+
+export interface FileDiffData {
+	path: string;
+	status: "added" | "modified" | "deleted";
+	additions: number;
+	deletions: number;
+	hunks: Array<{
+		oldStart: number;
+		oldLines: number;
+		newStart: number;
+		newLines: number;
+		lines: Array<{
+			type: "add" | "del" | "ctx";
+			content: string;
+			oldLineNo?: number;
+			newLineNo?: number;
+		}>;
+	}>;
+	timestamp: number;
+}
+
+export const sessionChanges = signal<FileDiffData[]>([]);
+export const changesOpen = signal(false);
+export const selectedChangePath = signal<string | null>(null);
+
+export function addFileChange(sessionId: string, diff: FileDiffData): void {
+	const activeId = activeSessionId.value;
+	if (sessionId !== activeId) return; // Only show changes for the active session
+	const current = [...sessionChanges.value];
+	const existing = current.findIndex((d) => d.path === diff.path);
+	if (existing >= 0) {
+		current[existing] = diff;
+	} else {
+		current.push(diff);
+	}
+	sessionChanges.value = current;
+}
+
+export function clearChanges(): void {
+	sessionChanges.value = [];
+	selectedChangePath.value = null;
 }
 
 const SUBAGENT_EXPIRE_MS = 10 * 60 * 1000; // 10 min auto-expire
@@ -708,7 +772,8 @@ export function startUsagePolling(
 				setClaudeUsage(data.claude);
 			}
 		} catch {
-			/* ignore */
+			// Mark as stale so the UI shows a warning — but keep the last cached value
+			if (claudeUsage.value) usageStale.value = true;
 		}
 	}
 

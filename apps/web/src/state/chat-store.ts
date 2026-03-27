@@ -660,6 +660,15 @@ export function completeFlowExecution(
 		(m) => m.streaming && m.flowExecutionId !== executionId,
 	);
 	if (!stillStreaming) chatStreaming.value = false;
+
+	// Archive peer messages for post-execution view before clearing
+	if (peerMessageLog.value.length > 0) {
+		archivedPeerMessages.value = {
+			...archivedPeerMessages.value,
+			[executionId]: [...peerMessageLog.value],
+		};
+	}
+
 	activeFlowExecution.value = null;
 	openPeerTerminal.value = null;
 	persistFlowState(null);
@@ -707,6 +716,8 @@ export interface PeerMessageEntry {
 	timestamp: number;
 	from: string;
 	to: string;
+	fromAgentId: string;
+	toAgentId: string;
 	type: string;
 	payload: string;
 	executionId: string;
@@ -715,42 +726,131 @@ export interface PeerMessageEntry {
 export const peerMessageLog = signal<PeerMessageEntry[]>([]);
 let peerMsgCounter = 0;
 
+// Communication edges between agents (for graph visualization)
+export interface CommunicationEdge {
+	fromAgentId: string;
+	toAgentId: string;
+	lastMessageAt: number;
+	messageCount: number;
+}
+
+export const peerCommunicationEdges = signal<CommunicationEdge[]>([]);
+
+// Active message animations (short-lived, for traveling dot effect)
+export interface ActiveAnimation {
+	id: number;
+	fromAgentId: string;
+	toAgentId: string;
+	startedAt: number;
+}
+
+export const activeMessageAnimations = signal<ActiveAnimation[]>([]);
+let animCounter = 0;
+const ANIMATION_DURATION = 1500; // ms
+
+// Agent summaries (from set_summary tool calls)
+export const peerAgentSummaries = signal<Record<string, string>>({});
+
+// Archived messages for post-execution view
+export const archivedPeerMessages = signal<Record<string, PeerMessageEntry[]>>(
+	{},
+);
+
 export function addPeerMessage(
 	executionId: string,
 	from: string,
 	to: string,
+	fromAgentId: string,
+	toAgentId: string,
 	messageType: string,
 	payload: string,
 ): void {
 	const flow = activeFlowExecution.value;
 	if (!flow || flow.executionId !== executionId) return;
+
+	const now = Date.now();
 	peerMessageLog.value = [
 		...peerMessageLog.value,
 		{
 			id: ++peerMsgCounter,
-			timestamp: Date.now(),
+			timestamp: now,
 			from,
 			to,
+			fromAgentId,
+			toAgentId,
 			type: messageType,
 			payload,
 			executionId,
 		},
 	];
+
+	// Update communication edges for graph visualization
+	if (fromAgentId && toAgentId) {
+		const edges = [...peerCommunicationEdges.value];
+		const existing = edges.find(
+			(e) => e.fromAgentId === fromAgentId && e.toAgentId === toAgentId,
+		);
+		if (existing) {
+			const idx = edges.indexOf(existing);
+			edges[idx] = {
+				...existing,
+				lastMessageAt: now,
+				messageCount: existing.messageCount + 1,
+			};
+		} else {
+			edges.push({
+				fromAgentId,
+				toAgentId,
+				lastMessageAt: now,
+				messageCount: 1,
+			});
+		}
+		peerCommunicationEdges.value = edges;
+
+		// Trigger traveling dot animation
+		const animId = ++animCounter;
+		activeMessageAnimations.value = [
+			...activeMessageAnimations.value,
+			{ id: animId, fromAgentId, toAgentId, startedAt: now },
+		];
+		setTimeout(() => {
+			activeMessageAnimations.value = activeMessageAnimations.value.filter(
+				(a) => a.id !== animId,
+			);
+		}, ANIMATION_DURATION);
+	}
 }
 
 export function clearPeerMessages(): void {
 	peerMessageLog.value = [];
 	peerMsgCounter = 0;
+	peerCommunicationEdges.value = [];
+	activeMessageAnimations.value = [];
+	peerAgentSummaries.value = {};
 }
 
 // Mark an agent as having received work (for status derivation in peer flows)
 export function markAgentActivated(executionId: string, agentId: string): void {
 	const flow = activeFlowExecution.value;
 	if (!flow || flow.executionId !== executionId) return;
-	if (flow.activatedAgents?.[agentId]) return; // already marked
+	if (flow.activatedAgents?.[agentId]) return;
 	activeFlowExecution.value = {
 		...flow,
 		activatedAgents: { ...flow.activatedAgents, [agentId]: true },
 	};
 	flowStateVersion.value++;
+}
+
+// Update agent summary (from set_summary tool via broker)
+export function updatePeerSummary(
+	executionId: string,
+	agentId: string,
+	summary: string,
+): void {
+	const flow = activeFlowExecution.value;
+	if (!flow || flow.executionId !== executionId) return;
+	peerAgentSummaries.value = {
+		...peerAgentSummaries.value,
+		[agentId]: summary,
+	};
 }

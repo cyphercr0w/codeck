@@ -41,6 +41,7 @@ import {
 	registerPeerSession,
 	addPeerMessage,
 	markAgentActivated,
+	updatePeerSummary,
 } from "./state/chat-store";
 import { apiFetch, getAuthToken } from "./api";
 
@@ -81,6 +82,7 @@ const KNOWN_MSG_TYPES = new Set([
 	"flow:execution:complete",
 	"flow:peer:session_created",
 	"flow:peer:message",
+	"flow:peer:summary",
 	"changes:file",
 	"changes:window",
 ]);
@@ -627,6 +629,8 @@ function openWs(wsUrl: string, protocols?: string[]): void {
 						d.executionId,
 						d.from,
 						d.to,
+						typeof d.fromAgentId === "string" ? d.fromAgentId : d.from,
+						typeof d.toAgentId === "string" ? d.toAgentId : d.to,
 						typeof d.messageType === "string" ? d.messageType : "message",
 						typeof d.payload === "string" ? d.payload : "",
 					);
@@ -634,6 +638,15 @@ function openWs(wsUrl: string, protocols?: string[]): void {
 					if (typeof d.toAgentId === "string") {
 						markAgentActivated(d.executionId, d.toAgentId);
 					}
+				}
+			} else if (msg.type === "flow:peer:summary" && msg.data) {
+				const d = msg.data as Record<string, unknown>;
+				if (
+					typeof d.executionId === "string" &&
+					typeof d.agentId === "string" &&
+					typeof d.summary === "string"
+				) {
+					updatePeerSummary(d.executionId, d.agentId, d.summary);
 				}
 			} else if (msg.type === "flow:execution:update" && msg.data) {
 				// Sync frontend state when backend transitions between agents.

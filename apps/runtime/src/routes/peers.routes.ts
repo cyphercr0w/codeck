@@ -18,6 +18,7 @@ import {
 	getBrokerStats,
 	getPeer,
 } from "../services/peers/broker.js";
+import { broadcast } from "../web/logger.js";
 
 const router = Router();
 
@@ -65,7 +66,7 @@ router.post("/heartbeat", (req, res) => {
 	res.json({ ok });
 });
 
-// Update summary
+// Update summary — also broadcast to frontend for real-time node graph
 router.post("/set-summary", (req, res) => {
 	const { peerId, summary } = req.body;
 	if (!peerId) {
@@ -73,6 +74,17 @@ router.post("/set-summary", (req, res) => {
 		return;
 	}
 	updateSummary(peerId, summary || "");
+	const peer = getPeer(peerId);
+	if (peer) {
+		broadcast({
+			type: "flow:peer:summary",
+			data: {
+				executionId: peer.executionId,
+				agentId: peer.agentId,
+				summary: summary || "",
+			},
+		});
+	}
 	res.json({ ok: true });
 });
 

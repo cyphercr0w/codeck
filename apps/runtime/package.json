@@ -5,9 +5,8 @@
 	"type": "module",
 	"main": "dist/index.js",
 	"scripts": {
-		"build": "tsc && npm run copy:templates && npm run copy:peers",
+		"build": "tsc && npm run copy:templates",
 		"copy:templates": "node -e \"const {cpSync,rmSync,existsSync}=require('fs');if(existsSync('dist/templates'))rmSync('dist/templates',{recursive:true,force:true});cpSync('src/templates','dist/templates',{recursive:true})\"",
-		"copy:peers": "node -e \"const {cpSync,mkdirSync,existsSync}=require('fs');const d='dist/peers';if(!existsSync(d))mkdirSync(d,{recursive:true});cpSync('src/peers','dist/peers',{recursive:true})\"",
 		"clean": "rm -rf dist",
 		"dev": "tsx watch src/index.ts"
 	},

@@ -1,7 +1,7 @@
 /**
  * TeamsSection — Team template list, creation, and launch UI.
  *
- * Displayed as a sub-view within FlowsSection when the "Teams" tab is active.
+ * Main orchestration view for Agent Teams — template list, creation, and launch.
  * Provides CRUD for team templates and launch functionality.
  */
 

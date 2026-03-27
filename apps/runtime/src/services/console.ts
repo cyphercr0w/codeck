@@ -698,9 +698,8 @@ export function listSessions(): Array<{
 	createdAt: number;
 	conversationId?: string;
 }> {
-	// Filter out peer sessions — they are managed by PeerExecutionViewer,
-	// not by ClaudeSection. Including them causes them to appear as
-	// terminal tabs and triggers stale console:attach calls.
+	// Filter out peer and team-agent sessions — they are managed by
+	// TeamExecutionViewer, not ClaudeSection.
 	return Array.from(sessions.values())
 		.filter((s) => s.type !== "peer" && s.type !== "team-agent")
 		.map((s) => ({

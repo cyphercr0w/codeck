@@ -24,7 +24,7 @@ The docs explain architecture, data flows, APIs, and conventions that you won't 
 - System config (auth.json, config.json) and agent data (memory, rules, skills, preferences) share this location
 - Preset manifests use absolute paths to drive file placement
 - Three CLAUDE.md layers: global (`/root/.claude/`), workspace (`/workspace/`), project (`/workspace/<project>/`)
-- Agent Teams (experimental): native Claude Code multi-agent coordination via tmux panes, replacing custom peer system. Templates at `/workspace/.codeck/teams/templates/`, API at `/api/teams`.
+- Agent Teams: sole orchestration system — native Claude Code multi-agent coordination via tmux panes. Templates at `/workspace/.codeck/teams/templates/`, API at `/api/teams`. Flow/peer system was removed.
 
 ## Quick Start (Self-Hosted)
 

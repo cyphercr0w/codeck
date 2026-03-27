@@ -25,20 +25,7 @@ import {
 	isMobile,
 	showToast,
 } from "./state/store";
-import {
-	appendToAssistant,
-	completeAssistant,
-	startFlowInChat,
-	appendFlowAgentOutput,
-	completeFlowAgent,
-	completeFlowExecution,
-	updateFlowFromExecution,
-	reconcileFlowState,
-	registerPeerSession,
-	addPeerMessage,
-	markAgentActivated,
-	updatePeerSummary,
-} from "./state/chat-store";
+import { appendToAssistant, completeAssistant } from "./state/chat-store";
 import { apiFetch, getAuthToken } from "./api";
 import {
 	onTeamLaunched,
@@ -76,14 +63,6 @@ const KNOWN_MSG_TYPES = new Set([
 	"chat:response:chunk",
 	"chat:response:complete",
 	"chat:response:error",
-	"chat:flow:started",
-	"flow:execution:update",
-	"flow:agent:output",
-	"flow:agent:complete",
-	"flow:execution:complete",
-	"flow:peer:session_created",
-	"flow:peer:message",
-	"flow:peer:summary",
 	"team:launched",
 	"team:agent:detected",
 	"team:stopped",
@@ -340,9 +319,6 @@ function openWs(wsUrl: string, protocols?: string[]): void {
 						});
 					// Pre-fetch recent folders so New Tab opens instantly (force — server state may have changed)
 					fetchRecentFolders(apiFetch, true);
-					// Reconcile stale flow state — if localStorage says "running" but
-					// the backend says otherwise (crash, restart), clean it up.
-					reconcileFlowState(apiFetch);
 				}
 				if (!msg.data.pendingRestore) {
 					setRestoringPending(false);
@@ -363,7 +339,8 @@ function openWs(wsUrl: string, protocols?: string[]): void {
 						typeof s.id === "string" &&
 						typeof s.cwd === "string" &&
 						typeof s.name === "string" &&
-						s.type !== "peer", // Peer sessions are managed by PeerExecutionViewer, not ClaudeSection
+						s.type !== "peer" &&
+						s.type !== "team-agent", // Team sessions managed by TeamExecutionViewer
 				);
 				// Don't auto-mount — let user choose Resume or Discard
 				if (restored.length > 0) {
@@ -521,134 +498,6 @@ function openWs(wsUrl: string, protocols?: string[]): void {
 						d.chatId,
 						typeof d.exitCode === "number" ? d.exitCode : 0,
 						typeof d.error === "string" ? d.error : undefined,
-					);
-				}
-			} else if (msg.type === "chat:flow:started" && msg.data) {
-				const d = msg.data as Record<string, unknown>;
-				if (
-					typeof d.executionId === "string" &&
-					typeof d.conversationId === "string" &&
-					typeof d.flowName === "string" &&
-					Array.isArray(d.agents)
-				) {
-					const flowId = typeof d.flowId === "string" ? d.flowId : "";
-					// Validate each agent element has the required fields
-					const validAgents = (d.agents as unknown[]).filter(
-						(a): a is { id: string; name: string; role: string } => {
-							if (typeof a !== "object" || a === null) return false;
-							const obj = a as Record<string, unknown>;
-							return (
-								typeof obj.id === "string" &&
-								typeof obj.name === "string" &&
-								typeof obj.role === "string"
-							);
-						},
-					);
-					if (validAgents.length > 0) {
-						startFlowInChat(
-							d.executionId,
-							d.conversationId,
-							flowId,
-							d.flowName,
-							validAgents,
-							typeof d.initialInput === "string" ? d.initialInput : undefined,
-						);
-					}
-				}
-			} else if (msg.type === "flow:agent:output" && msg.data) {
-				const d = msg.data as Record<string, unknown>;
-				if (
-					typeof d.executionId === "string" &&
-					typeof d.agentId === "string" &&
-					typeof d.chunk === "string"
-				) {
-					appendFlowAgentOutput(d.executionId, d.agentId, d.chunk);
-				}
-			} else if (msg.type === "flow:agent:complete" && msg.data) {
-				const d = msg.data as Record<string, unknown>;
-				if (
-					typeof d.executionId === "string" &&
-					typeof d.agentId === "string" &&
-					typeof d.result === "object" &&
-					d.result !== null
-				) {
-					const r = d.result as Record<string, unknown>;
-					completeFlowAgent(d.executionId, d.agentId, {
-						output: typeof r.output === "string" ? r.output : undefined,
-						startedAt:
-							typeof r.startedAt === "string" ? r.startedAt : undefined,
-						completedAt:
-							typeof r.completedAt === "string" ? r.completedAt : null,
-						structuredDecision:
-							typeof r.structuredDecision === "string"
-								? r.structuredDecision
-								: undefined,
-					});
-				}
-			} else if (msg.type === "flow:execution:complete" && msg.data) {
-				const d = msg.data as Record<string, unknown>;
-				if (typeof d.id === "string") {
-					const s = typeof d.status === "string" ? d.status : "completed";
-					const validStatus =
-						s === "completed" || s === "failed" || s === "cancelled"
-							? s
-							: "completed";
-					completeFlowExecution(d.id, validStatus);
-				}
-			} else if (msg.type === "flow:peer:session_created" && msg.data) {
-				const d = msg.data as Record<string, unknown>;
-				if (
-					typeof d.executionId === "string" &&
-					typeof d.agentId === "string" &&
-					typeof d.sessionId === "string"
-				) {
-					registerPeerSession(d.executionId, d.agentId, d.sessionId);
-					// Eagerly attach the session so output starts flowing immediately.
-					// The terminal DOM element may not exist yet, but attachSession
-					// ensures console:output data is buffered by writeToTerminal once
-					// the xterm instance is created later.
-					attachSession(d.sessionId);
-				}
-			} else if (msg.type === "flow:peer:message" && msg.data) {
-				const d = msg.data as Record<string, unknown>;
-				if (
-					typeof d.executionId === "string" &&
-					typeof d.from === "string" &&
-					typeof d.to === "string"
-				) {
-					addPeerMessage(
-						d.executionId,
-						d.from,
-						d.to,
-						typeof d.fromAgentId === "string" ? d.fromAgentId : d.from,
-						typeof d.toAgentId === "string" ? d.toAgentId : d.to,
-						typeof d.messageType === "string" ? d.messageType : "message",
-						typeof d.payload === "string" ? d.payload : "",
-					);
-					// Mark target agent as activated (for status derivation)
-					if (typeof d.toAgentId === "string") {
-						markAgentActivated(d.executionId, d.toAgentId);
-					}
-				}
-			} else if (msg.type === "flow:peer:summary" && msg.data) {
-				const d = msg.data as Record<string, unknown>;
-				if (
-					typeof d.executionId === "string" &&
-					typeof d.agentId === "string" &&
-					typeof d.summary === "string"
-				) {
-					updatePeerSummary(d.executionId, d.agentId, d.summary);
-				}
-			} else if (msg.type === "flow:execution:update" && msg.data) {
-				// Sync frontend state when backend transitions between agents.
-				// Without this, the frontend has a gap between agent:complete and the
-				// first agent:output where no "running" entry exists in the visitLog.
-				const d = msg.data as Record<string, unknown>;
-				if (typeof d.id === "string" && typeof d.currentAgentId === "string") {
-					updateFlowFromExecution(
-						d.id,
-						d.currentAgentId,
-						typeof d.loopCount === "number" ? d.loopCount : undefined,
 					);
 				}
 			} else if (msg.type === "team:launched" && msg.data) {

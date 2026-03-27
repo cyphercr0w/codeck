@@ -11,7 +11,7 @@ import {
 } from "../services/conversation-storage.js";
 import type { ChatConversation, ChatMessage } from "../types/chat.types.js";
 import { handleApiDirectMode } from "../services/chat-api-handler.js";
-import { cancelExecution } from "../services/flow-runner.js";
+import { stopTeam } from "../services/tmux-bridge.js";
 
 const router = Router();
 
@@ -89,7 +89,7 @@ router.post("/cancel", (req, res) => {
 		return;
 	}
 
-	cancelExecution(executionId);
+	stopTeam(executionId);
 	res.json({ success: true });
 });
 

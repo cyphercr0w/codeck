@@ -82,15 +82,12 @@ import proactiveAgentsRoutes from "../routes/agents.routes.js";
 import skillsRoutes from "../routes/skills.routes.js";
 import mcpRoutes from "../routes/mcp.routes.js";
 import hooksRoutes from "../routes/hooks.routes.js";
-import flowsRoutes from "../routes/flows.routes.js";
-import peersRoutes from "../routes/peers.routes.js";
 import chatRoutes from "../routes/chat.routes.js";
 import teamsRoutes from "../routes/teams.routes.js";
 import {
 	initProactiveAgents,
 	shutdownProactiveAgents,
 } from "../services/proactive-agents.js";
-import { initFlowTemplates } from "../services/flows.js";
 import { initTeamTemplates } from "../services/teams.js";
 import {
 	initConsolidationCron,
@@ -489,9 +486,7 @@ export async function startWebServer(): Promise<void> {
 			"/memory",
 			"/console/context",
 			"/console/subagents",
-			"/flows",
 			"/chat",
-			"/peers",
 			"/teams",
 			"/preview/navigate-to",
 		];
@@ -614,8 +609,6 @@ export async function startWebServer(): Promise<void> {
 	app.use("/api/skills", skillsRoutes);
 	app.use("/api/mcp-servers", mcpRoutes);
 	app.use("/api/hooks", hooksRoutes);
-	app.use("/api/flows", flowsRoutes);
-	app.use("/api/peers", peersRoutes);
 	app.use("/api/chat", chatRoutes);
 	app.use("/api/teams", teamsRoutes);
 
@@ -732,7 +725,6 @@ export async function startWebServer(): Promise<void> {
 		updateClaudeMd();
 		ensureDirectories();
 		ensureMcpServers();
-		initFlowTemplates();
 		initTeamTemplates();
 
 		// Auto-update agent CLI in background (async — does not block event loop)

@@ -58,7 +58,7 @@ import { AgentConfigSection } from "./components/AgentConfigSection";
 import { ToastContainer } from "./components/ToastContainer";
 
 import { AgentsSection } from "./components/AgentsSection";
-import { FlowsSection } from "./components/FlowsSection";
+import { TeamsSection } from "./components/teams/TeamsSection";
 import { ChatSection } from "./components/ChatSection";
 import { SettingsSection } from "./components/SettingsSection";
 import { MobileMenu } from "./components/MobileMenu";
@@ -732,7 +732,7 @@ export function App() {
 							/>
 						</div>
 
-						{section === "flows" && <FlowsSection />}
+						{section === "flows" && <TeamsSection />}
 						{section === "agents" && <AgentsSection />}
 						{section === "integrations" && <IntegrationsSection />}
 						{section === "config" && <AgentConfigSection />}

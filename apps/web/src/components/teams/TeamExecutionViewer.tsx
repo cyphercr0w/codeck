@@ -5,7 +5,7 @@
  * Each tab renders an xterm.js terminal connected to the agent's tmux pane
  * via the standard console:attach/output WebSocket pipeline.
  *
- * Terminal mounting uses imperative DOM (same as PeerExecutionViewer/ClaudeSection).
+ * Terminal mounting uses imperative DOM (same pattern as ClaudeSection).
  */
 
 import { type FunctionalComponent } from "preact";

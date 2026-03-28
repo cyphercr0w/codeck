@@ -86,9 +86,19 @@ router.get(
 				try {
 					const content = await readFile(join(AGENTS_DIR, file), "utf-8");
 					const { frontmatter } = parseFrontmatter(content);
-					return { name, ...frontmatter };
+					return {
+						name,
+						description: (frontmatter.description as string) || "",
+						model: (frontmatter.model as string) || "sonnet",
+						tools: Array.isArray(frontmatter.tools) ? frontmatter.tools : [],
+					};
 				} catch {
-					return { name };
+					return {
+						name,
+						description: "",
+						model: "sonnet",
+						tools: [] as string[],
+					};
 				}
 			}),
 		);

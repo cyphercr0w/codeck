@@ -34,6 +34,7 @@ import {
 	injectContextIntoCLAUDEMd,
 	type ContextInjectionStats,
 } from "./memory-context.js";
+import { startTeammateWatcher } from "./teammate-watcher.js";
 import {
 	getValidAgentBinary,
 	resolveAgentBinary,
@@ -396,6 +397,12 @@ function _createConsoleSessionInner(
 			"- The teammate starts from ZERO — they have no access to your conversation",
 			"- Think of it as writing a complete task brief for a new hire",
 			"- Bad: 'fix the modal' — Good: 'In /workspace/codeck/apps/web/src/components/Modal.tsx, the useEffect on line 106 has [onCancel] as dependency causing a loop. Change to useRef pattern.'",
+			"",
+			"### Progress reporting",
+			"The user can see teammate terminals in the UI. But they can't see your internal coordination.",
+			"After spawning teammates, briefly tell the user what each one is doing.",
+			"When teammates report back, summarize their findings/changes to the user.",
+			"Don't go silent for long — the user needs to know what's happening.",
 		].join("\n");
 		args.push("--append-system-prompt", teamsPrompt);
 	}
@@ -423,6 +430,7 @@ function _createConsoleSessionInner(
 	}
 
 	const name = workDir.split("/").pop() || workDir;
+	const teamsEnabled = finalEnv.CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS === "1";
 	const session: ConsoleSession = {
 		id,
 		type: opts.sessionType || "agent",
@@ -434,6 +442,11 @@ function _createConsoleSessionInner(
 		outputBufferSize: 0,
 		attached: false,
 	};
+
+	// Start teammate pane watcher for teams-enabled sessions
+	if (teamsEnabled) {
+		startTeammateWatcher(id, pty.pid);
+	}
 
 	// Set or detect conversation ID for agent sessions
 	if (opts.conversationId) {

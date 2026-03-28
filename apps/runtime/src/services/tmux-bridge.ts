@@ -14,6 +14,7 @@ import { randomUUID } from "crypto";
 import { TmuxPtyAdapter } from "./tmux-pty-adapter.js";
 import { registerVirtualSession, destroySession } from "./console.js";
 import { saveTeamExecution } from "./teams.js";
+import { getOAuthEnv } from "./claude-env.js";
 import { broadcast } from "../web/logger.js";
 import type {
 	TeamTemplate,
@@ -90,19 +91,19 @@ export function launchTeam(
 		throw new Error(`Failed to create tmux session: ${(e as Error).message}`);
 	}
 
-	// Unset env vars inherited from the runtime that interfere with Claude auth.
-	// - ANTHROPIC_API_KEY / CLAUDE_API_KEY: may be stale/invalid → forces OAuth
-	// - CODECK_CLAUDE_CONFIG: points to /home/codeck/.claude which has no credentials;
-	//   unsetting lets Claude use $HOME/.claude (/root/.claude) where OAuth tokens live.
-	const claudeCmd = [
-		"unset ANTHROPIC_API_KEY CLAUDE_API_KEY CODECK_CLAUDE_CONFIG;",
+	// Auth: the runtime injects CLAUDE_CODE_OAUTH_TOKEN per-session via getOAuthEnv().
+	// We must forward it to the tmux shell. Also unset stale ANTHROPIC_API_KEY
+	// which would override OAuth and fail with "Invalid API key".
+	const oauthEnv = getOAuthEnv();
+	const oauthToken = oauthEnv.CLAUDE_CODE_OAUTH_TOKEN || "";
+	const envPrefix = [
+		"unset ANTHROPIC_API_KEY CLAUDE_API_KEY;",
 		"CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1",
-		"claude",
-		"--teammate-mode",
-		"tmux",
-		"--permission-mode",
-		"acceptEdits",
-	].join(" ");
+		oauthToken ? `CLAUDE_CODE_OAUTH_TOKEN=${oauthToken}` : "",
+	]
+		.filter(Boolean)
+		.join(" ");
+	const claudeCmd = `${envPrefix} claude --teammate-mode tmux --permission-mode acceptEdits`;
 
 	// Use -l for literal text, then send Enter separately
 	execFileSync(

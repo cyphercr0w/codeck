@@ -350,11 +350,13 @@ function _createConsoleSessionInner(
 
 	// Agent Teams: if the env var is set (globally or per-session) and
 	// --teammate-mode is not already in args, add it automatically.
-	if (
-		finalEnv.CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS === "1" &&
-		!args.includes("--teammate-mode")
-	) {
+	const agentTeamsEnv = finalEnv.CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS;
+	console.log(
+		`[Console] Agent Teams check: env=${agentTeamsEnv}, hasFlag=${args.includes("--teammate-mode")}, processEnv=${process.env.CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS}`,
+	);
+	if (agentTeamsEnv === "1" && !args.includes("--teammate-mode")) {
 		args.push("--teammate-mode", "tmux");
+		console.log("[Console] Auto-added --teammate-mode tmux");
 	}
 
 	// Inject memory context into workspace CLAUDE.md before spawning

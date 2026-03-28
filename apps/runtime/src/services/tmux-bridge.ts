@@ -91,8 +91,16 @@ export function launchTeam(
 		throw new Error(`Failed to create tmux session: ${(e as Error).message}`);
 	}
 
-	// Remove stale API keys from tmux GLOBAL env so no pane (leader or teammate)
-	// inherits them. The tmux server inherited them from the runtime process.
+	// Auth strategy:
+	// 1. Inline env vars in the claude command (affects the leader shell)
+	// 2. set-environment -t session (affects teammate panes spawned later)
+	// 3. set-environment -g -u removes stale API keys globally
+	//
+	// getOAuthEnv() returns the current valid OAuth token from the credential store.
+	const oauthEnv = getOAuthEnv();
+	const oauthToken = oauthEnv.CLAUDE_CODE_OAUTH_TOKEN || "";
+
+	// Remove stale API keys from tmux global env (runtime process inherits them)
 	for (const key of ["ANTHROPIC_API_KEY", "CLAUDE_API_KEY"]) {
 		try {
 			execFileSync("tmux", ["set-environment", "-g", "-u", key], {
@@ -103,11 +111,7 @@ export function launchTeam(
 		}
 	}
 
-	// Auth: inject the OAuth token from the runtime's credential store.
-	const oauthEnv = getOAuthEnv();
-	const oauthToken = oauthEnv.CLAUDE_CODE_OAUTH_TOKEN || "";
-
-	// Set OAuth token + agent teams flag in tmux SESSION env so all panes get them.
+	// Set session-level env for teammate panes
 	const sessionEnv: Record<string, string> = {
 		CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS: "1",
 	};
@@ -121,8 +125,27 @@ export function launchTeam(
 			/* non-fatal */
 		}
 	}
+	// Also remove stale API keys at session level
+	for (const key of ["ANTHROPIC_API_KEY", "CLAUDE_API_KEY"]) {
+		try {
+			execFileSync("tmux", ["set-environment", "-t", tmuxSession, "-u", key], {
+				timeout: 2000,
+			});
+		} catch {
+			/* may not exist */
+		}
+	}
 
-	const claudeCmd = "claude --teammate-mode tmux --permission-mode acceptEdits";
+	// Build command with inline env vars for the leader shell (set-environment
+	// only affects NEW panes, not the shell that already started with new-session).
+	const inlineEnv = [
+		"unset ANTHROPIC_API_KEY CLAUDE_API_KEY;",
+		"CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1",
+		oauthToken ? `CLAUDE_CODE_OAUTH_TOKEN=${oauthToken}` : "",
+	]
+		.filter(Boolean)
+		.join(" ");
+	const claudeCmd = `${inlineEnv} claude --teammate-mode tmux --permission-mode acceptEdits`;
 
 	// Use -l for literal text, then send Enter separately
 	execFileSync(

@@ -250,7 +250,7 @@ export function launchTeam(
 	activeExecutions.set(executionId, {
 		execution,
 		watcherInterval: null,
-		knownPanes: new Set(["0.0"]), // leader pane
+		knownPanes: new Set(["0"]), // leader pane (index from #{pane_index})
 		adapters: new Map(),
 	});
 
@@ -455,13 +455,20 @@ function buildTeamPrompt(template: TeamTemplate, userInput?: string): string {
 		)
 		.join("\n");
 
+	const taskBlock = userInput
+		? [
+				"",
+				`After the team is created, use SendMessage to tell the first teammate (${agents[0]?.id || "agent"}) to start working on this task:`,
+				s(userInput),
+				"",
+				"Do NOT wait for a response before sending the message. Send it immediately after team creation.",
+			]
+		: [];
+
 	const parts = [
 		`Use the TeamCreate tool RIGHT NOW to create a team called "${teamName}" with these ${agents.length} teammates:`,
 		agentDescs,
-		"",
-		userInput
-			? `After creating the team, assign this task: ${s(userInput)}`
-			: "",
+		...taskBlock,
 		"",
 		"IMPORTANT: Use the TeamCreate tool, not HTTP APIs or any other method.",
 	];

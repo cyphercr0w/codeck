@@ -12,7 +12,6 @@ import { type FunctionalComponent } from "preact";
 import { useEffect, useRef, useState, useCallback } from "preact/hooks";
 import {
 	activeTeam,
-	selectedAgentSessionId,
 	selectTeamAgent,
 	clearActiveTeam,
 } from "../../state/team-store";
@@ -31,7 +30,6 @@ import "../../styles/team-viewer.css";
 
 const TeamExecutionViewer: FunctionalComponent = () => {
 	const team = activeTeam.value;
-	const selectedSession = selectedAgentSessionId.value;
 	const [terminalOpen, setTerminalOpen] = useState(false);
 	const [terminalSessionId, setTerminalSessionId] = useState<string | null>(
 		null,
@@ -77,12 +75,21 @@ const TeamExecutionViewer: FunctionalComponent = () => {
 		attachSession(terminalSessionId);
 		ensureTerminalVisible(terminalSessionId);
 
-		const rafId = requestAnimationFrame(() => {
-			if (hasTerminal(terminalSessionId)) {
+		// The split panel may not have its final dimensions on the first frame.
+		// Poll until the container has non-zero size, then fit the terminal.
+		let attempts = 0;
+		const fitWhenReady = () => {
+			attempts++;
+			if (!hasTerminal(terminalSessionId)) return;
+			const rect = container.getBoundingClientRect();
+			if (rect.width > 0 && rect.height > 0) {
 				fitTerminal(terminalSessionId);
 				focusTerminal(terminalSessionId);
+			} else if (attempts < 20) {
+				requestAnimationFrame(fitWhenReady);
 			}
-		});
+		};
+		const rafId = requestAnimationFrame(fitWhenReady);
 
 		return () => {
 			cancelAnimationFrame(rafId);
@@ -102,7 +109,17 @@ const TeamExecutionViewer: FunctionalComponent = () => {
 			if (hasTerminal(terminalSessionId)) fitTerminal(terminalSessionId);
 		});
 		observer.observe(container);
-		return () => observer.disconnect();
+
+		// Fallback: force fit after a short delay in case ResizeObserver
+		// missed the initial layout pass.
+		const timer = setTimeout(() => {
+			if (hasTerminal(terminalSessionId)) fitTerminal(terminalSessionId);
+		}, 200);
+
+		return () => {
+			observer.disconnect();
+			clearTimeout(timer);
+		};
 	}, [terminalSessionId, terminalOpen]);
 
 	// ── Keyboard: Escape closes terminal ──

@@ -1160,6 +1160,14 @@ export function registerVirtualSession(
 	pty: VirtualPty,
 	options: { cwd: string; name: string },
 ): void {
+	// Capture the current tmux screen content so the terminal isn't blank
+	// when the frontend attaches later.  pipe-pane only captures NEW output.
+	const initialScreen =
+		"captureScreen" in pty && typeof pty.captureScreen === "function"
+			? (pty as VirtualPty & { captureScreen(): string }).captureScreen()
+			: "";
+	const outputBuffer = initialScreen ? [initialScreen] : [];
+
 	const session: ConsoleSession = {
 		id,
 		type: "team-agent",
@@ -1167,8 +1175,8 @@ export function registerVirtualSession(
 		cwd: options.cwd,
 		name: options.name,
 		createdAt: Date.now(),
-		outputBuffer: [],
-		outputBufferSize: 0,
+		outputBuffer,
+		outputBufferSize: initialScreen.length,
 		attached: false,
 	};
 	sessions.set(id, session);

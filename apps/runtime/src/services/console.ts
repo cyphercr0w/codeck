@@ -1,7 +1,6 @@
 import { spawn as ptySpawn, type IPty } from "node-pty";
 import {
 	readFileSync,
-	writeFileSync,
 	existsSync,
 	mkdirSync,
 	unlinkSync,
@@ -33,7 +32,6 @@ import { summarizeSession } from "./session-summarizer.js";
 import { broadcast } from "../web/logger.js";
 import {
 	injectContextIntoCLAUDEMd,
-	getContextSidecarPath,
 	type ContextInjectionStats,
 } from "./memory-context.js";
 import {
@@ -389,6 +387,15 @@ function _createConsoleSessionInner(
 			"- You orchestrate, teammates execute. Don't implement yourself.",
 			"- After implementation, ALWAYS spawn a reviewer teammate",
 			"- Each teammate claims tasks before starting and marks them completed when done",
+			"",
+			"### CRITICAL — Context passing",
+			"When spawning a teammate, include ALL relevant context in their prompt:",
+			"- File paths they need to read/edit",
+			"- What was already decided or researched (don't make them re-investigate)",
+			"- Specific instructions: what to do, what NOT to change, what to verify",
+			"- The teammate starts from ZERO — they have no access to your conversation",
+			"- Think of it as writing a complete task brief for a new hire",
+			"- Bad: 'fix the modal' — Good: 'In /workspace/codeck/apps/web/src/components/Modal.tsx, the useEffect on line 106 has [onCancel] as dependency causing a loop. Change to useRef pattern.'",
 		].join("\n");
 		args.push("--append-system-prompt", teamsPrompt);
 	}

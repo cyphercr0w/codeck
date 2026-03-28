@@ -666,7 +666,9 @@ export function NewProjectModal({
 							<div class="npm-launch-title">Launch options</div>
 
 							{canResume && (
-								<div role="group" aria-label="Conversation resume mode">
+						<>
+						<div class="npm-launch-subtitle">Session</div>
+														<div role="group" aria-label="Conversation resume mode">
 									<label class="npm-checkbox">
 										<input
 											type="checkbox"
@@ -686,9 +688,11 @@ export function NewProjectModal({
 										<span class="npm-flag">--continue</span>
 									</label>
 								</div>
-							)}
+						</>
+						)}
 
-							<label class="npm-checkbox">
+						<div class="npm-launch-subtitle" style="margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border-color, #333)">Mode</div>
+						<label class="npm-checkbox">
 								<input
 									type="checkbox"
 									checked={flags.teams}

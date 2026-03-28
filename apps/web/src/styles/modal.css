@@ -382,3 +382,14 @@
 .npm-clone-line:last-child {
 	color: var(--text-primary, #e0e0e0);
 }
+
+/* Launch option group subtitles */
+.npm-launch-subtitle {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  color: var(--text-muted, #666);
+  margin-bottom: 6px;
+  margin-top: 4px;
+}

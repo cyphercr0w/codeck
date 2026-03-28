@@ -8,7 +8,7 @@
  */
 
 import { execFile } from "child_process";
-import { readdirSync } from "fs";
+import { readdir } from "fs/promises";
 import { promisify } from "util";
 
 const execFileAsync = promisify(execFile);
@@ -16,7 +16,7 @@ import { broadcast } from "../web/logger.js";
 
 const TMUX_SOCK_DIR = "/tmp/tmux-0";
 const POLL_INTERVAL = 1500; // ms
-const DETECT_INTERVAL = 5000; // ms — how often to scan for new swarm sessions
+const DETECT_INTERVAL = 2000; // ms — how often to scan for new swarm sessions
 
 interface PaneState {
 	lines: string[];
@@ -28,15 +28,25 @@ let paneStates = new Map<number, PaneState>();
 let pollTimer: ReturnType<typeof setInterval> | null = null;
 let detectTimer: ReturnType<typeof setInterval> | null = null;
 
-/** Find the claude-swarm tmux socket name, if any. */
-function findSwarmSocket(): string | null {
+/** Find the claude-swarm tmux socket name, if any. Verifies the socket is alive. */
+async function findSwarmSocket(): Promise<string | null> {
 	try {
-		const entries = readdirSync(TMUX_SOCK_DIR);
-		const swarm = entries.find((e) => e.startsWith("claude-swarm-"));
-		return swarm || null;
-	} catch {
-		return null;
-	}
+		const entries = await readdir(TMUX_SOCK_DIR);
+		for (const entry of entries) {
+			if (!entry.startsWith("claude-swarm-")) continue;
+			try {
+				await execFileAsync("tmux", ["-L", entry, "list-sessions"], {
+					timeout: 2000,
+				});
+				console.log(`[TeamMonitor] Socket found and alive: ${entry}`);
+				return entry;
+			} catch {
+				// stale socket — skip
+				continue;
+			}
+		}
+	} catch {}
+	return null;
 }
 
 /** List panes in the swarm session with their indices and titles. */
@@ -156,6 +166,9 @@ async function pollPanes(): Promise<void> {
 			stopPolling();
 			return;
 		}
+		console.log(
+			`[TeamMonitor] Panes listed: ${panes.map((p) => `${p.index}:${p.title}`).join(", ")}`,
+		);
 
 		// Prune stale pane entries
 		const activePaneIndices = new Set(panes.map((p) => p.index));
@@ -186,12 +199,16 @@ async function pollPanes(): Promise<void> {
 				});
 
 				if (meaningful.length > 0) {
+					console.log(
+						`[TeamMonitor] Pane ${pane.index} (${agentName}): ${meaningful.length} new line(s) captured`,
+					);
 					broadcast({
 						type: "team:pane:output",
 						paneIndex: pane.index,
 						agentName,
 						lines: meaningful,
 					});
+					console.log(`[TeamMonitor] Broadcast sent for pane ${pane.index}`);
 				}
 			}
 		}
@@ -241,8 +258,8 @@ function stopPolling(): void {
 }
 
 /** Periodically check for new swarm sessions. */
-function detectLoop(): void {
-	const socket = findSwarmSocket();
+async function detectLoop(): Promise<void> {
+	const socket = await findSwarmSocket();
 
 	if (socket && !activeSocket) {
 		startPolling(socket).catch(() => {});

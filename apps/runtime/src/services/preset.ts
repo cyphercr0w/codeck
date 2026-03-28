@@ -244,6 +244,133 @@ export function getPresetStatus(): PresetStatus {
 }
 
 /**
+ * Check if the bundled preset template is newer than the installed version.
+ * If so, copy only script files (scripts/*.mjs, scripts/*.sh, scripts/ecc/*, scripts/lib/*)
+ * to /workspace/.codeck/scripts/ and update the installed version in config.json.
+ *
+ * Safe files that are NEVER overwritten:
+ *   preferences.md, MEMORY.md, constitution.md, settings.json,
+ *   memory/**, state/**
+ */
+export function checkPresetUpdate(): void {
+	const status = getPresetStatus();
+	if (!status.configured || !status.presetId || !status.version) return;
+
+	const manifest = loadManifest(status.presetId);
+	if (!manifest) return;
+
+	if (!isNewerVersion(status.version, manifest.version)) return;
+
+	console.log(
+		`[Preset] Auto-updating scripts from ${status.version} to ${manifest.version}...`,
+	);
+
+	const presetDir = join(TEMPLATES_DIR, status.presetId);
+	let copied = 0;
+
+	// Copy script files declared in manifest.files whose dest is under /scripts/
+	for (const file of manifest.files) {
+		const dest = rewritePath(file.dest);
+		// Only update script files — never touch user data or settings
+		if (!dest.includes("/scripts/")) continue;
+		if (
+			dest.endsWith("preferences.md") ||
+			dest.endsWith("MEMORY.md") ||
+			dest.endsWith("constitution.md") ||
+			dest.endsWith("settings.json") ||
+			dest.includes("/memory/") ||
+			dest.includes("/state/")
+		)
+			continue;
+
+		const srcPath = join(presetDir, file.src);
+		const resolvedSrc = resolve(srcPath);
+		if (
+			!resolvedSrc.startsWith(TEMPLATES_DIR + "/") &&
+			resolvedSrc !== TEMPLATES_DIR
+		)
+			continue;
+		if (!existsSync(srcPath)) continue;
+		if (!isAllowedDestPath(dest)) continue;
+
+		const destDir = dirname(dest);
+		if (!existsSync(destDir)) mkdirSync(destDir, { recursive: true });
+		copyFileSync(srcPath, dest);
+		copied++;
+	}
+
+	// Copy recursive script dirs (scripts/ecc, scripts/lib) — skipIfExists=false entries only
+	if (manifest.recursive_dirs) {
+		for (const rd of manifest.recursive_dirs) {
+			if (rd.skipIfExists) continue; // only auto-update non-user dirs
+			const destDir = rewritePath(rd.dest);
+			if (!destDir.includes("/scripts/")) continue;
+			if (!isAllowedDestPath(destDir)) continue;
+
+			const srcDir = join(presetDir, rd.src);
+			const resolvedSrc = resolve(srcDir);
+			if (
+				!resolvedSrc.startsWith(TEMPLATES_DIR + "/") &&
+				resolvedSrc !== TEMPLATES_DIR
+			)
+				continue;
+			if (!existsSync(srcDir)) continue;
+
+			copied += copyScriptDirRecursive(srcDir, destDir);
+		}
+	}
+
+	// Update installed version in config.json
+	try {
+		let config: Record<string, unknown> = {};
+		if (existsSync(CONFIG_FILE)) {
+			const parsed = JSON.parse(readFileSync(CONFIG_FILE, "utf-8"));
+			if (
+				typeof parsed === "object" &&
+				parsed !== null &&
+				!Array.isArray(parsed)
+			) {
+				config = parsed;
+			}
+		}
+		config.version = manifest.version;
+		writeFileSync(CONFIG_FILE, JSON.stringify(config, null, 2), {
+			mode: 0o600,
+		});
+	} catch (e) {
+		console.warn(
+			"[Preset] Failed to update config version:",
+			(e as Error).message,
+		);
+	}
+
+	console.log(
+		`[Preset] Auto-updated scripts from ${status.version} to ${manifest.version} (${copied} files)`,
+	);
+}
+
+/** Copy script files from srcDir to destDir recursively. Returns count of files copied. */
+function copyScriptDirRecursive(srcDir: string, destDir: string): number {
+	if (!existsSync(destDir)) mkdirSync(destDir, { recursive: true });
+	let count = 0;
+	for (const entry of readdirSync(srcDir)) {
+		const srcEntry = join(srcDir, entry);
+		const destEntry = join(destDir, entry);
+		const stat = statSync(srcEntry);
+		if (stat.isDirectory()) {
+			count += copyScriptDirRecursive(srcEntry, destEntry);
+		} else {
+			const destEntryDir = dirname(destEntry);
+			if (!existsSync(destEntryDir))
+				mkdirSync(destEntryDir, { recursive: true });
+			copyFileSync(srcEntry, destEntry);
+			count++;
+		}
+	}
+	return count;
+}
+
+/**
  * Apply a preset by reading its manifest and copying declared files.
  * Supports `extends` with circular-reference guard (max depth 5).
  */

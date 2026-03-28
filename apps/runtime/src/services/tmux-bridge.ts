@@ -90,9 +90,11 @@ export function launchTeam(
 		throw new Error(`Failed to create tmux session: ${(e as Error).message}`);
 	}
 
-	// Launch Claude with Agent Teams enabled via inline env var.
-	// Do NOT pass ANTHROPIC_API_KEY — Claude uses OAuth from ~/.claude/.credentials.json.
+	// Unset stale/invalid API keys inherited from the runtime process.
+	// Claude will use OAuth credentials from ~/.claude/.credentials.json instead.
+	// Then launch Claude with Agent Teams enabled via inline env var.
 	const claudeCmd = [
+		"unset ANTHROPIC_API_KEY CLAUDE_API_KEY;",
 		"CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1",
 		"claude",
 		"--teammate-mode",

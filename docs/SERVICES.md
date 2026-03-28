@@ -750,3 +750,42 @@ Implements the IPty interface by wrapping tmux commands. Allows tmux panes to be
 - **Resize**: `tmux resize-pane -t pane -x cols -y rows`
 - **Liveness**: polls `tmux display-message` every 5s, auto-destroys on pane death
 - **Cleanup**: stops pipe-pane, kills tail process, removes temp file
+
+---
+
+## `services/conversation-storage.ts` — Chat Conversation Storage
+
+File-based CRUD for chat conversations. Each conversation stored as a JSON file in `/workspace/.codeck/chat/conversations/`.
+
+### Exports
+
+- `ensureConversationsDir()` — creates conversations directory
+- `readConversation(id)` → `ChatConversation | null`
+- `writeConversation(conversation)` → void
+- `deleteConversation(id)` → void
+- `conversationPath(id)` → string — validated file path
+- `listAllConversations()` → `ConversationSummary[]`
+- `autoName(message)` → string — generates conversation name from first message
+
+### Constants
+
+- `MODEL_MAP` — maps client model names (haiku/sonnet/opus) to Anthropic API model IDs
+
+---
+
+## `services/chat-api-handler.ts` — Chat Streaming Handler
+
+Calls the Anthropic Messages API directly with streaming, web tools, and an agentic tool loop (max 5 rounds).
+
+### Exports
+
+- `handleApiDirectMode(res, params)` — SSE streaming response handler
+
+### How it works
+
+1. Reads OAuth token from credentials
+2. Builds message history from conversation
+3. Calls Anthropic Messages API with streaming
+4. Parses SSE stream, forwards text deltas to client
+5. Executes tool calls (web_search, web_fetch) and loops back to API
+6. Saves assistant response to conversation on completion

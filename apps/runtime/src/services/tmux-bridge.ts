@@ -383,6 +383,24 @@ function startPaneWatcher(executionId: string): void {
 			firstTeammateDetectedAt = Date.now();
 		}
 
+		// Detect individual agent shutdown: pane existed with claude but now
+		// has a different command (bash) or disappeared entirely.
+		const paneMap = new Map(panes.map((p) => [p.index, p]));
+		for (const agent of Object.values(state.execution.agents)) {
+			if (agent.status !== "detected") continue;
+			const paneIdx = agent.tmuxPane?.split(".").pop();
+			if (!paneIdx) continue;
+			const pane = paneMap.get(paneIdx);
+			if (!pane || pane.command !== "claude") {
+				agent.status = "shutdown";
+				saveTeamExecution(state.execution);
+				broadcast({
+					type: "team:agent:shutdown",
+					data: { executionId, agentId: agent.agentId },
+				});
+			}
+		}
+
 		// Detect completion:
 		// 1. tmux session died entirely
 		// 2. All teammate Claude processes exited AND at least 90s passed since

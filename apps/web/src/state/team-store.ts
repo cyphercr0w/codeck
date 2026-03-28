@@ -105,6 +105,21 @@ export function onTeamAgentDetected(data: {
 	}
 }
 
+export function onTeamAgentShutdown(data: {
+	executionId: string;
+	agentId: string;
+}): void {
+	const team = activeTeam.value;
+	if (!team || team.executionId !== data.executionId) return;
+
+	activeTeam.value = {
+		...team,
+		agents: team.agents.map((a) =>
+			a.id === data.agentId ? { ...a, status: "shutdown" as const } : a,
+		),
+	};
+}
+
 export function onTeamStopped(data: {
 	executionId: string;
 	status: string;

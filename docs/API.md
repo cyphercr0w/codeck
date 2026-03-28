@@ -388,6 +388,22 @@ Uses `?token=` because browser downloads can't set headers.
 
 ---
 
+## Chat
+
+Conversational interface using `claude -p` with streaming JSON output. Conversations persisted as JSON files in `/workspace/.codeck/conversations/`.
+
+| Method | Endpoint | Body | Response | Description |
+|--------|----------|------|----------|-------------|
+| `POST` | `/api/chat/message` | `{ message, context?, conversationId?, model? }` | SSE stream | Send message, get streaming response |
+| `POST` | `/api/chat/cancel` | `{ chatId?, executionId? }` | `{ success }` | Cancel active stream or team execution |
+| `GET` | `/api/chat/conversations` | — | `{ conversations: [...] }` | List all conversations (newest first) |
+| `GET` | `/api/chat/conversations/:id` | — | `ChatConversation` | Get conversation with all messages |
+| `POST` | `/api/chat/conversations` | `{ name? }` | `{ id, name }` | Create empty conversation |
+| `PUT` | `/api/chat/conversations/:id/name` | `{ name }` | `{ id, name }` | Rename conversation |
+| `DELETE` | `/api/chat/conversations/:id` | — | `{ success }` | Delete conversation |
+
+---
+
 ## Agent Teams (localhost bypass)
 
 Team templates define parallel agent groups powered by Claude Code Agent Teams (experimental). Each agent gets its own tmux pane, bridged to the frontend via `TmuxPtyAdapter` → standard `console:*` WebSocket messages.

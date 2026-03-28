@@ -98,6 +98,7 @@ init-keyring.sh
                             ├── startPortScanner()          → Detects listening ports every 5s
                             ├── startMdns()                 → mDNS responder for codeck.local (LAN mode)
                             ├── startTokenRefreshMonitor()  → Background OAuth token refresh (every 5min, 30min margin)
+                            ├── initTeamTemplates()         → Creates built-in Agent Teams templates (Security Audit, Code Review)
                             ├── initProactiveAgents()       → Cron scheduler + agent runtime startup
                             ├── initConsolidationCron()     → Weekly memory consolidation (Sunday 02:00 UTC)
                             └── restoreSavedSessions()      → Auto-resume sessions from previous lifecycle (delayed 2s)
@@ -173,6 +174,11 @@ Each service is an ES module with pure functions (no classes). Mutable state is 
 | `port-manager` | `services/port-manager.ts` | `networkMode`, `mappedPorts: Set`, `containerId`, compose labels | Writes `compose.override.yml` via Docker helper |
 | `ports` | `services/ports.ts` | Cached port list | None |
 | `proactive-agents` | `services/proactive-agents.ts` | `agents: Map`, `cwdLocks`, `cwdQueues` | `/workspace/.codeck/agents/` |
+| `teams` | `services/teams.ts` | None | `/workspace/.codeck/teams/templates/*.json`, `/workspace/.codeck/teams/executions/*.json` |
+| `tmux-bridge` | `services/tmux-bridge.ts` | `activeExecutions: Map` | Bridges tmux panes to console sessions |
+| `tmux-pty-adapter` | `services/tmux-pty-adapter.ts` | Per-instance state (callbacks, tail process) | `/tmp/codeck-tmux-pipes/` (ephemeral) |
+| `conversation-storage` | `services/conversation-storage.ts` | None | `/workspace/.codeck/chat/conversations/*.json` |
+| `chat-api-handler` | `services/chat-api-handler.ts` | Active streams | None (stateless, streams to response) |
 | `embeddings` | `services/embeddings.ts` | Provider instance | None |
 | `environment` | `services/environment.ts` | Environment constants | None |
 | `claude-env` | `services/claude-env.ts` | Cached binary path | None |
@@ -185,6 +191,7 @@ Each router is an `express.Router()` mounted at a path prefix in `server.ts`:
 | Router | Mount path | Delegates to |
 |--------|-----------|-------------|
 | `agent.routes.ts` | `/api/claude` | `services/auth-anthropic.ts` — OAuth login flow |
+| `chat.routes.ts` | `/api/chat` | `services/conversation-storage.ts` + `services/chat-api-handler.ts` — Chat conversations + streaming responses |
 | `cli-auth.routes.ts` | `/api/cli-auth` | `services/cli-auth.ts` — Third-party CLI auth (Vercel, etc.) |
 | `codeck.routes.ts` | `/api/codeck` | Direct fs — `/workspace/.codeck/` agent data CRUD + env vars |
 | `console.routes.ts` | `/api/console` | `services/console.ts` — PTY session management |
@@ -203,6 +210,7 @@ Each router is an `express.Router()` mounted at a path prefix in `server.ts`:
 | `system.routes.ts` | `/api/system` | `services/port-manager.ts` — Network info, port exposure, model switching |
 | `workspace.routes.ts` | `/api/workspace` | Direct spawn — Export workspace as tar.gz |
 | `agents.routes.ts` | `/api/agents` | `services/proactive-agents.ts` — Proactive agent CRUD + scheduler |
+| `teams.routes.ts` | `/api/teams` | `services/teams.ts` + `services/tmux-bridge.ts` — Agent Teams template CRUD + launch/stop |
 
 Pattern: routes call `broadcastStatus()` after operations that change state, to notify all WS clients.
 
@@ -250,13 +258,15 @@ App (app.tsx)
 │                      └── Preset selection cards
 └── [view=main]     → Main layout
     ├── Sidebar
-    │   ├── Navigation (home/filesystem/claude/agents/integrations/settings)
+    │   ├── Navigation (home/chat/claude/teams/agents/integrations/config)
     │   ├── Connection status dot
     │   └── Brand header
     ├── Content Area
     │   ├── [section=home]          → HomeSection (dashboard)
+    │   ├── [section=chat]          → ChatSection (conversational UI)
     │   ├── [section=filesystem]    → FilesSection
     │   ├── [section=claude]        → ClaudeSection (terminal tabs)
+    │   ├── [section=teams]         → TeamsSection (Agent Teams launcher + execution viewer)
     │   ├── [section=agents]        → AgentsSection (proactive agents)
     │   ├── [section=integrations]  → IntegrationsSection
     │   ├── [section=config]        → AgentConfigSection (.codeck file editor)
@@ -497,6 +507,9 @@ Validation on connect:
 | `agent:execution:complete` | `{agentId, executionId, result}` | Agent execution finished |
 | `subagent:start` | `SubagentInfo` | Sub-agent spawned by Claude Code |
 | `subagent:stop` | `{agentId, duration}` | Sub-agent completed |
+| `team:launched` | `{executionId, templateName, agents[], leaderSessionId}` | Agent Team launched via tmux |
+| `team:agent:detected` | `{executionId, agentId, name, role, sessionId, tmuxPane}` | Teammate pane detected by pane watcher |
+| `team:stopped` | `{executionId, status}` | Agent Team execution completed/cancelled/failed |
 
 ### Client → Server Messages
 
@@ -900,6 +913,17 @@ server.ts (Express app)
 ├── memory-consolidation.ts (weekly consolidation pipeline)
 ├── proactive-agents.ts (scheduled agents)
 │   └── claude-env.ts
+├── teams.ts (team template CRUD)
+├── tmux-bridge.ts (Agent Teams orchestration)
+│   ├── tmux-pty-adapter.ts (IPty wrapper for tmux panes)
+│   ├── console.ts (registerVirtualSession)
+│   ├── teams.ts (saveTeamExecution)
+│   └── claude-env.ts (getOAuthEnv)
+├── conversation-storage.ts (chat conversation CRUD)
+├── chat-api-handler.ts (Anthropic API streaming + tool loop)
+│   ├── conversation-storage.ts
+│   ├── claude-env.ts (getOAuthEnv)
+│   └── web-tools.ts (web_search, web_fetch tool implementations)
 ├── cli-auth.ts (third-party CLI auth)
 ├── preset.ts (template system)
 ├── port-manager.ts (port exposure)

@@ -30,6 +30,7 @@ import { apiFetch, getAuthToken } from "./api";
 import {
 	onTeamLaunched,
 	onTeamAgentDetected,
+	onTeamAgentShutdown,
 	onTeamStopped,
 } from "./state/team-store";
 
@@ -65,6 +66,7 @@ const KNOWN_MSG_TYPES = new Set([
 	"chat:response:error",
 	"team:launched",
 	"team:agent:detected",
+	"team:agent:shutdown",
 	"team:stopped",
 ]);
 
@@ -539,6 +541,17 @@ function openWs(wsUrl: string, protocols?: string[]): void {
 						tmuxPane: d.tmuxPane,
 					});
 					attachSession(d.sessionId);
+				}
+			} else if (msg.type === "team:agent:shutdown" && msg.data) {
+				const d = msg.data as Record<string, unknown>;
+				if (
+					typeof d.executionId === "string" &&
+					typeof d.agentId === "string"
+				) {
+					onTeamAgentShutdown({
+						executionId: d.executionId,
+						agentId: d.agentId,
+					});
 				}
 			} else if (msg.type === "team:stopped" && msg.data) {
 				const d = msg.data as Record<string, unknown>;

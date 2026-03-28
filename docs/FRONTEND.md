@@ -26,11 +26,13 @@ Lightweight History API routing — no router library. `router.ts` syncs `active
 | URL | Section |
 |-----|---------|
 | `/` | home |
+| `/chat` | chat |
 | `/files` | filesystem |
 | `/terminal` | claude |
+| `/teams` | teams |
 | `/agents` | agents |
 | `/integrations` | integrations |
-| `/config` | config |
+| `/memory` | config |
 | `/settings` | settings |
 
 - **Deep linking**: Direct URL access loads the correct section
@@ -53,8 +55,12 @@ apps/web/
     ├── ws.ts               # WebSocket client with auto-reconnect
     ├── terminal.ts         # xterm.js instance manager
     ├── state/
-    │   └── store.ts        # All signals + mutation functions
+    │   ├── store.ts        # All signals + mutation functions
+    │   └── team-store.ts   # Agent Teams signals + event handlers
+    ├── services/
+    │   └── teams-service.ts # Agent Teams API client
     ├── components/
+    │   ├── nav-items.ts               # Navigation item definitions (shared by Sidebar + MobileMenu)
     │   ├── Icons.tsx                  # Centralized SVG icon library (40+ icons)
     │   ├── AuthView.tsx              # Password setup/login
     │   ├── LoadingView.tsx           # Branded loading (bridge icon + pulse)
@@ -63,14 +69,17 @@ apps/web/
     │   ├── LoginModal.tsx            # OAuth PKCE flow modal
     │   ├── Sidebar.tsx               # Navigation + collapse/expand
     │   ├── HomeSection.tsx           # Dashboard: account, resources, usage
+    │   ├── ChatSection.tsx           # Conversational chat UI
     │   ├── FilesSection.tsx          # Workspace file browser
-    │   ├── ClaudeSection.tsx         # Terminal tabs + xterm.js
+    │   ├── ClaudeSection.tsx         # Terminal tabs + xterm.js + preview panel
     │   ├── AgentsSection.tsx         # Proactive agents (list, create, edit, detail, live output)
     │   ├── AgentConfigSection.tsx    # .codeck file browser/editor
     │   ├── IntegrationsSection.tsx   # SSH keys + GitHub + third-party CLI auth
     │   ├── SettingsSection.tsx       # Password, sessions, permissions, logs, ports
     │   ├── ToastContainer.tsx        # Toast notification system
     │   ├── SubagentPanel.tsx         # Real-time sub-agent tracking panel
+    │   ├── PreviewPanel.tsx          # Live localhost preview iframe
+    │   ├── MobilePreviewSheet.tsx    # Fullscreen mobile preview overlay
     │   ├── NewProjectModal.tsx       # Create/clone/select project
     │   ├── ReconnectOverlay.tsx      # Full-screen WS disconnect overlay
     │   ├── MobileTerminalToolbar.tsx # Adaptive mobile terminal toolbar
@@ -78,11 +87,27 @@ apps/web/
     │   ├── MobileMenu.tsx            # Mobile navigation overlay
     │   ├── ImageUploadOverlay.tsx    # Image upload overlay
     │   ├── UploadOverlay.tsx         # File upload overlay
-    │   └── PullToRefresh.tsx         # Mobile pull-to-refresh
+    │   ├── PullToRefresh.tsx         # Mobile pull-to-refresh
+    │   ├── teams/
+    │   │   ├── TeamsSection.tsx       # Agent Teams launcher + template list
+    │   │   ├── TeamExecutionViewer.tsx# Live multi-agent terminal viewer
+    │   │   └── AgentCanvas.tsx        # Agent graph/canvas view
+    │   ├── agents/
+    │   │   ├── AgentForm.tsx          # Agent create/edit form
+    │   │   └── DirSelector.tsx        # Directory selector for agents
+    │   └── agent-config/
+    │       ├── EnvironmentTab.tsx     # Environment variables editor
+    │       ├── McpServersTab.tsx      # MCP server management
+    │       ├── PermissionsTab.tsx     # Permission toggles
+    │       ├── HooksTab.tsx           # Hook configuration
+    │       ├── SkillsTab.tsx          # Skill management
+    │       ├── RulesTab.tsx           # Rules editor
+    │       └── MemoryTab.tsx          # Memory viewer
     └── styles/
         ├── variables.css       # CSS custom properties (design tokens)
         ├── global.css          # Reset, buttons, inputs, badges, modals
-        └── app.css             # All component-specific styles
+        ├── app.css             # All component-specific styles
+        └── team-viewer.css     # Agent Teams viewer styles
 ```
 
 ---
@@ -126,7 +151,7 @@ All state in `state/store.ts` as Preact signals.
 | Signal | Type | Default | Description |
 |--------|------|---------|-------------|
 | `view` | `View` | `'loading'` | Current view |
-| `activeSection` | `Section` | `'home'` | Active section (home\|filesystem\|claude\|agents\|integrations\|config\|settings) |
+| `activeSection` | `Section` | `'home'` | Active section (home\|chat\|filesystem\|claude\|teams\|agents\|integrations\|config\|settings) |
 | `authMode` | `AuthMode` | `'login'` | Auth view mode |
 | `claudeAuthenticated` | `boolean` | `false` | Claude account connected |
 | `accountEmail` | `string \| null` | `null` | User email |
@@ -189,7 +214,7 @@ Step-by-step: calls login → polls status every 1.5s → user copies code → s
 
 ### `Sidebar.tsx` — Navigation
 
-7 nav items: Home, Filesystem, Terminal, Auto Agents, Integrations, Config, Settings. SVG icons, green/red status dot, version footer. Desktop: collapse/expand (56px / 260px). Mobile: overlay with backdrop.
+7 nav items: Home, Chat, Terminal, Agent Teams, Automated Agents, Integrations, Agent Config. SVG icons, green/red status dot, version footer. Desktop: collapse/expand (56px / 260px). Mobile: overlay with backdrop.
 
 ### `HomeSection.tsx` — Dashboard
 
@@ -199,6 +224,10 @@ Step-by-step: calls login → polls status every 1.5s → user copies code → s
 - Model selector (sonnet/opus/haiku)
 - Port mapping card (bridge mode): shows ports, add/remove
 - Workspace export button
+
+### `ChatSection.tsx` — Conversational UI
+
+Chat-style interface for interacting with Claude outside the terminal.
 
 ### `FilesSection.tsx` — File Browser
 
@@ -248,6 +277,28 @@ Real-time panel showing active Claude Code sub-agents:
 - Elapsed time display
 - Status text from last message or line
 - Collapse/expand
+
+### `PreviewPanel.tsx` — Live Preview
+
+Inline iframe panel showing live localhost preview via subdomain proxy. Embedded alongside the terminal in ClaudeSection.
+
+### `MobilePreviewSheet.tsx` — Mobile Preview
+
+Fullscreen overlay for preview on mobile devices. Triggered from ClaudeSection when a dev server is running.
+
+### `TeamsSection.tsx` — Agent Teams
+
+Team template management and execution launcher. Template list with CRUD, agent definition editor, launch with input prompt. Shows `TeamExecutionViewer` when a team is running.
+
+### `TeamExecutionViewer.tsx` — Team Execution View
+
+Split-panel view: left side shows `AgentCanvas` (d3-force node graph), right side shows expandable xterm.js terminal for selected agent. Click an agent node to open its terminal. Terminals are cached per agent session — switching preserves scrollback.
+
+### `AgentCanvas.tsx` — Agent Visualization
+
+Real-time Canvas 2D rendering of agent nodes with d3-force physics layout. Shows leader node (gold) and teammate nodes with status indicators (pending/detected/working). Flowing particles visualize inter-agent communication. 60fps rendering with throttled React state updates (~250ms).
+
+State managed by `team-store.ts` signals: `activeTeam`, `selectedAgentSessionId`, `teamPreviewMode`.
 
 ### `NewProjectModal.tsx` — Project Creation
 
@@ -344,7 +395,7 @@ Token stored in `localStorage` key `codeck_auth_token`.
 - All messages validated against known type set
 - `status` message syncs session list and re-attaches all sessions
 - `console:error` removes ghost sessions
-- Handlers: status, log, logs, ports, sessions:restored, console:output, console:exit, agent:*, subagent:*
+- Handlers: status, log, logs, ports, sessions:restored, console:output, console:exit, agent:*, subagent:*, team:launched, team:agent:detected, team:stopped
 
 ---
 

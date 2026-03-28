@@ -373,12 +373,11 @@ function startPaneWatcher(executionId: string): void {
 
 		// Detect completion:
 		// 1. tmux session died entirely
-		// 2. Only leader pane remains AND at least one teammate was detected
-		//    (teammates finished and their panes closed)
+		// 2. No teammate panes running Claude anymore (they exited to bash or closed)
 		const tmuxDead =
 			panes.length === 0 && !isTmuxSessionAlive(state.execution.tmuxSession);
-		const teammatesDone =
-			panes.length === 1 && panes[0].index === "0" && state.knownPanes.size > 1; // at least 1 teammate was seen
+		const claudePanes = panes.filter((p) => p.command === "claude");
+		const teammatesDone = claudePanes.length <= 1 && state.knownPanes.size > 1; // only leader (or none) still running claude
 
 		if (tmuxDead || teammatesDone) {
 			clearInterval(interval);

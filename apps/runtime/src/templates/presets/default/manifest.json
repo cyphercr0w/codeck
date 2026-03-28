@@ -2,7 +2,7 @@
 	"id": "default",
 	"name": "Default (Recommended)",
 	"description": "Persistent memory system, rules, sandbox skills, plus 28 sub-agents, 59 slash commands, 116 skills, 65 rules, and dev hooks from everything-claude-code v1.9.0.",
-	"version": "8.5.2",
+	"version": "8.5.3",
 	"author": "codeck",
 	"icon": "⚡",
 	"tags": ["general", "recommended"],

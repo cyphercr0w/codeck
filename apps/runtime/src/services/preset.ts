@@ -350,6 +350,10 @@ export function checkPresetUpdate(): void {
 	// Merge new hooks from preset template into user settings
 	mergePresetHooks(presetDir);
 
+	// Clean up invalid hooks: remove any Stop hooks whose command contains
+	// plain text instead of a script path (causes "JSON validation failed")
+	cleanInvalidStopHooks();
+
 	// Update installed version in config.json
 	try {
 		let config: Record<string, unknown> = {};
@@ -478,6 +482,40 @@ function extractCommands(entries: unknown[]): Set<string> {
  * Only adds hooks whose command points to PRESET_HOOK_PREFIX.
  * Never removes hooks, never touches permissions or other fields.
  */
+function cleanInvalidStopHooks(): void {
+	const settingsPath = rewritePath("/root/.claude/settings.json");
+	try {
+		if (!existsSync(settingsPath)) return;
+		const settings = JSON.parse(readFileSync(settingsPath, "utf-8"));
+		const stopHooks = settings.hooks?.Stop;
+		if (!Array.isArray(stopHooks)) return;
+
+		const before = stopHooks.length;
+		settings.hooks.Stop = stopHooks.filter(
+			(entry: { hooks?: Array<{ command?: string }> }) => {
+				const hooks = entry.hooks || [];
+				// Remove entries where the command is plain text, not a script path
+				return !hooks.some((h: { command?: string }) => {
+					const cmd = h.command || "";
+					return (
+						!cmd.startsWith("node ") &&
+						!cmd.startsWith("bash ") &&
+						cmd.length > 20
+					);
+				});
+			},
+		);
+		if (settings.hooks.Stop.length < before) {
+			writeFileSync(settingsPath, JSON.stringify(settings, null, "\t"));
+			console.log(
+				`[Preset] Removed ${before - settings.hooks.Stop.length} invalid Stop hook(s)`,
+			);
+		}
+	} catch {
+		/* non-fatal */
+	}
+}
+
 function mergePresetHooks(presetDir: string): void {
 	const templatePath = join(presetDir, "ecc", "settings.json");
 	const settingsDest = rewritePath("/root/.claude/settings.json");

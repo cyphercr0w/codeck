@@ -44,8 +44,7 @@ EXPOSE 80
 ENV WORKSPACE=/workspace
 ENV CODECK_DIR=/workspace/.codeck
 ENV NODE_OPTIONS="--max-old-space-size=2048"
-# CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS is set per-session (not globally)
-# when the user enables "Agent Teams" in the terminal launch modal.
+ENV CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1
 
 ENTRYPOINT ["/usr/local/bin/init-keyring.sh", "env", "NODE_ENV=production", "node", "apps/runtime/dist/index.js"]
 CMD ["--web"]

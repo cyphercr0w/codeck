@@ -1,10 +1,12 @@
 import { spawn as ptySpawn, type IPty } from "node-pty";
 import {
 	readFileSync,
+	writeFileSync,
 	existsSync,
 	mkdirSync,
 	unlinkSync,
 	renameSync,
+	realpathSync,
 } from "fs";
 import {
 	readdir as readdirAsync,
@@ -13,7 +15,6 @@ import {
 } from "fs/promises";
 import { randomUUID } from "crypto";
 import { resolve, join } from "path";
-import { realpathSync } from "fs";
 import { execFile as execFileCb } from "child_process";
 import { promisify } from "util";
 
@@ -32,6 +33,7 @@ import { summarizeSession } from "./session-summarizer.js";
 import { broadcast } from "../web/logger.js";
 import {
 	injectContextIntoCLAUDEMd,
+	getContextSidecarPath,
 	type ContextInjectionStats,
 } from "./memory-context.js";
 import {
@@ -355,6 +357,21 @@ function _createConsoleSessionInner(
 		console.warn(
 			`[Console] Memory context injection failed: ${(e as Error).message}`,
 		);
+	}
+
+	// If Agent Teams is enabled, append instructions to the context sidecar
+	// so the agent knows it can use TeamCreate, SendMessage, Agent with teams.
+	if (finalEnv.CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS === "1") {
+		try {
+			const sidecarPath = getContextSidecarPath();
+			const existing = existsSync(sidecarPath)
+				? readFileSync(sidecarPath, "utf-8")
+				: "";
+			const teamsContext = `\n\n## Agent Teams (enabled)\n\nYou have Agent Teams enabled (\`--teammate-mode tmux\`). You can:\n- Use **TeamCreate** to create a team for complex tasks\n- Use **Agent** tool with \`team_name\` to spawn teammates\n- Use **SendMessage** to communicate with teammates\n- Use **TaskCreate/TaskUpdate/TaskList** to coordinate work\n\nUse teams proactively when the task would benefit from parallel work (e.g., frontend + backend, research + implementation, review + fix). Create a team, assign tasks, and coordinate.\n`;
+			writeFileSync(sidecarPath, existing + teamsContext);
+		} catch {
+			/* non-fatal */
+		}
 	}
 
 	const binary = getValidAgentBinary();

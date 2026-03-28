@@ -383,21 +383,29 @@ function startPaneWatcher(executionId: string): void {
 			firstTeammateDetectedAt = Date.now();
 		}
 
-		// Detect individual agent shutdown: pane existed with claude but now
-		// has a different command (bash) or disappeared entirely.
+		// Detect individual agent shutdown: require 3 consecutive ticks where the
+		// pane is not running claude before marking shutdown (avoids false positives
+		// from transient tmux slowness or command transitions).
 		const paneMap = new Map(panes.map((p) => [p.index, p]));
 		for (const agent of Object.values(state.execution.agents)) {
 			if (agent.status !== "detected") continue;
 			const paneIdx = agent.tmuxPane?.split(".").pop();
 			if (!paneIdx) continue;
 			const pane = paneMap.get(paneIdx);
+			const key = `shutdown-${agent.agentId}`;
 			if (!pane || pane.command !== "claude") {
-				agent.status = "shutdown";
-				saveTeamExecution(state.execution);
-				broadcast({
-					type: "team:agent:shutdown",
-					data: { executionId, agentId: agent.agentId },
-				});
+				const count = ((state as any)[key] || 0) + 1;
+				(state as any)[key] = count;
+				if (count >= 3) {
+					agent.status = "shutdown";
+					saveTeamExecution(state.execution);
+					broadcast({
+						type: "team:agent:shutdown",
+						data: { executionId, agentId: agent.agentId },
+					});
+				}
+			} else {
+				(state as any)[key] = 0; // reset counter if claude is running
 			}
 		}
 

@@ -433,6 +433,7 @@ Team templates define parallel agent groups powered by Claude Code Agent Teams (
 ```jsonc
 { "type": "team:launched", "data": { "executionId": "...", "templateName": "...", "agents": [...], "leaderSessionId": "..." } }
 { "type": "team:agent:detected", "data": { "executionId": "...", "agentId": "...", "name": "...", "role": "...", "sessionId": "...", "tmuxPane": "..." } }
+{ "type": "team:agent:shutdown", "data": { "executionId": "...", "agentId": "..." } }
 { "type": "team:stopped", "data": { "executionId": "...", "status": "completed|cancelled|failed" } }
 ```
 

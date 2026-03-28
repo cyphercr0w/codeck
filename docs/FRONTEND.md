@@ -395,7 +395,7 @@ Token stored in `localStorage` key `codeck_auth_token`.
 - All messages validated against known type set
 - `status` message syncs session list and re-attaches all sessions
 - `console:error` removes ghost sessions
-- Handlers: status, log, logs, ports, sessions:restored, console:output, console:exit, agent:*, subagent:*, team:launched, team:agent:detected, team:stopped
+- Handlers: status, log, logs, ports, sessions:restored, console:output, console:exit, agent:*, subagent:*, team:launched, team:agent:detected, team:agent:shutdown, team:stopped
 
 ---
 

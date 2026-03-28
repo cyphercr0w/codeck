@@ -348,6 +348,15 @@ function _createConsoleSessionInner(
 		args.push(...opts.extraArgs);
 	}
 
+	// Agent Teams: if the env var is set (globally or per-session) and
+	// --teammate-mode is not already in args, add it automatically.
+	if (
+		finalEnv.CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS === "1" &&
+		!args.includes("--teammate-mode")
+	) {
+		args.push("--teammate-mode", "tmux");
+	}
+
 	// Inject memory context into workspace CLAUDE.md before spawning
 	let contextStats: ContextInjectionStats | null = null;
 	try {

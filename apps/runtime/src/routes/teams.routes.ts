@@ -26,6 +26,52 @@ import { resolve } from "path";
 const router = Router();
 const WORKSPACE = process.env.WORKSPACE || "/workspace";
 
+// ── Executions (registered before /:id to avoid route shadowing) ──
+
+/** List executions (active + persisted) */
+router.get(
+	"/executions/list",
+	asyncHandler(async (_req, res) => {
+		const persisted = listTeamExecutions();
+		const active = getActiveTeamExecutions();
+		// Merge: active take precedence over persisted
+		const activeIds = new Set(active.map((e) => e.id));
+		const merged = [
+			...active,
+			...persisted.filter((e) => !activeIds.has(e.id)),
+		];
+		res.json({ executions: merged });
+	}),
+);
+
+router.get(
+	"/executions/:execId",
+	asyncHandler(async (req, res) => {
+		const id = (req.params.execId ?? "").replace(/[^a-zA-Z0-9_-]/g, "");
+		const execution = getTeamExecution(id);
+		if (!execution) {
+			res.status(404).json({ error: "Execution not found" });
+			return;
+		}
+		res.json(execution);
+	}),
+);
+
+// ── Stop ──
+
+router.post(
+	"/executions/:execId/stop",
+	asyncHandler(async (req, res) => {
+		const id = (req.params.execId ?? "").replace(/[^a-zA-Z0-9_-]/g, "");
+		const stopped = stopTeam(id);
+		if (!stopped) {
+			res.status(404).json({ error: "Execution not found or already stopped" });
+			return;
+		}
+		res.json({ ok: true, status: "cancelled" });
+	}),
+);
+
 // ── Template CRUD ──
 
 /** List all team templates */
@@ -246,52 +292,6 @@ router.post(
 			status: execution.status,
 			leaderSessionId: execution.leaderSessionId,
 		});
-	}),
-);
-
-// ── Stop ──
-
-router.post(
-	"/executions/:execId/stop",
-	asyncHandler(async (req, res) => {
-		const id = (req.params.execId ?? "").replace(/[^a-zA-Z0-9_-]/g, "");
-		const stopped = stopTeam(id);
-		if (!stopped) {
-			res.status(404).json({ error: "Execution not found or already stopped" });
-			return;
-		}
-		res.json({ ok: true, status: "cancelled" });
-	}),
-);
-
-// ── Executions ──
-
-/** List executions (active + persisted) */
-router.get(
-	"/executions/list",
-	asyncHandler(async (_req, res) => {
-		const persisted = listTeamExecutions();
-		const active = getActiveTeamExecutions();
-		// Merge: active take precedence over persisted
-		const activeIds = new Set(active.map((e) => e.id));
-		const merged = [
-			...active,
-			...persisted.filter((e) => !activeIds.has(e.id)),
-		];
-		res.json({ executions: merged });
-	}),
-);
-
-router.get(
-	"/executions/:execId",
-	asyncHandler(async (req, res) => {
-		const id = (req.params.execId ?? "").replace(/[^a-zA-Z0-9_-]/g, "");
-		const execution = getTeamExecution(id);
-		if (!execution) {
-			res.status(404).json({ error: "Execution not found" });
-			return;
-		}
-		res.json(execution);
 	}),
 );
 

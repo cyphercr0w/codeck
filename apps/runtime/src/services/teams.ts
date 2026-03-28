@@ -13,7 +13,7 @@ import {
 	readdirSync,
 	unlinkSync,
 } from "fs";
-import { join } from "path";
+import { join, dirname } from "path";
 import { randomUUID } from "crypto";
 import type { TeamTemplate, TeamExecution } from "../types/team.types.js";
 
@@ -42,7 +42,7 @@ function readJsonFile<T>(filePath: string): T | null {
 }
 
 function writeJsonFile(filePath: string, data: unknown): void {
-	ensureDir(join(filePath, ".."));
+	ensureDir(dirname(filePath));
 	writeFileSync(filePath, JSON.stringify(data, null, "\t"), { mode: 0o600 });
 }
 

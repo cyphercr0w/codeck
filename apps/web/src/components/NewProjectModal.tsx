@@ -216,9 +216,7 @@ export function NewProjectModal({
 		if (tab === "clone") urlRef.current?.focus();
 	}, [tab]);
 
-	useEffect(() => {
-		if (step === 2) commandRef.current?.focus();
-	}, [step]);
+
 
 	async function loadDirs() {
 		setDirs([]);

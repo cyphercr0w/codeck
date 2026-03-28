@@ -9,15 +9,16 @@
 5. [Authentication flows](#authentication-flows)
 6. [WebSocket protocol](#websocket-protocol)
 7. [PTY terminal management](#pty-terminal-management)
-8. [Port exposure](#port-exposure)
-9. [Memory system](#memory-system)
-10. [Preset system](#preset-system)
-11. [Docker infrastructure](#docker-infrastructure)
-12. [Container filesystem at runtime](#container-filesystem-at-runtime)
-13. [Security model](#security-model)
-14. [Caching and in-memory state](#caching-and-in-memory-state)
-15. [Concurrency & state management](#concurrency--state-management)
-16. [Module dependencies](#module-dependencies)
+8. [Agent Teams](#agent-teams)
+9. [Port exposure](#port-exposure)
+10. [Memory system](#memory-system)
+11. [Preset system](#preset-system)
+12. [Docker infrastructure](#docker-infrastructure)
+13. [Container filesystem at runtime](#container-filesystem-at-runtime)
+14. [Security model](#security-model)
+15. [Caching and in-memory state](#caching-and-in-memory-state)
+16. [Concurrency & state management](#concurrency--state-management)
+17. [Module dependencies](#module-dependencies)
 
 ---
 
@@ -510,6 +511,7 @@ Validation on connect:
 | `team:launched` | `{executionId, templateName, agents[], leaderSessionId}` | Agent Team launched via tmux |
 | `team:agent:detected` | `{executionId, agentId, name, role, sessionId, tmuxPane}` | Teammate pane detected by pane watcher |
 | `team:stopped` | `{executionId, status}` | Agent Team execution completed/cancelled/failed |
+| `team:agent:shutdown` | `{executionId, agentId}` | Individual teammate agent process exited |
 
 ### Client → Server Messages
 
@@ -586,6 +588,57 @@ Validation on connect:
 ### Session persistence
 
 Sessions are saved to disk and auto-restored on container restart via `saveSessionState()` / `restoreSavedSessions()` in `console.ts`. Agent sessions restore with `--resume` and optional continuation prompts.
+
+---
+
+## Agent Teams
+
+Agent Teams enable parallel multi-agent collaboration via Claude Code's native `--teammate-mode tmux`. The system creates tmux sessions, detects spawned teammates, and bridges each pane to the existing console/WebSocket infrastructure.
+
+### Launch flow
+
+```
+1. launchTeam(template, prompt)
+    ├── Creates tmux session `team-{execId}` (160×40)
+    ├── OAuth propagation:
+    │   ├── Inline env vars in the leader's shell command
+    │   ├── tmux set-environment -t session (for future teammate panes)
+    │   └── Removes stale ANTHROPIC_API_KEY / CLAUDE_API_KEY from global + session env
+    ├── Starts: claude --teammate-mode tmux --permission-mode acceptEdits
+    ├── waitForClaudeReady()
+    │   └── Polls pane for `❯` prompt (up to 90s)
+    │       └── Auto-handles API key confirmation and interactive prompts
+    ├── Sends team creation prompt via tmux send-keys
+    └── Registers leader pane as virtual console session via TmuxPtyAdapter
+```
+
+### Pane watcher
+
+`startPaneWatcher()` polls `tmux list-panes` every 2s:
+
+- New panes bridged via `bridgeNewPane()` → creates `TmuxPtyAdapter` → `registerVirtualSession()`
+- Agent matched to template by pane index order (pane 1 = first agent, pane 2 = second, etc.)
+- Broadcasts `team:agent:detected` WS event for each new teammate
+
+### Completion detection
+
+Three conditions trigger team completion:
+
+1. **tmux session died** — entire session gone
+2. **Teammates done** — all teammate Claude processes exited AND >90s since first teammate detected (prevents false positives during startup)
+3. **Timeout** — no Claude processes at all for 5 minutes (team failed to spawn)
+
+Individual agent shutdown detected when pane's current command changes from `claude` to another process → broadcasts `team:agent:shutdown`.
+
+### TmuxPtyAdapter
+
+IPty-compatible wrapper that bridges tmux panes to the console session infrastructure:
+
+- **Output**: `tmux pipe-pane -O` → temp file → `tail -f` → `onData()` callbacks
+- **Input**: `tmux send-keys` with special key mapping (Enter, Ctrl+C, arrows, etc.)
+- **Resize**: `tmux resize-pane`
+- **Liveness**: Polls every 5s, auto-destroys on pane death
+- **Initial screen**: Captures pane content at bridge time for immediate display
 
 ---
 

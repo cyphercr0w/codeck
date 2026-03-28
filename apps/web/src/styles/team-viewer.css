@@ -155,7 +155,6 @@
 	flex: 1;
 	position: relative;
 	overflow: hidden;
-	transition: flex 0.2s ease;
 }
 
 .team-canvas-area.split {

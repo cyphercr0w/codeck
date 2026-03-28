@@ -356,6 +356,9 @@ function startPaneWatcher(executionId: string): void {
 	const state = activeExecutions.get(executionId);
 	if (!state) return;
 
+	const watcherStartTime = Date.now();
+	const WATCHER_TIMEOUT_MS = 60_000; // 60s — if no Claude processes found, give up
+
 	const interval = setInterval(() => {
 		if (!activeExecutions.has(executionId)) {
 			clearInterval(interval);
@@ -374,16 +377,27 @@ function startPaneWatcher(executionId: string): void {
 		// Detect completion:
 		// 1. tmux session died entirely
 		// 2. No teammate panes running Claude anymore (they exited to bash or closed)
+		// 3. No Claude processes for 60s — team failed to spawn or already finished
 		const tmuxDead =
 			panes.length === 0 && !isTmuxSessionAlive(state.execution.tmuxSession);
 		const claudePanes = panes.filter((p) => p.command === "claude");
 		const teammatesDone = claudePanes.length <= 1 && state.knownPanes.size > 1; // only leader (or none) still running claude
+		const noClaudeRunning = claudePanes.length === 0;
+		const timedOut = Date.now() - watcherStartTime > WATCHER_TIMEOUT_MS;
 
-		if (tmuxDead || teammatesDone) {
+		if (tmuxDead || teammatesDone || (noClaudeRunning && timedOut)) {
 			clearInterval(interval);
-			state.execution.status = "completed";
+			const finalStatus =
+				tmuxDead || (noClaudeRunning && timedOut) ? "failed" : "completed";
+			state.execution.status = finalStatus;
 			state.execution.completedAt = new Date().toISOString();
 			saveTeamExecution(state.execution);
+
+			if (noClaudeRunning && timedOut) {
+				console.warn(
+					`[TmuxBridge] Watcher timeout: no Claude processes for ${WATCHER_TIMEOUT_MS / 1000}s in ${state.execution.tmuxSession}`,
+				);
+			}
 
 			// Kill the tmux session (leader is idle, work is done)
 			try {
@@ -398,7 +412,7 @@ function startPaneWatcher(executionId: string): void {
 
 			broadcast({
 				type: "team:stopped",
-				data: { executionId, status: "completed" },
+				data: { executionId, status: finalStatus },
 			});
 			activeExecutions.delete(executionId);
 		}

@@ -5,7 +5,10 @@
  * Click agent: expands to 50% canvas (left) + 50% terminal (right).
  * Back/Escape: collapses terminal, returns to canvas-only.
  *
- * Only ONE terminal is ever rendered at a time to keep rendering simple.
+ * Terminal instances are cached per agent: switching agents hides the old
+ * terminal (display:none) and shows the new one. Scrollback and canvas
+ * state are preserved across switches. All terminals are destroyed on
+ * close or component unmount.
  */
 
 import { type FunctionalComponent } from "preact";
@@ -35,107 +38,61 @@ const TeamExecutionViewer: FunctionalComponent = () => {
 		null,
 	);
 	const termContainerRef = useRef<HTMLDivElement>(null);
-	const activeTermRef = useRef<string | null>(null);
+	/** Cache: sessionId → container div. Terminals persist across agent switches. */
+	const terminalContainers = useRef(new Map<string, HTMLDivElement>());
 
 	// ── Open terminal for an agent ──
 	const openTerminal = useCallback((sessionId: string) => {
-		if (activeTermRef.current && activeTermRef.current !== sessionId) {
-			destroyTerminal(activeTermRef.current);
-		}
 		setTerminalSessionId(sessionId);
 		setTerminalOpen(true);
 		selectTeamAgent(sessionId);
 	}, []);
 
-	// ── Close terminal ──
+	// ── Close terminal — destroy ALL cached terminals ──
 	const closeTerminal = useCallback(() => {
-		if (activeTermRef.current) {
-			destroyTerminal(activeTermRef.current);
-			activeTermRef.current = null;
+		for (const [id] of terminalContainers.current) {
+			destroyTerminal(id);
 		}
+		terminalContainers.current.clear();
 		setTerminalOpen(false);
 		setTerminalSessionId(null);
 	}, []);
 
-	// ── Mount/unmount terminal when sessionId changes ──
+	// ── Show/create terminal when active session changes ──
 	useEffect(() => {
 		const container = termContainerRef.current;
 		if (!container || !terminalOpen || !terminalSessionId) return;
 
-		// Remove previous children safely (no innerHTML)
-		while (container.firstChild) container.removeChild(container.firstChild);
+		// Hide all, show active
+		for (const [id, div] of terminalContainers.current) {
+			div.style.display = id === terminalSessionId ? "block" : "none";
+		}
 
-		const el = document.createElement("div");
-		el.className = "team-term-instance";
-		el.style.cssText = "position:absolute;inset:0;";
-		container.appendChild(el);
+		// First time for this session → create terminal
+		if (!terminalContainers.current.has(terminalSessionId)) {
+			const el = document.createElement("div");
+			el.className = "team-term-instance";
+			el.style.cssText = "position:absolute;inset:0;";
+			container.appendChild(el);
+			terminalContainers.current.set(terminalSessionId, el);
+			createTerminal(terminalSessionId, el);
+			attachSession(terminalSessionId);
+		}
 
-		activeTermRef.current = terminalSessionId;
-		createTerminal(terminalSessionId, el);
-		attachSession(terminalSessionId);
-		ensureTerminalVisible(terminalSessionId);
-
-		// The split panel may not have its final dimensions on the first frame.
-		// Poll until the container has non-zero size, then fit the terminal.
-		let attempts = 0;
-		const fitWhenReady = () => {
-			attempts++;
-			if (!hasTerminal(terminalSessionId)) return;
-			const rect = container.getBoundingClientRect();
-			if (rect.width > 0 && rect.height > 0) {
-				fitTerminal(terminalSessionId);
-				focusTerminal(terminalSessionId);
-			} else if (attempts < 20) {
-				requestAnimationFrame(fitWhenReady);
-			}
-		};
-		const rafId = requestAnimationFrame(fitWhenReady);
+		// Fit + repaint after visibility change (handles CSS transition timing).
+		// ensureTerminalVisible polls with rAF + IntersectionObserver fallback,
+		// so it correctly waits for the 0.2s CSS flex transition to settle.
+		const cancelEnsure = ensureTerminalVisible(terminalSessionId);
+		focusTerminal(terminalSessionId);
 
 		return () => {
-			cancelAnimationFrame(rafId);
-			if (activeTermRef.current === terminalSessionId) {
-				destroyTerminal(terminalSessionId);
-				activeTermRef.current = null;
-			}
+			cancelEnsure();
 		};
 	}, [terminalSessionId, terminalOpen]);
 
-	// ── Keep terminal fitted at all times ──
-	// ResizeObserver catches container size changes (panel resize, window resize).
-	// IntersectionObserver catches visibility changes (tab switch, panel show/hide).
-	// Periodic check catches edge cases both observers miss (CSS transitions, etc).
-	useEffect(() => {
-		const container = termContainerRef.current;
-		if (!container || !terminalOpen || !terminalSessionId) return;
-
-		const doFit = () => {
-			if (hasTerminal(terminalSessionId)) fitTerminal(terminalSessionId);
-		};
-
-		const resizeObs = new ResizeObserver(doFit);
-		resizeObs.observe(container);
-
-		const intersectionObs = new IntersectionObserver(
-			(entries) => {
-				if (entries[0]?.isIntersecting) doFit();
-			},
-			{ threshold: 0.1 },
-		);
-		intersectionObs.observe(container);
-
-		// Periodic fallback — catches CSS transitions and edge cases
-		const interval = setInterval(doFit, 2000);
-
-		// Immediate fit after layout settles
-		const timer = setTimeout(doFit, 150);
-
-		return () => {
-			resizeObs.disconnect();
-			intersectionObs.disconnect();
-			clearInterval(interval);
-			clearTimeout(timer);
-		};
-	}, [terminalSessionId, terminalOpen]);
+	// NOTE: No duplicate ResizeObserver/IntersectionObserver/setInterval here.
+	// createTerminal() in terminal.ts already sets up its own ResizeObserver
+	// that handles fit on container size changes.
 
 	// ── Keyboard: Escape closes terminal ──
 	useEffect(() => {
@@ -150,10 +107,10 @@ const TeamExecutionViewer: FunctionalComponent = () => {
 	// ── Cleanup on unmount ──
 	useEffect(() => {
 		return () => {
-			if (activeTermRef.current) {
-				destroyTerminal(activeTermRef.current);
-				activeTermRef.current = null;
+			for (const [id] of terminalContainers.current) {
+				destroyTerminal(id);
 			}
+			terminalContainers.current.clear();
 		};
 	}, []);
 

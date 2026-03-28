@@ -85,6 +85,7 @@ export function createTerminal(
 		fontFamily: "'JetBrains Mono', 'Fira Code', monospace",
 		fontSize: isMobile.value ? 12 : 14,
 		cursorBlink: true,
+		scrollback: 5000,
 	});
 	const fitAddon = new FitAddon();
 	term.loadAddon(fitAddon);
@@ -360,6 +361,11 @@ export function destroyTerminal(sessionId: string): void {
 		if (pending) {
 			clearTimeout(pending);
 			pendingScrollRaf.delete(sessionId);
+		}
+		const obs = pendingObservers.get(sessionId);
+		if (obs) {
+			obs.disconnect();
+			pendingObservers.delete(sessionId);
 		}
 	}
 }

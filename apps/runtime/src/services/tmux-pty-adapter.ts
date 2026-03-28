@@ -72,6 +72,7 @@ export class TmuxPtyAdapter implements Partial<IPty> {
 	private pipePath: string;
 	private destroyed = false;
 	private paused = false;
+	private initialScreen: string | null = null;
 
 	constructor(paneTarget: string, options?: { cols?: number; rows?: number }) {
 		this.paneTarget = paneTarget;
@@ -311,6 +312,12 @@ export class TmuxPtyAdapter implements Partial<IPty> {
 			return;
 		}
 
+		// Capture the current visible screen AFTER pipe-pane starts but BEFORE
+		// tail begins reading.  This avoids duplication: captureScreen covers
+		// everything produced BEFORE pipe-pane, and tail -f -c +0 reads only
+		// data written to the (initially empty) pipe file AFTER pipe-pane started.
+		this.initialScreen = this.captureScreen();
+
 		// Tail the file for real-time output
 		this.tailProcess = spawn("tail", ["-f", "-c", "+0", this.pipePath], {
 			stdio: ["ignore", "pipe", "ignore"],
@@ -327,6 +334,19 @@ export class TmuxPtyAdapter implements Partial<IPty> {
 				}
 			}
 		});
+
+		// Emit initial screen content to any already-registered callbacks.
+		// At construction time callbacks are typically empty — the content is
+		// also available via captureScreen() for registerVirtualSession to use.
+		if (this.initialScreen.trim()) {
+			for (const cb of this.dataCallbacks) {
+				try {
+					cb(this.initialScreen);
+				} catch {
+					// Ignore callback errors
+				}
+			}
+		}
 
 		this.tailProcess.on("exit", (code) => {
 			console.log(

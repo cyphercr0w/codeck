@@ -9,7 +9,10 @@
  * Does NOT fire for teammates (they have CLAUDE_CODE_TEAM_NAME set).
  */
 
-if (!process.env.CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS) {
+// Only active when teams is enabled AND we're inside a tmux session.
+// The env var alone is set in Dockerfile for all processes, but --teammate-mode
+// tmux only works when Claude is actually running inside tmux (TMUX env set).
+if (!process.env.CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS || !process.env.TMUX) {
   process.exit(0);
 }
 

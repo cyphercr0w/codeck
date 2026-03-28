@@ -83,12 +83,11 @@ import skillsRoutes from "../routes/skills.routes.js";
 import mcpRoutes from "../routes/mcp.routes.js";
 import hooksRoutes from "../routes/hooks.routes.js";
 import chatRoutes from "../routes/chat.routes.js";
-import teamsRoutes from "../routes/teams.routes.js";
+import yourTeamRoutes from "../routes/your-team.routes.js";
 import {
 	initProactiveAgents,
 	shutdownProactiveAgents,
 } from "../services/proactive-agents.js";
-import { initTeamTemplates } from "../services/teams.js";
 import { startTeamMonitor, stopTeamMonitor } from "../services/team-monitor.js";
 import {
 	initConsolidationCron,
@@ -611,7 +610,7 @@ export async function startWebServer(): Promise<void> {
 	app.use("/api/mcp-servers", mcpRoutes);
 	app.use("/api/hooks", hooksRoutes);
 	app.use("/api/chat", chatRoutes);
-	app.use("/api/teams", teamsRoutes);
+	app.use("/api/your-team", yourTeamRoutes);
 
 	// Account endpoint
 	app.get("/api/account", (_req, res) => {
@@ -727,7 +726,6 @@ export async function startWebServer(): Promise<void> {
 		updateClaudeMd();
 		ensureDirectories();
 		ensureMcpServers();
-		initTeamTemplates();
 
 		// Auto-update agent CLI in background (async — does not block event loop)
 		updateAgentBinary()

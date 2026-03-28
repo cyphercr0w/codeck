@@ -11,7 +11,6 @@ import {
 } from "../services/conversation-storage.js";
 import type { ChatConversation, ChatMessage } from "../types/chat.types.js";
 import { handleApiDirectMode } from "../services/chat-api-handler.js";
-import { stopTeam } from "../services/tmux-bridge.js";
 
 const router = Router();
 
@@ -80,17 +79,10 @@ router.post("/message", async (req, res) => {
 	});
 });
 
-// POST /api/chat/cancel — Cancel active chat stream or team execution
-router.post("/cancel", (req, res) => {
-	const { chatId, executionId } = req.body;
-
-	// Cancel team execution if provided
-	if (executionId && typeof executionId === "string") {
-		stopTeam(executionId);
-	}
-
-	// chatId is accepted but chat streaming cancellation is handled
-	// client-side via AbortController — this is a no-op acknowledgment.
+// POST /api/chat/cancel — Cancel active chat stream
+// chatId is accepted but chat streaming cancellation is handled
+// client-side via AbortController — this is a no-op acknowledgment.
+router.post("/cancel", (_req, res) => {
 	res.json({ success: true });
 });
 

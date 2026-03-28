@@ -78,11 +78,22 @@ export function launchTeam(
 		initialPrompt: options.input || "",
 	};
 
-	// Create tmux session (plain bash shell)
+	// Create tmux session in the project workspace (not /app build dir)
 	try {
 		execFileSync(
 			"tmux",
-			["new-session", "-d", "-s", tmuxSession, "-x", "160", "-y", "40"],
+			[
+				"new-session",
+				"-d",
+				"-s",
+				tmuxSession,
+				"-x",
+				"160",
+				"-y",
+				"40",
+				"-c",
+				cwd,
+			],
 			{ timeout: 5000 },
 		);
 	} catch (e) {

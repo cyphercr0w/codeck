@@ -11,8 +11,6 @@
 
 import { execFileSync } from "child_process";
 import { randomUUID } from "crypto";
-import { writeFileSync, unlinkSync, mkdirSync } from "fs";
-import { join } from "path";
 import { TmuxPtyAdapter } from "./tmux-pty-adapter.js";
 import { registerVirtualSession, destroySession } from "./console.js";
 import { saveTeamExecution } from "./teams.js";
@@ -79,68 +77,23 @@ export function launchTeam(
 		initialPrompt: options.input || "",
 	};
 
-	// Env vars that must reach the Claude process inside tmux.
-	// tmux new-session delegates to the tmux SERVER which spawns the shell,
-	// so the shell does NOT inherit this process's env.
-	// Solution: write a temp env file, and tell tmux to start bash sourcing it.
-	//
-	// NOTE: Do NOT pass ANTHROPIC_API_KEY — it may be stale/invalid.
-	// Claude Code will use OAuth credentials from ~/.claude/.credentials.json
-	// which is the primary auth method in Codeck.
-	const envVars: Record<string, string> = {
-		CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS: "1",
-	};
-
-	// Write temp env file (mode 0600 — only root can read)
-	const envDir = "/tmp/team-env";
-	mkdirSync(envDir, { recursive: true, mode: 0o700 });
-	const envFile = join(envDir, `${executionId}.sh`);
-	const envScript = Object.entries(envVars)
-		.map(([k, v]) => `export ${k}='${v.replace(/'/g, "'\\''")}'`)
-		.join("\n");
-	writeFileSync(envFile, envScript + "\n", { mode: 0o600 });
-
-	// Create tmux session: source the env file, then drop into interactive bash
+	// Create tmux session (plain bash shell)
 	try {
 		execFileSync(
 			"tmux",
-			[
-				"new-session",
-				"-d",
-				"-s",
-				tmuxSession,
-				"-x",
-				"160",
-				"-y",
-				"40",
-				`bash --rcfile ${envFile}`,
-			],
+			["new-session", "-d", "-s", tmuxSession, "-x", "160", "-y", "40"],
 			{ timeout: 5000 },
 		);
 	} catch (e) {
 		execution.status = "failed";
 		saveTeamExecution(execution);
-		try {
-			unlinkSync(envFile);
-		} catch {
-			/* ignore */
-		}
 		throw new Error(`Failed to create tmux session: ${(e as Error).message}`);
 	}
 
-	// Set session-level env so teammate panes (split later) also get them
-	for (const [k, v] of Object.entries(envVars)) {
-		try {
-			execFileSync("tmux", ["set-environment", "-t", tmuxSession, k, v], {
-				timeout: 2000,
-			});
-		} catch {
-			// non-fatal
-		}
-	}
-
-	// Launch Claude with Agent Teams in the tmux session
+	// Launch Claude with Agent Teams enabled via inline env var.
+	// Do NOT pass ANTHROPIC_API_KEY — Claude uses OAuth from ~/.claude/.credentials.json.
 	const claudeCmd = [
+		"CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1",
 		"claude",
 		"--teammate-mode",
 		"tmux",
@@ -169,11 +122,6 @@ export function launchTeam(
 		if (!ready || !activeExecutions.has(executionId)) {
 			execution.status = "failed";
 			saveTeamExecution(execution);
-			try {
-				unlinkSync(envFile);
-			} catch {
-				/* ignore */
-			}
 			return;
 		}
 
@@ -249,11 +197,6 @@ export function launchTeam(
 			console.error(`[TmuxBridge] Startup failed:`, (e as Error).message);
 			execution.status = "failed";
 			saveTeamExecution(execution);
-			try {
-				unlinkSync(envFile);
-			} catch {
-				/* ignore */
-			}
 		}
 	});
 
@@ -323,13 +266,6 @@ export function stopTeam(executionId: string): boolean {
 		});
 	} catch {
 		// Session may already be dead
-	}
-
-	// Clean up env file
-	try {
-		unlinkSync(join("/tmp/team-env", `${executionId}.sh`));
-	} catch {
-		// already removed or never created
 	}
 
 	// Update execution

@@ -147,6 +147,21 @@
 	align-items: center;
 }
 
+/* ── Footer: secondary sections (memory, preset, migration) ── */
+.mem-footer {
+	margin-top: 24px;
+	padding-top: 16px;
+	border-top: 1px solid var(--border);
+	opacity: 0.65;
+	transition: opacity 0.2s;
+}
+.mem-footer:hover {
+	opacity: 1;
+}
+.mem-footer .ac-section-title {
+	font-size: 12px;
+}
+
 /* ── Memory Shortcuts Grid ── */
 .mem-shortcuts {
 	display: grid;

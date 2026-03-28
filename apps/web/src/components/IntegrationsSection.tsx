@@ -696,23 +696,36 @@ function GitHubDetail({ onBack }: { onBack: () => void }) {
 		try {
 			const res = await apiFetch("/api/github/login", { method: "POST" });
 			const data = await res.json();
-			if (data.code) {
+			if (data.started || data.code) {
 				setGitHub((prev) => ({
 					...prev,
 					loginInProgress: true,
-					code: data.code,
-					url: data.url,
+					code: data.code ?? prev.code,
+					url: data.url ?? prev.url,
 				}));
-				// Poll for completion
+				// Poll for completion — the code/url arrive asynchronously via status endpoint
 				if (pollRef.current) clearInterval(pollRef.current);
 				pollRef.current = setInterval(async () => {
 					try {
 						const r = await apiFetch("/api/github/login-status");
 						const d = await r.json();
+						// Update code/url as they become available
+						if (d.code || d.url) {
+							setGitHub((prev) => ({
+								...prev,
+								code: d.code ?? prev.code,
+								url: d.url ?? prev.url,
+							}));
+						}
 						if (d.authenticated) {
 							if (pollRef.current) clearInterval(pollRef.current);
 							setGitHub(d);
 							setGhConnecting(false);
+						} else if (!d.inProgress && !d.authenticated) {
+							// Login finished without success
+							if (pollRef.current) clearInterval(pollRef.current);
+							setGhConnecting(false);
+							showToast("GitHub login failed or timed out", "error");
 						}
 					} catch {
 						/* retry */

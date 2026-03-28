@@ -444,12 +444,10 @@ function loadCachedUsage(): ClaudeUsageData | null {
 
 export const claudeUsage = signal<ClaudeUsageData | null>(loadCachedUsage());
 export const usageStale = signal(!!loadCachedUsage()); // true if showing cached data
-export const usageLastUpdated = signal<number>(0);
 
 export function setClaudeUsage(data: ClaudeUsageData): void {
 	claudeUsage.value = data;
 	usageStale.value = false;
-	usageLastUpdated.value = Date.now();
 	try {
 		localStorage.setItem(USAGE_CACHE_KEY, JSON.stringify(data));
 	} catch {
@@ -468,7 +466,7 @@ export interface ContextData {
 }
 
 // Context data stored per session — switching tabs shows that session's data instantly
-export const contextPerSession = signal<Record<string, ContextData>>({});
+const contextPerSession = signal<Record<string, ContextData>>({});
 // Computed: context for the active session
 export const contextData = computed(() => {
 	const id = activeSessionId.value;
@@ -515,7 +513,7 @@ export const previewMode = signal<PreviewMode>(
 	_savedMode || (_savedPort ? "split" : "hidden"),
 );
 // Compat: derived from previewMode
-export const previewSplit = signal<boolean>(
+const previewSplit = signal<boolean>(
 	_savedMode
 		? _savedMode === "split" || _savedMode === "full-preview"
 		: _savedPort !== null,

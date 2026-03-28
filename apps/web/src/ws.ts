@@ -40,7 +40,6 @@ const KNOWN_MSG_TYPES = new Set([
 	"console:error",
 	"console:output",
 	"console:exit",
-	"console:freeze",
 	"console:context_loaded",
 	"context",
 	"agent:update",
@@ -366,23 +365,6 @@ function openWs(wsUrl: string, protocols?: string[]): void {
 					msg.data !== null
 				) {
 					onContextLoaded?.(msg.sessionId, msg.data as ContextLoadedData);
-				}
-			} else if (msg.type === "console:freeze") {
-				// Server detected PTY freeze — log diagnostic info
-				if (typeof msg.sessionId === "string") {
-					const raw = msg as Record<string, unknown>;
-					const dur =
-						typeof raw.durationMs === "number"
-							? Math.round(raw.durationMs / 1000)
-							: "?";
-					const alive = raw.ptyAlive ? "alive" : "DEAD";
-					const lag =
-						typeof raw.eventLoopLagMs === "number" ? raw.eventLoopLagMs : "?";
-					addLog({
-						type: "warn",
-						message: `Terminal freeze: ${dur}s (PTY: ${alive}, event loop lag: ${lag}ms)`,
-						timestamp: Date.now(),
-					});
 				}
 			} else if (msg.type === "console:exit") {
 				if (typeof msg.sessionId === "string") {

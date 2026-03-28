@@ -37,7 +37,6 @@ import {
 	destroyAllSessions,
 	hasSavedSessions,
 	readSavedSessions,
-	restoreSessionsNow,
 	saveSessionState,
 	updateAgentBinary,
 	clearPendingRestore,
@@ -487,7 +486,6 @@ export async function startWebServer(): Promise<void> {
 			"/console/context",
 			"/console/subagents",
 			"/chat",
-			"/teams",
 			"/preview/navigate-to",
 		];
 		if (localBypassPaths.some((p) => req.path.startsWith(p))) {

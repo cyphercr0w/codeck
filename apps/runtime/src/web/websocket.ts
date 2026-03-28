@@ -562,25 +562,6 @@ function handleConsoleMessage(
 			sessionHandlers.set(sid, dataDisposable);
 		}
 
-		// For team-agent sessions, capture the current tmux screen BEFORE
-		// replaying the buffer.  pipe-pane may have started after the agent
-		// already produced output, so the buffer alone can miss early content.
-		// captureScreen() grabs the live visible pane, filling that gap.
-		if (session.type === "team-agent" && "captureScreen" in session.pty) {
-			const screen = (
-				session.pty as unknown as { captureScreen(): string }
-			).captureScreen();
-			if (screen && ws.readyState === WebSocket.OPEN) {
-				ws.send(
-					JSON.stringify({
-						type: "console:output",
-						sessionId: msg.sessionId,
-						data: screen,
-					}),
-				);
-			}
-		}
-
 		// Replay buffered output
 		const buffered = markSessionAttached(msg.sessionId);
 		for (const chunk of buffered) {

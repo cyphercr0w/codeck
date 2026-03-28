@@ -49,7 +49,7 @@ export const MAX_SESSIONS = parseInt(process.env.MAX_SESSIONS || "5", 10);
 
 interface ConsoleSession {
 	id: string;
-	type: "agent" | "shell" | "team-agent";
+	type: "agent" | "shell";
 	pty: IPty;
 	cwd: string;
 	name: string;
@@ -89,7 +89,7 @@ interface CreateSessionOptions {
 	// Peer orchestration: additional args and env for agent PTY sessions
 	extraArgs?: string[];
 	extraEnv?: Record<string, string>;
-	sessionType?: "agent" | "shell" | "team-agent";
+	sessionType?: "agent" | "shell";
 }
 
 /**
@@ -741,18 +741,14 @@ export function listSessions(): Array<{
 	createdAt: number;
 	conversationId?: string;
 }> {
-	// Filter out peer and team-agent sessions — they are managed by
-	// TeamExecutionViewer, not ClaudeSection.
-	return Array.from(sessions.values())
-		.filter((s) => s.type !== "team-agent")
-		.map((s) => ({
-			id: s.id,
-			type: s.type,
-			cwd: s.cwd,
-			name: s.name,
-			createdAt: s.createdAt,
-			conversationId: s.conversationId,
-		}));
+	return Array.from(sessions.values()).map((s) => ({
+		id: s.id,
+		type: s.type,
+		cwd: s.cwd,
+		name: s.name,
+		createdAt: s.createdAt,
+		conversationId: s.conversationId,
+	}));
 }
 
 /**
@@ -868,7 +864,7 @@ const SESSIONS_STATE_PATH = resolve(
 
 interface SavedSession {
 	id: string;
-	type: "agent" | "shell" | "team-agent";
+	type: "agent" | "shell";
 	cwd: string;
 	name: string;
 	reason: string;
@@ -905,8 +901,6 @@ function saveSessionStateNow(
 ): SessionsState {
 	const saved: SavedSession[] = [];
 	for (const [, session] of sessions) {
-		// Skip team-agent sessions — managed by TeamExecutionViewer, not user sessions.
-		if (session.type === "team-agent") continue;
 		saved.push({
 			id: session.id,
 			type: session.type,
@@ -1154,67 +1148,4 @@ export async function updateAgentBinary(): Promise<{
 
 	console.log(`[Console] Update complete: ${version} at ${newPath}`);
 	return { version, binaryPath: newPath };
-}
-
-export async function flushAllSessions(timeoutMs = 10000): Promise<void> {
-	const agentSessions = Array.from(sessions.values()).filter(
-		(s) => s.type === "agent",
-	);
-	if (agentSessions.length === 0) return;
-
-	console.log(
-		`[Console] Flushing ${agentSessions.length} agent sessions (timeout: ${timeoutMs}ms)`,
-	);
-	for (const session of agentSessions) {
-		session.pty.write("/compact\n");
-	}
-	await new Promise((r) => setTimeout(r, timeoutMs));
-}
-
-// ── Team-Agent Virtual Sessions ──
-
-/**
- * Minimal PTY interface for virtual sessions (TmuxPtyAdapter).
- * Only the methods actually used by the WebSocket pipeline.
- */
-interface VirtualPty {
-	onData(callback: (data: string) => void): { dispose(): void };
-	onExit(callback: (e: { exitCode: number; signal?: number }) => void): {
-		dispose(): void;
-	};
-	write(data: string): void;
-	resize(cols: number, rows: number): void;
-	kill(signal?: string): void;
-	pause?(): void;
-	resume?(): void;
-	pid: number;
-	cols: number;
-	rows: number;
-}
-
-/**
- * Register an external PTY-like object as a console session.
- * Used by tmux-bridge to register TmuxPtyAdapter instances
- * so the WebSocket pipeline can stream their output.
- */
-export function registerVirtualSession(
-	id: string,
-	pty: VirtualPty,
-	options: { cwd: string; name: string },
-): void {
-	// Output buffer starts empty for team-agent sessions.  The WebSocket
-	// console:attach handler calls captureScreen() at attach time instead,
-	// delivering a fresher snapshot and avoiding duplicate screen content.
-	const session: ConsoleSession = {
-		id,
-		type: "team-agent",
-		pty: pty as unknown as IPty, // VirtualPty covers all methods the WS pipeline uses
-		cwd: options.cwd,
-		name: options.name,
-		createdAt: Date.now(),
-		outputBuffer: [],
-		outputBufferSize: 0,
-		attached: false,
-	};
-	sessions.set(id, session);
 }

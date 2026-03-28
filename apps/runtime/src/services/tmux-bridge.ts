@@ -357,7 +357,9 @@ function startPaneWatcher(executionId: string): void {
 	if (!state) return;
 
 	const watcherStartTime = Date.now();
-	const WATCHER_TIMEOUT_MS = 180_000; // 3min — large teams need time to spawn
+	const SPAWN_GRACE_MS = 90_000; // 90s grace period for teammates to spawn
+	const WATCHER_TIMEOUT_MS = 300_000; // 5min — if no Claude processes at all, give up
+	let firstTeammateDetectedAt = 0; // timestamp of first teammate with command=claude
 
 	const interval = setInterval(() => {
 		if (!activeExecutions.has(executionId)) {
@@ -374,14 +376,24 @@ function startPaneWatcher(executionId: string): void {
 			bridgeNewPane(executionId, pane);
 		}
 
+		// Track when first teammate Claude process appears
+		const claudePanes = panes.filter((p) => p.command === "claude");
+		const teammateClaudePanes = claudePanes.filter((p) => p.index !== "0");
+		if (teammateClaudePanes.length > 0 && firstTeammateDetectedAt === 0) {
+			firstTeammateDetectedAt = Date.now();
+		}
+
 		// Detect completion:
 		// 1. tmux session died entirely
-		// 2. No teammate panes running Claude anymore (they exited to bash or closed)
-		// 3. No Claude processes for 60s — team failed to spawn or already finished
+		// 2. All teammate Claude processes exited AND at least 90s passed since
+		//    first teammate was seen (prevents false positives during startup)
+		// 3. No Claude processes at all for 5min (team failed to spawn)
 		const tmuxDead =
 			panes.length === 0 && !isTmuxSessionAlive(state.execution.tmuxSession);
-		const claudePanes = panes.filter((p) => p.command === "claude");
-		const teammatesDone = claudePanes.length <= 1 && state.knownPanes.size > 1; // only leader (or none) still running claude
+		const teammatesDone =
+			firstTeammateDetectedAt > 0 &&
+			Date.now() - firstTeammateDetectedAt > SPAWN_GRACE_MS &&
+			teammateClaudePanes.length === 0;
 		const noClaudeRunning = claudePanes.length === 0;
 		const timedOut = Date.now() - watcherStartTime > WATCHER_TIMEOUT_MS;
 

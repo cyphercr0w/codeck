@@ -218,6 +218,61 @@ export function MemoryTab({ onNavigate }: MemoryTabProps) {
 
 	return (
 		<div class="ac-tab-content">
+			{/* Configuration Shortcuts — always visible, top of page */}
+			<div class="ac-section">
+				<div class="ac-section-title">Configuration</div>
+				<div class="mem-shortcuts">
+					<button class="mem-shortcut" onClick={() => onNavigate?.("skills")}>
+						<IconBookmark size={28} />
+						<div>
+							<div class="mem-shortcut-title">Skills</div>
+							<div class="mem-shortcut-desc">Manage agent capabilities</div>
+						</div>
+					</button>
+					<button class="mem-shortcut" onClick={() => onNavigate?.("mcp")}>
+						<IconPlug size={28} />
+						<div>
+							<div class="mem-shortcut-title">MCP Servers</div>
+							<div class="mem-shortcut-desc">External tool integrations</div>
+						</div>
+					</button>
+					<button class="mem-shortcut" onClick={() => onNavigate?.("rules")}>
+						<IconList size={28} />
+						<div>
+							<div class="mem-shortcut-title">Rules</div>
+							<div class="mem-shortcut-desc">Coding standards & guidelines</div>
+						</div>
+					</button>
+					<button class="mem-shortcut" onClick={() => onNavigate?.("hooks")}>
+						<IconSettings size={28} />
+						<div>
+							<div class="mem-shortcut-title">Hooks</div>
+							<div class="mem-shortcut-desc">Automation scripts</div>
+						</div>
+					</button>
+					<button
+						class="mem-shortcut"
+						onClick={() => onNavigate?.("permissions")}
+					>
+						<IconShield size={28} />
+						<div>
+							<div class="mem-shortcut-title">Permissions</div>
+							<div class="mem-shortcut-desc">Tool access controls</div>
+						</div>
+					</button>
+					<button class="mem-shortcut" onClick={() => onNavigate?.("env")}>
+						<IconKey size={28} />
+						<div>
+							<div class="mem-shortcut-title">Environment</div>
+							<div class="mem-shortcut-desc">Variables & secrets</div>
+						</div>
+					</button>
+				</div>
+			</div>
+
+			{/* Visual separator before footer sections */}
+			<div class="mem-separator" />
+
 			{/* Memory Stats */}
 			<div class="ac-section">
 				<div class="ac-section-header">
@@ -357,63 +412,6 @@ export function MemoryTab({ onNavigate }: MemoryTabProps) {
 					</div>
 				</div>
 			</div>
-			{/* close ac-row */}
-
-			{/* Quick Access Shortcuts */}
-			{onNavigate && (
-				<div class="ac-section">
-					<div class="ac-section-title">Configuration</div>
-					<div class="mem-shortcuts">
-						<button class="mem-shortcut" onClick={() => onNavigate("skills")}>
-							<IconBookmark size={16} />
-							<div>
-								<div class="mem-shortcut-title">Skills</div>
-								<div class="mem-shortcut-desc">Manage agent capabilities</div>
-							</div>
-						</button>
-						<button class="mem-shortcut" onClick={() => onNavigate("mcp")}>
-							<IconPlug size={16} />
-							<div>
-								<div class="mem-shortcut-title">MCP Servers</div>
-								<div class="mem-shortcut-desc">External tool integrations</div>
-							</div>
-						</button>
-						<button class="mem-shortcut" onClick={() => onNavigate("rules")}>
-							<IconList size={16} />
-							<div>
-								<div class="mem-shortcut-title">Rules</div>
-								<div class="mem-shortcut-desc">
-									Coding standards & guidelines
-								</div>
-							</div>
-						</button>
-						<button class="mem-shortcut" onClick={() => onNavigate("hooks")}>
-							<IconSettings size={16} />
-							<div>
-								<div class="mem-shortcut-title">Hooks</div>
-								<div class="mem-shortcut-desc">Automation scripts</div>
-							</div>
-						</button>
-						<button
-							class="mem-shortcut"
-							onClick={() => onNavigate("permissions")}
-						>
-							<IconShield size={16} />
-							<div>
-								<div class="mem-shortcut-title">Permissions</div>
-								<div class="mem-shortcut-desc">Tool access controls</div>
-							</div>
-						</button>
-						<button class="mem-shortcut" onClick={() => onNavigate("env")}>
-							<IconKey size={16} />
-							<div>
-								<div class="mem-shortcut-title">Environment</div>
-								<div class="mem-shortcut-desc">Variables & secrets</div>
-							</div>
-						</button>
-					</div>
-				</div>
-			)}
 
 			<ConfirmModal
 				visible={showImportConfirm}

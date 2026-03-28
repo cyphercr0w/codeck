@@ -169,6 +169,11 @@ export function launchTeam(
 		if (!ready || !activeExecutions.has(executionId)) {
 			execution.status = "failed";
 			saveTeamExecution(execution);
+			try {
+				unlinkSync(envFile);
+			} catch {
+				/* ignore */
+			}
 			return;
 		}
 
@@ -244,6 +249,11 @@ export function launchTeam(
 			console.error(`[TmuxBridge] Startup failed:`, (e as Error).message);
 			execution.status = "failed";
 			saveTeamExecution(execution);
+			try {
+				unlinkSync(envFile);
+			} catch {
+				/* ignore */
+			}
 		}
 	});
 

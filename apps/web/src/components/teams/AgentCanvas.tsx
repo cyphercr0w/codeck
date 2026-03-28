@@ -409,9 +409,16 @@ const AgentCanvas: FunctionalComponent<{
 			// Sync state
 			syncNodes();
 
-			// Tick physics
+			// Tick physics and clamp nodes inside canvas bounds
 			if (simRef.current) {
 				for (let i = 0; i < 3; i++) simRef.current.tick();
+			}
+			const pad = LEADER_RADIUS + LABEL_OFFSET + 32; // room for labels
+			for (const node of nodesRef.current) {
+				if (node.x !== undefined)
+					node.x = Math.max(pad, Math.min(w - pad, node.x));
+				if (node.y !== undefined)
+					node.y = Math.max(pad, Math.min(h - pad, node.y));
 			}
 
 			// Update particles

@@ -91,19 +91,38 @@ export function launchTeam(
 		throw new Error(`Failed to create tmux session: ${(e as Error).message}`);
 	}
 
-	// Auth: the runtime injects CLAUDE_CODE_OAUTH_TOKEN per-session via getOAuthEnv().
-	// We must forward it to the tmux shell. Also unset stale ANTHROPIC_API_KEY
-	// which would override OAuth and fail with "Invalid API key".
+	// Remove stale API keys from tmux GLOBAL env so no pane (leader or teammate)
+	// inherits them. The tmux server inherited them from the runtime process.
+	for (const key of ["ANTHROPIC_API_KEY", "CLAUDE_API_KEY"]) {
+		try {
+			execFileSync("tmux", ["set-environment", "-g", "-u", key], {
+				timeout: 2000,
+			});
+		} catch {
+			/* may not exist */
+		}
+	}
+
+	// Auth: inject the OAuth token from the runtime's credential store.
 	const oauthEnv = getOAuthEnv();
 	const oauthToken = oauthEnv.CLAUDE_CODE_OAUTH_TOKEN || "";
-	const envPrefix = [
-		"unset ANTHROPIC_API_KEY CLAUDE_API_KEY;",
-		"CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1",
-		oauthToken ? `CLAUDE_CODE_OAUTH_TOKEN=${oauthToken}` : "",
-	]
-		.filter(Boolean)
-		.join(" ");
-	const claudeCmd = `${envPrefix} claude --teammate-mode tmux --permission-mode acceptEdits`;
+
+	// Set OAuth token + agent teams flag in tmux SESSION env so all panes get them.
+	const sessionEnv: Record<string, string> = {
+		CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS: "1",
+	};
+	if (oauthToken) sessionEnv.CLAUDE_CODE_OAUTH_TOKEN = oauthToken;
+	for (const [k, v] of Object.entries(sessionEnv)) {
+		try {
+			execFileSync("tmux", ["set-environment", "-t", tmuxSession, k, v], {
+				timeout: 2000,
+			});
+		} catch {
+			/* non-fatal */
+		}
+	}
+
+	const claudeCmd = "claude --teammate-mode tmux --permission-mode acceptEdits";
 
 	// Use -l for literal text, then send Enter separately
 	execFileSync(

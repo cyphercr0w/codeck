@@ -305,10 +305,20 @@ export class TmuxPtyAdapter implements Partial<IPty> {
 			}
 		});
 
-		this.tailProcess.on("exit", () => {
+		this.tailProcess.on("exit", (code) => {
+			console.log(
+				`[TmuxPty] tail exited for ${this.paneTarget} code=${code} destroyed=${this.destroyed}`,
+			);
 			if (!this.destroyed) {
 				this.destroy();
 			}
+		});
+
+		this.tailProcess.on("error", (err) => {
+			console.error(
+				`[TmuxPty] tail error for ${this.paneTarget}:`,
+				err.message,
+			);
 		});
 
 		// Monitor pane liveness every 5s

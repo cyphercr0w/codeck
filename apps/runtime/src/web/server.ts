@@ -89,6 +89,7 @@ import {
 	shutdownProactiveAgents,
 } from "../services/proactive-agents.js";
 import { initTeamTemplates } from "../services/teams.js";
+import { startTeamMonitor, stopTeamMonitor } from "../services/team-monitor.js";
 import {
 	initConsolidationCron,
 	shutdownConsolidationCron,
@@ -685,6 +686,7 @@ export async function startWebServer(): Promise<void> {
 		saveSessionState("shutdown");
 		stopTokenRefreshMonitor();
 		shutdownProactiveAgents();
+		stopTeamMonitor();
 		shutdownConsolidationCron();
 		shutdownEmbeddings();
 		shutdownSearch();
@@ -745,6 +747,7 @@ export async function startWebServer(): Promise<void> {
 		initProactiveAgents(broadcast);
 		startTokenRefreshMonitor(broadcast);
 		initConsolidationCron();
+		startTeamMonitor();
 
 		// Daily session transcript cleanup (remove >30 day old JSONL files)
 		// Run once at startup and then every 24 hours

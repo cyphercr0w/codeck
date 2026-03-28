@@ -68,6 +68,9 @@ const KNOWN_MSG_TYPES = new Set([
 	"team:agent:detected",
 	"team:agent:shutdown",
 	"team:stopped",
+	"team:detected",
+	"team:pane:output",
+	"team:ended",
 ]);
 
 /** Runtime validation for incoming WebSocket messages */
@@ -557,6 +560,36 @@ function openWs(wsUrl: string, protocols?: string[]): void {
 				if (typeof d.executionId === "string" && typeof d.status === "string") {
 					onTeamStopped({ executionId: d.executionId, status: d.status });
 				}
+			} else if (msg.type === "team:pane:output") {
+				// Real-time teammate output from tmux pane capture
+				const m = msg as Record<string, unknown>;
+				const agentName =
+					typeof m.agentName === "string" ? m.agentName : "agent";
+				const lines = Array.isArray(m.lines) ? m.lines : [];
+				for (const line of lines) {
+					if (typeof line === "string" && line.trim()) {
+						addLog({
+							type: "info",
+							message: `[${agentName}] ${line.trim()}`,
+							timestamp: Date.now(),
+						});
+					}
+				}
+			} else if (msg.type === "team:detected") {
+				const m = msg as Record<string, unknown>;
+				const panes = Array.isArray(m.panes) ? m.panes : [];
+				const names = panes.map((p: any) => p.name || "agent").join(", ");
+				addLog({
+					type: "info",
+					message: `Team detected: ${panes.length} agents (${names})`,
+					timestamp: Date.now(),
+				});
+			} else if (msg.type === "team:ended") {
+				addLog({
+					type: "info",
+					message: "Team session ended",
+					timestamp: Date.now(),
+				});
 			}
 		} catch (err) {
 			console.warn("[WS] Failed to parse message:", err);

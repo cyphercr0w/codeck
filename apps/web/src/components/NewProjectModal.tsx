@@ -14,16 +14,36 @@ interface NewProjectModalProps {
 	onConfirm: (dir: string, options: { command: string }) => void;
 }
 
-/**
- * Parse the command input string and return which flags are active.
- */
-function parseCommandFlags(command: string): {
+/** Known safe flags that users can type in the params input */
+const ALLOWED_FLAGS = new Set([
+	"--resume",
+	"--continue",
+	"--teammate-mode",
+	"--verbose",
+	"--debug",
+]);
+
+/** Flags blocked by the backend — shown as error if user types them */
+const BLOCKED_FLAGS = new Set([
+	"--dangerously-skip-permissions",
+	"--allowedTools",
+	"-p",
+	"--prompt",
+	"--model",
+	"--permission-mode",
+	"--output-format",
+	"--mcp-config",
+	"--append-system-prompt",
+	"--prefill",
+]);
+
+/** Parse params string (without "claude" prefix) and return which flags are active. */
+function parseCommandFlags(params: string): {
 	resume: boolean;
 	continueFlag: boolean;
 	teams: boolean;
 } {
-	// Tokenize carefully: split on whitespace but respect the flag patterns
-	const tokens = command.trim().split(/\s+/);
+	const tokens = params.trim().split(/\s+/).filter(Boolean);
 	return {
 		resume: tokens.includes("--resume"),
 		continueFlag: tokens.includes("--continue"),
@@ -33,22 +53,29 @@ function parseCommandFlags(command: string): {
 	};
 }
 
-/**
- * Build a command string by toggling a flag on/off, preserving any extra user-typed flags.
- */
+/** Validate params and return error message if invalid, or empty string if OK. */
+function validateParams(params: string): string {
+	const tokens = params.trim().split(/\s+/).filter(Boolean);
+	for (const token of tokens) {
+		if (!token.startsWith("-")) continue; // skip flag values like "tmux"
+		if (BLOCKED_FLAGS.has(token)) return `Flag "${token}" is not allowed`;
+		if (!ALLOWED_FLAGS.has(token)) return `Unknown flag "${token}"`;
+	}
+	return "";
+}
+
+/** Toggle a flag on/off in the params string, preserving other user-typed flags. */
 function toggleFlag(
-	command: string,
+	params: string,
 	flag: string,
 	enabled: boolean,
 	removeFlags?: string[],
 ): string {
-	let cmd = command;
+	let cmd = params;
 
-	// Remove conflicting flags first
 	if (removeFlags) {
 		for (const rf of removeFlags) {
 			if (rf === "--teammate-mode") {
-				// Remove --teammate-mode and its argument
 				cmd = cmd.replace(/\s*--teammate-mode\s+\S+/, "");
 			} else {
 				cmd = cmd.replace(
@@ -59,19 +86,16 @@ function toggleFlag(
 		}
 	}
 
-	// Remove the flag itself (and argument for --teammate-mode)
 	if (flag === "--teammate-mode tmux") {
 		cmd = cmd.replace(/\s*--teammate-mode\s+tmux/, "");
 	} else {
 		cmd = cmd.replace(new RegExp(`\\s*${flag.replace(/-/g, "\\-")}`, "g"), "");
 	}
 
-	// Add flag if enabling
 	if (enabled) {
 		cmd = cmd.trimEnd() + " " + flag;
 	}
 
-	// Clean up extra whitespace
 	return cmd.replace(/\s+/g, " ").trim();
 }
 
@@ -95,13 +119,19 @@ export function NewProjectModal({
 	const [loading, setLoading] = useState(false);
 	const [error, setError] = useState("");
 	const [sshConfigured, setSshConfigured] = useState(false);
-	const [command, setCommand] = useState("claude");
+	const [params, setParams] = useState("");
+	const [paramError, setParamError] = useState("");
 	const nameRef = useRef<HTMLInputElement>(null);
 	const urlRef = useRef<HTMLInputElement>(null);
 	const commandRef = useRef<HTMLInputElement>(null);
 
 	// The resolved directory path for step 2
 	const [resolvedDir, setResolvedDir] = useState("");
+
+	// Stable ref for onCancel — avoids re-running the init effect when the parent
+	// passes a new inline function on each render (which would reset step to 1).
+	const onCancelRef = useRef(onCancel);
+	onCancelRef.current = onCancel;
 
 	useEffect(() => {
 		if (visible) {
@@ -114,7 +144,8 @@ export function NewProjectModal({
 			setCanResume(false);
 			setLoading(false);
 			setError("");
-			setCommand("claude");
+			setParams("");
+			setParamError("");
 			loadDirs();
 			checkSshStatus();
 
@@ -131,7 +162,7 @@ export function NewProjectModal({
 			// Focus trap and Escape handler
 			const handleKeyDown = (e: KeyboardEvent) => {
 				if (e.key === "Escape") {
-					onCancel();
+					onCancelRef.current();
 					return;
 				}
 				if (e.key === "Tab") {
@@ -153,7 +184,7 @@ export function NewProjectModal({
 			document.addEventListener("keydown", handleKeyDown);
 			return () => document.removeEventListener("keydown", handleKeyDown);
 		}
-	}, [visible, onCancel]);
+	}, [visible]);
 
 	useEffect(() => {
 		if (tab === "create") nameRef.current?.focus();
@@ -214,8 +245,9 @@ export function NewProjectModal({
 	/** Advance from step 1 to step 2 for the "existing" and "create" tabs */
 	async function advanceToStep2(dir: string) {
 		setResolvedDir(dir);
-		setCommand("claude");
-		setCanResume(false); // reset before async check to avoid stale state
+		setParams("");
+		setParamError("");
+		setCanResume(false);
 		await checkConversations(dir);
 		setStep(2);
 	}
@@ -284,12 +316,14 @@ export function NewProjectModal({
 	}
 
 	function handleStep2Submit() {
-		onConfirm(resolvedDir, { command });
+		const fullCommand = params.trim() ? `claude ${params.trim()}` : "claude";
+		onConfirm(resolvedDir, { command: fullCommand });
 	}
 
 	function handleBack() {
 		setStep(1);
-		setCommand("claude");
+		setParams("");
+		setParamError("");
 		setError("");
 	}
 
@@ -301,32 +335,24 @@ export function NewProjectModal({
 		return false;
 	}
 
-	// Bidirectional command <-> checkbox sync
-	const flags = parseCommandFlags(command);
+	// Bidirectional params <-> checkbox sync
+	const flags = parseCommandFlags(params);
 
 	function handleResumeToggle(checked: boolean) {
-		// --resume and --continue are mutually exclusive
-		setCommand(toggleFlag(command, "--resume", checked, ["--continue"]));
+		setParams(toggleFlag(params, "--resume", checked, ["--continue"]));
 	}
 
 	function handleContinueToggle(checked: boolean) {
-		// --continue and --resume are mutually exclusive
-		setCommand(toggleFlag(command, "--continue", checked, ["--resume"]));
+		setParams(toggleFlag(params, "--continue", checked, ["--resume"]));
 	}
 
 	function handleTeamsToggle(checked: boolean) {
-		setCommand(toggleFlag(command, "--teammate-mode tmux", checked));
+		setParams(toggleFlag(params, "--teammate-mode tmux", checked));
 	}
 
-	function handleCommandInput(value: string) {
-		// Ensure "claude" prefix is always present
-		if (!value.startsWith("claude")) {
-			// Find where the user's extra content starts
-			const rest = value.replace(/^[a-z]*\s*/, "");
-			setCommand("claude" + (rest ? " " + rest : ""));
-		} else {
-			setCommand(value);
-		}
+	function handleParamsInput(value: string) {
+		setParams(value);
+		setParamError(validateParams(value));
 	}
 
 	const dirShortName = resolvedDir.split("/").pop() || resolvedDir;
@@ -585,7 +611,7 @@ export function NewProjectModal({
 							</label>
 						</div>
 
-						{/* Editable command input */}
+						{/* Command input with locked "claude" prefix */}
 						<div style={{ marginBottom: "16px" }}>
 							<label
 								class="npm-label"
@@ -593,19 +619,52 @@ export function NewProjectModal({
 							>
 								Command
 							</label>
-							<input
-								ref={commandRef}
-								type="text"
-								class="input"
-								style={{ fontFamily: "var(--font-mono)", fontSize: "13px" }}
-								value={command}
-								onInput={(e) =>
-									handleCommandInput((e.target as HTMLInputElement).value)
-								}
-								onKeyDown={(e) => {
-									if (e.key === "Enter") handleStep2Submit();
-								}}
-							/>
+							<div style={{ display: "flex", alignItems: "center", gap: 0 }}>
+								<span
+									style={{
+										fontFamily: "var(--font-mono)",
+										fontSize: "13px",
+										padding: "8px 2px 8px 12px",
+										background: "var(--bg-tertiary, #1a1a2e)",
+										border: "1px solid var(--border-color, #333)",
+										borderRight: "none",
+										borderRadius: "6px 0 0 6px",
+										color: "var(--text-secondary, #888)",
+										userSelect: "none",
+										whiteSpace: "nowrap",
+									}}
+								>
+									claude
+								</span>
+								<input
+									ref={commandRef}
+									type="text"
+									class="input"
+									style={{
+										fontFamily: "var(--font-mono)",
+										fontSize: "13px",
+										borderRadius: "0 6px 6px 0",
+										flex: 1,
+									}}
+									placeholder="--resume --continue"
+									value={params}
+									onInput={(e) =>
+										handleParamsInput((e.target as HTMLInputElement).value)
+									}
+									onKeyDown={(e) => {
+										if (e.key === "Enter" && !paramError) handleStep2Submit();
+									}}
+								/>
+							</div>
+							{paramError && (
+								<div
+									class="npm-error"
+									style={{ marginTop: "6px" }}
+									role="alert"
+								>
+									{paramError}
+								</div>
+							)}
 						</div>
 
 						{error && (
@@ -627,7 +686,11 @@ export function NewProjectModal({
 								<IconChevronLeft size={14} />
 								Back
 							</button>
-							<button class="btn btn-primary" onClick={handleStep2Submit}>
+							<button
+								class="btn btn-primary"
+								onClick={handleStep2Submit}
+								disabled={!!paramError}
+							>
 								Open terminal
 							</button>
 						</div>

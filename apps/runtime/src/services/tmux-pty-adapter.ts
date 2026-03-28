@@ -208,18 +208,22 @@ export class TmuxPtyAdapter implements Partial<IPty> {
 		}
 	}
 
-	/** Check if the tmux pane still exists */
+	/** Check if the tmux pane still exists (retry once to tolerate transient failures) */
 	isAlive(): boolean {
-		try {
-			execFileSync(
-				TMUX_CMD,
-				["display-message", "-t", this.paneTarget, "-p", "#{pane_id}"],
-				{ encoding: "utf-8", timeout: 1000 },
-			);
-			return true;
-		} catch {
-			return false;
+		for (let attempt = 0; attempt < 2; attempt++) {
+			try {
+				execFileSync(
+					TMUX_CMD,
+					["display-message", "-t", this.paneTarget, "-p", "#{pane_id}"],
+					{ encoding: "utf-8", timeout: 3000 },
+				);
+				return true;
+			} catch {
+				if (attempt === 0) continue; // retry once
+				return false;
+			}
 		}
+		return false;
 	}
 
 	destroy(): void {
@@ -273,17 +277,36 @@ export class TmuxPtyAdapter implements Partial<IPty> {
 
 		// Start pipe-pane: tmux pipes raw program output to our file.
 		// Shell-quote the path to prevent injection — pipe-pane runs via sh -c.
+		// Retry once on failure — tmux may be busy with many concurrent panes.
 		const safePath = this.pipePath.replace(/'/g, "'\\''");
-		try {
-			execFileSync(
-				TMUX_CMD,
-				["pipe-pane", "-O", "-t", this.paneTarget, `cat >> '${safePath}'`],
-				{ timeout: 2000 },
-			);
-		} catch (e) {
+		let pipeStarted = false;
+		for (let attempt = 0; attempt < 3; attempt++) {
+			try {
+				execFileSync(
+					TMUX_CMD,
+					["pipe-pane", "-O", "-t", this.paneTarget, `cat >> '${safePath}'`],
+					{ timeout: 5000 },
+				);
+				pipeStarted = true;
+				break;
+			} catch (e) {
+				console.error(
+					`[TmuxPty] pipe-pane attempt ${attempt + 1} failed for ${this.paneTarget}:`,
+					(e as Error).message,
+				);
+				if (attempt < 2) {
+					// Brief delay before retry
+					try {
+						execFileSync("sleep", ["0.5"], { timeout: 2000 });
+					} catch {
+						/* */
+					}
+				}
+			}
+		}
+		if (!pipeStarted) {
 			console.error(
-				`[TmuxPty] Failed to start pipe-pane for ${this.paneTarget}:`,
-				(e as Error).message,
+				`[TmuxPty] All pipe-pane attempts failed for ${this.paneTarget}`,
 			);
 			return;
 		}

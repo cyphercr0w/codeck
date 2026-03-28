@@ -24,6 +24,7 @@ import {
 	mobilePreviewOpen,
 	isMobile,
 	showToast,
+	addCloneProgress,
 } from "./state/store";
 import { appendToAssistant, completeAssistant } from "./state/chat-store";
 import { apiFetch, getAuthToken } from "./api";
@@ -71,6 +72,7 @@ const KNOWN_MSG_TYPES = new Set([
 	"team:detected",
 	"team:pane:output",
 	"team:ended",
+	"clone:progress",
 ]);
 
 /** Runtime validation for incoming WebSocket messages */
@@ -590,6 +592,11 @@ function openWs(wsUrl: string, protocols?: string[]): void {
 					message: "Team session ended",
 					timestamp: Date.now(),
 				});
+			} else if (msg.type === "clone:progress") {
+				const m = msg as Record<string, unknown>;
+				if (typeof m.line === "string") {
+					addCloneProgress(m.line);
+				}
 			}
 		} catch (err) {
 			console.warn("[WS] Failed to parse message:", err);

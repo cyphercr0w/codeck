@@ -8,6 +8,7 @@ import {
 	isValidGitUrl,
 	checkDiskSpace,
 } from "../services/git.js";
+import { broadcast } from "../web/logger.js";
 import { broadcastStatus } from "../web/websocket.js";
 import { asyncHandler } from "../utils/async-handler.js";
 
@@ -167,7 +168,17 @@ router.post(
 			stdout += data.toString();
 		});
 		proc.stderr.on("data", (data: Buffer) => {
-			stderr += data.toString();
+			const chunk = data.toString();
+			stderr += chunk;
+			// Git outputs progress to stderr — broadcast each line for real-time UI
+			const lines = chunk.split(/\r?\n|\r/).filter((l: string) => l.trim());
+			for (const line of lines) {
+				broadcast({
+					type: "clone:progress",
+					line: line.trim(),
+					target: sanitized,
+				});
+			}
 		});
 
 		proc.on("close", async (code) => {

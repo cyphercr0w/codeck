@@ -133,6 +133,13 @@ export const pendingRestoredSessions = signal<PendingSession[]>([]);
 // Logs
 export const logs = signal<LogEntry[]>([]);
 export const logsExpanded = signal(false);
+export const cloneProgress = signal<string[]>([]);
+export function addCloneProgress(line: string): void {
+	cloneProgress.value = [...cloneProgress.value, line];
+}
+export function clearCloneProgress(): void {
+	cloneProgress.value = [];
+}
 
 // Preset
 export const presetConfigured = signal(false);

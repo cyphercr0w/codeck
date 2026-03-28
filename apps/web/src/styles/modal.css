@@ -359,3 +359,26 @@
 		display: none;
 	}
 }
+
+/* ========== Clone Progress Log ========== */
+.npm-clone-log {
+	margin-top: 12px;
+	padding: 10px 12px;
+	background: var(--bg-primary, #0d0d1a);
+	border: 1px solid var(--border-color, #333);
+	border-radius: 6px;
+	font-family: var(--font-mono);
+	font-size: 11px;
+	line-height: 1.5;
+	max-height: 120px;
+	overflow-y: auto;
+	color: var(--text-secondary, #888);
+}
+.npm-clone-line {
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+.npm-clone-line:last-child {
+	color: var(--text-primary, #e0e0e0);
+}

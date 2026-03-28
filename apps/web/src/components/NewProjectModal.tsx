@@ -1,6 +1,12 @@
 import { useEffect, useRef, useState } from "preact/hooks";
 import { apiFetch } from "../api";
-import { workspacePath, agentName, setActiveSection } from "../state/store";
+import {
+	workspacePath,
+	agentName,
+	setActiveSection,
+	cloneProgress,
+	clearCloneProgress,
+} from "../state/store";
 import { IconFolder, IconPlus, IconGithub, IconChevronLeft } from "./Icons";
 
 type Tab = "existing" | "create" | "clone";
@@ -298,6 +304,7 @@ export function NewProjectModal({
 		if (!url) return;
 
 		setError("");
+		clearCloneProgress();
 		setLoading(true);
 		try {
 			const body: Record<string, string> = { url };
@@ -309,6 +316,7 @@ export function NewProjectModal({
 				body: JSON.stringify(body),
 			});
 			const data = await res.json();
+			clearCloneProgress();
 			if (data.success) {
 				await advanceToStep2(data.path);
 			} else {
@@ -317,6 +325,7 @@ export function NewProjectModal({
 		} catch {
 			setError("Connection error");
 		} finally {
+			clearCloneProgress();
 			setLoading(false);
 		}
 	}
@@ -589,6 +598,17 @@ export function NewProjectModal({
 						{error && (
 							<div class="npm-error" role="alert">
 								{error}
+							</div>
+						)}
+
+						{/* Clone progress log — visible during active clone */}
+						{loading && tab === "clone" && cloneProgress.value.length > 0 && (
+							<div class="npm-clone-log" aria-live="polite">
+								{cloneProgress.value.slice(-6).map((line, i) => (
+									<div key={i} class="npm-clone-line">
+										{line}
+									</div>
+								))}
 							</div>
 						)}
 

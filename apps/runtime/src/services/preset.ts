@@ -74,6 +74,7 @@ interface PresetConfig {
 	presetName: string;
 	configuredAt: string;
 	version: string;
+	autoUpdate?: boolean;
 }
 
 export interface PresetStatus {
@@ -84,6 +85,7 @@ export interface PresetStatus {
 	version: string | null;
 	availableVersion: string | null;
 	updateAvailable: boolean;
+	autoUpdate: boolean;
 }
 
 // ── Validation ──────────────────────────────────────────────────────
@@ -216,6 +218,7 @@ export function getPresetStatus(): PresetStatus {
 		version: null,
 		availableVersion: null,
 		updateAvailable: false,
+		autoUpdate: true,
 	};
 	if (!existsSync(CONFIG_FILE)) return empty;
 	try {
@@ -236,6 +239,7 @@ export function getPresetStatus(): PresetStatus {
 			version: config.version,
 			availableVersion,
 			updateAvailable,
+			autoUpdate: config.autoUpdate !== false,
 		};
 	} catch (e) {
 		console.warn("[Preset] Failed to read config:", (e as Error).message);
@@ -252,9 +256,32 @@ export function getPresetStatus(): PresetStatus {
  *   preferences.md, MEMORY.md, constitution.md, settings.json,
  *   memory/**, state/**
  */
+export function setAutoUpdate(enabled: boolean): void {
+	try {
+		let config: Record<string, unknown> = {};
+		if (existsSync(CONFIG_FILE)) {
+			const parsed = JSON.parse(readFileSync(CONFIG_FILE, "utf-8"));
+			if (
+				typeof parsed === "object" &&
+				parsed !== null &&
+				!Array.isArray(parsed)
+			) {
+				config = parsed;
+			}
+		}
+		config.autoUpdate = enabled;
+		writeFileSync(CONFIG_FILE, JSON.stringify(config, null, 2), {
+			mode: 0o600,
+		});
+	} catch (e) {
+		console.warn("[Preset] Failed to set autoUpdate:", (e as Error).message);
+	}
+}
+
 export function checkPresetUpdate(): void {
 	const status = getPresetStatus();
 	if (!status.configured || !status.presetId || !status.version) return;
+	if (!status.autoUpdate) return;
 
 	const manifest = loadManifest(status.presetId);
 	if (!manifest) return;

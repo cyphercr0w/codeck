@@ -23,6 +23,7 @@ interface PresetStatus {
 	version: string | null;
 	availableVersion: string | null;
 	updateAvailable: boolean;
+	autoUpdate: boolean;
 }
 
 interface MemoryStats {
@@ -348,15 +349,27 @@ export function MemoryTab({ onNavigate }: MemoryTabProps) {
 								</div>
 							</div>
 							<div class="mem-card-actions">
-								<button
-									class={`btn btn-sm ${hasUpdate ? "btn-primary" : "btn-secondary"}`}
-									onClick={() => setShowUpdateModal(true)}
-									disabled={updating || !hasUpdate}
-									style="flex: 1"
-								>
-									{updating ? <span class="spinner-sm" /> : null}
-									{hasUpdate ? "Update Preset" : "Up to Date"}
-								</button>
+								{hasUpdate ? (
+									<button
+										class="btn btn-sm btn-primary"
+										onClick={() => setShowUpdateModal(true)}
+										disabled={updating}
+										style="flex: 1"
+									>
+										{updating ? <span class="spinner-sm" /> : null}
+										Install v{presetStatus.availableVersion}
+									</button>
+								) : (
+									<button
+										class="btn btn-sm btn-secondary"
+										onClick={() => setShowUpdateModal(true)}
+										disabled={updating}
+										style="flex: 1"
+									>
+										{updating ? <span class="spinner-sm" /> : null}
+										Re-apply preset
+									</button>
+								)}
 								<button
 									class="btn btn-sm btn-ghost"
 									onClick={() => setShowResetModal(true)}
@@ -366,6 +379,21 @@ export function MemoryTab({ onNavigate }: MemoryTabProps) {
 									Reset
 								</button>
 							</div>
+							<label class="npm-checkbox" style="margin-top: 8px">
+								<input
+									type="checkbox"
+									checked={presetStatus.autoUpdate !== false}
+									onChange={async (e) => {
+										const enabled = (e.target as HTMLInputElement).checked;
+										await apiFetch("/api/preset/auto-update", {
+											method: "POST",
+											body: JSON.stringify({ enabled }),
+										});
+										loadPresetStatus();
+									}}
+								/>
+								<span>Auto-update on startup</span>
+							</label>
 						</div>
 					)}
 

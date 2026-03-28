@@ -100,24 +100,39 @@ const TeamExecutionViewer: FunctionalComponent = () => {
 		};
 	}, [terminalSessionId, terminalOpen]);
 
-	// ── Resize terminal on container resize ──
+	// ── Keep terminal fitted at all times ──
+	// ResizeObserver catches container size changes (panel resize, window resize).
+	// IntersectionObserver catches visibility changes (tab switch, panel show/hide).
+	// Periodic check catches edge cases both observers miss (CSS transitions, etc).
 	useEffect(() => {
 		const container = termContainerRef.current;
 		if (!container || !terminalOpen || !terminalSessionId) return;
 
-		const observer = new ResizeObserver(() => {
+		const doFit = () => {
 			if (hasTerminal(terminalSessionId)) fitTerminal(terminalSessionId);
-		});
-		observer.observe(container);
+		};
 
-		// Fallback: force fit after a short delay in case ResizeObserver
-		// missed the initial layout pass.
-		const timer = setTimeout(() => {
-			if (hasTerminal(terminalSessionId)) fitTerminal(terminalSessionId);
-		}, 200);
+		const resizeObs = new ResizeObserver(doFit);
+		resizeObs.observe(container);
+
+		const intersectionObs = new IntersectionObserver(
+			(entries) => {
+				if (entries[0]?.isIntersecting) doFit();
+			},
+			{ threshold: 0.1 },
+		);
+		intersectionObs.observe(container);
+
+		// Periodic fallback — catches CSS transitions and edge cases
+		const interval = setInterval(doFit, 2000);
+
+		// Immediate fit after layout settles
+		const timer = setTimeout(doFit, 150);
 
 		return () => {
-			observer.disconnect();
+			resizeObs.disconnect();
+			intersectionObs.disconnect();
+			clearInterval(interval);
 			clearTimeout(timer);
 		};
 	}, [terminalSessionId, terminalOpen]);

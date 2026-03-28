@@ -90,9 +90,17 @@ router.post(
 			"--prefill",
 		]);
 		if (Array.isArray(clientExtraArgs)) {
+			let skipNext = false;
 			for (const arg of clientExtraArgs) {
 				if (typeof arg !== "string" || arg.length > 100) continue;
-				if (BLOCKED_FLAGS.has(arg)) continue;
+				if (skipNext) {
+					skipNext = false;
+					continue;
+				}
+				if (BLOCKED_FLAGS.has(arg)) {
+					skipNext = true;
+					continue;
+				}
 				extraArgs.push(arg);
 			}
 		}

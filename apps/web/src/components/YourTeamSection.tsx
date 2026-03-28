@@ -233,7 +233,8 @@ function AgentDefEditor({
 		setSaving(true);
 		setError(null);
 		try {
-			const content = `---\nname: ${agentName}\ndescription: ${description}\nmodel: ${model}\ntools: ${JSON.stringify(tools)}\n---\n\n${prompt}`;
+			const safeDesc = description.replace(/\n/g, " ").replace(/---/g, "—");
+				const content = `---\nname: ${agentName}\ndescription: ${safeDesc}\nmodel: ${model}\ntools: ${JSON.stringify(tools)}\n---\n\n${prompt}`;
 			const res = await apiFetch(
 				`/api/your-team/${encodeURIComponent(agentName)}`,
 				{
@@ -394,13 +395,13 @@ export function YourTeamSection() {
 		try {
 			const res = await apiFetch(`/api/your-team/${encodeURIComponent(name)}`);
 			const data = await res.json();
-			const agent = data.agent ?? data;
+			const fm = data.frontmatter ?? {};
 			setEditing({
-				name: agent.name ?? name,
-				description: agent.description ?? "",
-				model: agent.model ?? "sonnet",
-				tools: agent.tools ?? [],
-				prompt: agent.body ?? agent.prompt ?? "",
+				name: data.name ?? name,
+				description: (fm.description as string) ?? "",
+				model: (fm.model as string) ?? "sonnet",
+				tools: Array.isArray(fm.tools) ? fm.tools : [],
+				prompt: data.body ?? "",
 			});
 		} catch {
 			setDeleteError("Failed to load agent details.");

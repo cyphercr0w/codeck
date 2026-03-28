@@ -70,6 +70,22 @@ function validateParams(params: string): string {
 	return "";
 }
 
+const PREFS_KEY_PREFIX = 'codeck_launch_prefs_';
+
+function loadLaunchPrefs(dir: string): { resume: boolean; continue_: boolean; teams: boolean } {
+	try {
+		const raw = localStorage.getItem(PREFS_KEY_PREFIX + dir);
+		if (raw) return JSON.parse(raw);
+	} catch {}
+	return { resume: false, continue_: false, teams: false };
+}
+
+function saveLaunchPrefs(dir: string, prefs: { resume: boolean; continue_: boolean; teams: boolean }): void {
+	try {
+		localStorage.setItem(PREFS_KEY_PREFIX + dir, JSON.stringify(prefs));
+	} catch {}
+}
+
 /** Toggle a flag on/off in the params string, preserving other user-typed flags. */
 function toggleFlag(
 	params: string,
@@ -257,7 +273,12 @@ export function NewProjectModal({
 	/** Advance from step 1 to step 2 for the "existing" and "create" tabs */
 	async function advanceToStep2(dir: string) {
 		setResolvedDir(dir);
-		setParams("");
+		const prefs = loadLaunchPrefs(dir);
+		let initialParams = '';
+		if (prefs.resume) initialParams += ' --resume';
+		if (prefs.continue_) initialParams += ' --continue';
+		if (prefs.teams) initialParams += ' --teammate-mode tmux';
+		setParams(initialParams.trim());
 		setParamError("");
 		setCanResume(false);
 		await checkConversations(dir);
@@ -331,6 +352,8 @@ export function NewProjectModal({
 	}
 
 	function handleStep2Submit() {
+		const currentFlags = parseCommandFlags(params);
+		saveLaunchPrefs(resolvedDir, { resume: currentFlags.resume, continue_: currentFlags.continueFlag, teams: currentFlags.teams });
 		const fullCommand = params.trim() ? `claude ${params.trim()}` : "claude";
 		onConfirm(resolvedDir, { command: fullCommand });
 	}
@@ -643,25 +666,21 @@ export function NewProjectModal({
 							<div class="npm-launch-title">Launch options</div>
 
 							{canResume && (
-								<div role="radiogroup" aria-label="Conversation resume mode">
+								<div role="group" aria-label="Conversation resume mode">
 									<label class="npm-checkbox">
 										<input
-											type="radio"
-											name="resume-mode"
-											checked={flags.resume}
-											onChange={() => {}}
-											onClick={() => handleResumeToggle(!flags.resume)}
+											type="checkbox"
+								checked={flags.resume}
+								onChange={(e) => handleResumeToggle((e.target as HTMLInputElement).checked)}
 										/>
 										<span>Resume previous conversation</span>
 										<span class="npm-flag">--resume</span>
 									</label>
 									<label class="npm-checkbox">
 										<input
-											type="radio"
-											name="resume-mode"
-											checked={flags.continueFlag}
-											onChange={() => {}}
-											onClick={() => handleContinueToggle(!flags.continueFlag)}
+											type="checkbox"
+								checked={flags.continueFlag}
+								onChange={(e) => handleContinueToggle((e.target as HTMLInputElement).checked)}
 										/>
 										<span>Continue most recent conversation</span>
 										<span class="npm-flag">--continue</span>

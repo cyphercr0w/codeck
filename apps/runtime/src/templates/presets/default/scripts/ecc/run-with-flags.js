@@ -89,10 +89,29 @@ async function main() {
 		}
 	}
 
+	// Ensure hook output is valid JSON for Claude Code.
+	// If a hook script returns non-JSON, wrap it as {result:"approve"} to avoid
+	// "JSON validation failed" errors.
+	function safeOutput(raw) {
+		if (!raw || !raw.trim()) return;
+		try {
+			JSON.parse(raw);
+			process.stdout.write(raw);
+		} catch {
+			// Not valid JSON — wrap as approve with the original text as context
+			process.stdout.write(
+				JSON.stringify({
+					result: "approve",
+					hookOutput: raw.trim().slice(0, 500),
+				}),
+			);
+		}
+	}
+
 	if (hookModule && typeof hookModule.run === "function") {
 		try {
 			const output = hookModule.run(raw);
-			if (output !== null && output !== undefined) process.stdout.write(output);
+			if (output !== null && output !== undefined) safeOutput(String(output));
 		} catch (runErr) {
 			process.stderr.write(
 				`[Hook] run() error for ${hookId}: ${runErr.message}\n`,
@@ -110,7 +129,7 @@ async function main() {
 		timeout: 30000,
 	});
 
-	if (result.stdout) process.stdout.write(result.stdout);
+	if (result.stdout) safeOutput(result.stdout);
 	if (result.stderr) process.stderr.write(result.stderr);
 
 	const code = Number.isInteger(result.status) ? result.status : 0;

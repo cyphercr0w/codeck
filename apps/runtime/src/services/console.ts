@@ -359,19 +359,38 @@ function _createConsoleSessionInner(
 		);
 	}
 
-	// If Agent Teams is enabled, append instructions to the context sidecar
-	// so the agent knows it can use TeamCreate, SendMessage, Agent with teams.
+	// If Agent Teams is enabled, inject instructions via --append-system-prompt
+	// so the agent knows how to use teams from the very first message.
+	// Using CLI flag instead of sidecar because the sidecar hook only fires once
+	// and may have already been consumed before teams context was appended.
 	if (finalEnv.CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS === "1") {
-		try {
-			const sidecarPath = getContextSidecarPath();
-			const existing = existsSync(sidecarPath)
-				? readFileSync(sidecarPath, "utf-8")
-				: "";
-			const teamsContext = `\n\n## Agent Teams — ENABLED (use by default)\n\nYou are running with \`--teammate-mode tmux\`. You MUST use teams for any task that involves multiple steps, files, or concerns.\n\n### When to use teams (ALWAYS for non-trivial work)\n- Any implementation touching 2+ files → spawn teammates\n- Bug fix + review → implementer + reviewer\n- Feature work → planner + implementer + reviewer\n- Research + implementation → researcher + implementer\n- You are the LEADER. You plan, delegate, coordinate, and communicate with the user. Teammates EXECUTE.\n\n### Workflow\n1. **TeamCreate** — create a team with a descriptive name\n2. **TaskCreate** — break work into discrete tasks with clear descriptions\n3. **TaskUpdate** — set dependencies (addBlockedBy) between tasks\n4. **Agent** — spawn teammates with \`team_name\` and \`name\` params. ALWAYS use \`model: "sonnet"\` for teammates (fast + capable). Reserve opus for yourself.\n5. **SendMessage** — communicate with teammates by name. They can message you back.\n6. **Monitor** — teammates send you messages when done. Check TaskList for progress.\n7. **Shutdown** — when all tasks complete, send \`{"type":"shutdown_request"}\` to each teammate.\n\n### Rules\n- Teammates use **Sonnet** model (never Opus — too slow for execution work)\n- You orchestrate, you don't implement. Delegate to teammates.\n- After implementation, ALWAYS spawn a reviewer teammate\n- Before any edit, teammates must register skills: run the bash command to write loaded-skills.json with the session token\n- Each teammate should claim tasks (TaskUpdate with owner) before starting\n- Mark tasks completed as they finish\n`;
-			writeFileSync(sidecarPath, existing + teamsContext);
-		} catch {
-			/* non-fatal */
-		}
+		const teamsPrompt = [
+			"## Agent Teams — ENABLED (use by default)",
+			"",
+			"You have --teammate-mode tmux. You MUST use teams for any task involving multiple steps, files, or concerns.",
+			"",
+			"### When to use teams (ALWAYS for non-trivial work)",
+			"- Any implementation touching 2+ files → spawn teammates",
+			"- Bug fix + review → implementer + reviewer",
+			"- Feature work → planner + implementer + reviewer",
+			"- You are the LEADER. You plan, delegate, coordinate, and communicate with the user. Teammates EXECUTE.",
+			"",
+			"### Workflow",
+			"1. TeamCreate — create a team",
+			"2. TaskCreate — break work into tasks with descriptions",
+			"3. TaskUpdate — set dependencies between tasks",
+			"4. Agent — spawn teammates with team_name, name, and model: 'sonnet' (ALWAYS sonnet for teammates)",
+			"5. SendMessage — communicate with teammates by name",
+			"6. Monitor progress via TaskList and teammate messages",
+			"7. Shutdown teammates when done: SendMessage with {type: 'shutdown_request'}",
+			"",
+			"### Rules",
+			"- Teammates ALWAYS use Sonnet model (never Opus — too slow)",
+			"- You orchestrate, teammates execute. Don't implement yourself.",
+			"- After implementation, ALWAYS spawn a reviewer teammate",
+			"- Each teammate claims tasks before starting and marks them completed when done",
+		].join("\n");
+		args.push("--append-system-prompt", teamsPrompt);
 	}
 
 	const binary = getValidAgentBinary();

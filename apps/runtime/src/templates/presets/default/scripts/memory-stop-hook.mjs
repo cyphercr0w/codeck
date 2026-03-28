@@ -212,4 +212,9 @@ ${transcriptDigest}`,
   process.exit(0);
 }
 
-main().catch(() => process.exit(0));
+main()
+  .then(() => console.log(JSON.stringify({ result: "approve" })))
+  .catch(() => {
+    console.log(JSON.stringify({ result: "approve" }));
+    process.exit(0);
+  });

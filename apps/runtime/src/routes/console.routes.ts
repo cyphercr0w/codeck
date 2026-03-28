@@ -76,12 +76,24 @@ router.post(
 			extraArgs.push("--teammate-mode", "tmux");
 			extraEnv.CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS = "1";
 		}
-		// Append user-provided extra args (sanitized: only allow strings < 100 chars)
+		// Append user-provided extra args with blocklist for dangerous flags
+		const BLOCKED_FLAGS = new Set([
+			"--dangerously-skip-permissions",
+			"--allowedTools",
+			"-p",
+			"--prompt",
+			"--model",
+			"--permission-mode",
+			"--output-format",
+			"--mcp-config",
+			"--append-system-prompt",
+			"--prefill",
+		]);
 		if (Array.isArray(clientExtraArgs)) {
 			for (const arg of clientExtraArgs) {
-				if (typeof arg === "string" && arg.length < 100) {
-					extraArgs.push(arg);
-				}
+				if (typeof arg !== "string" || arg.length > 100) continue;
+				if (BLOCKED_FLAGS.has(arg)) continue;
+				extraArgs.push(arg);
 			}
 		}
 

@@ -612,7 +612,6 @@ export function App() {
 			"--resume",
 			"--continue",
 			"--teammate-mode",
-			"tmux",
 		]);
 		// Build extraArgs from unknown tokens, preserving order
 		const extraArgs: string[] = [];

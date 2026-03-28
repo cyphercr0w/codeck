@@ -215,6 +215,7 @@ export function NewProjectModal({
 	async function advanceToStep2(dir: string) {
 		setResolvedDir(dir);
 		setCommand("claude");
+		setCanResume(false); // reset before async check to avoid stale state
 		await checkConversations(dir);
 		setStep(2);
 	}

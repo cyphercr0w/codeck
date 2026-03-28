@@ -36,6 +36,10 @@
 	gap: 4px;
 }
 
+.team-header-done {
+	color: #8b949e;
+}
+
 .team-dot-pulse {
 	width: 6px;
 	height: 6px;

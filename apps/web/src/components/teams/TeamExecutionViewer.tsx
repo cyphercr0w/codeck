@@ -162,7 +162,18 @@ const TeamExecutionViewer: FunctionalComponent = () => {
 	}
 
 	const isRunning = team.status === "running" || team.status === "launching";
+	const isCompleted =
+		team.status === "completed" ||
+		team.status === "cancelled" ||
+		team.status === "failed";
 	const agentCount = team.agents.filter((a) => a.sessionId).length + 1;
+
+	// Auto-close preview 5s after completion
+	useEffect(() => {
+		if (!isCompleted) return;
+		const timer = setTimeout(() => clearActiveTeam(), 5000);
+		return () => clearTimeout(timer);
+	}, [isCompleted]);
 
 	const termAgentName = terminalSessionId
 		? terminalSessionId === team.leaderSessionId
@@ -183,6 +194,16 @@ const TeamExecutionViewer: FunctionalComponent = () => {
 					<span class="team-header-status">
 						<span class="team-dot-pulse" />
 						Running
+					</span>
+				)}
+				{isCompleted && (
+					<span class="team-header-status team-header-done">
+						&#10003;{" "}
+						{team.status === "completed"
+							? "Completed"
+							: team.status === "failed"
+								? "Failed"
+								: "Stopped"}
 					</span>
 				)}
 				{terminalOpen && (

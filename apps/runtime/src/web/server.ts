@@ -61,6 +61,7 @@ import {
 	getActivePorts,
 } from "../services/ports.js";
 import { initPortManager } from "../services/port-manager.js";
+import { restoreCredentialSymlinks } from "../services/credential-persist.js";
 import { startMdns, stopMdns, getLanIP } from "../services/mdns.js";
 import { ensureDirectories } from "../services/memory.js";
 import {
@@ -720,6 +721,8 @@ export async function startWebServer(): Promise<void> {
 		console.log("");
 		logMemoryConfig();
 		initPortManager();
+		// Restore credential symlinks BEFORE any auth checks
+		restoreCredentialSymlinks();
 		initGitHub();
 		checkPresetUpdate();
 		updateClaudeMd();

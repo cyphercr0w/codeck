@@ -9,7 +9,6 @@
 	"extends": null,
 	"files": [
 		{ "src": "CLAUDE.md", "dest": "/root/.claude/CLAUDE.md" },
-		{ "src": "../../CLAUDE.md", "dest": "/workspace/CLAUDE.md" },
 		{ "src": "mcp.json", "dest": "/root/.claude/mcp.json" },
 		{ "src": "AGENTS.md", "dest": "/workspace/.codeck/AGENTS.md" },
 		{ "src": "constitution.md", "dest": "/workspace/.codeck/constitution.md" },

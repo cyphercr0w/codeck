@@ -320,6 +320,9 @@ export function checkPresetUpdate(): void {
 		}
 	}
 
+	// Merge new hooks from preset template into user settings
+	mergePresetHooks(presetDir);
+
 	// Update installed version in config.json
 	try {
 		let config: Record<string, unknown> = {};
@@ -774,6 +777,7 @@ async function applyPresetRecursive(
 		const isDataFile =
 			dest.includes("/memory/") ||
 			dest.endsWith("preferences.md") ||
+			dest.endsWith("constitution.md") ||
 			dest.includes("/rules/user/");
 		if (!force && file.skipIfExists && existsSync(dest)) {
 			console.log(`[Preset]   KEEP ${dest} (skipIfExists)`);

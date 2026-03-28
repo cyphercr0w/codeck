@@ -90,11 +90,12 @@ export function launchTeam(
 		throw new Error(`Failed to create tmux session: ${(e as Error).message}`);
 	}
 
-	// Unset stale/invalid API keys inherited from the runtime process.
-	// Claude will use OAuth credentials from ~/.claude/.credentials.json instead.
-	// Then launch Claude with Agent Teams enabled via inline env var.
+	// Unset env vars inherited from the runtime that interfere with Claude auth.
+	// - ANTHROPIC_API_KEY / CLAUDE_API_KEY: may be stale/invalid → forces OAuth
+	// - CODECK_CLAUDE_CONFIG: points to /home/codeck/.claude which has no credentials;
+	//   unsetting lets Claude use $HOME/.claude (/root/.claude) where OAuth tokens live.
 	const claudeCmd = [
-		"unset ANTHROPIC_API_KEY CLAUDE_API_KEY;",
+		"unset ANTHROPIC_API_KEY CLAUDE_API_KEY CODECK_CLAUDE_CONFIG;",
 		"CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1",
 		"claude",
 		"--teammate-mode",
@@ -401,17 +402,25 @@ function sanitizeForTerminal(text: string): string {
 
 function buildTeamPrompt(template: TeamTemplate, userInput?: string): string {
 	const s = sanitizeForTerminal;
-	const parts = [
-		`Create an agent team called '${s(template.name).toLowerCase().replace(/\s+/g, "-")}' with ${Object.keys(template.agents).length} teammates:`,
-		"",
-		...Object.values(template.agents).map(
+	const teamName = s(template.name).toLowerCase().replace(/\s+/g, "-");
+	const agents = Object.values(template.agents);
+
+	const agentDescs = agents
+		.map(
 			(a) =>
-				`A '${s(a.id)}' teammate with role "${s(a.role)}" and this system prompt: "${s(a.systemPrompt)}"${a.allowedTools.length > 0 ? ` Allowed tools: ${a.allowedTools.map(String).join(", ")}.` : ""}`,
-		),
+				`- name: "${s(a.id)}", role: "${s(a.role)}", prompt: "${s(a.systemPrompt)}"${a.allowedTools.length > 0 ? `, tools: [${a.allowedTools.map((t) => `"${String(t)}"`).join(", ")}]` : ""}`,
+		)
+		.join("\n");
+
+	const parts = [
+		`Use the TeamCreate tool RIGHT NOW to create a team called "${teamName}" with these ${agents.length} teammates:`,
+		agentDescs,
 		"",
-		userInput ? `Task: ${s(userInput)}` : "",
+		userInput
+			? `After creating the team, assign this task: ${s(userInput)}`
+			: "",
 		"",
-		"Spawn all teammates now.",
+		"IMPORTANT: Use the TeamCreate tool, not HTTP APIs or any other method.",
 	];
 
 	return parts.filter(Boolean).join("\n");

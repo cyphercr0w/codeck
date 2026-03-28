@@ -7,8 +7,11 @@
  * against the previous state to emit only new lines.
  */
 
-import { execFileSync } from "child_process";
+import { execFile } from "child_process";
 import { readdirSync } from "fs";
+import { promisify } from "util";
+
+const execFileAsync = promisify(execFile);
 import { broadcast } from "../web/logger.js";
 
 const TMUX_SOCK_DIR = "/tmp/tmux-0";
@@ -37,11 +40,11 @@ function findSwarmSocket(): string | null {
 }
 
 /** List panes in the swarm session with their indices and titles. */
-function listPanes(
+async function listPanes(
 	socket: string,
-): Array<{ index: number; title: string; pid: number }> {
+): Promise<Array<{ index: number; title: string; pid: number }>> {
 	try {
-		const raw = execFileSync(
+		const { stdout: raw } = await execFileAsync(
 			"tmux",
 			[
 				"-L",
@@ -58,23 +61,32 @@ function listPanes(
 			.trim()
 			.split("\n")
 			.filter(Boolean)
-			.map((line) => {
-				const [idx, title, pid] = line.split("\t");
+			.map((line: string) => {
+				const parts = line.split("\t");
+				const idx = parseInt(parts[0] ?? "", 10);
+				const pid = parseInt(parts[2] ?? "", 10);
+				if (isNaN(idx) || isNaN(pid)) return null;
 				return {
-					index: parseInt(idx, 10),
-					title: title || `pane-${idx}`,
-					pid: parseInt(pid, 10),
+					index: idx,
+					title: parts[1] || `pane-${idx}`,
+					pid,
 				};
-			});
+			})
+			.filter(
+				(p): p is { index: number; title: string; pid: number } => p !== null,
+			);
 	} catch {
 		return [];
 	}
 }
 
 /** Capture the visible content of a pane. */
-function capturePane(socket: string, paneIndex: number): string[] {
+async function capturePane(
+	socket: string,
+	paneIndex: number,
+): Promise<string[]> {
 	try {
-		const raw = execFileSync(
+		const { stdout: raw } = await execFileAsync(
 			"tmux",
 			[
 				"-L",
@@ -134,67 +146,73 @@ function diffLines(current: string[], previous: string[]): string[] {
 }
 
 /** Single poll cycle: capture all panes, diff, broadcast new lines. */
-function pollPanes(): void {
-	if (!activeSocket) return;
+let polling = false;
+async function pollPanes(): Promise<void> {
+	if (!activeSocket || polling) return;
+	polling = true;
+	try {
+		const panes = await listPanes(activeSocket);
+		if (panes.length === 0) {
+			stopPolling();
+			return;
+		}
 
-	const panes = listPanes(activeSocket);
-	if (panes.length === 0) {
-		// Session might have ended
-		stopPolling();
-		return;
-	}
+		// Prune stale pane entries
+		const activePaneIndices = new Set(panes.map((p) => p.index));
+		for (const idx of paneStates.keys()) {
+			if (!activePaneIndices.has(idx)) paneStates.delete(idx);
+		}
 
-	for (const pane of panes) {
-		const current = capturePane(activeSocket, pane.index);
-		const prev = paneStates.get(pane.index);
-		const prevLines = prev?.lines || [];
-		const agentName = prev?.agentName || parseAgentName(pane.title, pane.index);
+		for (const pane of panes) {
+			const current = await capturePane(activeSocket!, pane.index);
+			const prev = paneStates.get(pane.index);
+			const prevLines = prev?.lines || [];
+			const agentName =
+				prev?.agentName || parseAgentName(pane.title, pane.index);
 
-		const newLines = diffLines(current, prevLines);
+			const newLines = diffLines(current, prevLines);
 
-		// Update state
-		paneStates.set(pane.index, { lines: current, agentName });
+			paneStates.set(pane.index, { lines: current, agentName });
 
-		// Broadcast new lines if any
-		if (newLines.length > 0) {
-			// Filter out noise: empty lines, prompt lines, system reminders
-			const meaningful = newLines.filter((l) => {
-				const trimmed = l.trim();
-				if (!trimmed) return false;
-				if (trimmed.startsWith("<system-reminder>")) return false;
-				if (trimmed === "❯" || trimmed === "❯") return false;
-				if (trimmed.match(/^CTX \d+%$/)) return false;
-				if (trimmed.match(/^───+/)) return false;
-				return true;
-			});
-
-			if (meaningful.length > 0) {
-				broadcast({
-					type: "team:pane:output",
-					paneIndex: pane.index,
-					agentName,
-					lines: meaningful,
+			if (newLines.length > 0) {
+				const meaningful = newLines.filter((l) => {
+					const trimmed = l.trim();
+					if (!trimmed) return false;
+					if (trimmed.startsWith("<system-reminder>")) return false;
+					if (trimmed === "❯") return false;
+					if (/^CTX \d+%$/.test(trimmed)) return false;
+					if (/^───+/.test(trimmed)) return false;
+					return true;
 				});
+
+				if (meaningful.length > 0) {
+					broadcast({
+						type: "team:pane:output",
+						paneIndex: pane.index,
+						agentName,
+						lines: meaningful,
+					});
+				}
 			}
 		}
+	} finally {
+		polling = false;
 	}
 }
 
-function startPolling(socket: string): void {
+async function startPolling(socket: string): Promise<void> {
 	if (pollTimer) return;
 	activeSocket = socket;
 	paneStates.clear();
 	console.log(`[TeamMonitor] Started monitoring tmux socket: ${socket}`);
 
-	// Initial pane scan
-	const panes = listPanes(socket);
+	const panes = await listPanes(socket);
 	for (const pane of panes) {
 		const agentName = parseAgentName(pane.title, pane.index);
 		paneStates.set(pane.index, { lines: [], agentName });
 		console.log(`[TeamMonitor] Pane ${pane.index}: ${agentName}`);
 	}
 
-	// Broadcast initial team detection
 	broadcast({
 		type: "team:detected",
 		socket,
@@ -204,7 +222,9 @@ function startPolling(socket: string): void {
 		})),
 	});
 
-	pollTimer = setInterval(pollPanes, POLL_INTERVAL);
+	pollTimer = setInterval(() => {
+		pollPanes().catch(() => {});
+	}, POLL_INTERVAL);
 }
 
 function stopPolling(): void {
@@ -225,15 +245,12 @@ function detectLoop(): void {
 	const socket = findSwarmSocket();
 
 	if (socket && !activeSocket) {
-		// New swarm session found
-		startPolling(socket);
+		startPolling(socket).catch(() => {});
 	} else if (!socket && activeSocket) {
-		// Swarm session ended
 		stopPolling();
 	} else if (socket && activeSocket && socket !== activeSocket) {
-		// Different swarm session — switch
 		stopPolling();
-		startPolling(socket);
+		startPolling(socket).catch(() => {});
 	}
 }
 

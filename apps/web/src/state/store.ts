@@ -134,8 +134,11 @@ export const pendingRestoredSessions = signal<PendingSession[]>([]);
 export const logs = signal<LogEntry[]>([]);
 export const logsExpanded = signal(false);
 export const cloneProgress = signal<string[]>([]);
+const MAX_CLONE_LINES = 50;
 export function addCloneProgress(line: string): void {
-	cloneProgress.value = [...cloneProgress.value, line];
+	const next = [...cloneProgress.value, line];
+	cloneProgress.value =
+		next.length > MAX_CLONE_LINES ? next.slice(-MAX_CLONE_LINES) : next;
 }
 export function clearCloneProgress(): void {
 	cloneProgress.value = [];

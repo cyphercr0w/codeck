@@ -13,8 +13,8 @@
  * This makes the implement→review→present flow mechanical, not aspirational.
  *
  * Output format (Claude Code Stop hook contract):
- *   { "decision": "approve" }                    — let Claude stop
- *   { "decision": "block", "reason": "...", "message": "..." } — force continue
+ *   { "result": "approve" }                    — let Claude stop
+ *   { "result": "block", "reason": "...", "message": "..." } — force continue
  */
 
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'fs';
@@ -40,7 +40,7 @@ try {
 
 // No edits tracked → approve stop (nothing to review)
 if (!edits.count || edits.count === 0) {
-  console.log(JSON.stringify({ decision: 'approve' }));
+  console.log(JSON.stringify({ result: 'approve' }));
   process.exit(0);
 }
 
@@ -49,7 +49,7 @@ if (!edits.count || edits.count === 0) {
 if (edits.count <= 4) {
   // Clear tracker so next stop doesn't re-check these
   writeFileSync(EDIT_TRACKER, JSON.stringify({ files: [], count: 0, since: 0 }));
-  console.log(JSON.stringify({ decision: 'approve' }));
+  console.log(JSON.stringify({ result: 'approve' }));
   process.exit(0);
 }
 
@@ -60,7 +60,7 @@ try {
     const subs = JSON.parse(readFileSync(subagentFile, 'utf-8'));
     if (subs.count > 0 && (Date.now() - subs.lastUpdate) < 600000) {
       // Sub-agents active within last 10 minutes — approve silently
-      console.log(JSON.stringify({ decision: 'approve' }));
+      console.log(JSON.stringify({ result: 'approve' }));
       process.exit(0);
     }
   }
@@ -81,7 +81,7 @@ try {
 if (reviewRecent) {
   // Review was done — approve and clear tracker
   writeFileSync(EDIT_TRACKER, JSON.stringify({ files: [], count: 0, since: 0 }));
-  console.log(JSON.stringify({ decision: 'approve' }));
+  console.log(JSON.stringify({ result: 'approve' }));
   process.exit(0);
 }
 
@@ -92,7 +92,7 @@ const msg = edits.count > 8
   : fileList;
 
 console.log(JSON.stringify({
-  decision: 'block',
+  result: 'block',
   reason: `You modified ${edits.count} files (${msg}) but haven't run code-reviewer yet.`,
   message: `Stop hook feedback:\nYou modified ${edits.count} files (${msg}) but haven't run code-reviewer yet.\nSpawn a code-reviewer sub-agent before presenting results. After review, write marker: echo '{"timestamp":'$(date +%s%3N)',"agent":"code-reviewer"}' > /workspace/.codeck/state/review-marker.json`,
 }));

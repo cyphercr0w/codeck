@@ -341,7 +341,6 @@ function openWs(wsUrl: string, protocols?: string[]): void {
 						typeof s.id === "string" &&
 						typeof s.cwd === "string" &&
 						typeof s.name === "string" &&
-						s.type !== "peer" &&
 						s.type !== "team-agent", // Team sessions managed by TeamExecutionViewer
 				);
 				// Don't auto-mount — let user choose Resume or Discard

@@ -49,7 +49,7 @@ export const MAX_SESSIONS = parseInt(process.env.MAX_SESSIONS || "5", 10);
 
 interface ConsoleSession {
 	id: string;
-	type: "agent" | "shell" | "peer" | "team-agent";
+	type: "agent" | "shell" | "team-agent";
 	pty: IPty;
 	cwd: string;
 	name: string;
@@ -89,7 +89,7 @@ interface CreateSessionOptions {
 	// Peer orchestration: additional args and env for agent PTY sessions
 	extraArgs?: string[];
 	extraEnv?: Record<string, string>;
-	sessionType?: "agent" | "shell" | "peer" | "team-agent";
+	sessionType?: "agent" | "shell" | "team-agent";
 }
 
 /**
@@ -382,7 +382,7 @@ function _createConsoleSessionInner(
 	const name = workDir.split("/").pop() || workDir;
 	const session: ConsoleSession = {
 		id,
-		type: opts.sessionType === "peer" ? "peer" : "agent",
+		type: opts.sessionType || "agent",
 		pty,
 		cwd: workDir,
 		name,
@@ -701,7 +701,7 @@ export function listSessions(): Array<{
 	// Filter out peer and team-agent sessions — they are managed by
 	// TeamExecutionViewer, not ClaudeSection.
 	return Array.from(sessions.values())
-		.filter((s) => s.type !== "peer" && s.type !== "team-agent")
+		.filter((s) => s.type !== "team-agent")
 		.map((s) => ({
 			id: s.id,
 			type: s.type,
@@ -825,7 +825,7 @@ const SESSIONS_STATE_PATH = resolve(
 
 interface SavedSession {
 	id: string;
-	type: "agent" | "shell" | "peer" | "team-agent";
+	type: "agent" | "shell" | "team-agent";
 	cwd: string;
 	name: string;
 	reason: string;
@@ -862,9 +862,8 @@ function saveSessionStateNow(
 ): SessionsState {
 	const saved: SavedSession[] = [];
 	for (const [, session] of sessions) {
-		// Skip peer sessions — they are ephemeral flow agents, not user sessions.
-		// Including them causes ClaudeSection to mount them as normal terminal tabs.
-		if (session.type === "peer") continue;
+		// Skip team-agent sessions — managed by TeamExecutionViewer, not user sessions.
+		if (session.type === "team-agent") continue;
 		saved.push({
 			id: session.id,
 			type: session.type,

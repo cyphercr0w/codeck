@@ -617,7 +617,12 @@ export function ClaudeSection({
 		<div class="content-section terminal-preview-layout">
 			<div
 				class="terminal-side"
-				style={{ display: pMode === "full-preview" ? "none" : "flex" }}
+				style={{
+					display:
+						pMode === "full-preview" || teamPreviewMode.value === "full"
+							? "none"
+							: "flex",
+				}}
 			>
 				<div class={`claude-content${mobile ? " mobile-terminal" : ""}`}>
 					<div class="terminal-tabs">

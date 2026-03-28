@@ -51,7 +51,13 @@ router.post(
 			return;
 		}
 
-		const { cwd, resume, enableTeams } = req.body || {};
+		const {
+			cwd,
+			resume,
+			enableTeams,
+			useContinue,
+			extraArgs: clientExtraArgs,
+		} = req.body || {};
 
 		// Validate cwd stays within /workspace to prevent path traversal
 		if (cwd && typeof cwd === "string") {
@@ -63,18 +69,27 @@ router.post(
 			}
 		}
 
-		// Agent Teams: pass --teammate-mode tmux + env flag
+		// Build extra args from feature flags + any user-provided flags
 		const extraArgs: string[] = [];
 		const extraEnv: Record<string, string> = {};
 		if (enableTeams) {
 			extraArgs.push("--teammate-mode", "tmux");
 			extraEnv.CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS = "1";
 		}
+		// Append user-provided extra args (sanitized: only allow strings < 100 chars)
+		if (Array.isArray(clientExtraArgs)) {
+			for (const arg of clientExtraArgs) {
+				if (typeof arg === "string" && arg.length < 100) {
+					extraArgs.push(arg);
+				}
+			}
+		}
 
 		try {
 			const session = createConsoleSession({
 				cwd: cwd || undefined,
 				resume,
+				useContinue: !!useContinue,
 				extraArgs: extraArgs.length > 0 ? extraArgs : undefined,
 				extraEnv: Object.keys(extraEnv).length > 0 ? extraEnv : undefined,
 			});

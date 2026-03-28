@@ -123,6 +123,9 @@ export function App() {
 	const [section, setSection] = useState<Section>("home");
 	const [loginModalOpen, setLoginModalOpen] = useState(false);
 	const [newProjectOpen, setNewProjectOpen] = useState(false);
+	const [newProjectInitialDir, setNewProjectInitialDir] = useState<
+		string | undefined
+	>();
 	const [sidebarOpen, setSidebarOpen] = useState(false);
 	const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
@@ -516,6 +519,20 @@ export function App() {
 			);
 			return;
 		}
+		setNewProjectInitialDir(undefined);
+		setNewProjectOpen(true);
+	}
+
+	/** Open modal at step 2 with a pre-selected dir (used by recent projects) */
+	function handleOpenWithDir(dir: string) {
+		if (sessions.value.length >= SESSION_LIMIT) {
+			addLocalLog(
+				"warn",
+				`Maximum of ${SESSION_LIMIT} sessions reached. Close an existing session to create a new one.`,
+			);
+			return;
+		}
+		setNewProjectInitialDir(dir);
 		setNewProjectOpen(true);
 	}
 
@@ -570,7 +587,7 @@ export function App() {
 
 	async function handleProjectConfirm(
 		dir: string,
-		options: { resume: boolean; enableTeams?: boolean },
+		options: { command: string },
 	) {
 		setNewProjectOpen(false);
 		if (sessions.value.length >= SESSION_LIMIT) {
@@ -579,6 +596,34 @@ export function App() {
 				`Maximum of ${SESSION_LIMIT} sessions reached. Close an existing session to create a new one.`,
 			);
 			return;
+		}
+
+		// Parse flags from the command string
+		const tokens = options.command.trim().split(/\s+/);
+		const hasResume = tokens.includes("--resume");
+		const hasContinue = tokens.includes("--continue");
+		const hasTeams =
+			tokens.includes("--teammate-mode") &&
+			tokens[tokens.indexOf("--teammate-mode") + 1] === "tmux";
+
+		// Collect extra args (anything beyond claude and the known flags)
+		const knownFlags = new Set([
+			"claude",
+			"--resume",
+			"--continue",
+			"--teammate-mode",
+			"tmux",
+		]);
+		// Build extraArgs from unknown tokens, preserving order
+		const extraArgs: string[] = [];
+		for (let i = 0; i < tokens.length; i++) {
+			const t = tokens[i];
+			if (knownFlags.has(t)) {
+				// Skip "tmux" only when it follows --teammate-mode
+				if (t === "--teammate-mode" && tokens[i + 1] === "tmux") i++;
+				continue;
+			}
+			extraArgs.push(t);
 		}
 
 		// Show tab immediately with loading state
@@ -601,8 +646,10 @@ export function App() {
 				method: "POST",
 				body: JSON.stringify({
 					cwd: dir,
-					resume: options.resume,
-					enableTeams: options.enableTeams || false,
+					resume: hasResume || hasContinue,
+					enableTeams: hasTeams,
+					useContinue: hasContinue,
+					extraArgs: extraArgs.length > 0 ? extraArgs : undefined,
 				}),
 			});
 			clearTimeout(loadingTimeout);
@@ -733,6 +780,7 @@ export function App() {
 							<ClaudeSection
 								onNewSession={handleNewSession}
 								onNewShell={handleNewShell}
+								onOpenWithDir={handleOpenWithDir}
 							/>
 						</div>
 
@@ -752,7 +800,11 @@ export function App() {
 			/>
 			<NewProjectModal
 				visible={newProjectOpen}
-				onCancel={() => setNewProjectOpen(false)}
+				initialDir={newProjectInitialDir}
+				onCancel={() => {
+					setNewProjectOpen(false);
+					setNewProjectInitialDir(undefined);
+				}}
 				onConfirm={handleProjectConfirm}
 			/>
 			<ReconnectOverlay />

@@ -82,6 +82,7 @@ function getFileFromDrop(e: DragEvent): File | null {
 interface ClaudeSectionProps {
 	onNewSession: () => void;
 	onNewShell: () => void;
+	onOpenWithDir?: (dir: string) => void;
 }
 
 /**
@@ -121,6 +122,7 @@ function attachSettleRepaint(sessionId: string): void {
 export function ClaudeSection({
 	onNewSession,
 	onNewShell,
+	onOpenWithDir,
 }: ClaudeSectionProps) {
 	const instancesRef = useRef<HTMLDivElement>(null);
 	const [editingTabId, setEditingTabId] = useState<string | null>(null);
@@ -842,8 +844,8 @@ export function ClaudeSection({
 														onClick={() => {
 															if (openSession) {
 																switchToSession(openSession.id);
-															} else {
-																void continueInFolder(f.cwd);
+															} else if (onOpenWithDir) {
+																onOpenWithDir(f.cwd);
 															}
 														}}
 													>

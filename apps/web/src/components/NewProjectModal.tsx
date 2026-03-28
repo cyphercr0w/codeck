@@ -1,27 +1,88 @@
 import { useEffect, useRef, useState } from "preact/hooks";
 import { apiFetch } from "../api";
 import { workspacePath, agentName, setActiveSection } from "../state/store";
-import { IconFolder, IconPlus, IconGithub } from "./Icons";
+import { IconFolder, IconPlus, IconGithub, IconChevronLeft } from "./Icons";
 
 type Tab = "existing" | "create" | "clone";
-
-interface LaunchOptions {
-	resume: boolean;
-	enableTeams: boolean;
-}
+type Step = 1 | 2;
 
 interface NewProjectModalProps {
 	visible: boolean;
+	/** If set, skip step 1 and open directly on step 2 with this dir */
+	initialDir?: string;
 	onCancel: () => void;
-	onConfirm: (dir: string, options: LaunchOptions) => void;
+	onConfirm: (dir: string, options: { command: string }) => void;
+}
+
+/**
+ * Parse the command input string and return which flags are active.
+ */
+function parseCommandFlags(command: string): {
+	resume: boolean;
+	continueFlag: boolean;
+	teams: boolean;
+} {
+	// Tokenize carefully: split on whitespace but respect the flag patterns
+	const tokens = command.trim().split(/\s+/);
+	return {
+		resume: tokens.includes("--resume"),
+		continueFlag: tokens.includes("--continue"),
+		teams:
+			tokens.includes("--teammate-mode") &&
+			tokens[tokens.indexOf("--teammate-mode") + 1] === "tmux",
+	};
+}
+
+/**
+ * Build a command string by toggling a flag on/off, preserving any extra user-typed flags.
+ */
+function toggleFlag(
+	command: string,
+	flag: string,
+	enabled: boolean,
+	removeFlags?: string[],
+): string {
+	let cmd = command;
+
+	// Remove conflicting flags first
+	if (removeFlags) {
+		for (const rf of removeFlags) {
+			if (rf === "--teammate-mode") {
+				// Remove --teammate-mode and its argument
+				cmd = cmd.replace(/\s*--teammate-mode\s+\S+/, "");
+			} else {
+				cmd = cmd.replace(
+					new RegExp(`\\s*${rf.replace(/-/g, "\\-")}`, "g"),
+					"",
+				);
+			}
+		}
+	}
+
+	// Remove the flag itself (and argument for --teammate-mode)
+	if (flag === "--teammate-mode tmux") {
+		cmd = cmd.replace(/\s*--teammate-mode\s+tmux/, "");
+	} else {
+		cmd = cmd.replace(new RegExp(`\\s*${flag.replace(/-/g, "\\-")}`, "g"), "");
+	}
+
+	// Add flag if enabling
+	if (enabled) {
+		cmd = cmd.trimEnd() + " " + flag;
+	}
+
+	// Clean up extra whitespace
+	return cmd.replace(/\s+/g, " ").trim();
 }
 
 export function NewProjectModal({
 	visible,
+	initialDir,
 	onCancel,
 	onConfirm,
 }: NewProjectModalProps) {
 	const modalRef = useRef<HTMLDivElement>(null);
+	const [step, setStep] = useState<Step>(1);
 	const [tab, setTab] = useState<Tab>("existing");
 	const [dirs, setDirs] = useState<string[]>([]);
 	const ws = workspacePath.value;
@@ -30,14 +91,17 @@ export function NewProjectModal({
 	const [cloneUrl, setCloneUrl] = useState("");
 	const [cloneName, setCloneName] = useState("");
 	const [cloneBranch, setCloneBranch] = useState("");
-	const [resume, setResume] = useState(false);
-	const [enableTeams, setEnableTeams] = useState(false);
 	const [canResume, setCanResume] = useState(false);
 	const [loading, setLoading] = useState(false);
 	const [error, setError] = useState("");
 	const [sshConfigured, setSshConfigured] = useState(false);
+	const [command, setCommand] = useState("claude");
 	const nameRef = useRef<HTMLInputElement>(null);
 	const urlRef = useRef<HTMLInputElement>(null);
+	const commandRef = useRef<HTMLInputElement>(null);
+
+	// The resolved directory path for step 2
+	const [resolvedDir, setResolvedDir] = useState("");
 
 	useEffect(() => {
 		if (visible) {
@@ -47,12 +111,22 @@ export function NewProjectModal({
 			setCloneUrl("");
 			setCloneName("");
 			setCloneBranch("");
-			setResume(false);
 			setCanResume(false);
 			setLoading(false);
 			setError("");
+			setCommand("claude");
 			loadDirs();
 			checkSshStatus();
+
+			// If initialDir provided, skip to step 2 directly
+			if (initialDir) {
+				setResolvedDir(initialDir);
+				setStep(2);
+				checkConversations(initialDir);
+			} else {
+				setResolvedDir("");
+				setStep(1);
+			}
 
 			// Focus trap and Escape handler
 			const handleKeyDown = (e: KeyboardEvent) => {
@@ -86,6 +160,10 @@ export function NewProjectModal({
 		if (tab === "clone") urlRef.current?.focus();
 	}, [tab]);
 
+	useEffect(() => {
+		if (step === 2) commandRef.current?.focus();
+	}, [step]);
+
 	async function loadDirs() {
 		setDirs([]);
 		try {
@@ -109,10 +187,8 @@ export function NewProjectModal({
 			);
 			const data = await res.json();
 			setCanResume(!!data.hasConversations);
-			if (!data.hasConversations) setResume(false);
 		} catch {
 			setCanResume(false);
-			setResume(false);
 		}
 	}
 
@@ -135,6 +211,25 @@ export function NewProjectModal({
 		return url.startsWith("git@") || url.includes("ssh://");
 	}
 
+	/** Advance from step 1 to step 2 for the "existing" and "create" tabs */
+	async function advanceToStep2(dir: string) {
+		setResolvedDir(dir);
+		setCommand("claude");
+		await checkConversations(dir);
+		setStep(2);
+	}
+
+	/** Handle the "Next" button for step 1 */
+	async function handleStep1Next() {
+		if (tab === "existing") {
+			await advanceToStep2(selected);
+		} else if (tab === "create") {
+			await handleCreateFolder();
+		} else if (tab === "clone") {
+			await handleClone();
+		}
+	}
+
 	async function handleCreateFolder() {
 		const name = newName.trim();
 		if (!name) return;
@@ -148,7 +243,7 @@ export function NewProjectModal({
 			});
 			const data = await res.json();
 			if (data.success) {
-				onConfirm(data.path, { resume, enableTeams });
+				await advanceToStep2(data.path);
 			} else {
 				setError(data.error || "Error creating folder");
 			}
@@ -176,7 +271,7 @@ export function NewProjectModal({
 			});
 			const data = await res.json();
 			if (data.success) {
-				onConfirm(data.path, { resume, enableTeams });
+				await advanceToStep2(data.path);
 			} else {
 				setError(data.error || "Error cloning");
 			}
@@ -187,23 +282,53 @@ export function NewProjectModal({
 		}
 	}
 
-	function handleConfirm() {
-		if (tab === "existing") {
-			onConfirm(selected, { resume, enableTeams });
-		} else if (tab === "create") {
-			handleCreateFolder();
-		} else {
-			handleClone();
-		}
+	function handleStep2Submit() {
+		onConfirm(resolvedDir, { command });
 	}
 
-	function canConfirm(): boolean {
+	function handleBack() {
+		setStep(1);
+		setCommand("claude");
+		setError("");
+	}
+
+	function canAdvance(): boolean {
 		if (loading) return false;
 		if (tab === "existing") return true;
 		if (tab === "create") return newName.trim().length > 0;
 		if (tab === "clone") return cloneUrl.trim().length > 0;
 		return false;
 	}
+
+	// Bidirectional command <-> checkbox sync
+	const flags = parseCommandFlags(command);
+
+	function handleResumeToggle(checked: boolean) {
+		// --resume and --continue are mutually exclusive
+		setCommand(toggleFlag(command, "--resume", checked, ["--continue"]));
+	}
+
+	function handleContinueToggle(checked: boolean) {
+		// --continue and --resume are mutually exclusive
+		setCommand(toggleFlag(command, "--continue", checked, ["--resume"]));
+	}
+
+	function handleTeamsToggle(checked: boolean) {
+		setCommand(toggleFlag(command, "--teammate-mode tmux", checked));
+	}
+
+	function handleCommandInput(value: string) {
+		// Ensure "claude" prefix is always present
+		if (!value.startsWith("claude")) {
+			// Find where the user's extra content starts
+			const rest = value.replace(/^[a-z]*\s*/, "");
+			setCommand("claude" + (rest ? " " + rest : ""));
+		} else {
+			setCommand(value);
+		}
+	}
+
+	const dirShortName = resolvedDir.split("/").pop() || resolvedDir;
 
 	if (!visible) return null;
 
@@ -218,224 +343,295 @@ export function NewProjectModal({
 				aria-labelledby="npm-modal-title"
 				onClick={(e) => e.stopPropagation()}
 			>
-				<h2 id="npm-modal-title" class="modal-title">
-					New {agentName.value} session
-				</h2>
+				{step === 1 && (
+					<>
+						<h2 id="npm-modal-title" class="modal-title">
+							New {agentName.value} session
+						</h2>
 
-				{/* Tabs */}
-				<div class="npm-tabs" role="tablist" aria-label="Session type">
-					<button
-						class={`npm-tab${tab === "existing" ? " active" : ""}`}
-						role="tab"
-						aria-selected={tab === "existing"}
-						onClick={() => {
-							setTab("existing");
-							setError("");
-						}}
-					>
-						<IconFolder size={14} />
-						Existing folder
-					</button>
-					<button
-						class={`npm-tab${tab === "create" ? " active" : ""}`}
-						role="tab"
-						aria-selected={tab === "create"}
-						onClick={() => {
-							setTab("create");
-							setError("");
-							setResume(false);
-						}}
-					>
-						<IconPlus size={14} />
-						New folder
-					</button>
-					<button
-						class={`npm-tab${tab === "clone" ? " active" : ""}`}
-						role="tab"
-						aria-selected={tab === "clone"}
-						onClick={() => {
-							setTab("clone");
-							setError("");
-							setResume(false);
-						}}
-					>
-						<IconGithub size={14} />
-						Clone repo
-					</button>
-				</div>
-
-				{/* Tab content */}
-				<div class="npm-content">
-					{tab === "existing" && (
-						<div class="dir-list">
-							<div
-								class={`dir-item${selected === ws ? " selected" : ""}`}
-								onClick={() => selectDir(ws)}
+						{/* Tabs */}
+						<div class="npm-tabs" role="tablist" aria-label="Session type">
+							<button
+								class={`npm-tab${tab === "existing" ? " active" : ""}`}
+								role="tab"
+								aria-selected={tab === "existing"}
+								onClick={() => {
+									setTab("existing");
+									setError("");
+								}}
 							>
 								<IconFolder size={14} />
-								<span>{ws} (default)</span>
-							</div>
-							{dirs.map((d) => (
-								<div
-									key={d}
-									class={`dir-item${selected === d ? " selected" : ""}`}
-									onClick={() => selectDir(d)}
-								>
-									<IconFolder size={14} />
-									<span>{d.split("/").pop()}</span>
-								</div>
-							))}
-						</div>
-					)}
-
-					{tab === "create" && (
-						<div class="npm-form">
-							<label class="npm-label">Folder name</label>
-							<input
-								ref={nameRef}
-								type="text"
-								class="input"
-								placeholder="my-project"
-								value={newName}
-								onInput={(e) =>
-									setNewName((e.target as HTMLInputElement).value)
-								}
-								onKeyDown={(e) => {
-									if (e.key === "Enter" && canConfirm()) handleConfirm();
+								Existing folder
+							</button>
+							<button
+								class={`npm-tab${tab === "create" ? " active" : ""}`}
+								role="tab"
+								aria-selected={tab === "create"}
+								onClick={() => {
+									setTab("create");
+									setError("");
 								}}
-							/>
-							<p class="npm-hint">
-								Will be created in {ws}/{newName.trim() || "..."}
-							</p>
-						</div>
-					)}
-
-					{tab === "clone" && (
-						<div class="npm-form">
-							<label class="npm-label">Repository URL</label>
-							<input
-								ref={urlRef}
-								type="text"
-								class="input"
-								placeholder="https://github.com/user/repo.git"
-								value={cloneUrl}
-								onInput={(e) =>
-									setCloneUrl((e.target as HTMLInputElement).value)
-								}
-								onKeyDown={(e) => {
-									if (e.key === "Enter" && canConfirm()) handleConfirm();
+							>
+								<IconPlus size={14} />
+								New folder
+							</button>
+							<button
+								class={`npm-tab${tab === "clone" ? " active" : ""}`}
+								role="tab"
+								aria-selected={tab === "clone"}
+								onClick={() => {
+									setTab("clone");
+									setError("");
 								}}
-							/>
+							>
+								<IconGithub size={14} />
+								Clone repo
+							</button>
+						</div>
 
-							{/* SSH warning */}
-							{cloneUrl && isSSHUrl(cloneUrl) && !sshConfigured && (
-								<div class="npm-warning">
-									SSH keys not configured. Private repos will fail.
+						{/* Tab content */}
+						<div class="npm-content">
+							{tab === "existing" && (
+								<div class="dir-list">
+									<div
+										class={`dir-item${selected === ws ? " selected" : ""}`}
+										onClick={() => selectDir(ws)}
+									>
+										<IconFolder size={14} />
+										<span>{ws} (default)</span>
+									</div>
+									{dirs.map((d) => (
+										<div
+											key={d}
+											class={`dir-item${selected === d ? " selected" : ""}`}
+											onClick={() => selectDir(d)}
+										>
+											<IconFolder size={14} />
+											<span>{d.split("/").pop()}</span>
+										</div>
+									))}
 								</div>
 							)}
 
-							<div class="npm-hint">
-								For private repos,{" "}
-								<button
-									class="npm-link"
-									type="button"
-									onClick={() => {
-										onCancel();
-										setActiveSection("integrations");
-										history.pushState(null, "", "/integrations");
-									}}
-								>
-									configure SSH keys or connect your GitHub account
-								</button>{" "}
-								in Integrations first.
-							</div>
+							{tab === "create" && (
+								<div class="npm-form">
+									<label class="npm-label">Folder name</label>
+									<input
+										ref={nameRef}
+										type="text"
+										class="input"
+										placeholder="my-project"
+										value={newName}
+										onInput={(e) =>
+											setNewName((e.target as HTMLInputElement).value)
+										}
+										onKeyDown={(e) => {
+											if (e.key === "Enter" && canAdvance()) handleStep1Next();
+										}}
+									/>
+									<p class="npm-hint">
+										Will be created in {ws}/{newName.trim() || "..."}
+									</p>
+								</div>
+							)}
 
-							<div class="npm-row">
-								<div style={{ flex: 1 }}>
-									<label class="npm-label">Name (optional)</label>
+							{tab === "clone" && (
+								<div class="npm-form">
+									<label class="npm-label">Repository URL</label>
 									<input
+										ref={urlRef}
 										type="text"
 										class="input"
-										placeholder="auto-detected"
-										value={cloneName}
+										placeholder="https://github.com/user/repo.git"
+										value={cloneUrl}
 										onInput={(e) =>
-											setCloneName((e.target as HTMLInputElement).value)
+											setCloneUrl((e.target as HTMLInputElement).value)
 										}
+										onKeyDown={(e) => {
+											if (e.key === "Enter" && canAdvance()) handleStep1Next();
+										}}
 									/>
+
+									{/* SSH warning */}
+									{cloneUrl && isSSHUrl(cloneUrl) && !sshConfigured && (
+										<div class="npm-warning">
+											SSH keys not configured. Private repos will fail.
+										</div>
+									)}
+
+									<div class="npm-hint">
+										For private repos,{" "}
+										<button
+											class="npm-link"
+											type="button"
+											onClick={() => {
+												onCancel();
+												setActiveSection("integrations");
+												history.pushState(null, "", "/integrations");
+											}}
+										>
+											configure SSH keys or connect your GitHub account
+										</button>{" "}
+										in Integrations first.
+									</div>
+
+									<div class="npm-row">
+										<div style={{ flex: 1 }}>
+											<label class="npm-label">Name (optional)</label>
+											<input
+												type="text"
+												class="input"
+												placeholder="auto-detected"
+												value={cloneName}
+												onInput={(e) =>
+													setCloneName((e.target as HTMLInputElement).value)
+												}
+											/>
+										</div>
+										<div style={{ flex: 1 }}>
+											<label class="npm-label">Branch (optional)</label>
+											<input
+												type="text"
+												class="input"
+												placeholder="default"
+												value={cloneBranch}
+												onInput={(e) =>
+													setCloneBranch((e.target as HTMLInputElement).value)
+												}
+											/>
+										</div>
+									</div>
 								</div>
-								<div style={{ flex: 1 }}>
-									<label class="npm-label">Branch (optional)</label>
-									<input
-										type="text"
-										class="input"
-										placeholder="default"
-										value={cloneBranch}
-										onInput={(e) =>
-											setCloneBranch((e.target as HTMLInputElement).value)
-										}
-									/>
-								</div>
-							</div>
+							)}
 						</div>
-					)}
-				</div>
 
-				{/* Launch options — only show when resume is available */}
-				{tab === "existing" && canResume && (
-					<div class="npm-launch-options">
-						<div class="npm-launch-title">Launch options</div>
-						<label class="npm-checkbox">
+						{error && (
+							<div class="npm-error" role="alert">
+								{error}
+							</div>
+						)}
+
+						<div class="modal-actions">
+							<button
+								class="btn btn-secondary"
+								onClick={onCancel}
+								disabled={loading}
+							>
+								Cancel
+							</button>
+							<button
+								class="btn btn-primary"
+								onClick={handleStep1Next}
+								disabled={!canAdvance()}
+							>
+								{loading ? <span class="loading" /> : null}
+								{tab === "clone" ? "Clone and continue" : "Next"}
+							</button>
+						</div>
+					</>
+				)}
+
+				{step === 2 && (
+					<>
+						<h2 id="npm-modal-title" class="modal-title">
+							Launch terminal in {dirShortName}
+						</h2>
+
+						{/* Launch options */}
+						<div class="npm-launch-options">
+							<div class="npm-launch-title">Launch options</div>
+
+							{canResume && (
+								<label class="npm-checkbox">
+									<input
+										type="checkbox"
+										checked={flags.resume}
+										onChange={(e) =>
+											handleResumeToggle((e.target as HTMLInputElement).checked)
+										}
+									/>
+									<span>Resume previous conversation</span>
+									<span class="npm-flag">--resume</span>
+								</label>
+							)}
+
+							{canResume && (
+								<label class="npm-checkbox">
+									<input
+										type="checkbox"
+										checked={flags.continueFlag}
+										onChange={(e) =>
+											handleContinueToggle(
+												(e.target as HTMLInputElement).checked,
+											)
+										}
+									/>
+									<span>Continue most recent conversation</span>
+									<span class="npm-flag">--continue</span>
+								</label>
+							)}
+
+							<label class="npm-checkbox">
+								<input
+									type="checkbox"
+									checked={flags.teams}
+									onChange={(e) =>
+										handleTeamsToggle((e.target as HTMLInputElement).checked)
+									}
+								/>
+								<span>Enable Agent Teams</span>
+								<span class="npm-flag">experimental</span>
+							</label>
+						</div>
+
+						{/* Editable command input */}
+						<div style={{ marginBottom: "16px" }}>
+							<label
+								class="npm-label"
+								style={{ marginBottom: "6px", display: "block" }}
+							>
+								Command
+							</label>
 							<input
-								type="checkbox"
-								checked={resume}
-								onChange={(e) =>
-									setResume((e.target as HTMLInputElement).checked)
+								ref={commandRef}
+								type="text"
+								class="input"
+								style={{ fontFamily: "var(--font-mono)", fontSize: "13px" }}
+								value={command}
+								onInput={(e) =>
+									handleCommandInput((e.target as HTMLInputElement).value)
 								}
+								onKeyDown={(e) => {
+									if (e.key === "Enter") handleStep2Submit();
+								}}
 							/>
-							<span>Resume previous conversation</span>
-							<span class="npm-flag">--resume</span>
-						</label>
-					</div>
+						</div>
+
+						{error && (
+							<div class="npm-error" role="alert">
+								{error}
+							</div>
+						)}
+
+						<div class="modal-actions">
+							<button
+								class="btn btn-secondary"
+								onClick={handleBack}
+								style={{
+									display: "inline-flex",
+									alignItems: "center",
+									gap: "4px",
+								}}
+							>
+								<IconChevronLeft size={14} />
+								Back
+							</button>
+							<button class="btn btn-primary" onClick={handleStep2Submit}>
+								Open terminal
+							</button>
+						</div>
+					</>
 				)}
-
-				{/* Enable Teams */}
-				<div class="npm-launch-options">
-					<label class="npm-checkbox">
-						<input
-							type="checkbox"
-							checked={enableTeams}
-							onChange={(e) =>
-								setEnableTeams((e.target as HTMLInputElement).checked)
-							}
-						/>
-						<span>Enable Agent Teams</span>
-						<span class="npm-flag">experimental</span>
-					</label>
-				</div>
-
-				{error && (
-					<div class="npm-error" role="alert">
-						{error}
-					</div>
-				)}
-
-				<div class="modal-actions">
-					<button
-						class="btn btn-secondary"
-						onClick={onCancel}
-						disabled={loading}
-					>
-						Cancel
-					</button>
-					<button
-						class="btn btn-primary"
-						onClick={handleConfirm}
-						disabled={!canConfirm()}
-					>
-						{loading ? <span class="loading" /> : null}
-						{tab === "clone" ? "Clone and open" : "Open terminal"}
-					</button>
-				</div>
 			</div>
 		</div>
 	);

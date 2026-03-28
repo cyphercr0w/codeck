@@ -142,3 +142,41 @@ export function clearActiveTeam(): void {
 	selectedAgentSessionId.value = null;
 	teamPreviewMode.value = "hidden";
 }
+
+/** Reconnect to an active execution found via API (e.g. after page refresh). */
+export function reconnectTeam(exec: {
+	id: string;
+	templateName: string;
+	status: string;
+	leaderSessionId: string | null;
+	agents: Record<
+		string,
+		{
+			agentId: string;
+			name: string;
+			role: string;
+			sessionId: string | null;
+			status: string;
+		}
+	>;
+}): void {
+	activeTeam.value = {
+		executionId: exec.id,
+		templateName: exec.templateName,
+		leaderSessionId: exec.leaderSessionId || "",
+		agents: Object.values(exec.agents).map((a) => ({
+			id: a.agentId,
+			name: a.name,
+			role: a.role,
+			sessionId: a.sessionId || "",
+			tmuxPane: "",
+			status: (a.status as TeamAgent["status"]) || "pending",
+		})),
+		status: (exec.status as ActiveTeam["status"]) || "running",
+		startedAt: Date.now(),
+	};
+	if (exec.leaderSessionId) {
+		selectedAgentSessionId.value = exec.leaderSessionId;
+	}
+	teamPreviewMode.value = "split";
+}

@@ -6,10 +6,11 @@
  */
 
 import { useState, useEffect } from "preact/hooks";
-import { activeTeam } from "../../state/team-store";
+import { activeTeam, reconnectTeam } from "../../state/team-store";
 import { activeSession } from "../../state/store";
 import {
 	loadTeamTemplates,
+	loadTeamExecutions,
 	saveTeamTemplate,
 	deleteTeamTemplate,
 	launchTeam,
@@ -17,7 +18,9 @@ import {
 	isTeamCacheLoaded,
 	type TeamTemplateDef,
 	type TeamAgentDef,
+	type TeamExecutionDef,
 } from "../../services/teams-service";
+import { apiFetch } from "../../api";
 import { showToast } from "../../state/store";
 import TeamExecutionViewer from "./TeamExecutionViewer";
 import "../../styles/team-viewer.css";
@@ -41,7 +44,38 @@ export function TeamsSection() {
 				.catch(() => showToast("Failed to load team templates"));
 		}
 		// If team is active, show it
-		if (team) setView("active");
+		if (team) {
+			setView("active");
+			return;
+		}
+		// Check for running executions (reconnect after page refresh)
+		loadTeamExecutions()
+			.then((execs: TeamExecutionDef[]) => {
+				const running = execs.find(
+					(e: TeamExecutionDef) =>
+						e.status === "running" || e.status === "launching",
+				);
+				if (running) {
+					apiFetch(`/api/teams/executions/${running.id}`)
+						.then((r: Response) => r.json())
+						.then(
+							(exec: {
+								id: string;
+								templateName: string;
+								status: string;
+								leaderSessionId: string | null;
+								agents: Record<string, unknown>;
+							}) => {
+								if (exec?.agents) {
+									reconnectTeam(exec as Parameters<typeof reconnectTeam>[0]);
+									setView("active");
+								}
+							},
+						)
+						.catch(() => {});
+				}
+			})
+			.catch(() => {});
 	}, []);
 
 	useEffect(() => {

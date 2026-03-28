@@ -13,6 +13,7 @@
 
 import { type FunctionalComponent } from "preact";
 import { useEffect, useRef, useState, useCallback } from "preact/hooks";
+import { showToast } from "../../state/store";
 import {
 	activeTeam,
 	selectTeamAgent,
@@ -125,11 +126,19 @@ const TeamExecutionViewer: FunctionalComponent = () => {
 		team.status === "failed";
 	const agentCount = team.agents.filter((a) => a.sessionId).length + 1;
 
-	// Auto-close preview 5s after completion
+	// Notify on completion — keep preview open so user can review
 	useEffect(() => {
 		if (!isCompleted) return;
-		const timer = setTimeout(() => clearActiveTeam(), 5000);
-		return () => clearTimeout(timer);
+		const shutdownCount = team.agents.filter(
+			(a) => a.status === "shutdown",
+		).length;
+		const label =
+			team.status === "completed"
+				? `Team "${team.templateName}" completed — ${shutdownCount} agent${shutdownCount !== 1 ? "s" : ""} finished`
+				: team.status === "failed"
+					? `Team "${team.templateName}" failed`
+					: `Team "${team.templateName}" stopped`;
+		showToast(label, team.status === "failed" ? "error" : "success");
 	}, [isCompleted]);
 
 	const termAgentName = terminalSessionId

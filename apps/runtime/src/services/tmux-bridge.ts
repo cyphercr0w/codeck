@@ -83,13 +83,13 @@ export function launchTeam(
 	// tmux new-session delegates to the tmux SERVER which spawns the shell,
 	// so the shell does NOT inherit this process's env.
 	// Solution: write a temp env file, and tell tmux to start bash sourcing it.
+	//
+	// NOTE: Do NOT pass ANTHROPIC_API_KEY — it may be stale/invalid.
+	// Claude Code will use OAuth credentials from ~/.claude/.credentials.json
+	// which is the primary auth method in Codeck.
 	const envVars: Record<string, string> = {
 		CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS: "1",
 	};
-	if (process.env.ANTHROPIC_API_KEY)
-		envVars.ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
-	if (process.env.CLAUDE_API_KEY)
-		envVars.CLAUDE_API_KEY = process.env.CLAUDE_API_KEY;
 
 	// Write temp env file (mode 0600 — only root can read)
 	const envDir = "/tmp/team-env";

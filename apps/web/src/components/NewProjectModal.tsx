@@ -109,6 +109,7 @@ export function NewProjectModal({
 	const [step, setStep] = useState<Step>(1);
 	const [tab, setTab] = useState<Tab>("existing");
 	const [dirs, setDirs] = useState<string[]>([]);
+	const [dirsLoading, setDirsLoading] = useState(false);
 	const ws = workspacePath.value;
 	const [selected, setSelected] = useState(ws);
 	const [newName, setNewName] = useState("");
@@ -121,6 +122,7 @@ export function NewProjectModal({
 	const [sshConfigured, setSshConfigured] = useState(false);
 	const [params, setParams] = useState("");
 	const [paramError, setParamError] = useState("");
+	const [teamsTooltip, setTeamsTooltip] = useState(false);
 	const nameRef = useRef<HTMLInputElement>(null);
 	const urlRef = useRef<HTMLInputElement>(null);
 	const commandRef = useRef<HTMLInputElement>(null);
@@ -146,6 +148,7 @@ export function NewProjectModal({
 			setError("");
 			setParams("");
 			setParamError("");
+			setTeamsTooltip(false);
 			loadDirs();
 			checkSshStatus();
 
@@ -197,6 +200,7 @@ export function NewProjectModal({
 
 	async function loadDirs() {
 		setDirs([]);
+		setDirsLoading(true);
 		try {
 			const res = await apiFetch("/api/files?path=&type=dir");
 			const data = await res.json();
@@ -208,6 +212,8 @@ export function NewProjectModal({
 			}
 		} catch {
 			/* ignore */
+		} finally {
+			setDirsLoading(false);
 		}
 	}
 
@@ -370,8 +376,27 @@ export function NewProjectModal({
 				aria-labelledby="npm-modal-title"
 				onClick={(e) => e.stopPropagation()}
 			>
+				{/* Step indicator */}
+				<div class="modal-steps" aria-label="Progress">
+					<div
+						class={`modal-step${step === 1 ? " active" : ""}`}
+						aria-current={step === 1 ? "step" : undefined}
+					>
+						<span class="modal-step-num">1</span>
+						<span>Choose folder</span>
+					</div>
+					<div class="modal-step-connector" aria-hidden="true" />
+					<div
+						class={`modal-step${step === 2 ? " active" : ""}`}
+						aria-current={step === 2 ? "step" : undefined}
+					>
+						<span class="modal-step-num">2</span>
+						<span>Launch options</span>
+					</div>
+				</div>
+
 				{step === 1 && (
-					<>
+					<div class="npm-step-content">
 						<h2 id="npm-modal-title" class="modal-title">
 							New {agentName.value} session
 						</h2>
@@ -419,24 +444,53 @@ export function NewProjectModal({
 						{/* Tab content */}
 						<div class="npm-content">
 							{tab === "existing" && (
-								<div class="dir-list">
-									<div
-										class={`dir-item${selected === ws ? " selected" : ""}`}
-										onClick={() => selectDir(ws)}
-									>
-										<IconFolder size={14} />
-										<span>{ws} (default)</span>
-									</div>
-									{dirs.map((d) => (
-										<div
-											key={d}
-											class={`dir-item${selected === d ? " selected" : ""}`}
-											onClick={() => selectDir(d)}
-										>
-											<IconFolder size={14} />
-											<span>{d.split("/").pop()}</span>
+								<div class="dir-list" role="listbox" aria-label="Select folder">
+									{dirsLoading ? (
+										<div class="npm-dirs-loading">
+											<span class="loading" />
 										</div>
-									))}
+									) : (
+										<>
+											<div
+												class={`dir-item${selected === ws ? " selected" : ""}`}
+												role="option"
+												aria-selected={selected === ws}
+												tabIndex={0}
+												onClick={() => selectDir(ws)}
+												onKeyDown={(e) => {
+													if (e.key === "Enter" || e.key === " ") {
+														e.preventDefault();
+														selectDir(ws);
+													}
+												}}
+											>
+												<IconFolder size={14} />
+												<span>{ws} (default)</span>
+											</div>
+											{dirs.map((d) => (
+												<div
+													key={d}
+													class={`dir-item${selected === d ? " selected" : ""}`}
+													role="option"
+													aria-selected={selected === d}
+													tabIndex={0}
+													onClick={() => selectDir(d)}
+													onKeyDown={(e) => {
+														if (e.key === "Enter" || e.key === " ") {
+															e.preventDefault();
+															selectDir(d);
+														}
+													}}
+												>
+													<IconFolder size={14} />
+													<span>{d.split("/").pop()}</span>
+												</div>
+											))}
+											{dirs.length === 0 && (
+												<div class="npm-dirs-empty">No subfolders found</div>
+											)}
+										</>
+									)}
 								</div>
 							)}
 
@@ -555,11 +609,11 @@ export function NewProjectModal({
 								{tab === "clone" ? "Clone and continue" : "Next"}
 							</button>
 						</div>
-					</>
+					</div>
 				)}
 
 				{step === 2 && (
-					<>
+					<div class="npm-step-content">
 						<h2 id="npm-modal-title" class="modal-title">
 							Launch terminal in {dirShortName}
 						</h2>
@@ -569,33 +623,30 @@ export function NewProjectModal({
 							<div class="npm-launch-title">Launch options</div>
 
 							{canResume && (
-								<label class="npm-checkbox">
-									<input
-										type="checkbox"
-										checked={flags.resume}
-										onChange={(e) =>
-											handleResumeToggle((e.target as HTMLInputElement).checked)
-										}
-									/>
-									<span>Resume previous conversation</span>
-									<span class="npm-flag">--resume</span>
-								</label>
-							)}
-
-							{canResume && (
-								<label class="npm-checkbox">
-									<input
-										type="checkbox"
-										checked={flags.continueFlag}
-										onChange={(e) =>
-											handleContinueToggle(
-												(e.target as HTMLInputElement).checked,
-											)
-										}
-									/>
-									<span>Continue most recent conversation</span>
-									<span class="npm-flag">--continue</span>
-								</label>
+								<div role="radiogroup" aria-label="Conversation resume mode">
+									<label class="npm-checkbox">
+										<input
+											type="radio"
+											name="resume-mode"
+											checked={flags.resume}
+											onChange={() => {}}
+											onClick={() => handleResumeToggle(!flags.resume)}
+										/>
+										<span>Resume previous conversation</span>
+										<span class="npm-flag">--resume</span>
+									</label>
+									<label class="npm-checkbox">
+										<input
+											type="radio"
+											name="resume-mode"
+											checked={flags.continueFlag}
+											onChange={() => {}}
+											onClick={() => handleContinueToggle(!flags.continueFlag)}
+										/>
+										<span>Continue most recent conversation</span>
+										<span class="npm-flag">--continue</span>
+									</label>
+								</div>
 							)}
 
 							<label class="npm-checkbox">
@@ -607,8 +658,32 @@ export function NewProjectModal({
 									}
 								/>
 								<span>Enable Agent Teams</span>
-								<span class="npm-flag">experimental</span>
+								<span
+									class="npm-flag npm-flag-experimental"
+									title="Enables multi-agent coordination via tmux panes. Requires tmux installed in the container."
+									role="button"
+									tabIndex={0}
+									aria-expanded={teamsTooltip}
+									onClick={(e) => {
+										e.preventDefault();
+										setTeamsTooltip((v) => !v);
+									}}
+									onKeyDown={(e) => {
+										if (e.key === "Enter" || e.key === " ") {
+											e.preventDefault();
+											setTeamsTooltip((v) => !v);
+										}
+									}}
+								>
+									experimental
+								</span>
 							</label>
+							{teamsTooltip && (
+								<div class="npm-tooltip" role="note">
+									Enables multi-agent coordination via tmux panes. Requires tmux
+									installed in the container.
+								</div>
+							)}
 						</div>
 
 						{/* Command input with locked "claude" prefix */}
@@ -619,20 +694,10 @@ export function NewProjectModal({
 							>
 								Command
 							</label>
-							<div style={{ display: "flex", alignItems: "center", gap: 0 }}>
+							<div class="npm-command-wrap">
 								<span
-									style={{
-										fontFamily: "var(--font-mono)",
-										fontSize: "13px",
-										padding: "8px 2px 8px 12px",
-										background: "var(--bg-tertiary, #1a1a2e)",
-										border: "1px solid var(--border-color, #333)",
-										borderRight: "none",
-										borderRadius: "6px 0 0 6px",
-										color: "var(--text-secondary, #888)",
-										userSelect: "none",
-										whiteSpace: "nowrap",
-									}}
+									class="npm-command-prefix"
+									title="The 'claude' command is fixed — add flags in the input"
 								>
 									claude
 								</span>
@@ -640,13 +705,7 @@ export function NewProjectModal({
 									ref={commandRef}
 									type="text"
 									class="input"
-									style={{
-										fontFamily: "var(--font-mono)",
-										fontSize: "13px",
-										borderRadius: "0 6px 6px 0",
-										flex: 1,
-									}}
-									placeholder="--resume --continue"
+									placeholder="additional flags..."
 									value={params}
 									onInput={(e) =>
 										handleParamsInput((e.target as HTMLInputElement).value)
@@ -694,7 +753,7 @@ export function NewProjectModal({
 								Open terminal
 							</button>
 						</div>
-					</>
+					</div>
 				)}
 			</div>
 		</div>

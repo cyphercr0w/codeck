@@ -169,6 +169,9 @@ export function initGitHub(): void {
 		loadGitHubAccountInfo();
 		// Setup git credential helper in case it was lost on rebuild
 		spawnSync("gh", ["auth", "setup-git"], { stdio: "pipe", timeout: 5000 });
+		// Ensure backup exists — covers logins done before backup code existed
+		// or cases where the backup was lost. Without this, every rebuild loses GH auth.
+		backupGhCredentials();
 		console.log("[GitHub] Session restored from persisted token");
 	}
 }

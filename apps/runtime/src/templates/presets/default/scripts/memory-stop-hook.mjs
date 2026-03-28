@@ -27,6 +27,14 @@ const API_URL = 'https://api.anthropic.com/v1/messages';
 const MAX_TRANSCRIPT_CHARS = 12000; // Keep Haiku prompt small
 const MIN_SESSION_LINES = 5;
 
+const APPROVE = JSON.stringify({ result: "approve" });
+
+let _approved = false;
+function exitApprove() {
+  if (!_approved) { _approved = true; process.stdout.write(APPROVE); }
+  process.exit(0);
+}
+
 async function main() {
   // Read hook payload from stdin
   let payload;
@@ -34,11 +42,11 @@ async function main() {
     const stdin = readFileSync('/dev/stdin', 'utf-8');
     payload = JSON.parse(stdin);
   } catch {
-    process.exit(0); // Non-fatal — never block session close
+    exitApprove();
   }
 
   const sessionId = payload?.session_id;
-  if (!sessionId) process.exit(0);
+  if (!sessionId) exitApprove();
 
   // Get OAuth token — read from disk (env var may not be set)
   let token = process.env.CLAUDE_CODE_OAUTH_TOKEN;
@@ -55,20 +63,20 @@ async function main() {
       }
     } catch { /* non-fatal */ }
   }
-  if (!token) process.exit(0);
+  if (!token) exitApprove();
 
   // Read transcript
   const transcriptPath = join(SESSIONS_DIR, `${sessionId}.jsonl`);
-  if (!existsSync(transcriptPath)) process.exit(0);
+  if (!existsSync(transcriptPath)) exitApprove();
 
   let lines;
   try {
     lines = readFileSync(transcriptPath, 'utf-8').split('\n').filter(Boolean);
   } catch {
-    process.exit(0);
+    exitApprove();
   }
 
-  if (lines.length < MIN_SESSION_LINES) process.exit(0);
+  if (lines.length < MIN_SESSION_LINES) exitApprove();
 
   // Extract cwd and meaningful content from transcript
   let cwd = '';
@@ -103,7 +111,7 @@ async function main() {
     } catch { /* skip malformed lines */ }
   }
 
-  if (userMessages.length === 0) process.exit(0);
+  if (userMessages.length === 0) exitApprove();
 
   const project = cwd.split('/').pop() || 'workspace';
 
@@ -172,15 +180,15 @@ ${transcriptDigest}`,
       }),
     });
 
-    if (!response.ok) process.exit(0);
+    if (!response.ok) exitApprove();
 
     const data = await response.json();
     summary = data?.content?.[0]?.text;
   } catch {
-    process.exit(0);
+    exitApprove();
   }
 
-  if (!summary?.trim()) process.exit(0);
+  if (!summary?.trim()) exitApprove();
 
   // Append to daily memory log
   const today = new Date().toISOString().slice(0, 10);
@@ -206,15 +214,11 @@ ${transcriptDigest}`,
 
     console.error(`[MemoryHook] Wrote semantic summary for session ${sessionId} (project: ${project})`);
   } catch {
-    process.exit(0);
+    exitApprove();
   }
 
-  process.exit(0);
+  exitApprove();
 }
 
 main()
-  .then(() => console.log(JSON.stringify({ result: "approve" })))
-  .catch(() => {
-    console.log(JSON.stringify({ result: "approve" }));
-    process.exit(0);
-  });
+  .catch(() => exitApprove());

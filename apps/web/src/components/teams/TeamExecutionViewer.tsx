@@ -207,6 +207,17 @@ const TeamExecutionViewer: FunctionalComponent = () => {
 					<div class="team-terminal-split">
 						<div class="team-terminal-header">
 							<span class="team-terminal-agent-name">{termAgentName}</span>
+							<button
+								class="team-terminal-reload"
+								onClick={() => {
+									if (terminalSessionId && hasTerminal(terminalSessionId)) {
+										fitTerminal(terminalSessionId);
+									}
+								}}
+								title="Resize terminal"
+							>
+								&#8635;
+							</button>
 							<button class="team-terminal-close" onClick={closeTerminal}>
 								&#215;
 							</button>

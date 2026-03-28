@@ -181,8 +181,22 @@
 	color: #3d5afe;
 }
 
-.team-terminal-close {
+.team-terminal-reload {
 	margin-left: auto;
+	background: none;
+	border: none;
+	color: #6b7280;
+	font-size: 15px;
+	cursor: pointer;
+	padding: 0 4px;
+	line-height: 1;
+}
+
+.team-terminal-reload:hover {
+	color: #e1e4e8;
+}
+
+.team-terminal-close {
 	background: none;
 	border: none;
 	color: #6b7280;

@@ -14,7 +14,7 @@
  *
  * Output format (Claude Code Stop hook contract):
  *   { "decision": "approve" }                    — let Claude stop
- *   { "decision": "block", "reason": "...", "systemMessage": "..." } — force continue
+ *   { "decision": "block", "reason": "...", "message": "..." } — force continue
  */
 
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'fs';
@@ -53,6 +53,19 @@ if (edits.count <= 4) {
   process.exit(0);
 }
 
+// If sub-agents are actively working, don't block — review comes after they finish
+try {
+  const subagentFile = join(STATE_DIR, 'active-subagents.json');
+  if (existsSync(subagentFile)) {
+    const subs = JSON.parse(readFileSync(subagentFile, 'utf-8'));
+    if (subs.count > 0 && (Date.now() - subs.lastUpdate) < 600000) {
+      // Sub-agents active within last 10 minutes — approve silently
+      console.log(JSON.stringify({ decision: 'approve' }));
+      process.exit(0);
+    }
+  }
+} catch { /* no subagent tracking */ }
+
 // Significant edits (5+ files) — check if review happened
 let reviewRecent = false;
 try {
@@ -81,5 +94,5 @@ const msg = edits.count > 8
 console.log(JSON.stringify({
   decision: 'block',
   reason: `You modified ${edits.count} files (${msg}) but haven't run code-reviewer yet.`,
-  systemMessage: `WORKFLOW CHECKPOINT: You made significant changes (${edits.count} files) without running a code review. Before presenting results to the user, spawn a code-reviewer sub-agent to review your changes. After the review completes and you address any issues, you can present your work. Write the review marker after: echo '{"timestamp":'$(date +%s%3N)',"agent":"code-reviewer"}' > /workspace/.codeck/state/review-marker.json`,
+  message: `Stop hook feedback:\nYou modified ${edits.count} files (${msg}) but haven't run code-reviewer yet.\nSpawn a code-reviewer sub-agent before presenting results. After review, write marker: echo '{"timestamp":'$(date +%s%3N)',"agent":"code-reviewer"}' > /workspace/.codeck/state/review-marker.json`,
 }));

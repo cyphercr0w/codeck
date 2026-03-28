@@ -108,7 +108,7 @@ const reminder = [
 ].join('\n');
 
 console.log(JSON.stringify({
-  systemMessage: reminder,
+  message: reminder,
 }));
 
 // ── Helpers ──

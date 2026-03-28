@@ -199,7 +199,7 @@
 /* ── Prompt textarea — code-editor feel ── */
 .yt-prompt-textarea {
 	width: 100%;
-	min-height: 300px;
+	min-height: 500px;
 	resize: vertical;
 	font-family: var(--font-mono) !important;
 	font-size: 12px;

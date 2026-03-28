@@ -100,15 +100,6 @@ export function launchTeam(
 		.join("\n");
 	writeFileSync(envFile, envScript + "\n", { mode: 0o600 });
 
-	// Also set tmux global env so teammate panes (split later) inherit them
-	for (const [k, v] of Object.entries(envVars)) {
-		try {
-			execFileSync("tmux", ["set-environment", "-g", k, v], { timeout: 2000 });
-		} catch {
-			// non-fatal
-		}
-	}
-
 	// Create tmux session: source the env file, then drop into interactive bash
 	try {
 		execFileSync(
@@ -135,6 +126,17 @@ export function launchTeam(
 			/* ignore */
 		}
 		throw new Error(`Failed to create tmux session: ${(e as Error).message}`);
+	}
+
+	// Set session-level env so teammate panes (split later) also get them
+	for (const [k, v] of Object.entries(envVars)) {
+		try {
+			execFileSync("tmux", ["set-environment", "-t", tmuxSession, k, v], {
+				timeout: 2000,
+			});
+		} catch {
+			// non-fatal
+		}
 	}
 
 	// Launch Claude with Agent Teams in the tmux session

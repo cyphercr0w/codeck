@@ -570,7 +570,7 @@ export function App() {
 
 	async function handleProjectConfirm(
 		dir: string,
-		options: { resume: boolean },
+		options: { resume: boolean; enableTeams?: boolean },
 	) {
 		setNewProjectOpen(false);
 		if (sessions.value.length >= SESSION_LIMIT) {
@@ -599,7 +599,11 @@ export function App() {
 		try {
 			const res = await apiFetch("/api/console/create", {
 				method: "POST",
-				body: JSON.stringify({ cwd: dir, resume: options.resume }),
+				body: JSON.stringify({
+					cwd: dir,
+					resume: options.resume,
+					enableTeams: options.enableTeams || false,
+				}),
 			});
 			clearTimeout(loadingTimeout);
 			const data = await res.json();

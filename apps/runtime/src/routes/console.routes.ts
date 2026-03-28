@@ -51,7 +51,7 @@ router.post(
 			return;
 		}
 
-		const { cwd, resume } = req.body || {};
+		const { cwd, resume, enableTeams } = req.body || {};
 
 		// Validate cwd stays within /workspace to prevent path traversal
 		if (cwd && typeof cwd === "string") {
@@ -63,8 +63,21 @@ router.post(
 			}
 		}
 
+		// Agent Teams: pass --teammate-mode tmux + env flag
+		const extraArgs: string[] = [];
+		const extraEnv: Record<string, string> = {};
+		if (enableTeams) {
+			extraArgs.push("--teammate-mode", "tmux");
+			extraEnv.CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS = "1";
+		}
+
 		try {
-			const session = createConsoleSession({ cwd: cwd || undefined, resume });
+			const session = createConsoleSession({
+				cwd: cwd || undefined,
+				resume,
+				extraArgs: extraArgs.length > 0 ? extraArgs : undefined,
+				extraEnv: Object.keys(extraEnv).length > 0 ? extraEnv : undefined,
+			});
 			console.log(
 				`[Console] Session created: ${session.id} (cwd: ${session.cwd}, resume: ${!!resume})`,
 			);

@@ -360,15 +360,32 @@ function startPaneWatcher(executionId: string): void {
 			bridgeNewPane(executionId, pane);
 		}
 
-		// Check if tmux session still exists (distinguish "gone" from "tmux call failed")
-		if (
-			panes.length === 0 &&
-			!isTmuxSessionAlive(state.execution.tmuxSession)
-		) {
+		// Detect completion:
+		// 1. tmux session died entirely
+		// 2. Only leader pane remains AND at least one teammate was detected
+		//    (teammates finished and their panes closed)
+		const tmuxDead =
+			panes.length === 0 && !isTmuxSessionAlive(state.execution.tmuxSession);
+		const teammatesDone =
+			panes.length === 1 && panes[0].index === "0" && state.knownPanes.size > 1; // at least 1 teammate was seen
+
+		if (tmuxDead || teammatesDone) {
 			clearInterval(interval);
 			state.execution.status = "completed";
 			state.execution.completedAt = new Date().toISOString();
 			saveTeamExecution(state.execution);
+
+			// Kill the tmux session (leader is idle, work is done)
+			try {
+				execFileSync(
+					"tmux",
+					["kill-session", "-t", state.execution.tmuxSession],
+					{ timeout: 5000 },
+				);
+			} catch {
+				/* already dead */
+			}
+
 			broadcast({
 				type: "team:stopped",
 				data: { executionId, status: "completed" },

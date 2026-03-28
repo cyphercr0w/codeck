@@ -207,6 +207,53 @@ router.get(
 	}),
 );
 
+/**
+ * Decode a Claude Code project directory name back to a filesystem path.
+ * Claude encodes "/workspace/my-project" as "workspace-my-project" (slashes → hyphens).
+ * Ambiguity: hyphens in folder names look identical to path separators.
+ * Solution: try all possible slash/hyphen splits and return the first that exists.
+ */
+function decodeProjectPath(encoded: string, _workspace: string): string | null {
+	// Fast path: simple decode (all hyphens → slashes)
+	const simple = resolve("/" + encoded.replace(/-/g, "/"));
+	if (existsSync(simple)) return simple;
+
+	// Try all possible splits: for each hyphen, it could be "/" or "-".
+	// We use BFS to find the first existing path.
+	const parts = encoded.split("-");
+	if (parts.length <= 1)
+		return existsSync("/" + encoded) ? resolve("/" + encoded) : null;
+
+	// For paths with many hyphens, limit search to avoid combinatorial explosion.
+	// Most real paths have ≤ 6 segments (e.g. workspace-Tierras-Sagradas-AO = 4 parts).
+	if (parts.length > 10) {
+		// Fallback: just use slash decode
+		return existsSync(simple) ? simple : null;
+	}
+
+	// Generate candidates: each hyphen can be "/" or "-"
+	const candidates: string[] = [];
+	const generate = (idx: number, current: string) => {
+		if (idx === parts.length) {
+			candidates.push(resolve(current));
+			return;
+		}
+		if (idx === 0) {
+			generate(idx + 1, "/" + parts[0]);
+			return;
+		}
+		generate(idx + 1, current + "/" + parts[idx]); // slash
+		generate(idx + 1, current + "-" + parts[idx]); // hyphen
+	};
+	generate(0, "");
+
+	// Return first candidate that exists on disk
+	for (const c of candidates) {
+		if (existsSync(c)) return c;
+	}
+	return null;
+}
+
 // List recent project folders with resumable conversations.
 // Groups by cwd folder, returns one entry per folder sorted by most recent activity.
 // Frontend uses POST /continue with the folder's cwd to resume.
@@ -238,27 +285,17 @@ router.get("/recent-conversations", (_req, res) => {
 			}
 
 			// Decode project dir name: "-workspace-codeck" → "/workspace/codeck"
-			const decodedPath = resolve(
-				"/" + projectDir.replace(/^-/, "").replace(/-/g, "/"),
-			);
+			// Claude Code encodes paths by replacing "/" with "-" and prepending "-".
+			// Problem: folder names with hyphens (e.g. "my-project") are ambiguous.
+			// Solution: try progressively joining segments to find existing paths.
+			const encoded = projectDir.replace(/^-/, "");
+			const resolvedCwd = decodeProjectPath(encoded, WORKSPACE);
+			if (!resolvedCwd) continue;
 			if (
-				!decodedPath.startsWith(WORKSPACE + sep) &&
-				decodedPath !== WORKSPACE
+				!resolvedCwd.startsWith(WORKSPACE + sep) &&
+				resolvedCwd !== WORKSPACE
 			) {
 				continue;
-			}
-
-			// Resolve to actual path (handle old layouts)
-			let resolvedCwd = decodedPath;
-			if (!existsSync(resolvedCwd)) {
-				const parts = resolvedCwd.split(sep);
-				const projectName = parts[parts.length - 1];
-				const candidate = join(WORKSPACE, projectName);
-				if (projectName && existsSync(candidate)) {
-					resolvedCwd = resolve(candidate);
-				} else {
-					continue; // folder doesn't exist, skip
-				}
 			}
 
 			// Count .jsonl files and find most recent mtime

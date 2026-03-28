@@ -106,11 +106,12 @@ export async function deleteTeamTemplate(id: string): Promise<boolean> {
 export async function launchTeam(
 	templateId: string,
 	input?: string,
+	cwd?: string,
 ): Promise<{ executionId: string; leaderSessionId: string }> {
 	const res = await apiFetch(`/api/teams/${templateId}/launch`, {
 		method: "POST",
 		headers: { "Content-Type": "application/json" },
-		body: JSON.stringify({ input }),
+		body: JSON.stringify({ input, cwd }),
 	});
 	return (await res.json()) as {
 		executionId: string;

@@ -7,6 +7,7 @@
 
 import { useState, useEffect } from "preact/hooks";
 import { activeTeam } from "../../state/team-store";
+import { activeSession } from "../../state/store";
 import {
 	loadTeamTemplates,
 	saveTeamTemplate,
@@ -51,7 +52,11 @@ export function TeamsSection() {
 	async function handleLaunch(templateId: string) {
 		setLaunching(true);
 		try {
-			await launchTeam(templateId, launchInputs[templateId] || undefined);
+			await launchTeam(
+				templateId,
+				launchInputs[templateId] || undefined,
+				activeSession.value?.cwd,
+			);
 			setLaunchInputs((prev) => ({ ...prev, [templateId]: "" }));
 			setView("active");
 		} catch (e) {

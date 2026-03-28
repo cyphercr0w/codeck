@@ -357,7 +357,7 @@ function startPaneWatcher(executionId: string): void {
 	if (!state) return;
 
 	const watcherStartTime = Date.now();
-	const WATCHER_TIMEOUT_MS = 60_000; // 60s — if no Claude processes found, give up
+	const WATCHER_TIMEOUT_MS = 180_000; // 3min — large teams need time to spawn
 
 	const interval = setInterval(() => {
 		if (!activeExecutions.has(executionId)) {

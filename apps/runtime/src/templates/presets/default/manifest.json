@@ -195,6 +195,14 @@
 			"dest": "/workspace/.codeck/scripts/decision-guidance.mjs"
 		},
 		{
+			"src": "scripts/skill-proposal-hook.mjs",
+			"dest": "/workspace/.codeck/scripts/skill-proposal-hook.mjs"
+		},
+		{
+			"src": "scripts/skill-evolution.mjs",
+			"dest": "/workspace/.codeck/scripts/skill-evolution.mjs"
+		},
+		{
 			"src": "scripts/visual-brainstorm.mjs",
 			"dest": "/workspace/.codeck/scripts/visual-brainstorm.mjs"
 		},

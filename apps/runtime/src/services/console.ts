@@ -424,7 +424,10 @@ function _createConsoleSessionInner(
 		CODECK_SESSION_ID: id, // Must be LAST — prevents oauthEnv from overwriting
 	};
 
-	// Build CLI args from launch options
+	// Build CLI args from launch options.
+	// NOTE: --bare skips hooks/LSP/plugins for faster startup — useful for
+	// headless/programmatic calls. NOT used here because this is an interactive
+	// PTY session. Use buildBareArgs() for non-interactive programmatic spawns.
 	const args: string[] = [];
 	if (opts.useContinue) {
 		// Restore/auto-resume: --continue picks the most recent conversation for this cwd
@@ -1250,6 +1253,15 @@ export async function restoreSessionsNow(
 		`[Console] Restored ${restored.length}/${savedSessions.length} sessions`,
 	);
 	return restored;
+}
+
+/**
+ * Build args for a headless Claude Code invocation.
+ * Uses --bare to skip hooks/LSP/plugins for faster startup.
+ * Requires ANTHROPIC_API_KEY (OAuth not supported in bare mode).
+ */
+export function buildBareArgs(prompt: string, _cwd: string): string[] {
+	return ["--bare", "-p", prompt, "--output-format", "stream-json"];
 }
 
 /**

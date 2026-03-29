@@ -521,6 +521,18 @@
 				"description": "Track token and cost metrics per session"
 			},
 			{
+				"matcher": "",
+				"hooks": [
+					{
+						"type": "command",
+						"command": "node /workspace/.codeck/scripts/skill-proposal-hook.mjs",
+						"async": true,
+						"timeout": 10
+					}
+				],
+				"description": "Detect repeated workflow patterns and propose new skills"
+			},
+			{
 				"matcher": "*",
 				"hooks": [
 					{

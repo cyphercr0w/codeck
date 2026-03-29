@@ -81,4 +81,29 @@ description: One line that triggers auto-activation. Be specific.
 - [ ] Condition 1 met
 - [ ] Condition 2 met
 - [ ] Verification command output shown
+
+## Gotchas
+
+- **[What went wrong]** — [why it happened and the fix].
+```
+
+## Gotchas
+
+Every skill should include a Gotchas section built from observed failure points. This is the highest-signal content in any skill — it prevents repeated mistakes.
+
+### How to write gotchas
+
+- Each gotcha should describe a specific failure that actually happened
+- Include: what went wrong, why, and the fix
+- Keep to 1-2 lines per gotcha
+- Update gotchas when new failure modes are discovered
+
+### Example gotchas section
+
+```
+## Gotchas
+
+- **Don't mock the database** — integration tests must hit a real DB. Mocked tests passed but prod migration failed (2024-Q3 incident).
+- **`npm ci` not `npm install`** — `install` mutates lockfile, breaks reproducible builds in CI.
+- **Check `existsSync` before `readFileSync`** — reading a missing file crashes the hook silently (no error output).
 ```

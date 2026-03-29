@@ -127,6 +127,10 @@
 			"args": ["-y", "figma-developer-mcp"],
 			"env": { "FIGMA_ACCESS_TOKEN": "" },
 			"description": "Figma design files, components, and styles"
+		},
+		"deepwiki": {
+			"command": "npx",
+			"args": ["-y", "deepwiki-mcp"]
 		}
 	}
 }

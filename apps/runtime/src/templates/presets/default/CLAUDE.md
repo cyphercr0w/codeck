@@ -20,11 +20,15 @@ You have persistent memory at `/workspace/.codeck/memory/`. It survives between 
 
 3. **Load the skill before editing.** A hook will block your first edit if you haven't loaded the matching skill. See `rules/base/workflow.md` for the skill-to-area mapping table. Load the skill, then retry.
 
+<important if="you just wrote or edited code">
 4. **Verify your work.** Build/lint/test after code changes. A PostToolUse hook runs deterministic checks — read its output. Don't present work that doesn't compile.
+</important>
 
 5. **Use sub-agents.** Complex task → spawn `planner` first. After implementing → spawn `code-reviewer`. Research → spawn an exploration sub-agent. Don't do everything yourself. Sub-agents at `/root/.claude/agents/`.
 
+<important if="you just finished implementing a feature or fix">
 6. **Implement → Review → Iterate.** Every code change: implement, build, review (sub-agent), fix issues, THEN present. Never skip review. After any code review completes, write the marker: `echo '{"timestamp":'$(date +%s%3N)',"agent":"code-reviewer"}' > /workspace/.codeck/state/review-marker.json`
+</important>
 
 7. **3 retries max.** If the same approach fails 3 times, STOP. Re-read the error, rethink the approach. Better context beats more retries.
 
@@ -32,7 +36,9 @@ You have persistent memory at `/workspace/.codeck/memory/`. It survives between 
 
 9. **Parallelize.** Multiple file reads → parallel calls. Independent research → parallel agents. Never do sequentially what can be done in parallel.
 
+<important if="the user just corrected you or said 'no' or 'don't'">
 10. **Learn from corrections.** When the user corrects you ("no, use X instead", "don't do that", "I prefer Y"), IMMEDIATELY save the correction to `/workspace/.codeck/preferences.md` as a durable rule. Also read preferences at session start. Every correction is a preference you should never need to be told twice.
+</important>
 
 ## On Session End
 

@@ -7,12 +7,10 @@ import {
 	renameSync,
 	realpathSync,
 	readdirSync,
+	lstatSync,
+	symlinkSync,
 } from "fs";
-import {
-	readdir as readdirAsync,
-	stat as statAsync,
-	readFile as readFileAsync,
-} from "fs/promises";
+import { readdir as readdirAsync, stat as statAsync } from "fs/promises";
 import { randomUUID } from "crypto";
 import { resolve, join } from "path";
 import { execFile as execFileCb } from "child_process";
@@ -29,7 +27,6 @@ import {
 } from "./session-writer.js";
 import { atomicWriteFileSync } from "./memory.js";
 import { decryptValue } from "./auth-anthropic/encryption.js";
-import { summarizeSession } from "./session-summarizer.js";
 import { broadcast } from "../web/logger.js";
 import {
 	injectContextIntoCLAUDEMd,
@@ -220,6 +217,106 @@ function detectConversationId(
 			}
 		}, 500);
 	})();
+}
+
+const RULES_DIR = "/root/.claude/rules";
+const RULES_LIBRARY = "/workspace/.codeck/rules-library";
+
+// Note: symlinks are global state under ~/.claude/rules/. In theory, concurrent
+// session creation with different cwd values could race. In practice Codeck is
+// single-user and sessions are created sequentially, so this is acceptable.
+function setupLanguageRules(cwd: string): void {
+	try {
+		// Detect languages from indicator files
+		const langs: string[] = [];
+
+		// Only tsconfig.json triggers typescript — package.json alone is ambiguous (JS-only projects)
+		if (existsSync(join(cwd, "tsconfig.json"))) {
+			langs.push("typescript");
+		}
+		if (existsSync(join(cwd, "Cargo.toml"))) langs.push("rust");
+		if (existsSync(join(cwd, "go.mod"))) langs.push("golang");
+		if (
+			existsSync(join(cwd, "pom.xml")) ||
+			existsSync(join(cwd, "build.gradle"))
+		) {
+			langs.push("java");
+		}
+		if (existsSync(join(cwd, "build.gradle.kts"))) langs.push("kotlin");
+		if (existsSync(join(cwd, "composer.json"))) langs.push("php");
+		if (
+			existsSync(join(cwd, "requirements.txt")) ||
+			existsSync(join(cwd, "pyproject.toml"))
+		) {
+			langs.push("python");
+		}
+		if (existsSync(join(cwd, "Package.swift"))) langs.push("swift");
+		if (existsSync(join(cwd, "CMakeLists.txt"))) langs.push("cpp");
+		if (
+			existsSync(join(cwd, "cpanfile")) ||
+			existsSync(join(cwd, "Makefile.PL"))
+		) {
+			langs.push("perl");
+		}
+		try {
+			if (
+				readdirSync(cwd).some(
+					(f) => f.endsWith(".csproj") || f.endsWith(".sln"),
+				)
+			) {
+				langs.push("csharp");
+			}
+		} catch {
+			/* non-fatal */
+		}
+
+		// Remove existing language symlinks (never touch common/ or typescript/)
+		if (existsSync(RULES_DIR)) {
+			try {
+				for (const entry of readdirSync(RULES_DIR)) {
+					if (entry === "common" || entry === "typescript") continue;
+					const entryPath = join(RULES_DIR, entry);
+					try {
+						if (lstatSync(entryPath).isSymbolicLink()) {
+							unlinkSync(entryPath);
+						}
+					} catch {
+						/* skip unreadable entry */
+					}
+				}
+			} catch {
+				/* skip if rules dir unreadable */
+			}
+		} else {
+			mkdirSync(RULES_DIR, { recursive: true });
+		}
+
+		// Create symlinks for detected languages (skip typescript — already a real dir)
+		const toLink = langs.filter((l) => l !== "typescript");
+		if (toLink.length === 0) {
+			if (langs.length === 0) {
+				console.log("[Rules] No additional language rules needed");
+			}
+			return;
+		}
+
+		for (const lang of toLink) {
+			const src = join(RULES_LIBRARY, lang);
+			const dest = join(RULES_DIR, lang);
+			if (!existsSync(src)) continue;
+			try {
+				symlinkSync(src, dest);
+			} catch (e) {
+				console.warn(
+					`[Rules] Failed to symlink ${lang}: ${(e as Error).message}`,
+				);
+			}
+		}
+
+		console.log(`[Rules] Detected: ${langs.join(", ")} → symlinked rules`);
+	} catch (e) {
+		console.warn(`[Rules] setupLanguageRules failed: ${(e as Error).message}`);
+	}
 }
 
 // Simple mutex to prevent concurrent session creation from exceeding MAX_SESSIONS.
@@ -442,6 +539,8 @@ function _createConsoleSessionInner(
 
 		args.push("--append-system-prompt", teamsLines.join("\n"));
 	}
+
+	setupLanguageRules(workDir);
 
 	const binary = getValidAgentBinary();
 	console.log(

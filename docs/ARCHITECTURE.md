@@ -759,6 +759,10 @@ Weekly cron (Sunday 02:00 UTC) runs the consolidation pipeline:
 
 Files in `memory/` paths, named `preferences.md`, or in `rules/` paths are "data files". Only copied on first apply; subsequent applies skip to preserve customizations. Use `POST /api/presets/reset` (force) to overwrite.
 
+### On-demand language rules
+
+Only `common/` and `typescript/` rules are permanently installed in `~/.claude/rules/`. All other language rulesets live in `/workspace/.codeck/rules-library/` and are symlinked into `~/.claude/rules/` at session start by `setupLanguageRules(cwd)` based on project indicator files. See [CONFIGURATION.md — On-demand language rules loading](CONFIGURATION.md) for details.
+
 ### CLAUDE.md Instruction File Hierarchy
 
 Three-layer system providing hierarchical context:

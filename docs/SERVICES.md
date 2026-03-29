@@ -139,6 +139,7 @@ Manages Claude CLI interactive pseudo-terminal sessions via node-pty.
 
 | Function | Signature | Description |
 |----------|-----------|-------------|
+| `setupLanguageRules` | `(cwd): void` | Detects project language and symlinks matching ruleset from rules-library |
 | `createConsoleSession` | `(options?): ConsoleSession` | Spawns claude CLI in PTY with OAuth env |
 | `createShellSession` | `(options?): ConsoleSession` | Spawns bash shell (no OAuth required) |
 | `getSession` | `(id): ConsoleSession \| undefined` | Lookup by UUID |
@@ -162,7 +163,8 @@ Manages Claude CLI interactive pseudo-terminal sessions via node-pty.
 
 1. `getOAuthEnv()` — reads token from `.credentials.json`
 2. `ensureOnboardingComplete()` — writes onboarding flags to `/root/.claude.json`
-3. `syncToClaudeSettings()` — writes enabled permissions to `settings.json`
+3. `setupLanguageRules(cwd)` — detects project language from indicator files and symlinks the matching ruleset from `/workspace/.codeck/rules-library/` into `~/.claude/rules/`
+4. `syncToClaudeSettings()` — writes enabled permissions to `settings.json`
 4. Build clean env: strip `NODE_ENV`, `PORT`, etc.; inject OAuth token + `TERM=xterm-256color`
 5. `pty.spawn('claude', [--resume?], { name: 'xterm-256color', cols: 120, rows: 30, cwd, env })`
 6. Output buffered in `session.outputBuffer[]` (1MB cap, FIFO) until WS client attaches

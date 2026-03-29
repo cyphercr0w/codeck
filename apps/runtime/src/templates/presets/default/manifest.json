@@ -2,7 +2,7 @@
 	"id": "default",
 	"name": "Default (Recommended)",
 	"description": "Persistent memory system, rules, sandbox skills, plus 66 sub-agents, 59 slash commands, 116 skills, 65 rules, and dev hooks from everything-claude-code v1.9.0.",
-	"version": "8.6.0",
+	"version": "8.6.1",
 	"author": "codeck",
 	"icon": "⚡",
 	"tags": ["general", "recommended"],
@@ -182,6 +182,10 @@
 		{
 			"src": "scripts/generate-weekly-digest.mjs",
 			"dest": "/workspace/.codeck/scripts/generate-weekly-digest.mjs"
+		},
+		{
+			"src": "rules-library/README.md",
+			"dest": "/workspace/.codeck/rules-library/README.md"
 		}
 	],
 	"directories": [
@@ -197,7 +201,8 @@
 		"/workspace/.codeck/scripts",
 		"/workspace/.codeck/scripts/ecc",
 		"/workspace/.codeck/scripts/lib",
-		"/workspace/.codeck/agents"
+		"/workspace/.codeck/agents",
+		"/workspace/.codeck/rules-library"
 	],
 	"recursive_dirs": [
 		{
@@ -233,6 +238,12 @@
 		{
 			"src": "scripts/lib",
 			"dest": "/workspace/.codeck/scripts/lib",
+			"recursive": true,
+			"skipIfExists": false
+		},
+		{
+			"src": "rules-library",
+			"dest": "/workspace/.codeck/rules-library",
 			"recursive": true,
 			"skipIfExists": false
 		}

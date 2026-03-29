@@ -143,6 +143,18 @@
 			"dest": "/workspace/.codeck/scripts/credential-persist.mjs"
 		},
 		{
+			"src": "scripts/cwd-changed-hook.mjs",
+			"dest": "/workspace/.codeck/scripts/cwd-changed-hook.mjs"
+		},
+		{
+			"src": "scripts/skill-metrics-hook.mjs",
+			"dest": "/workspace/.codeck/scripts/skill-metrics-hook.mjs"
+		},
+		{
+			"src": "scripts/anticipatory-prefetch.mjs",
+			"dest": "/workspace/.codeck/scripts/anticipatory-prefetch.mjs"
+		},
+		{
 			"src": "integrations/vercel.md",
 			"dest": "/workspace/.codeck/integrations/vercel.md"
 		},
@@ -173,6 +185,10 @@
 		{
 			"src": "scripts/decision-guidance.mjs",
 			"dest": "/workspace/.codeck/scripts/decision-guidance.mjs"
+		},
+		{
+			"src": "scripts/visual-brainstorm.mjs",
+			"dest": "/workspace/.codeck/scripts/visual-brainstorm.mjs"
 		},
 		{
 			"src": "scripts/consolidation-apply.mjs",

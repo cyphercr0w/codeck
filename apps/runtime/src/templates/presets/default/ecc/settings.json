@@ -1,5 +1,6 @@
 {
 	"_attribution": "Source: affaan-m/everything-claude-code (MIT License) + Codeck hooks. Integrated into Codeck preset.",
+	"plansDirectory": "./reports",
 	"permissions": {
 		"allow": [
 			"Read",
@@ -90,6 +91,7 @@
 		"PreToolUse": [
 			{
 				"matcher": "Edit|Write",
+				"if": "Edit OR Write",
 				"hooks": [
 					{
 						"type": "command",
@@ -99,6 +101,7 @@
 			},
 			{
 				"matcher": "Bash",
+				"if": "Bash",
 				"hooks": [
 					{
 						"type": "command",
@@ -108,6 +111,7 @@
 			},
 			{
 				"matcher": "Edit|Write|Bash",
+				"if": "Edit OR Write OR Bash",
 				"hooks": [
 					{
 						"type": "command",
@@ -117,6 +121,7 @@
 			},
 			{
 				"matcher": "Bash",
+				"if": "Bash",
 				"hooks": [
 					{
 						"type": "command",
@@ -127,6 +132,7 @@
 			},
 			{
 				"matcher": "Bash",
+				"if": "Bash",
 				"hooks": [
 					{
 						"type": "command",
@@ -137,6 +143,7 @@
 			},
 			{
 				"matcher": "Bash",
+				"if": "Bash",
 				"hooks": [
 					{
 						"type": "command",
@@ -147,6 +154,7 @@
 			},
 			{
 				"matcher": "Write",
+				"if": "Write",
 				"hooks": [
 					{
 						"type": "command",
@@ -157,6 +165,7 @@
 			},
 			{
 				"matcher": "Edit|Write",
+				"if": "Edit OR Write",
 				"hooks": [
 					{
 						"type": "command",
@@ -179,6 +188,7 @@
 			},
 			{
 				"matcher": "Bash|Write|Edit|MultiEdit",
+				"if": "Bash OR Edit OR Write",
 				"hooks": [
 					{
 						"type": "command",
@@ -190,6 +200,7 @@
 			},
 			{
 				"matcher": "Bash|Write|Edit|MultiEdit",
+				"if": "Bash OR Edit OR Write",
 				"hooks": [
 					{
 						"type": "command",
@@ -213,6 +224,7 @@
 		"PostToolUse": [
 			{
 				"matcher": "Edit|Write",
+				"if": "Edit OR Write",
 				"hooks": [
 					{
 						"type": "command",
@@ -236,6 +248,7 @@
 			},
 			{
 				"matcher": "Read|Grep|Glob|Bash|WebFetch|WebSearch",
+				"if": "Read OR Grep OR Glob OR Bash OR WebFetch OR WebSearch",
 				"hooks": [
 					{
 						"type": "command",
@@ -245,6 +258,7 @@
 			},
 			{
 				"matcher": "Bash",
+				"if": "Bash",
 				"hooks": [
 					{
 						"type": "command",
@@ -255,6 +269,7 @@
 			},
 			{
 				"matcher": "Bash",
+				"if": "Bash",
 				"hooks": [
 					{
 						"type": "command",
@@ -267,6 +282,7 @@
 			},
 			{
 				"matcher": "Edit|Write|MultiEdit",
+				"if": "Edit OR Write",
 				"hooks": [
 					{
 						"type": "command",
@@ -279,6 +295,7 @@
 			},
 			{
 				"matcher": "Edit",
+				"if": "Edit",
 				"hooks": [
 					{
 						"type": "command",
@@ -289,6 +306,7 @@
 			},
 			{
 				"matcher": "Edit",
+				"if": "Edit",
 				"hooks": [
 					{
 						"type": "command",
@@ -299,6 +317,7 @@
 			},
 			{
 				"matcher": "Edit",
+				"if": "Edit",
 				"hooks": [
 					{
 						"type": "command",
@@ -309,6 +328,7 @@
 			},
 			{
 				"matcher": "Bash|Write|Edit|MultiEdit",
+				"if": "Bash OR Edit OR Write",
 				"hooks": [
 					{
 						"type": "command",
@@ -332,6 +352,7 @@
 			},
 			{
 				"matcher": "Edit|Write",
+				"if": "Edit OR Write",
 				"hooks": [
 					{
 						"type": "command",
@@ -340,6 +361,19 @@
 					}
 				],
 				"description": "Track file edits for workflow-checkpoint review enforcement"
+			},
+			{
+				"matcher": "Read|Edit|Write",
+				"if": "Read OR Edit OR Write",
+				"hooks": [
+					{
+						"type": "command",
+						"command": "node /workspace/.codeck/scripts/anticipatory-prefetch.mjs",
+						"async": true,
+						"timeout": 5
+					}
+				],
+				"description": "Pre-fetch related memory context based on files being worked on"
 			}
 		],
 		"PreCompact": [
@@ -416,6 +450,18 @@
 						"command": "node /workspace/.codeck/scripts/memory-stop-hook.mjs"
 					}
 				]
+			},
+			{
+				"matcher": "",
+				"hooks": [
+					{
+						"type": "command",
+						"command": "node /workspace/.codeck/scripts/skill-metrics-hook.mjs",
+						"async": true,
+						"timeout": 5
+					}
+				],
+				"description": "Track which skills and agents were used per session for performance analysis"
 			},
 			{
 				"matcher": "*",
@@ -567,6 +613,18 @@
 					}
 				],
 				"description": "Track subagent completion for real-time UI panel"
+			}
+		],
+		"CwdChanged": [
+			{
+				"matcher": "",
+				"hooks": [
+					{
+						"type": "command",
+						"command": "node /workspace/.codeck/scripts/cwd-changed-hook.mjs"
+					}
+				],
+				"description": "Auto-detect project type and available env vars on directory change"
 			}
 		]
 	}

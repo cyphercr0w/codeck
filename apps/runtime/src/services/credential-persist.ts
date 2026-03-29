@@ -85,7 +85,18 @@ export function restoreCredentialSymlinks(): void {
 			if (existsSync(persistPath) && !sysLstat) {
 				const parentDir = dirname(systemPath);
 				if (!existsSync(parentDir)) mkdirSync(parentDir, { recursive: true });
-				symlinkSync(persistPath, systemPath);
+				try {
+					symlinkSync(persistPath, systemPath);
+				} catch {
+					// Symlink failed — fall back to copying files
+					const pStat = lstatSync(persistPath);
+					if (pStat.isDirectory()) {
+						mkdirSync(systemPath, { recursive: true });
+						cpSync(persistPath, systemPath, { recursive: true });
+					} else {
+						cpSync(persistPath, systemPath);
+					}
+				}
 				restored++;
 				continue;
 			}
@@ -98,14 +109,25 @@ export function restoreCredentialSymlinks(): void {
 				} else {
 					cpSync(systemPath, persistPath);
 				}
-				const backupPath = systemPath + ".bak";
+				// Try to replace with symlink; if dir is busy (Docker mount), fall back to file copy
 				try {
-					renameSync(systemPath, backupPath);
+					const backupPath = systemPath + ".bak";
+					try {
+						renameSync(systemPath, backupPath);
+					} catch {
+						rmSync(systemPath, { recursive: true, force: true });
+					}
+					symlinkSync(persistPath, systemPath);
+					migrated++;
 				} catch {
-					rmSync(systemPath, { recursive: true, force: true });
+					// Directory can't be removed (busy mount) — copy files from persist into it
+					if (sysLstat.isDirectory()) {
+						cpSync(persistPath, systemPath, { recursive: true });
+					} else {
+						cpSync(persistPath, systemPath);
+					}
+					restored++;
 				}
-				symlinkSync(persistPath, systemPath);
-				migrated++;
 			}
 		} catch (err) {
 			console.warn(`[CredentialPersist] ${name}: ${(err as Error).message}`);

@@ -23,6 +23,12 @@ import { dirname, join } from "path";
 
 const PERSIST_DIR = "/workspace/.codeck/credentials";
 
+// /root/.claude.json is a single file outside the Docker volume.
+// CLAUDE_JSON_SYSTEM: ephemeral path used by Claude Code at runtime.
+// CLAUDE_JSON_PERSIST: durable backup inside the /workspace volume.
+const CLAUDE_JSON_SYSTEM = "/root/.claude.json";
+const CLAUDE_JSON_PERSIST = join(PERSIST_DIR, "claude-config.json");
+
 const CREDENTIAL_PATHS: Record<string, string> = {
 	gh: "/root/.config/gh",
 	ssh: "/root/.ssh",
@@ -140,5 +146,58 @@ export function restoreCredentialSymlinks(): void {
 		console.log(
 			`[CredentialPersist] ${restored} restored, ${migrated} migrated`,
 		);
+	}
+
+	// Special case: /root/.claude.json is a file (not a dir) outside the Docker volume.
+	// Copy to/from persistent storage on every startup so it survives container rebuilds.
+	persistClaudeJson();
+}
+
+/**
+ * Persist /root/.claude.json across container rebuilds.
+ * Called once at startup from restoreCredentialSymlinks().
+ */
+function persistClaudeJson(): void {
+	const systemExists = existsSync(CLAUDE_JSON_SYSTEM);
+	const persistExists = existsSync(CLAUDE_JSON_PERSIST);
+
+	try {
+		if (systemExists && !persistExists) {
+			writeFileSync(CLAUDE_JSON_PERSIST, readFileSync(CLAUDE_JSON_SYSTEM), {
+				mode: 0o600,
+			});
+			console.log(
+				"[CredentialPersist] claude.json: migrated to persistent storage",
+			);
+		} else if (persistExists && !systemExists) {
+			writeFileSync(CLAUDE_JSON_SYSTEM, readFileSync(CLAUDE_JSON_PERSIST), {
+				mode: 0o600,
+			});
+			console.log(
+				"[CredentialPersist] claude.json: restored from persistent storage",
+			);
+		} else if (systemExists && persistExists) {
+			writeFileSync(CLAUDE_JSON_PERSIST, readFileSync(CLAUDE_JSON_SYSTEM), {
+				mode: 0o600,
+			});
+		}
+	} catch (err) {
+		console.warn(`[CredentialPersist] claude.json: ${(err as Error).message}`);
+	}
+}
+
+/**
+ * Backup /root/.claude.json to persistent storage.
+ * Call after any MCP server mutation (POST, DELETE, toggle).
+ */
+export function backupClaudeConfig(): void {
+	try {
+		if (existsSync(CLAUDE_JSON_SYSTEM)) {
+			writeFileSync(CLAUDE_JSON_PERSIST, readFileSync(CLAUDE_JSON_SYSTEM), {
+				mode: 0o600,
+			});
+		}
+	} catch {
+		/* best effort */
 	}
 }

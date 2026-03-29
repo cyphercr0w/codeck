@@ -575,6 +575,44 @@ const ACCOUNT_CHECKERS: Record<
 			email: data.email,
 		};
 	},
+	SLACK_BOT_TOKEN: async (token) => {
+		const res = await fetch("https://slack.com/api/auth.test", {
+			headers: { Authorization: `Bearer ${token}` },
+			signal: AbortSignal.timeout(8000),
+		});
+		if (!res.ok) return {};
+		const data = (await res.json()) as {
+			ok?: boolean;
+			user?: string;
+			team?: string;
+		};
+		if (!data.ok) return {};
+		return { username: data.user, team: data.team };
+	},
+	LINEAR_API_KEY: async (token) => {
+		const res = await fetch("https://api.linear.app/graphql", {
+			method: "POST",
+			headers: { Authorization: token, "Content-Type": "application/json" },
+			body: JSON.stringify({ query: "{ viewer { name email } }" }),
+			signal: AbortSignal.timeout(8000),
+		});
+		if (!res.ok) return {};
+		const data = (await res.json()) as {
+			data?: { viewer?: { name?: string; email?: string } };
+		};
+		if (!data.data?.viewer) return {};
+		return {
+			username: data.data.viewer.name,
+			email: data.data.viewer.email,
+		};
+	},
+	AWS_ACCESS_KEY_ID: async (token) => {
+		// AWS STS GetCallerIdentity requires request signing — verify format only
+		if (token.startsWith("AKIA") || token.startsWith("ASIA")) {
+			return { username: `AWS (${token.slice(0, 8)}...)` };
+		}
+		return {};
+	},
 };
 
 router.get(

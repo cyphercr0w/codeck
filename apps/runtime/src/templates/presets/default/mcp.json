@@ -17,18 +17,6 @@
 			"command": "npx",
 			"args": ["-y", "@playwright/mcp@latest", "--headless", "--no-sandbox"]
 		},
-		"brave-search": {
-			"command": "npx",
-			"args": ["-y", "@anthropic-ai/mcp-server-brave-search"],
-			"env": { "BRAVE_API_KEY": "" },
-			"description": "Web search via Brave Search API"
-		},
-		"github": {
-			"command": "npx",
-			"args": ["-y", "@anthropic-ai/mcp-server-github"],
-			"env": { "GITHUB_TOKEN": "" },
-			"description": "GitHub repos, PRs, issues, and code search"
-		},
 		"memory": {
 			"command": "npx",
 			"args": ["-y", "@modelcontextprotocol/server-memory"],
@@ -46,6 +34,18 @@
 		}
 	},
 	"_disabledMcpServers": {
+		"brave-search": {
+			"command": "npx",
+			"args": ["-y", "@anthropic-ai/mcp-server-brave-search"],
+			"env": { "BRAVE_API_KEY": "" },
+			"description": "Web search via Brave Search API"
+		},
+		"github": {
+			"command": "npx",
+			"args": ["-y", "@anthropic-ai/mcp-server-github"],
+			"env": { "GITHUB_TOKEN": "" },
+			"description": "GitHub repos, PRs, issues, and code search"
+		},
 		"exa-web-search": {
 			"command": "npx",
 			"args": ["-y", "exa-mcp-server"],
@@ -67,7 +67,7 @@
 		"vercel": {
 			"command": "npx",
 			"args": ["-y", "vercel-mcp@latest"],
-			"env": { "VERCEL_API_KEY": "" },
+			"env": { "VERCEL_TOKEN": "" },
 			"description": "Vercel deployments and projects"
 		},
 		"railway": {
@@ -106,7 +106,7 @@
 		},
 		"notion": {
 			"command": "npx",
-			"args": ["-y", "@notionhq/mcp-server"],
+			"args": ["-y", "@notionhq/notion-mcp-server"],
 			"env": { "NOTION_API_KEY": "" },
 			"description": "Notion pages, databases, and workspaces"
 		},
@@ -124,7 +124,7 @@
 		},
 		"figma": {
 			"command": "npx",
-			"args": ["-y", "figma-mcp-server"],
+			"args": ["-y", "figma-developer-mcp"],
 			"env": { "FIGMA_ACCESS_TOKEN": "" },
 			"description": "Figma design files, components, and styles"
 		}

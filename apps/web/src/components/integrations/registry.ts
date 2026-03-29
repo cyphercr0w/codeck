@@ -7,6 +7,9 @@ import {
 	IconGoogle,
 	IconCloudflare,
 	IconFigma,
+	IconSlack,
+	IconLinear,
+	IconAWS,
 } from "../Icons";
 import type { IntegrationDef } from "./types";
 
@@ -77,7 +80,7 @@ export const INTEGRATIONS: IntegrationDef[] = [
 			"Create an integration at notion.so/my-integrations and copy the secret",
 		mcpServerName: "notion",
 		mcpCommand: "npx",
-		mcpArgs: ["-y", "@notionhq/mcp-server-notion"],
+		mcpArgs: ["-y", "@notionhq/notion-mcp-server"],
 	},
 	{
 		id: "google",
@@ -91,6 +94,8 @@ export const INTEGRATIONS: IntegrationDef[] = [
 		tokenHint:
 			"Create an API key or Service Account at Google Cloud Console → APIs & Services → Credentials",
 		mcpServerName: "google",
+		mcpCommand: "npx",
+		mcpArgs: ["-y", "@anthropic-ai/mcp-server-google-maps"],
 	},
 	{
 		id: "cloudflare",
@@ -121,5 +126,50 @@ export const INTEGRATIONS: IntegrationDef[] = [
 		mcpServerName: "figma",
 		mcpCommand: "npx",
 		mcpArgs: ["-y", "figma-developer-mcp"],
+	},
+	{
+		id: "slack",
+		name: "Slack",
+		description: "Messages, channels, and team communication",
+		icon: () => h(IconSlack, { size: 22 }),
+		available: true,
+		tokenBased: true,
+		tokenEnvKey: "SLACK_BOT_TOKEN",
+		tokenUrl: "https://api.slack.com/apps",
+		tokenHint:
+			"Create a Slack app → OAuth & Permissions → Bot User OAuth Token (xoxb-...)",
+		mcpServerName: "slack",
+		mcpCommand: "npx",
+		mcpArgs: ["-y", "@modelcontextprotocol/server-slack"],
+	},
+	{
+		id: "linear",
+		name: "Linear",
+		description: "Issues, projects, and team workflows",
+		icon: () => h(IconLinear, { size: 22 }),
+		available: true,
+		tokenBased: true,
+		tokenEnvKey: "LINEAR_API_KEY",
+		tokenUrl: "https://linear.app/settings/account/api",
+		tokenHint:
+			"Generate a personal API key at Linear → Settings → Account → API",
+		mcpServerName: "linear",
+		mcpCommand: "npx",
+		mcpArgs: ["-y", "mcp-linear"],
+	},
+	{
+		id: "aws",
+		name: "AWS",
+		description: "S3, Lambda, DynamoDB, and cloud services",
+		icon: () => h(IconAWS, { size: 22 }),
+		available: true,
+		tokenBased: true,
+		tokenEnvKey: "AWS_ACCESS_KEY_ID",
+		tokenUrl: "https://console.aws.amazon.com/iam/home#/security_credentials",
+		tokenHint:
+			"Create an access key at IAM → Security Credentials → Access Keys. Also set AWS_SECRET_ACCESS_KEY and AWS_REGION in Environment tab.",
+		mcpServerName: "aws",
+		mcpCommand: "npx",
+		mcpArgs: ["-y", "aws-mcp"],
 	},
 ];

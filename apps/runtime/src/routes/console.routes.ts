@@ -73,7 +73,6 @@ router.post(
 		const extraArgs: string[] = [];
 		const extraEnv: Record<string, string> = {};
 		if (enableTeams) {
-			extraArgs.push("--teammate-mode", "tmux");
 			extraEnv.CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS = "1";
 		}
 		// Append user-provided extra args with blocklist for dangerous flags

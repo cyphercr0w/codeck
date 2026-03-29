@@ -348,17 +348,6 @@ function _createConsoleSessionInner(
 		args.push(...opts.extraArgs);
 	}
 
-	// Agent Teams: if the env var is set (globally or per-session) and
-	// --teammate-mode is not already in args, add it automatically.
-	const agentTeamsEnv = finalEnv.CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS;
-	console.log(
-		`[Console] Agent Teams check: env=${agentTeamsEnv}, hasFlag=${args.includes("--teammate-mode")}, processEnv=${process.env.CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS}`,
-	);
-	if (agentTeamsEnv === "1" && !args.includes("--teammate-mode")) {
-		args.push("--teammate-mode", "tmux");
-		console.log("[Console] Auto-added --teammate-mode tmux");
-	}
-
 	// Inject memory context into workspace CLAUDE.md before spawning
 	let contextStats: ContextInjectionStats | null = null;
 	try {
@@ -369,54 +358,47 @@ function _createConsoleSessionInner(
 		);
 	}
 
-	// If Agent Teams is enabled, inject instructions via --append-system-prompt
-	// so the agent knows how to use teams from the very first message.
-	// Using CLI flag instead of sidecar because the sidecar hook only fires once
-	// and may have already been consumed before teams context was appended.
-	if (finalEnv.CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS === "1") {
-		const teamsPrompt = [
-			"## Agent Teams — ENABLED (use by default)",
-			"",
-			"You have --teammate-mode tmux. You MUST use teams for any task involving multiple steps, files, or concerns.",
-			"",
-			"### When to use teams (ALWAYS for non-trivial work)",
-			"- Any implementation touching 2+ files → spawn teammates",
-			"- Bug fix + review → implementer + reviewer",
-			"- Feature work → planner + implementer + reviewer",
-			"- You are the LEADER. You plan, delegate, coordinate, and communicate with the user. Teammates EXECUTE.",
-			"",
-			"### Workflow",
-			"1. TeamCreate — create a team",
-			"2. TaskCreate — break work into tasks with descriptions",
-			"3. TaskUpdate — set dependencies between tasks",
-			"4. Agent — spawn teammates with team_name, name, and model: 'sonnet' (ALWAYS sonnet for teammates)",
-			"5. SendMessage — communicate with teammates by name",
-			"6. Monitor progress via TaskList and teammate messages",
-			"7. Shutdown teammates when done: SendMessage with {type: 'shutdown_request'}",
-			"",
-			"### Rules",
-			"- Teammates ALWAYS use Sonnet model (never Opus — too slow)",
-			"- You orchestrate, teammates execute. Don't implement yourself.",
-			"- After implementation, ALWAYS spawn a reviewer teammate",
-			"- Each teammate claims tasks before starting and marks them completed when done",
-			"",
-			"### CRITICAL — Context passing",
-			"When spawning a teammate, include ALL relevant context in their prompt:",
-			"- File paths they need to read/edit",
-			"- What was already decided or researched (don't make them re-investigate)",
-			"- Specific instructions: what to do, what NOT to change, what to verify",
-			"- The teammate starts from ZERO — they have no access to your conversation",
-			"- Think of it as writing a complete task brief for a new hire",
-			"- Bad: 'fix the modal' — Good: 'In /workspace/codeck/apps/web/src/components/Modal.tsx, the useEffect on line 106 has [onCancel] as dependency causing a loop. Change to useRef pattern.'",
-			"",
-			"### Progress reporting",
-			"The user can see teammate terminals in the UI. But they can't see your internal coordination.",
-			"After spawning teammates, briefly tell the user what each one is doing.",
-			"When teammates report back, summarize their findings/changes to the user.",
-			"Don't go silent for long — the user needs to know what's happening.",
-		].join("\n");
-		args.push("--append-system-prompt", teamsPrompt);
-	}
+	// Inject Agent Teams instructions via --append-system-prompt so the agent
+	// coordinates teams from the first message without needing to be told.
+	const teamsPrompt = [
+		"## You are the LEADER of an Agent Team system.",
+		"",
+		"You do NOT implement code yourself. You are a coordinator. Your job is to:",
+		"1. Understand what the user wants",
+		"2. Break it into tasks",
+		"3. Spawn specialized teammates (sub-agents) to execute each task",
+		"4. Monitor their progress and report back to the user",
+		"5. Review the results and iterate if needed",
+		"",
+		"### ALWAYS use teams for non-trivial work",
+		"- Any task touching 2+ files → spawn teammates",
+		"- Bug fix → implementer + reviewer",
+		"- Feature → planner + implementer + reviewer",
+		"- Research → exploration agent",
+		"- If it can be parallelized, parallelize it.",
+		"",
+		"### How to coordinate",
+		"1. TeamCreate — create a team (once per task group)",
+		"2. TaskCreate — define tasks with clear descriptions",
+		"3. Agent — spawn teammates with team_name, name, and model: 'sonnet'",
+		"   Each teammate gets an ISOLATED context. They know NOTHING about your conversation.",
+		"   You MUST give them everything they need in their prompt:",
+		"   - Exact file paths to read/edit",
+		"   - What was decided (don't make them re-research)",
+		"   - What to do, what NOT to change, what to verify",
+		"   - Think of it as a complete task brief for a new hire",
+		"4. SendMessage — talk to teammates by name",
+		"5. TaskList — check progress",
+		"6. When done: SendMessage with {type: 'shutdown_request'} to each teammate",
+		"",
+		"### Rules",
+		"- Teammates ALWAYS use model: 'sonnet' (never Opus — too slow/expensive)",
+		"- ALWAYS spawn a reviewer after implementation work",
+		"- After spawning teammates, tell the user what each one is doing",
+		"- When teammates report back, summarize findings to the user",
+		"- Never go silent — the user needs to know what's happening",
+	].join("\n");
+	args.push("--append-system-prompt", teamsPrompt);
 
 	const binary = getValidAgentBinary();
 	console.log(
@@ -441,7 +423,6 @@ function _createConsoleSessionInner(
 	}
 
 	const name = workDir.split("/").pop() || workDir;
-	const teamsEnabled = finalEnv.CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS === "1";
 	const session: ConsoleSession = {
 		id,
 		type: opts.sessionType || "agent",
@@ -454,10 +435,8 @@ function _createConsoleSessionInner(
 		attached: false,
 	};
 
-	// Start teammate pane watcher for teams-enabled sessions
-	if (teamsEnabled) {
-		startTeammateWatcher(id, pty.pid);
-	}
+	// Start teammate pane watcher for all sessions (teams always enabled)
+	startTeammateWatcher(id, pty.pid);
 
 	// Set or detect conversation ID for agent sessions
 	if (opts.conversationId) {

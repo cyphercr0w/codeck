@@ -17,7 +17,10 @@ interface NewProjectModalProps {
 	/** If set, skip step 1 and open directly on step 2 with this dir */
 	initialDir?: string;
 	onCancel: () => void;
-	onConfirm: (dir: string, options: { command: string }) => void;
+	onConfirm: (
+		dir: string,
+		options: { command: string; enableTeams: boolean },
+	) => void;
 }
 
 /** Known safe flags that users can type in the params input */
@@ -70,17 +73,18 @@ const PREFS_KEY_PREFIX = "codeck_launch_prefs_";
 function loadLaunchPrefs(dir: string): {
 	resume: boolean;
 	continue_: boolean;
+	teams: boolean;
 } {
 	try {
 		const raw = localStorage.getItem(PREFS_KEY_PREFIX + dir);
 		if (raw) return JSON.parse(raw);
 	} catch {}
-	return { resume: false, continue_: false };
+	return { resume: false, continue_: false, teams: false };
 }
 
 function saveLaunchPrefs(
 	dir: string,
-	prefs: { resume: boolean; continue_: boolean },
+	prefs: { resume: boolean; continue_: boolean; teams: boolean },
 ): void {
 	try {
 		localStorage.setItem(PREFS_KEY_PREFIX + dir, JSON.stringify(prefs));
@@ -138,6 +142,7 @@ export function NewProjectModal({
 	const urlRef = useRef<HTMLInputElement>(null);
 	const commandRef = useRef<HTMLInputElement>(null);
 	const [commandEditable, setCommandEditable] = useState(false);
+	const [teamsEnabled, setTeamsEnabled] = useState(false);
 
 	// The resolved directory path for step 2
 	const [resolvedDir, setResolvedDir] = useState("");
@@ -263,7 +268,7 @@ export function NewProjectModal({
 		let initialParams = "";
 		if (prefs.resume) initialParams += " --resume";
 		if (prefs.continue_) initialParams += " --continue";
-		// Teams are always enabled via backend --append-system-prompt
+		setTeamsEnabled(prefs.teams ?? false);
 		setParams(initialParams.trim());
 		setParamError("");
 		setCanResume(false);
@@ -342,9 +347,10 @@ export function NewProjectModal({
 		saveLaunchPrefs(resolvedDir, {
 			resume: currentFlags.resume,
 			continue_: currentFlags.continueFlag,
+			teams: teamsEnabled,
 		});
 		const fullCommand = params.trim() ? `claude ${params.trim()}` : "claude";
-		onConfirm(resolvedDir, { command: fullCommand });
+		onConfirm(resolvedDir, { command: fullCommand, enableTeams: teamsEnabled });
 	}
 
 	function handleBack() {
@@ -684,7 +690,28 @@ export function NewProjectModal({
 								</>
 							)}
 
-							{/* Agent Teams always enabled via backend */}
+							<div
+								class="npm-launch-subtitle"
+								style="margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border-color, #333)"
+							>
+								Mode
+							</div>
+							<label class="npm-checkbox">
+								<input
+									type="checkbox"
+									checked={teamsEnabled}
+									onChange={(e) =>
+										setTeamsEnabled((e.target as HTMLInputElement).checked)
+									}
+								/>
+								<span>Agent Teams</span>
+								<span
+									class="npm-flag"
+									style={{ opacity: 0.6, fontSize: "11px" }}
+								>
+									leader + sub-agents
+								</span>
+							</label>
 						</div>
 
 						{/* Command input with locked "claude" prefix */}

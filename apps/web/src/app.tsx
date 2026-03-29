@@ -602,26 +602,13 @@ export function App() {
 		const tokens = options.command.trim().split(/\s+/);
 		const hasResume = tokens.includes("--resume");
 		const hasContinue = tokens.includes("--continue");
-		const hasTeams =
-			tokens.includes("--teammate-mode") &&
-			tokens[tokens.indexOf("--teammate-mode") + 1] === "tmux";
 
-		// Collect extra args (anything beyond claude and the known flags)
-		const knownFlags = new Set([
-			"claude",
-			"--resume",
-			"--continue",
-			"--teammate-mode",
-		]);
-		// Build extraArgs from unknown tokens, preserving order
+		// Collect extra args (anything beyond "claude" and known flags)
+		const knownFlags = new Set(["claude", "--resume", "--continue"]);
 		const extraArgs: string[] = [];
 		for (let i = 0; i < tokens.length; i++) {
 			const t = tokens[i];
-			if (knownFlags.has(t)) {
-				// Skip "tmux" only when it follows --teammate-mode
-				if (t === "--teammate-mode" && tokens[i + 1] === "tmux") i++;
-				continue;
-			}
+			if (knownFlags.has(t)) continue;
 			extraArgs.push(t);
 		}
 
@@ -646,7 +633,6 @@ export function App() {
 				body: JSON.stringify({
 					cwd: dir,
 					resume: hasResume || hasContinue,
-					enableTeams: hasTeams,
 					useContinue: hasContinue,
 					extraArgs: extraArgs.length > 0 ? extraArgs : undefined,
 				}),

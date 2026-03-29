@@ -24,7 +24,6 @@ interface NewProjectModalProps {
 const ALLOWED_FLAGS = new Set([
 	"--resume",
 	"--continue",
-	"--teammate-mode",
 	"--verbose",
 	"--debug",
 ]);
@@ -47,15 +46,11 @@ const BLOCKED_FLAGS = new Set([
 function parseCommandFlags(params: string): {
 	resume: boolean;
 	continueFlag: boolean;
-	teams: boolean;
 } {
 	const tokens = params.trim().split(/\s+/).filter(Boolean);
 	return {
 		resume: tokens.includes("--resume"),
 		continueFlag: tokens.includes("--continue"),
-		teams:
-			tokens.includes("--teammate-mode") &&
-			tokens[tokens.indexOf("--teammate-mode") + 1] === "tmux",
 	};
 }
 
@@ -70,17 +65,23 @@ function validateParams(params: string): string {
 	return "";
 }
 
-const PREFS_KEY_PREFIX = 'codeck_launch_prefs_';
+const PREFS_KEY_PREFIX = "codeck_launch_prefs_";
 
-function loadLaunchPrefs(dir: string): { resume: boolean; continue_: boolean; teams: boolean } {
+function loadLaunchPrefs(dir: string): {
+	resume: boolean;
+	continue_: boolean;
+} {
 	try {
 		const raw = localStorage.getItem(PREFS_KEY_PREFIX + dir);
 		if (raw) return JSON.parse(raw);
 	} catch {}
-	return { resume: false, continue_: false, teams: false };
+	return { resume: false, continue_: false };
 }
 
-function saveLaunchPrefs(dir: string, prefs: { resume: boolean; continue_: boolean; teams: boolean }): void {
+function saveLaunchPrefs(
+	dir: string,
+	prefs: { resume: boolean; continue_: boolean },
+): void {
 	try {
 		localStorage.setItem(PREFS_KEY_PREFIX + dir, JSON.stringify(prefs));
 	} catch {}
@@ -97,22 +98,11 @@ function toggleFlag(
 
 	if (removeFlags) {
 		for (const rf of removeFlags) {
-			if (rf === "--teammate-mode") {
-				cmd = cmd.replace(/\s*--teammate-mode\s+\S+/, "");
-			} else {
-				cmd = cmd.replace(
-					new RegExp(`\\s*${rf.replace(/-/g, "\\-")}`, "g"),
-					"",
-				);
-			}
+			cmd = cmd.replace(new RegExp(`\\s*${rf.replace(/-/g, "\\-")}`, "g"), "");
 		}
 	}
 
-	if (flag === "--teammate-mode tmux") {
-		cmd = cmd.replace(/\s*--teammate-mode\s+tmux/, "");
-	} else {
-		cmd = cmd.replace(new RegExp(`\\s*${flag.replace(/-/g, "\\-")}`, "g"), "");
-	}
+	cmd = cmd.replace(new RegExp(`\\s*${flag.replace(/-/g, "\\-")}`, "g"), "");
 
 	if (enabled) {
 		cmd = cmd.trimEnd() + " " + flag;
@@ -144,10 +134,10 @@ export function NewProjectModal({
 	const [sshConfigured, setSshConfigured] = useState(false);
 	const [params, setParams] = useState("");
 	const [paramError, setParamError] = useState("");
-	const [teamsTooltip, setTeamsTooltip] = useState(false);
 	const nameRef = useRef<HTMLInputElement>(null);
 	const urlRef = useRef<HTMLInputElement>(null);
 	const commandRef = useRef<HTMLInputElement>(null);
+	const [commandEditable, setCommandEditable] = useState(false);
 
 	// The resolved directory path for step 2
 	const [resolvedDir, setResolvedDir] = useState("");
@@ -170,7 +160,7 @@ export function NewProjectModal({
 			setError("");
 			setParams("");
 			setParamError("");
-			setTeamsTooltip(false);
+			setCommandEditable(false);
 			loadDirs();
 			checkSshStatus();
 
@@ -215,8 +205,6 @@ export function NewProjectModal({
 		if (tab === "create") nameRef.current?.focus();
 		if (tab === "clone") urlRef.current?.focus();
 	}, [tab]);
-
-
 
 	async function loadDirs() {
 		setDirs([]);
@@ -272,10 +260,10 @@ export function NewProjectModal({
 	async function advanceToStep2(dir: string) {
 		setResolvedDir(dir);
 		const prefs = loadLaunchPrefs(dir);
-		let initialParams = '';
-		if (prefs.resume) initialParams += ' --resume';
-		if (prefs.continue_) initialParams += ' --continue';
-		if (prefs.teams) initialParams += ' --teammate-mode tmux';
+		let initialParams = "";
+		if (prefs.resume) initialParams += " --resume";
+		if (prefs.continue_) initialParams += " --continue";
+		// Teams are always enabled via backend --append-system-prompt
 		setParams(initialParams.trim());
 		setParamError("");
 		setCanResume(false);
@@ -351,7 +339,10 @@ export function NewProjectModal({
 
 	function handleStep2Submit() {
 		const currentFlags = parseCommandFlags(params);
-		saveLaunchPrefs(resolvedDir, { resume: currentFlags.resume, continue_: currentFlags.continueFlag, teams: currentFlags.teams });
+		saveLaunchPrefs(resolvedDir, {
+			resume: currentFlags.resume,
+			continue_: currentFlags.continueFlag,
+		});
 		const fullCommand = params.trim() ? `claude ${params.trim()}` : "claude";
 		onConfirm(resolvedDir, { command: fullCommand });
 	}
@@ -380,10 +371,6 @@ export function NewProjectModal({
 
 	function handleContinueToggle(checked: boolean) {
 		setParams(toggleFlag(params, "--continue", checked, ["--resume"]));
-	}
-
-	function handleTeamsToggle(checked: boolean) {
-		setParams(toggleFlag(params, "--teammate-mode tmux", checked));
 	}
 
 	function handleParamsInput(value: string) {
@@ -664,78 +651,84 @@ export function NewProjectModal({
 							<div class="npm-launch-title">Launch options</div>
 
 							{canResume && (
-						<>
-						<div class="npm-launch-subtitle">Session</div>
-														<div role="group" aria-label="Conversation resume mode">
-									<label class="npm-checkbox">
-										<input
-											type="checkbox"
-								checked={flags.resume}
-								onChange={(e) => handleResumeToggle((e.target as HTMLInputElement).checked)}
-										/>
-										<span>Resume previous conversation</span>
-										<span class="npm-flag">--resume</span>
-									</label>
-									<label class="npm-checkbox">
-										<input
-											type="checkbox"
-								checked={flags.continueFlag}
-								onChange={(e) => handleContinueToggle((e.target as HTMLInputElement).checked)}
-										/>
-										<span>Continue most recent conversation</span>
-										<span class="npm-flag">--continue</span>
-									</label>
-								</div>
-						</>
-						)}
-
-						<div class="npm-launch-subtitle" style="margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border-color, #333)">Mode</div>
-						<label class="npm-checkbox">
-								<input
-									type="checkbox"
-									checked={flags.teams}
-									onChange={(e) =>
-										handleTeamsToggle((e.target as HTMLInputElement).checked)
-									}
-								/>
-								<span>Enable Agent Teams</span>
-								<span
-									class="npm-flag npm-flag-experimental"
-									title="Enables multi-agent coordination via tmux panes. Requires tmux installed in the container."
-									role="button"
-									tabIndex={0}
-									aria-expanded={teamsTooltip}
-									onClick={(e) => {
-										e.preventDefault();
-										setTeamsTooltip((v) => !v);
-									}}
-									onKeyDown={(e) => {
-										if (e.key === "Enter" || e.key === " ") {
-											e.preventDefault();
-											setTeamsTooltip((v) => !v);
-										}
-									}}
-								>
-									experimental
-								</span>
-							</label>
-							{teamsTooltip && (
-								<div class="npm-tooltip" role="note">
-									Enables multi-agent coordination via tmux panes. Requires tmux
-									installed in the container.
-								</div>
+								<>
+									<div class="npm-launch-subtitle">Session</div>
+									<div role="group" aria-label="Conversation resume mode">
+										<label class="npm-checkbox">
+											<input
+												type="checkbox"
+												checked={flags.resume}
+												onChange={(e) =>
+													handleResumeToggle(
+														(e.target as HTMLInputElement).checked,
+													)
+												}
+											/>
+											<span>Resume previous conversation</span>
+											<span class="npm-flag">--resume</span>
+										</label>
+										<label class="npm-checkbox">
+											<input
+												type="checkbox"
+												checked={flags.continueFlag}
+												onChange={(e) =>
+													handleContinueToggle(
+														(e.target as HTMLInputElement).checked,
+													)
+												}
+											/>
+											<span>Continue most recent conversation</span>
+											<span class="npm-flag">--continue</span>
+										</label>
+									</div>
+								</>
 							)}
+
+							{/* Agent Teams always enabled via backend */}
 						</div>
 
 						{/* Command input with locked "claude" prefix */}
 						<div style={{ marginBottom: "16px" }}>
-							<label
-								class="npm-label"
-								style={{ marginBottom: "6px", display: "block" }}
+							<div
+								style={{
+									display: "flex",
+									alignItems: "center",
+									justifyContent: "space-between",
+									marginBottom: "6px",
+								}}
 							>
-								Command
-							</label>
-							<div class="npm-command-wrap">
+								<label class="npm-label" style={{ margin: 0 }}>
+									Command
+								</label>
+								<button
+									type="button"
+									class="btn-icon"
+									title={
+										commandEditable ? "Lock command" : "Edit command (advanced)"
+									}
+									onClick={() => {
+										const next = !commandEditable;
+										setCommandEditable(next);
+										if (next) setTimeout(() => commandRef.current?.focus(), 50);
+									}}
+									style={{
+										padding: "2px 6px",
+										fontSize: "12px",
+										opacity: 0.7,
+										background: "none",
+										border: "1px solid var(--border-color, #444)",
+										borderRadius: "4px",
+										cursor: "pointer",
+										color: "var(--text-secondary, #999)",
+									}}
+								>
+									{commandEditable ? "lock" : "edit"}
+								</button>
+							</div>
+							<div
+								class="npm-command-wrap"
+								style={{ opacity: commandEditable ? 1 : 0.6 }}
+							>
 								<span
 									class="npm-command-prefix"
 									title="The 'claude' command is fixed — add flags in the input"
@@ -746,14 +739,16 @@ export function NewProjectModal({
 									ref={commandRef}
 									type="text"
 									class="input"
-									placeholder="additional flags..."
+									placeholder={commandEditable ? "additional flags..." : ""}
 									value={params}
+									disabled={!commandEditable}
 									onInput={(e) =>
 										handleParamsInput((e.target as HTMLInputElement).value)
 									}
 									onKeyDown={(e) => {
 										if (e.key === "Enter" && !paramError) handleStep2Submit();
 									}}
+									style={{ cursor: commandEditable ? "text" : "default" }}
 								/>
 							</div>
 							{paramError && (

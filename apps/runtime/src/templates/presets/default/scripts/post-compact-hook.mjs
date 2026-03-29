@@ -49,12 +49,16 @@ if (existsSync(preCompactPath)) {
 }
 
 // 2. Project-specific memory (PRIORITY — this is what matters)
+// Track whether session-context path memory was injected; if so, skip global MEMORY.md
+// (path memory is distilled from durable memory — injecting both is redundant)
+let sessionContextInjected = false;
 if (isProjectDir) {
   const pathId = computePathId(cwd);
   const pathMemory = join('/workspace/.codeck/memory/paths', pathId, 'MEMORY.md');
   if (existsSync(pathMemory)) {
     const content = readFileSync(pathMemory, 'utf-8');
     sections.push(`<project-memory project="${projectName}">\n${content.slice(0, 3000)}\n</project-memory>`);
+    sessionContextInjected = true; // path memory covers durable memory for this project
   }
 
   // Project-specific daily log
@@ -66,9 +70,12 @@ if (isProjectDir) {
   }
 }
 
-// 3. Global memory — ONLY essential sections (not full dump of all projects)
+// 3. Global memory — inject ONLY if session-context path memory was not found.
+// Dedup logic: path memory (section 2) is the distilled, authoritative source for this
+// project's durable memory. If it exists, global MEMORY.md would repeat the same content.
+// Fall back to global MEMORY.md only when there is no project-specific path memory yet.
 const memoryPath = '/workspace/.codeck/memory/MEMORY.md';
-if (existsSync(memoryPath)) {
+if (!sessionContextInjected && existsSync(memoryPath)) {
   const full = readFileSync(memoryPath, 'utf-8');
   const filtered = filterGlobalMemory(full, projectName);
   if (filtered) {

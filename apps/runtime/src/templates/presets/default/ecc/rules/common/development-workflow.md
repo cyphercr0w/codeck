@@ -36,3 +36,9 @@ The Feature Implementation Workflow describes the development pipeline: research
    - Detailed commit messages
    - Follow conventional commits format
    - See [git-workflow.md](./git-workflow.md) for commit message format and PR process
+
+---
+
+## Iron Law
+
+**All Phases Required — Research, Plan, TDD, Review, Commit. None Skippable.** No change is small enough to skip the pipeline.

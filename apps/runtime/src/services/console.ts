@@ -323,6 +323,7 @@ function _createConsoleSessionInner(
 		...oauthEnv,
 		...(opts.extraEnv || {}),
 		TERM: "xterm-256color",
+		CLAUDE_AUTOCOMPACT_PCT_OVERRIDE: "90",
 		CODECK_SESSION_ID: id, // Must be LAST — prevents oauthEnv from overwriting
 	};
 

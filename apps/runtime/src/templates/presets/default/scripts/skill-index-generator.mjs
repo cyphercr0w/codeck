@@ -2,20 +2,18 @@
 /**
  * Generates a compact skill index at /workspace/.codeck/state/skill-index.md
  *
- * Progressive disclosure: instead of Claude loading full SKILL.md files (some 30KB),
- * this index provides name + description for all 100+ skills in ~5KB. Claude reads
- * the index to find relevant skills, then reads only the specific SKILL.md it needs.
+ * Ultra-compact format: one line per skill grouped by category.
+ * Use `/learn <skill-id>` to load full details.
  *
  * Run on SessionStart or periodically to keep the index fresh.
  */
 
-import { readdirSync, readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs';
+import { readdirSync, existsSync, writeFileSync, mkdirSync } from 'fs';
 import { join } from 'path';
 
 const SKILLS_DIR = '/root/.claude/skills';
 const STATE_DIR = '/workspace/.codeck/state';
 const INDEX_PATH = join(STATE_DIR, 'skill-index.md');
-const MAX_SKILL_SIZE = 4096; // skills larger than this get a summary note
 
 if (!existsSync(STATE_DIR)) mkdirSync(STATE_DIR, { recursive: true });
 
@@ -24,62 +22,45 @@ if (!existsSync(SKILLS_DIR)) {
   process.exit(0);
 }
 
-const skills = [];
-
-for (const dir of readdirSync(SKILLS_DIR).sort()) {
-  const skillMd = join(SKILLS_DIR, dir, 'SKILL.md');
-  if (!existsSync(skillMd)) continue;
-
-  try {
-    const content = readFileSync(skillMd, 'utf-8');
-    const size = content.length;
-
-    // Extract frontmatter
-    let name = dir;
-    let description = '';
-    const fmMatch = content.match(/^---\n([\s\S]*?)\n---/);
-    if (fmMatch) {
-      const fm = fmMatch[1];
-      const nameMatch = fm.match(/^name:\s*(.+)$/m);
-      const descMatch = fm.match(/^description:\s*(.+)$/m);
-      if (nameMatch) name = nameMatch[1].trim();
-      if (descMatch) description = descMatch[1].trim();
-    }
-
-    // If no description in frontmatter, use first non-empty line after frontmatter
-    if (!description) {
-      const afterFm = content.replace(/^---[\s\S]*?---\n*/, '');
-      const firstLine = afterFm.split('\n').find(l => l.trim() && !l.startsWith('#'));
-      if (firstLine) description = firstLine.trim().slice(0, 120);
-    }
-
-    skills.push({
-      id: dir,
-      name,
-      description: description.slice(0, 150),
-      size,
-      large: size > MAX_SKILL_SIZE,
-    });
-  } catch { /* skip broken skills */ }
+// Category inference from skill ID prefix
+function getCategory(id) {
+  if (/^(android|compose-multiplatform|flutter|foundation-models|kotlin|liquid-glass|swift|swiftui)/.test(id)) return 'mobile';
+  if (/^(django|laravel|springboot|jpa|perl)/.test(id)) return 'frameworks';
+  if (/^(cpp|golang|java|python|rust)/.test(id)) return 'languages';
+  if (/^(frontend|nuxt4|nextjs)/.test(id)) return 'frontend';
+  if (/^(backend|api|database|postgres|clickhouse|docker|deployment)/.test(id)) return 'backend';
+  if (/^(agent|agentic|autonomous|claude-devfleet|continuous-agent|dmux|enterprise-agent|eval|ralphinho|team-builder)/.test(id)) return 'agents';
+  if (/^(architecture|blueprint|bun|claude-api|codebase|codeck|configure|context-budget|continuous-learning|cost-aware|data-scraper|deep-research|documentation|exa-search|iterative|mcp|nanoclaw|nutrient|plankton|project-guidelines|prompt|pytorch|regex|rules|search-first|skill|strategic)/.test(id)) return 'tooling';
+  if (/^(ai-first|ai-regression|tdd|e2e|testing|verification|coding-standards|code)/.test(id)) return 'quality';
+  if (/^(security|django-security|laravel-security|perl-security|springboot-security)/.test(id)) return 'security';
+  if (/^(article|content|crosspost|investor|market-research|video|x-api|fal-ai|videodb|visa-doc)/.test(id)) return 'content';
+  if (/^(carrier|customs|energy|inventory|logistics|production-scheduling|quality-nonconformance|returns)/.test(id)) return 'supply-chain';
+  return 'other';
 }
 
-// Generate compact markdown index
+const skillIds = readdirSync(SKILLS_DIR).sort().filter(dir =>
+  existsSync(join(SKILLS_DIR, dir, 'SKILL.md'))
+);
+
+// Group by category
+const grouped = {};
+for (const id of skillIds) {
+  const cat = getCategory(id);
+  if (!grouped[cat]) grouped[cat] = [];
+  grouped[cat].push(id);
+}
+
 const lines = [
   '# Skill Index',
   '',
-  `${skills.length} skills available. Use \`/learn <skill-id>\` to load one.`,
+  `${skillIds.length} skills. Use \`/learn <skill-id>\` to load full details.`,
   '',
-  '| Skill | Description | Size |',
-  '|-------|-------------|------|',
 ];
 
-for (const s of skills) {
-  const sizeLabel = s.large ? `${Math.round(s.size / 1024)}KB` : `${s.size}B`;
-  lines.push(`| ${s.id} | ${s.description} | ${sizeLabel} |`);
+for (const cat of Object.keys(grouped).sort()) {
+  lines.push(`**${cat}:** ${grouped[cat].join(', ')}`);
+  lines.push('');
 }
 
-lines.push('');
-lines.push(`*Generated: ${new Date().toISOString().slice(0, 19)}*`);
-
 writeFileSync(INDEX_PATH, lines.join('\n'));
-console.error(`[SkillIndex] Generated index: ${skills.length} skills, ${skills.filter(s => s.large).length} large (>4KB)`);
+console.error(`[SkillIndex] Generated compact index: ${skillIds.length} skills in ${Object.keys(grouped).length} categories`);

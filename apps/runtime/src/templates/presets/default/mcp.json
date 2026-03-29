@@ -26,14 +26,14 @@
 			"command": "npx",
 			"args": ["-y", "@magicuidesign/mcp@latest"],
 			"description": "Magic UI components"
-		},
+		}
+	},
+	"_disabledMcpServers": {
 		"token-optimizer": {
 			"command": "npx",
 			"args": ["-y", "token-optimizer-mcp"],
 			"description": "Token optimization via content deduplication and compression"
-		}
-	},
-	"_disabledMcpServers": {
+		},
 		"brave-search": {
 			"command": "npx",
 			"args": ["-y", "@anthropic-ai/mcp-server-brave-search"],

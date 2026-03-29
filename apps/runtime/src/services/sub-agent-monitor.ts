@@ -1,5 +1,5 @@
 /**
- * Team Monitor — captures output from Claude Code native teammate tmux panes
+ * Sub-Agent Monitor — captures output from Claude Code native teammate tmux panes
  * and broadcasts it via WebSocket so the frontend can show real-time feedback.
  *
  * Detection: looks for tmux sockets matching `claude-swarm-*` in /tmp/tmux-0/.
@@ -38,7 +38,7 @@ async function findSwarmSocket(): Promise<string | null> {
 				await execFileAsync("tmux", ["-L", entry, "list-sessions"], {
 					timeout: 2000,
 				});
-				console.log(`[TeamMonitor] Socket found and alive: ${entry}`);
+				console.log(`[SubAgentMonitor] Socket found and alive: ${entry}`);
 				return entry;
 			} catch {
 				// stale socket — skip
@@ -167,7 +167,7 @@ async function pollPanes(): Promise<void> {
 			return;
 		}
 		console.log(
-			`[TeamMonitor] Panes listed: ${panes.map((p) => `${p.index}:${p.title}`).join(", ")}`,
+			`[SubAgentMonitor] Panes listed: ${panes.map((p) => `${p.index}:${p.title}`).join(", ")}`,
 		);
 
 		// Prune stale pane entries
@@ -200,15 +200,17 @@ async function pollPanes(): Promise<void> {
 
 				if (meaningful.length > 0) {
 					console.log(
-						`[TeamMonitor] Pane ${pane.index} (${agentName}): ${meaningful.length} new line(s) captured`,
+						`[SubAgentMonitor] Pane ${pane.index} (${agentName}): ${meaningful.length} new line(s) captured`,
 					);
 					broadcast({
-						type: "team:pane:output",
+						type: "subagent:pane:output",
 						paneIndex: pane.index,
 						agentName,
 						lines: meaningful,
 					});
-					console.log(`[TeamMonitor] Broadcast sent for pane ${pane.index}`);
+					console.log(
+						`[SubAgentMonitor] Broadcast sent for pane ${pane.index}`,
+					);
 				}
 			}
 		}
@@ -221,17 +223,17 @@ async function startPolling(socket: string): Promise<void> {
 	if (pollTimer) return;
 	activeSocket = socket;
 	paneStates.clear();
-	console.log(`[TeamMonitor] Started monitoring tmux socket: ${socket}`);
+	console.log(`[SubAgentMonitor] Started monitoring tmux socket: ${socket}`);
 
 	const panes = await listPanes(socket);
 	for (const pane of panes) {
 		const agentName = parseAgentName(pane.title, pane.index);
 		paneStates.set(pane.index, { lines: [], agentName });
-		console.log(`[TeamMonitor] Pane ${pane.index}: ${agentName}`);
+		console.log(`[SubAgentMonitor] Pane ${pane.index}: ${agentName}`);
 	}
 
 	broadcast({
-		type: "team:detected",
+		type: "subagent:detected",
 		socket,
 		panes: panes.map((p) => ({
 			index: p.index,
@@ -250,8 +252,8 @@ function stopPolling(): void {
 		pollTimer = null;
 	}
 	if (activeSocket) {
-		console.log(`[TeamMonitor] Stopped monitoring (session ended)`);
-		broadcast({ type: "team:ended" });
+		console.log(`[SubAgentMonitor] Stopped monitoring (session ended)`);
+		broadcast({ type: "subagent:ended" });
 		activeSocket = null;
 		paneStates.clear();
 	}
@@ -271,16 +273,18 @@ async function detectLoop(): Promise<void> {
 	}
 }
 
-/** Start the team monitor. Call once at server startup. */
-export function startTeamMonitor(): void {
-	console.log("[TeamMonitor] Initialized — watching for claude-swarm sessions");
+/** Start the sub-agent monitor. Call once at server startup. */
+export function startSubAgentMonitor(): void {
+	console.log(
+		"[SubAgentMonitor] Initialized — watching for claude-swarm sessions",
+	);
 	detectTimer = setInterval(detectLoop, DETECT_INTERVAL);
 	// Run immediately
 	detectLoop();
 }
 
-/** Stop the team monitor. Call on shutdown. */
-export function stopTeamMonitor(): void {
+/** Stop the sub-agent monitor. Call on shutdown. */
+export function stopSubAgentMonitor(): void {
 	if (detectTimer) {
 		clearInterval(detectTimer);
 		detectTimer = null;

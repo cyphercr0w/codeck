@@ -44,6 +44,11 @@
 	flex-shrink: 0;
 	overflow-x: auto;
 	-webkit-overflow-scrolling: touch;
+	scrollbar-width: none;
+	-ms-overflow-style: none;
+}
+.ac-tabs::-webkit-scrollbar {
+	display: none;
 }
 
 .ac-tab {
@@ -55,6 +60,7 @@
 	cursor: pointer;
 	border-bottom: 2px solid transparent;
 	white-space: nowrap;
+	flex-shrink: 0;
 	transition:
 		color 0.15s,
 		border-color 0.15s;
@@ -76,7 +82,7 @@
 }
 
 .ac-tab-content {
-	padding: 16px 20px;
+	padding: 20px 20px 16px;
 	display: flex;
 	flex-direction: column;
 	gap: 20px;

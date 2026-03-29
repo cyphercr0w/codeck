@@ -87,12 +87,15 @@ import skillsRoutes from "../routes/skills.routes.js";
 import mcpRoutes from "../routes/mcp.routes.js";
 import hooksRoutes from "../routes/hooks.routes.js";
 import chatRoutes from "../routes/chat.routes.js";
-import yourTeamRoutes from "../routes/your-team.routes.js";
+import subAgentsRoutes from "../routes/sub-agents.routes.js";
 import {
 	initProactiveAgents,
 	shutdownProactiveAgents,
 } from "../services/proactive-agents.js";
-import { startTeamMonitor, stopTeamMonitor } from "../services/team-monitor.js";
+import {
+	startSubAgentMonitor,
+	stopSubAgentMonitor,
+} from "../services/sub-agent-monitor.js";
 import {
 	initConsolidationCron,
 	shutdownConsolidationCron,
@@ -613,7 +616,7 @@ export async function startWebServer(): Promise<void> {
 	app.use("/api/mcp-servers", mcpRoutes);
 	app.use("/api/hooks", hooksRoutes);
 	app.use("/api/chat", chatRoutes);
-	app.use("/api/your-team", yourTeamRoutes);
+	app.use("/api/sub-agents", subAgentsRoutes);
 
 	// Account endpoint
 	app.get("/api/account", (_req, res) => {
@@ -688,7 +691,7 @@ export async function startWebServer(): Promise<void> {
 		saveSessionState("shutdown");
 		stopTokenRefreshMonitor();
 		shutdownProactiveAgents();
-		stopTeamMonitor();
+		stopSubAgentMonitor();
 		shutdownConsolidationCron();
 		shutdownEmbeddings();
 		shutdownSearch();
@@ -752,7 +755,7 @@ export async function startWebServer(): Promise<void> {
 		initProactiveAgents(broadcast);
 		startTokenRefreshMonitor(broadcast);
 		initConsolidationCron();
-		startTeamMonitor();
+		startSubAgentMonitor();
 
 		// Daily session transcript cleanup (remove >30 day old JSONL files)
 		// Run once at startup and then every 24 hours

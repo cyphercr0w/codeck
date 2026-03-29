@@ -58,9 +58,9 @@ const KNOWN_MSG_TYPES = new Set([
 	"chat:response:chunk",
 	"chat:response:complete",
 	"chat:response:error",
-	"team:detected",
-	"team:pane:output",
-	"team:ended",
+	"subagent:detected",
+	"subagent:pane:output",
+	"subagent:ended",
 	"clone:progress",
 ]);
 
@@ -478,8 +478,8 @@ function openWs(wsUrl: string, protocols?: string[]): void {
 						typeof d.error === "string" ? d.error : undefined,
 					);
 				}
-			} else if (msg.type === "team:pane:output") {
-				// Real-time teammate output from tmux pane capture
+			} else if (msg.type === "subagent:pane:output") {
+				// Real-time sub-agent output from tmux pane capture
 				const m = msg as Record<string, unknown>;
 				const agentName =
 					typeof m.agentName === "string" ? m.agentName : "agent";
@@ -493,19 +493,19 @@ function openWs(wsUrl: string, protocols?: string[]): void {
 						});
 					}
 				}
-			} else if (msg.type === "team:detected") {
+			} else if (msg.type === "subagent:detected") {
 				const m = msg as Record<string, unknown>;
 				const panes = Array.isArray(m.panes) ? m.panes : [];
 				const names = panes.map((p: any) => p.name || "agent").join(", ");
 				addLog({
 					type: "info",
-					message: `Team detected: ${panes.length} agents (${names})`,
+					message: `Sub-agents detected: ${panes.length} agents (${names})`,
 					timestamp: Date.now(),
 				});
-			} else if (msg.type === "team:ended") {
+			} else if (msg.type === "subagent:ended") {
 				addLog({
 					type: "info",
-					message: "Team session ended",
+					message: "Sub-agent session ended",
 					timestamp: Date.now(),
 				});
 			} else if (msg.type === "clone:progress") {

@@ -81,37 +81,58 @@
 }
 /* ── Memory Stats ── */
 .mem-stats {
-	display: flex;
-	flex-wrap: wrap;
-	justify-content: space-between;
-	gap: 8px 0;
-	margin-bottom: 8px;
+	display: grid;
+	grid-template-columns: repeat(5, 1fr);
+	gap: 0;
+	margin-bottom: 6px;
+	border: 1px solid var(--border);
+	border-radius: var(--radius);
+	overflow: hidden;
+}
+@media (max-width: 480px) {
+	.mem-stats {
+		grid-template-columns: repeat(3, 1fr);
+	}
+	.mem-stat {
+		border-bottom: 1px solid var(--border);
+	}
+	.mem-stat:nth-child(3n) {
+		border-right: none;
+	}
+	.mem-stat:nth-last-child(-n + 2) {
+		border-bottom: none;
+	}
 }
 .mem-stat {
 	display: flex;
 	flex-direction: column;
 	align-items: center;
-	flex: 1;
 	min-width: 0;
+	padding: 8px 4px;
+	border-right: 1px solid var(--border);
+}
+.mem-stat:last-child {
+	border-right: none;
 }
 .mem-stat-value {
-	font-size: 16px;
+	font-size: 14px;
 	font-weight: 700;
 	font-family: var(--font-mono);
+	color: var(--text-primary);
 }
 .mem-stat-label {
-	font-size: 10px;
+	font-size: 9px;
 	color: var(--text-muted);
 	text-transform: uppercase;
-	letter-spacing: 0.3px;
+	letter-spacing: 0.5px;
+	margin-top: 2px;
 }
 
-/* ── Memory Preset Info ── */
 /* ── Memory Cards (Preset + Migration) ── */
 .mem-card {
 	flex: 1;
 	min-width: 0;
-	padding: 16px;
+	padding: 14px;
 	background: var(--bg-card);
 	border: 1px solid var(--border);
 	border-radius: var(--radius-lg);
@@ -119,12 +140,12 @@
 .mem-card-header {
 	display: flex;
 	align-items: flex-start;
-	gap: 12px;
-	margin-bottom: 14px;
+	gap: 10px;
+	margin-bottom: 12px;
 }
 .mem-card-header > svg {
 	flex-shrink: 0;
-	color: var(--accent);
+	color: var(--text-secondary);
 	margin-top: 2px;
 }
 .mem-card-header-info {
@@ -134,11 +155,11 @@
 	min-width: 0;
 }
 .mem-card-title {
-	font-size: 14px;
+	font-size: 13px;
 	font-weight: 600;
 }
 .mem-card-meta {
-	font-size: 12px;
+	font-size: 11px;
 	color: var(--text-muted);
 }
 .mem-card-actions {
@@ -146,26 +167,40 @@
 	gap: 8px;
 	align-items: center;
 }
+/* Destructive tint for the Reset ghost button inside the preset card */
+.mem-card-actions .btn-ghost {
+	color: var(--error);
+	opacity: 0.7;
+}
+.mem-card-actions .btn-ghost:hover {
+	background: var(--error-subtle);
+	color: var(--error);
+	opacity: 1;
+}
 
 /* ── Footer: secondary sections (memory, preset, migration) ── */
 .mem-footer {
-	margin-top: 24px;
-	padding-top: 16px;
+	margin-top: 48px;
+	padding-top: 20px;
 	border-top: 1px solid var(--border);
-	opacity: 0.65;
-	transition: opacity 0.2s;
+	opacity: 0.55;
+	transition: opacity var(--transition);
 }
 .mem-footer:hover {
 	opacity: 1;
 }
 .mem-footer .ac-section-title {
 	font-size: 12px;
+	color: var(--text-secondary);
+}
+.mem-footer .ac-section-header {
+	margin-bottom: 4px;
 }
 
 /* ── Memory Shortcuts Grid ── */
 .mem-shortcuts {
 	display: grid;
-	grid-template-columns: repeat(2, 1fr);
+	grid-template-columns: repeat(3, 1fr);
 	gap: 10px;
 }
 @media (max-width: 640px) {
@@ -173,38 +208,58 @@
 		grid-template-columns: repeat(2, 1fr);
 	}
 }
+@media (max-width: 420px) {
+	.mem-shortcuts {
+		grid-template-columns: 1fr;
+	}
+}
 .mem-shortcut {
 	display: flex;
 	flex-direction: column;
 	align-items: center;
 	text-align: center;
-	gap: 12px;
-	padding: 20px 24px;
+	gap: 10px;
+	padding: 20px 16px;
 	background: var(--bg-secondary);
 	border: 1px solid var(--border);
-	border-radius: var(--radius);
+	border-radius: var(--radius-lg);
 	cursor: pointer;
-	transition: all 0.15s;
+	transition:
+		background var(--transition),
+		border-color var(--transition),
+		box-shadow var(--transition);
 	font-family: inherit;
 	color: var(--text-primary);
 }
 .mem-shortcut:hover {
 	background: var(--bg-hover);
 	border-color: var(--accent);
+	box-shadow:
+		0 0 0 1px var(--accent-subtle),
+		inset 0 0 0 1px var(--accent-subtle);
+}
+.mem-shortcut:focus-visible {
+	outline: 2px solid var(--accent);
+	outline-offset: 2px;
 }
 .mem-shortcut svg {
 	color: var(--accent);
 	flex-shrink: 0;
+	opacity: 0.85;
+	transition: opacity var(--transition);
+}
+.mem-shortcut:hover svg {
+	opacity: 1;
 }
 .mem-shortcut-title {
-	font-size: 15px;
+	font-size: 13px;
 	font-weight: 600;
 	line-height: 1.2;
 }
 .mem-shortcut-desc {
-	font-size: 12px;
+	font-size: 11px;
 	color: var(--text-muted);
-	line-height: 1.3;
+	line-height: 1.4;
 }
 
 /* ── Quick Input ── */

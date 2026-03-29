@@ -2,7 +2,7 @@ import { useState, useEffect } from "preact/hooks";
 import { apiFetch } from "../api";
 import { IconPlus, IconChevronLeft, IconTrash, IconBot, IconX } from "./Icons";
 import { ConfirmModal } from "./ConfirmModal";
-import "../styles/your-team.css";
+import "../styles/sub-agents.css";
 
 // ── Types ──
 
@@ -234,9 +234,9 @@ function AgentDefEditor({
 		setError(null);
 		try {
 			const safeDesc = description.replace(/\n/g, " ").replace(/---/g, "—");
-				const content = `---\nname: ${agentName}\ndescription: ${safeDesc}\nmodel: ${model}\ntools: ${JSON.stringify(tools)}\n---\n\n${prompt}`;
+			const content = `---\nname: ${agentName}\ndescription: ${safeDesc}\nmodel: ${model}\ntools: ${JSON.stringify(tools)}\n---\n\n${prompt}`;
 			const res = await apiFetch(
-				`/api/your-team/${encodeURIComponent(agentName)}`,
+				`/api/sub-agents/${encodeURIComponent(agentName)}`,
 				{
 					method: "PUT",
 					body: JSON.stringify({ content }),
@@ -365,7 +365,7 @@ function AgentDefEditor({
 
 // ── Main Component ──
 
-export function YourTeamSection() {
+export function SubAgentsSection() {
 	const [agents, setAgents] = useState<AgentDef[]>([]);
 	const [loading, setLoading] = useState(true);
 	const [loadError, setLoadError] = useState<string | null>(null);
@@ -381,7 +381,7 @@ export function YourTeamSection() {
 		setLoading(true);
 		setLoadError(null);
 		try {
-			const res = await apiFetch("/api/your-team");
+			const res = await apiFetch("/api/sub-agents");
 			const data = await res.json();
 			setAgents(data.agents ?? []);
 		} catch {
@@ -393,7 +393,7 @@ export function YourTeamSection() {
 	async function openEditor(name: string) {
 		setFetchingAgent(true);
 		try {
-			const res = await apiFetch(`/api/your-team/${encodeURIComponent(name)}`);
+			const res = await apiFetch(`/api/sub-agents/${encodeURIComponent(name)}`);
 			const data = await res.json();
 			const fm = data.frontmatter ?? {};
 			setEditing({
@@ -412,7 +412,7 @@ export function YourTeamSection() {
 	async function handleDelete(name: string) {
 		setDeleteError(null);
 		try {
-			await apiFetch(`/api/your-team/${encodeURIComponent(name)}`, {
+			await apiFetch(`/api/sub-agents/${encodeURIComponent(name)}`, {
 				method: "DELETE",
 			});
 			setAgents((prev) => prev.filter((a) => a.name !== name));
@@ -448,10 +448,10 @@ export function YourTeamSection() {
 					<div>
 						<div class="home-title">
 							<IconBot size={20} />
-							<span>Your Team</span>
+							<span>Sub-Agents</span>
 						</div>
 						<p class="home-subtitle">
-							Define the agents that make up your team —{" "}
+							Define the agents that make up your sub-agents —{" "}
 							{agents.length > 0
 								? `${agents.length} ${agents.length === 1 ? "agent" : "agents"} configured`
 								: "no agents yet"}
@@ -493,7 +493,7 @@ export function YourTeamSection() {
 						/>
 						<h3>No Agents Yet</h3>
 						<p>
-							Define the agents that will collaborate in your team. Each agent
+							Define the agents that will collaborate as sub-agents. Each agent
 							has a role, model, and set of tools.
 						</p>
 						<button
@@ -504,7 +504,7 @@ export function YourTeamSection() {
 						</button>
 					</div>
 				) : (
-					<div class="your-team-grid">
+					<div class="sub-agents-grid">
 						{agents.map((agent) => (
 							<AgentDefCard
 								key={agent.name}

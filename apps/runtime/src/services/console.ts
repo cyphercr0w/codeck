@@ -6,6 +6,7 @@ import {
 	unlinkSync,
 	renameSync,
 	realpathSync,
+	readdirSync,
 } from "fs";
 import {
 	readdir as readdirAsync,
@@ -360,7 +361,7 @@ function _createConsoleSessionInner(
 
 	// Inject Agent Teams instructions when enabled for this session
 	if (finalEnv.CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS === "1") {
-		const teamsPrompt = [
+		const teamsLines = [
 			"## You are the LEADER of an Agent Team system.",
 			"",
 			"You do NOT implement code yourself. You are a coordinator. Your job is to:",
@@ -397,8 +398,48 @@ function _createConsoleSessionInner(
 			"- After spawning teammates, tell the user what each one is doing",
 			"- When teammates report back, summarize findings to the user",
 			"- Never go silent — the user needs to know what's happening",
-		].join("\n");
-		args.push("--append-system-prompt", teamsPrompt);
+		];
+
+		// Load pre-configured sub-agent definitions so the leader knows what's available
+		const agentsDir = join(process.env.HOME || "/root", ".claude", "agents");
+		try {
+			const agentFiles = readdirSync(agentsDir).filter((f) =>
+				f.endsWith(".md"),
+			);
+			if (agentFiles.length > 0) {
+				const catalog: string[] = [];
+				for (const file of agentFiles) {
+					try {
+						const content = readFileSync(join(agentsDir, file), "utf-8");
+						const fmMatch = content.match(/^---\s*\n([\s\S]*?)\n---/);
+						if (!fmMatch) continue;
+						const fm = fmMatch[1];
+						const nameMatch = fm.match(/^name:\s*(.+)/m);
+						const descMatch = fm.match(/^description:\s*(.+)/m);
+						if (nameMatch) {
+							const name = nameMatch[1].trim();
+							const desc = descMatch ? descMatch[1].trim() : "";
+							catalog.push(`- **${name}**: ${desc}`);
+						}
+					} catch {
+						/* skip unreadable files */
+					}
+				}
+				if (catalog.length > 0) {
+					teamsLines.push(
+						"",
+						"### Pre-configured Sub-Agents",
+						"Use `subagent_type` parameter to spawn these specialized agents. Prefer these over generic agents.",
+						"",
+						...catalog,
+					);
+				}
+			}
+		} catch {
+			/* agents dir not found — skip catalog */
+		}
+
+		args.push("--append-system-prompt", teamsLines.join("\n"));
 	}
 
 	const binary = getValidAgentBinary();

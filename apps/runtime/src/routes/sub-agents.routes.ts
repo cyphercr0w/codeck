@@ -1,5 +1,5 @@
 /**
- * Your Team — Agent Definitions CRUD API
+ * Sub-Agents — Agent Definitions CRUD API
  *
  * Manages agent .md files in ~/.claude/agents/.
  * Each file has optional YAML frontmatter between --- markers.
@@ -72,7 +72,7 @@ async function ensureAgentsDir(): Promise<void> {
 	await mkdir(AGENTS_DIR, { recursive: true });
 }
 
-// GET /api/your-team — list all agents (parsed frontmatter only)
+// GET /api/sub-agents — list all agents (parsed frontmatter only)
 router.get(
 	"/",
 	asyncHandler(async (_req, res) => {
@@ -107,7 +107,7 @@ router.get(
 	}),
 );
 
-// GET /api/your-team/:name — read single agent (content + parsed frontmatter)
+// GET /api/sub-agents/:name — read single agent (content + parsed frontmatter)
 router.get(
 	"/:name",
 	asyncHandler(async (req, res) => {
@@ -136,7 +136,7 @@ router.get(
 	}),
 );
 
-// PUT /api/your-team/:name — create or update agent file
+// PUT /api/sub-agents/:name — create or update agent file
 router.put(
 	"/:name",
 	asyncHandler(async (req, res) => {
@@ -170,7 +170,7 @@ router.put(
 	}),
 );
 
-// DELETE /api/your-team/:name — delete agent file
+// DELETE /api/sub-agents/:name — delete agent file
 router.delete(
 	"/:name",
 	asyncHandler(async (req, res) => {

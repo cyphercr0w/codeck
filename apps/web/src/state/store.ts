@@ -50,7 +50,7 @@ export type Section =
 	| "chat"
 	| "filesystem"
 	| "claude"
-	| "teams"
+	| "subagents"
 	| "agents"
 	| "integrations"
 	| "config"

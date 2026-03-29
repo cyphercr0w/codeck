@@ -179,6 +179,14 @@
 			"dest": "/workspace/.codeck/integrations/cloudflare.md"
 		},
 		{
+			"src": "scripts/task-created-hook.mjs",
+			"dest": "/workspace/.codeck/scripts/task-created-hook.mjs"
+		},
+		{
+			"src": "scripts/stop-failure-hook.mjs",
+			"dest": "/workspace/.codeck/scripts/stop-failure-hook.mjs"
+		},
+		{
 			"src": "scripts/repo-map-generator.mjs",
 			"dest": "/workspace/.codeck/scripts/repo-map-generator.mjs"
 		},

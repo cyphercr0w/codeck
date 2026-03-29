@@ -223,6 +223,17 @@
 		],
 		"PostToolUse": [
 			{
+				"matcher": "TaskCreate",
+				"if": "TaskCreate",
+				"hooks": [
+					{
+						"type": "command",
+						"command": "node /workspace/.codeck/scripts/task-created-hook.mjs"
+					}
+				],
+				"description": "Log task creation to session state for tracking"
+			},
+			{
 				"matcher": "Edit|Write",
 				"if": "Edit OR Write",
 				"hooks": [
@@ -589,6 +600,18 @@
 					}
 				],
 				"description": "Track failed MCP tool calls, mark unhealthy servers, and attempt reconnect"
+			}
+		],
+		"StopFailure": [
+			{
+				"matcher": "",
+				"hooks": [
+					{
+						"type": "command",
+						"command": "node /workspace/.codeck/scripts/stop-failure-hook.mjs"
+					}
+				],
+				"description": "Log API failures for diagnostics"
 			}
 		],
 		"SubagentStart": [

@@ -478,38 +478,49 @@ function extractCommands(entries: unknown[]): Set<string> {
 }
 
 /**
- * Merge preset hooks into an existing settings.json (additive-only).
- * Only adds hooks whose command points to PRESET_HOOK_PREFIX.
- * Never removes hooks, never touches permissions or other fields.
+ * Sync preset hooks with settings.json.
+ * Adds missing preset hooks and removes stale preset-managed hooks
+ * (commands under PRESET_HOOK_PREFIX that are no longer in the template).
+ * User-added hooks (non-preset) are never touched.
  */
 function cleanInvalidStopHooks(): void {
 	const settingsPath = rewritePath("/root/.claude/settings.json");
 	try {
 		if (!existsSync(settingsPath)) return;
 		const settings = JSON.parse(readFileSync(settingsPath, "utf-8"));
-		const stopHooks = settings.hooks?.Stop;
-		if (!Array.isArray(stopHooks)) return;
 
-		const before = stopHooks.length;
-		settings.hooks.Stop = stopHooks.filter(
-			(entry: { hooks?: Array<{ command?: string }> }) => {
-				const hooks = entry.hooks || [];
-				// Remove entries where the command is plain text, not a script path
-				return !hooks.some((h: { command?: string }) => {
-					const cmd = h.command || "";
-					return (
-						!cmd.startsWith("node ") &&
-						!cmd.startsWith("bash ") &&
-						cmd.length > 20
-					);
-				});
-			},
-		);
-		if (settings.hooks.Stop.length < before) {
-			writeFileSync(settingsPath, JSON.stringify(settings, null, "\t"));
-			console.log(
-				`[Preset] Removed ${before - settings.hooks.Stop.length} invalid Stop hook(s)`,
+		// Clean all hook types, not just Stop
+		const hookTypes = ["Stop", "PreToolUse", "PostToolUse"];
+		let totalRemoved = 0;
+
+		for (const hookType of hookTypes) {
+			const hooks = settings.hooks?.[hookType];
+			if (!Array.isArray(hooks)) continue;
+
+			const before = hooks.length;
+			settings.hooks[hookType] = hooks.filter(
+				(entry: { hooks?: Array<{ command?: string }> }) => {
+					const innerHooks = entry.hooks || [];
+					// Keep entries where ALL commands start with a valid executable prefix
+					return innerHooks.every((h: { command?: string }) => {
+						const cmd = (h.command || "").trim();
+						if (!cmd) return false;
+						return (
+							cmd.startsWith("node ") ||
+							cmd.startsWith("bash ") ||
+							cmd.startsWith("sh ") ||
+							cmd.startsWith("python") ||
+							cmd.startsWith("/")
+						);
+					});
+				},
 			);
+			totalRemoved += before - settings.hooks[hookType].length;
+		}
+
+		if (totalRemoved > 0) {
+			writeFileSync(settingsPath, JSON.stringify(settings, null, "\t"));
+			console.log(`[Preset] Removed ${totalRemoved} invalid hook(s)`);
 		}
 	} catch {
 		/* non-fatal */
@@ -581,6 +592,65 @@ function mergePresetHooks(presetDir: string): void {
 			}
 		}
 
+		// Remove stale preset-managed hooks that are no longer in the template
+		// and remove non-executable ghost hooks (plain text commands)
+		let removed = 0;
+		for (const event of Object.keys(current.hooks)) {
+			const entries = current.hooks[event];
+			if (!Array.isArray(entries)) continue;
+
+			// Build set of template commands for this event (rewritten paths)
+			const templateCmds = new Set<string>();
+			const tEntries = templateHooks[event];
+			if (Array.isArray(tEntries)) {
+				for (const te of tEntries) {
+					if (!te || typeof te !== "object") continue;
+					const th = (te as Record<string, unknown>).hooks;
+					if (!Array.isArray(th)) continue;
+					for (const h of th) {
+						if (
+							h &&
+							typeof h === "object" &&
+							typeof (h as Record<string, unknown>).command === "string"
+						) {
+							templateCmds.add(
+								rewritePath((h as Record<string, unknown>).command as string),
+							);
+						}
+					}
+				}
+			}
+
+			const before = entries.length;
+			current.hooks[event] = entries.filter(
+				(entry: { hooks?: Array<{ command?: string }> }) => {
+					const hooks = entry.hooks || [];
+					if (hooks.length === 0) return false;
+
+					for (const h of hooks) {
+						const cmd = (h.command || "").trim();
+						// Remove ghost hooks (plain text, not executable)
+						if (
+							cmd &&
+							!cmd.startsWith("node ") &&
+							!cmd.startsWith("bash ") &&
+							!cmd.startsWith("sh ") &&
+							!cmd.startsWith("python") &&
+							!cmd.startsWith("/")
+						) {
+							return false;
+						}
+						// Remove stale preset-managed hooks no longer in template
+						if (cmd.includes(PRESET_HOOK_PREFIX) && !templateCmds.has(cmd)) {
+							return false;
+						}
+					}
+					return true;
+				},
+			);
+			removed += before - current.hooks[event].length;
+		}
+
 		// Also merge statusLine if present in template and not in current
 		if (template.statusLine && !current.statusLine) {
 			const sl = JSON.parse(JSON.stringify(template.statusLine));
@@ -592,9 +662,11 @@ function mergePresetHooks(presetDir: string): void {
 			console.log(`[Preset]   MERGE statusLine: ${sl.command}`);
 		}
 
-		if (added > 0) {
+		if (added > 0 || removed > 0) {
 			writeFileSync(settingsDest, JSON.stringify(current, null, 2));
-			console.log(`[Preset]   Merged ${added} new hook(s) into settings.json`);
+			if (added > 0) console.log(`[Preset]   Merged ${added} new hook(s)`);
+			if (removed > 0)
+				console.log(`[Preset]   Removed ${removed} stale/invalid hook(s)`);
 		}
 	} catch (e) {
 		console.warn(`[Preset]   Failed to merge hooks:`, (e as Error).message);

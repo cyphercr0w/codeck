@@ -4,6 +4,7 @@ description: Operate autonomous agent loops, monitor progress, and intervene saf
 tools: ["Read", "Grep", "Glob", "Bash", "Edit"]
 model: sonnet
 color: orange
+maxTurns: 10
 ---
 
 You are the loop operator.

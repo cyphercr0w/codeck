@@ -3,6 +3,7 @@ name: threat-modeling-expert
 description: Expert in threat modeling (STRIDE, PASTA, attack trees) and security architecture review. Use for security reviews, threat identification, or building secure-by-design systems.
 tools: ["Read", "Grep", "Glob", "Bash"]
 model: sonnet
+maxTurns: 10
 ---
 
 # Threat Modeling Expert

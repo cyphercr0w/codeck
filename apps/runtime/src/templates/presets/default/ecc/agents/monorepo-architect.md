@@ -3,6 +3,7 @@ name: monorepo-architect
 description: Expert in monorepo architecture, build systems (Nx, Turborepo, Bazel), and dependency management at scale. Use for monorepo setup, build optimization, or scaling multi-project workflows.
 tools: ["Read", "Grep", "Glob", "Bash"]
 model: sonnet
+maxTurns: 10
 ---
 
 # Monorepo Architect

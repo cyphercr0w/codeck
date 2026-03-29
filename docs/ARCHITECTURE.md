@@ -593,23 +593,17 @@ Sessions are saved to disk and auto-restored on container restart via `saveSessi
 
 ## Agent Teams
 
-Agent Teams enable parallel multi-agent collaboration via Claude Code's native `--teammate-mode tmux`. The system creates tmux sessions, detects spawned teammates, and bridges each pane to the existing console/WebSocket infrastructure.
+Agent Teams enable parallel multi-agent collaboration via Claude Code's built-in TeamCreate/Agent/SendMessage tools. When `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1` is set and the "Agent Teams" checkbox is enabled at launch, a system prompt is injected (via `--append-system-prompt`) instructing Claude to act as a team leader — spawning teammates, creating tasks, and coordinating work.
 
-### Launch flow
+### Activation flow
 
 ```
-1. launchTeam(template, prompt)
-    ├── Creates tmux session `team-{execId}` (160×40)
-    ├── OAuth propagation:
-    │   ├── Inline env vars in the leader's shell command
-    │   ├── tmux set-environment -t session (for future teammate panes)
-    │   └── Removes stale ANTHROPIC_API_KEY / CLAUDE_API_KEY from global + session env
-    ├── Starts: claude --teammate-mode tmux --permission-mode acceptEdits
-    ├── waitForClaudeReady()
-    │   └── Polls pane for `❯` prompt (up to 90s)
-    │       └── Auto-handles API key confirmation and interactive prompts
-    ├── Sends team creation prompt via tmux send-keys
-    └── Registers leader pane as virtual console session via TmuxPtyAdapter
+1. User checks "Agent Teams" in the launch modal
+2. Frontend sends enableTeams: true → POST /api/console/create
+3. console.routes.ts sets CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1 in session env
+4. console.ts detects the env var and appends team leader system prompt
+5. Claude uses TeamCreate → TaskCreate → Agent (model: sonnet) to spawn teammates
+6. TeammateWatcher polls for tmux panes and broadcasts events to frontend
 ```
 
 ### Pane watcher

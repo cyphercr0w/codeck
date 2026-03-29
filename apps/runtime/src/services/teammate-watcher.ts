@@ -34,7 +34,7 @@ const POLL_MS = 3000;
 
 /**
  * Start watching for teammate panes for a teams-enabled session.
- * Call this after spawning a PTY with --teammate-mode tmux.
+ * Call this after spawning a PTY with CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1.
  */
 export function startTeammateWatcher(sessionId: string, pid: number): void {
 	if (watchers.has(sessionId)) return;
@@ -172,7 +172,7 @@ function pollPanes(
 
 /**
  * Find tmux session created by a PID (or its children).
- * Claude Code with --teammate-mode tmux creates a session and runs inside it.
+ * Claude Code with Agent Teams enabled creates a tmux session internally.
  */
 function findTmuxSession(pid: number): string | null {
 	try {

@@ -350,9 +350,8 @@ export function checkPresetUpdate(): void {
 	// Merge new hooks from preset template into user settings
 	mergePresetHooks(presetDir);
 
-	// Clean up invalid hooks: remove any Stop hooks whose command contains
-	// plain text instead of a script path (causes "JSON validation failed")
-	cleanInvalidStopHooks();
+	// Note: mergePresetHooks already removes ghost hooks and stale preset-managed
+	// hooks during its bidirectional sync — no separate cleanup step needed.
 
 	// Update installed version in config.json
 	try {
@@ -483,49 +482,6 @@ function extractCommands(entries: unknown[]): Set<string> {
  * (commands under PRESET_HOOK_PREFIX that are no longer in the template).
  * User-added hooks (non-preset) are never touched.
  */
-function cleanInvalidStopHooks(): void {
-	const settingsPath = rewritePath("/root/.claude/settings.json");
-	try {
-		if (!existsSync(settingsPath)) return;
-		const settings = JSON.parse(readFileSync(settingsPath, "utf-8"));
-
-		// Clean all hook types, not just Stop
-		const hookTypes = ["Stop", "PreToolUse", "PostToolUse"];
-		let totalRemoved = 0;
-
-		for (const hookType of hookTypes) {
-			const hooks = settings.hooks?.[hookType];
-			if (!Array.isArray(hooks)) continue;
-
-			const before = hooks.length;
-			settings.hooks[hookType] = hooks.filter(
-				(entry: { hooks?: Array<{ command?: string }> }) => {
-					const innerHooks = entry.hooks || [];
-					// Keep entries where ALL commands start with a valid executable prefix
-					return innerHooks.every((h: { command?: string }) => {
-						const cmd = (h.command || "").trim();
-						if (!cmd) return false;
-						return (
-							cmd.startsWith("node ") ||
-							cmd.startsWith("bash ") ||
-							cmd.startsWith("sh ") ||
-							cmd.startsWith("python") ||
-							cmd.startsWith("/")
-						);
-					});
-				},
-			);
-			totalRemoved += before - settings.hooks[hookType].length;
-		}
-
-		if (totalRemoved > 0) {
-			writeFileSync(settingsPath, JSON.stringify(settings, null, "\t"));
-			console.log(`[Preset] Removed ${totalRemoved} invalid hook(s)`);
-		}
-	} catch {
-		/* non-fatal */
-	}
-}
 
 function mergePresetHooks(presetDir: string): void {
 	const templatePath = join(presetDir, "ecc", "settings.json");
@@ -635,7 +591,8 @@ function mergePresetHooks(presetDir: string): void {
 							!cmd.startsWith("node ") &&
 							!cmd.startsWith("bash ") &&
 							!cmd.startsWith("sh ") &&
-							!cmd.startsWith("python") &&
+							!cmd.startsWith("python ") &&
+							!cmd.startsWith("python3 ") &&
 							!cmd.startsWith("/")
 						) {
 							return false;

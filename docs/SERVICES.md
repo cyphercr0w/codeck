@@ -720,24 +720,9 @@ CRUD for team templates. Teams define parallel agent groups (no sequential trans
 
 ## `services/tmux-bridge.ts` — Agent Teams Orchestration
 
-Launches Claude Code with `--teammate-mode tmux`, detects new tmux panes as teammates spawn, and bridges each pane to the console session infrastructure via `TmuxPtyAdapter`.
+**Note:** The tmux-bridge was the original Agent Teams orchestration layer. It has been superseded by the native TeamCreate/Agent/SendMessage system where Claude Code itself manages teams. The tmux-bridge remains for reference but is no longer the active launch path.
 
-### Exports
-
-- `launchTeam(template, options)` → `TeamExecution` — creates tmux session, starts Claude, sends team prompt
-- `launchAdHocTeam(agents, options)` → `TeamExecution` — launch without saved template
-- `stopTeam(executionId)` → `boolean` — kills tmux session, cleans up sessions
-- `getActiveTeamExecutions()` → `TeamExecution[]`
-
-### Architecture
-
-1. Creates tmux session (`team-{execId}`)
-2. Starts `claude --teammate-mode tmux --permission-mode acceptEdits`
-3. `waitForClaudeReady()` polls pane for `❯` prompt, handles API key confirmation
-4. Sends team creation prompt built from template agents
-5. `startPaneWatcher()` polls `tmux list-panes` every 2s for new teammates
-6. `bridgeNewPane()` creates `TmuxPtyAdapter` + `registerVirtualSession()` per pane
-7. Broadcasts `team:agent:detected` WS events so frontend attaches xterm.js
+The current Agent Teams flow uses `console.ts` → `--append-system-prompt` to inject team leader instructions when `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1` is set. `teammate-watcher.ts` monitors for tmux panes created by Claude's Agent tool.
 
 ---
 

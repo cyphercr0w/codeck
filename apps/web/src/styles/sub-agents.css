@@ -1,0 +1,407 @@
+/* ========== Sub-Agents Section ========== */
+
+.sub-agents-grid {
+	display: grid;
+	grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+	gap: 14px;
+}
+
+/* ── Agent Def Card ── */
+.yt-card {
+	background: var(--bg-card, var(--bg-secondary));
+	border: 1px solid var(--border);
+	border-radius: var(--radius-lg);
+	padding: 16px;
+	cursor: pointer;
+	transition:
+		border-color var(--transition),
+		background var(--transition),
+		box-shadow var(--transition),
+		transform var(--transition);
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+}
+
+.yt-card:hover {
+	border-color: var(--border-light);
+	background: var(--bg-hover);
+	box-shadow:
+		0 4px 20px rgba(0, 0, 0, 0.4),
+		0 1px 4px rgba(99, 102, 241, 0.08);
+	transform: translateY(-2px);
+}
+
+.yt-card-header {
+	display: flex;
+	align-items: flex-start;
+	justify-content: space-between;
+	gap: 8px;
+}
+
+.yt-card-name {
+	font-size: 14px;
+	font-weight: 600;
+	color: var(--text-primary);
+	line-height: 1.3;
+}
+
+.yt-card-desc {
+	font-size: 12px;
+	color: var(--text-secondary);
+	line-height: 1.5;
+	display: -webkit-box;
+	-webkit-line-clamp: 3;
+	-webkit-box-orient: vertical;
+	overflow: hidden;
+	flex: 1;
+	min-height: 2.8em;
+}
+
+.yt-card-meta {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	flex-wrap: wrap;
+	padding-top: 8px;
+	border-top: 1px solid var(--border);
+	margin-top: auto;
+}
+
+.yt-card-actions {
+	display: flex;
+	justify-content: flex-end;
+	padding-top: 8px;
+	border-top: 1px solid var(--border);
+}
+
+/* ── Model Badges ── */
+.badge-model-sonnet {
+	background: var(--info-subtle);
+	color: var(--info);
+}
+
+.badge-model-opus {
+	background: var(--accent-subtle);
+	color: var(--accent);
+}
+
+.badge-model-haiku {
+	background: var(--success-subtle);
+	color: var(--success);
+}
+
+/* ── Edit / Create Form ── */
+.yt-edit {
+	max-width: 720px;
+}
+
+.yt-edit-header {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	margin-bottom: 20px;
+}
+
+.yt-edit-title {
+	font-size: 18px;
+	font-weight: 700;
+	color: var(--text-primary);
+}
+
+/* ── Form inputs — scoped to .yt-edit ── */
+.yt-edit input[type="text"],
+.yt-edit input[type="email"],
+.yt-edit input[type="password"],
+.yt-edit input[type="number"],
+.yt-edit textarea,
+.yt-edit select {
+	width: 100%;
+	background: #1a1a2e;
+	border: 1px solid #333;
+	border-radius: 8px;
+	padding: 10px 14px;
+	font-size: 13px;
+	font-family: var(--font-sans, inherit);
+	color: var(--text-primary);
+	transition:
+		border-color var(--transition),
+		box-shadow var(--transition);
+	box-sizing: border-box;
+	outline: none;
+	-webkit-appearance: none;
+	appearance: none;
+}
+
+.yt-edit input::placeholder,
+.yt-edit textarea::placeholder {
+	color: var(--text-muted);
+}
+
+.yt-edit input:focus,
+.yt-edit textarea:focus,
+.yt-edit select:focus {
+	border-color: var(--accent);
+	box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.15);
+}
+
+.yt-edit textarea {
+	resize: vertical;
+	min-height: 80px;
+	line-height: 1.5;
+}
+
+/* Select — custom arrow */
+.yt-edit select {
+	background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23505060' d='M6 8L1 3h10z'/%3E%3C/svg%3E");
+	background-repeat: no-repeat;
+	background-position: right 12px center;
+	padding-right: 32px;
+	cursor: pointer;
+}
+
+.yt-edit select option {
+	background: #1a1a2e;
+	color: var(--text-primary);
+}
+
+/* ── Form groups ── */
+.yt-edit .form-group {
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+	margin-bottom: 16px;
+}
+
+.yt-edit .form-label {
+	font-size: 13px;
+	font-weight: 600;
+	color: var(--text-muted);
+	letter-spacing: 0.2px;
+}
+
+/* ── Section groups ── */
+.yt-section {
+	margin-bottom: 24px;
+}
+
+.yt-section-heading {
+	font-size: 11px;
+	font-weight: 700;
+	color: var(--text-muted);
+	text-transform: uppercase;
+	letter-spacing: 0.8px;
+	margin-bottom: 12px;
+	padding-bottom: 8px;
+	border-bottom: 1px solid var(--border);
+}
+
+/* ── Prompt textarea — code-editor feel ── */
+.yt-prompt-textarea {
+	width: 100%;
+	min-height: 500px;
+	resize: vertical;
+	font-family: var(--font-mono) !important;
+	font-size: 12px;
+	line-height: 1.6;
+	background: #0d0d1a !important;
+	border: 1px solid #2a2a3a !important;
+	border-radius: 8px;
+	padding: 14px 16px !important;
+	color: var(--text-primary);
+	box-sizing: border-box;
+	outline: none;
+	transition:
+		border-color var(--transition),
+		box-shadow var(--transition);
+}
+
+.yt-prompt-textarea:focus {
+	border-color: var(--accent) !important;
+	box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.12) !important;
+}
+
+/* ── Model pills ── */
+.yt-model-pills {
+	display: flex;
+	gap: 6px;
+	flex-wrap: wrap;
+}
+
+.yt-model-pill {
+	display: inline-flex;
+	align-items: center;
+	gap: 5px;
+	padding: 6px 14px;
+	border: 1px solid var(--border-light);
+	border-radius: 999px;
+	background: var(--bg-tertiary);
+	color: var(--text-secondary);
+	font-size: 12px;
+	font-weight: 500;
+	cursor: pointer;
+	transition:
+		border-color var(--transition),
+		background var(--transition),
+		color var(--transition),
+		box-shadow var(--transition);
+	user-select: none;
+}
+
+.yt-model-pill:hover {
+	border-color: var(--border-light);
+	background: var(--bg-hover);
+	color: var(--text-primary);
+}
+
+/* Sonnet — blue */
+.yt-model-pill.active.sonnet,
+.yt-model-pill[data-model="sonnet"].active {
+	border-color: var(--info);
+	background: var(--info-subtle);
+	color: var(--info);
+	box-shadow: 0 0 0 1px rgba(96, 165, 250, 0.2);
+}
+
+/* Opus — purple/indigo */
+.yt-model-pill.active.opus,
+.yt-model-pill[data-model="opus"].active {
+	border-color: var(--accent);
+	background: var(--accent-subtle);
+	color: var(--accent);
+	box-shadow: 0 0 0 1px rgba(99, 102, 241, 0.2);
+}
+
+/* Haiku — green */
+.yt-model-pill.active.haiku,
+.yt-model-pill[data-model="haiku"].active {
+	border-color: var(--success);
+	background: var(--success-subtle);
+	color: var(--success);
+	box-shadow: 0 0 0 1px rgba(52, 211, 153, 0.2);
+}
+
+/* ── Error box ── */
+.yt-error {
+	display: flex;
+	align-items: flex-start;
+	gap: 10px;
+	padding: 10px 14px;
+	background: var(--error-subtle);
+	border: 1px solid rgba(248, 113, 113, 0.25);
+	border-left: 3px solid var(--error);
+	border-radius: 6px;
+	font-size: 13px;
+	color: var(--error);
+	line-height: 1.4;
+	margin-bottom: 14px;
+}
+
+/* ── Actions row ── */
+.yt-actions {
+	display: flex;
+	align-items: center;
+	justify-content: flex-end;
+	gap: 8px;
+	padding-top: 4px;
+}
+
+/* ── Tools tag input ── */
+.yt-tools-list {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 6px;
+	margin-bottom: 8px;
+}
+
+.yt-tool-tag {
+	display: inline-flex;
+	align-items: center;
+	gap: 4px;
+	padding: 2px 8px 2px 10px;
+	background: var(--bg-tertiary);
+	border: 1px solid var(--border-light);
+	border-radius: 999px;
+	font-size: 12px;
+	color: var(--text-secondary);
+	font-family: var(--font-mono);
+}
+
+.yt-tool-tag-remove {
+	background: none;
+	border: none;
+	cursor: pointer;
+	padding: 0;
+	color: var(--text-muted);
+	display: flex;
+	align-items: center;
+	line-height: 1;
+	transition: color var(--transition);
+}
+
+.yt-tool-tag-remove:hover {
+	color: var(--error);
+}
+
+.yt-tool-add-row {
+	display: flex;
+	gap: 6px;
+}
+
+.yt-tool-add-row input {
+	flex: 1;
+	font-family: var(--font-mono);
+	font-size: 12px;
+}
+
+/* ── Count label ── */
+.yt-count {
+	font-size: 12px;
+	color: var(--text-muted);
+}
+
+/* ── Tools checklist ── */
+.yt-tools-checklist {
+	display: grid;
+	grid-template-columns: repeat(3, 1fr);
+	gap: 6px 12px;
+	margin-bottom: 10px;
+}
+
+.yt-tools-check-item {
+	display: flex;
+	align-items: center;
+	gap: 7px;
+	cursor: pointer;
+	user-select: none;
+}
+
+.yt-tools-check-item input[type="checkbox"] {
+	width: 15px;
+	height: 15px;
+	min-width: 15px;
+	padding: 0;
+	border-radius: 4px;
+	border: 1px solid #333;
+	background: #1a1a2e;
+	accent-color: var(--accent);
+	cursor: pointer;
+}
+
+.yt-tools-check-item label {
+	font-size: 12px;
+	font-family: var(--font-mono);
+	color: var(--text-secondary);
+	cursor: pointer;
+	transition: color var(--transition);
+}
+
+.yt-tools-check-item:has(input:checked) label {
+	color: var(--text-primary);
+}
+
+.yt-tools-custom {
+	margin-top: 8px;
+	padding-top: 8px;
+	border-top: 1px solid var(--border);
+}

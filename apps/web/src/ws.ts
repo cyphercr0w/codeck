@@ -16,9 +16,17 @@ import {
 	updateSubagentOutput,
 	removeSubagent,
 	syncSubagentsFromServer,
-	fetchRecentConversations,
+	fetchRecentFolders,
 	pendingRestoredSessions,
+	previewPort,
+	previewUrl,
+	previewMode,
+	mobilePreviewOpen,
+	isMobile,
+	showToast,
+	addCloneProgress,
 } from "./state/store";
+import { appendToAssistant, completeAssistant } from "./state/chat-store";
 import { apiFetch, getAuthToken } from "./api";
 
 // Known WebSocket message types — reject anything not in this set
@@ -32,7 +40,6 @@ const KNOWN_MSG_TYPES = new Set([
 	"console:error",
 	"console:output",
 	"console:exit",
-	"console:freeze",
 	"console:context_loaded",
 	"context",
 	"agent:update",
@@ -44,7 +51,17 @@ const KNOWN_MSG_TYPES = new Set([
 	"subagent:start",
 	"subagent:output",
 	"subagent:stop",
+	"preview:navigate",
+	"preview:frame",
+	"preview:error",
 	"session:conversationId",
+	"chat:response:chunk",
+	"chat:response:complete",
+	"chat:response:error",
+	"subagent:detected",
+	"subagent:pane:output",
+	"subagent:ended",
+	"clone:progress",
 ]);
 
 /** Runtime validation for incoming WebSocket messages */
@@ -135,6 +152,28 @@ type ExitHandler = (sessionId: string) => void;
 let onOutput: OutputHandler | null = null;
 let onExit: ExitHandler | null = null;
 
+// Preview frame callback (CDP screencast)
+type PreviewFrameHandler = (
+	data: string,
+	metadata: Record<string, unknown>,
+) => void;
+let onPreviewFrame: PreviewFrameHandler | null = null;
+
+export function setPreviewFrameHandler(
+	handler: PreviewFrameHandler | null,
+): void {
+	onPreviewFrame = handler;
+}
+
+type PreviewErrorHandler = (error: string, url: string) => void;
+let onPreviewError: PreviewErrorHandler | null = null;
+
+export function setPreviewErrorHandler(
+	handler: PreviewErrorHandler | null,
+): void {
+	onPreviewError = handler;
+}
+
 export function setTerminalHandlers(
 	output: OutputHandler,
 	exit: ExitHandler,
@@ -177,12 +216,21 @@ export function wsSend(msg: object): void {
 	}
 }
 
+// Pending attach queue — if WS is not open when attachSession is called,
+// the attach message is queued and sent once the connection opens.
+const pendingAttaches = new Set<string>();
+
 /** Send console:attach only once per session per WS connection.
  *  After attaching, flushes any inputs buffered while the WS was down. */
 export function attachSession(sessionId: string): void {
 	if (attachedSessions.has(sessionId)) return;
 	attachedSessions.add(sessionId);
-	wsSend({ type: "console:attach", sessionId });
+	if (ws && ws.readyState === WebSocket.OPEN) {
+		wsSend({ type: "console:attach", sessionId });
+	} else {
+		// WS not ready — queue the attach for when it connects
+		pendingAttaches.add(sessionId);
+	}
 
 	// Flush pending inputs immediately after attach — the server processes
 	// console:attach synchronously and registers the client before reading
@@ -215,6 +263,12 @@ function openWs(wsUrl: string, protocols?: string[]): void {
 			ws!.send(JSON.stringify(msg));
 		}
 		pendingResizes.clear();
+
+		// Flush pending attach messages (sessions created while WS was down)
+		for (const sid of pendingAttaches) {
+			ws!.send(JSON.stringify({ type: "console:attach", sessionId: sid }));
+		}
+		pendingAttaches.clear();
 		// pendingInputs are flushed per-session inside attachSession()
 
 		// Stale connection detector
@@ -223,9 +277,9 @@ function openWs(wsUrl: string, protocols?: string[]): void {
 			if (
 				ws &&
 				ws.readyState === WebSocket.OPEN &&
-				Date.now() - lastMessageAt > 45000
+				Date.now() - lastMessageAt > 60000
 			) {
-				console.warn("[WS] Connection stale (no data in 45s), reconnecting");
+				console.warn("[WS] Connection stale (no data in 60s), reconnecting");
 				ws.close();
 			}
 		}, 10000);
@@ -259,8 +313,8 @@ function openWs(wsUrl: string, protocols?: string[]): void {
 						.catch(() => {
 							/* non-fatal */
 						});
-					// Pre-fetch recent conversations so New Tab opens instantly (force — server state may have changed)
-					fetchRecentConversations(apiFetch, true);
+					// Pre-fetch recent folders so New Tab opens instantly (force — server state may have changed)
+					fetchRecentFolders(apiFetch, true);
 				}
 				if (!msg.data.pendingRestore) {
 					setRestoringPending(false);
@@ -280,7 +334,8 @@ function openWs(wsUrl: string, protocols?: string[]): void {
 					(s: any) =>
 						typeof s.id === "string" &&
 						typeof s.cwd === "string" &&
-						typeof s.name === "string",
+						typeof s.name === "string" &&
+						s.type !== "team-agent", // Team sessions managed by TeamExecutionViewer
 				);
 				// Don't auto-mount — let user choose Resume or Discard
 				if (restored.length > 0) {
@@ -310,23 +365,6 @@ function openWs(wsUrl: string, protocols?: string[]): void {
 					msg.data !== null
 				) {
 					onContextLoaded?.(msg.sessionId, msg.data as ContextLoadedData);
-				}
-			} else if (msg.type === "console:freeze") {
-				// Server detected PTY freeze — log diagnostic info
-				if (typeof msg.sessionId === "string") {
-					const raw = msg as Record<string, unknown>;
-					const dur =
-						typeof raw.durationMs === "number"
-							? Math.round(raw.durationMs / 1000)
-							: "?";
-					const alive = raw.ptyAlive ? "alive" : "DEAD";
-					const lag =
-						typeof raw.eventLoopLagMs === "number" ? raw.eventLoopLagMs : "?";
-					addLog({
-						type: "warn",
-						message: `Terminal freeze: ${dur}s (PTY: ${alive}, event loop lag: ${lag}ms)`,
-						timestamp: Date.now(),
-					});
 				}
 			} else if (msg.type === "console:exit") {
 				if (typeof msg.sessionId === "string") {
@@ -381,6 +419,29 @@ function openWs(wsUrl: string, protocols?: string[]): void {
 					(msg.data as any).duration,
 					(msg.data as any).lastMessage,
 				);
+			} else if (msg.type === "preview:navigate" && msg.data) {
+				// Agent requested a preview — open it
+				const { port, url } = msg.data as { port?: number; url?: string };
+				if (port) {
+					previewPort.value = port;
+					previewUrl.value = url || `localhost:${port}`;
+					if (isMobile.value) {
+						mobilePreviewOpen.value = false; // show indicator, user taps to expand
+					} else {
+						previewMode.value = "split";
+					}
+					showToast(`Preview opened on port ${port}`, "info", 3000);
+				}
+			} else if (msg.type === "preview:frame" && msg.data) {
+				onPreviewFrame?.(
+					msg.data as string,
+					((raw as any).metadata as Record<string, unknown>) || {},
+				);
+			} else if (msg.type === "preview:error") {
+				onPreviewError?.(
+					((raw as any).error as string) || "Unknown error",
+					((raw as any).url as string) || "",
+				);
 			} else if (msg.type === "session:conversationId") {
 				const sid = msg.sessionId as string;
 				const convId = (raw as any).conversationId as string;
@@ -392,6 +453,65 @@ function openWs(wsUrl: string, protocols?: string[]): void {
 						updated[idx] = { ...updated[idx], conversationId: convId };
 						sessions.value = updated;
 					}
+				}
+			} else if (msg.type === "chat:response:chunk" && msg.data) {
+				const d = msg.data as Record<string, unknown>;
+				if (typeof d.chatId === "string" && typeof d.chunk === "string") {
+					appendToAssistant(d.chatId, d.chunk);
+				}
+			} else if (msg.type === "chat:response:error" && msg.data) {
+				// Error during streaming — complete the assistant message with error
+				const d = msg.data as Record<string, unknown>;
+				if (typeof d.chatId === "string") {
+					completeAssistant(
+						d.chatId,
+						1,
+						typeof d.error === "string" ? d.error : "Unknown error",
+					);
+				}
+			} else if (msg.type === "chat:response:complete" && msg.data) {
+				const d = msg.data as Record<string, unknown>;
+				if (typeof d.chatId === "string") {
+					completeAssistant(
+						d.chatId,
+						typeof d.exitCode === "number" ? d.exitCode : 0,
+						typeof d.error === "string" ? d.error : undefined,
+					);
+				}
+			} else if (msg.type === "subagent:pane:output") {
+				// Real-time sub-agent output from tmux pane capture
+				const m = msg as Record<string, unknown>;
+				const agentName =
+					typeof m.agentName === "string" ? m.agentName : "agent";
+				const lines = Array.isArray(m.lines) ? m.lines : [];
+				for (const line of lines) {
+					if (typeof line === "string" && line.trim()) {
+						addLog({
+							type: "info",
+							message: `[${agentName}] ${line.trim()}`,
+							timestamp: Date.now(),
+						});
+					}
+				}
+			} else if (msg.type === "subagent:detected") {
+				const m = msg as Record<string, unknown>;
+				const panes = Array.isArray(m.panes) ? m.panes : [];
+				const names = panes.map((p: any) => p.name || "agent").join(", ");
+				addLog({
+					type: "info",
+					message: `Sub-agents detected: ${panes.length} agents (${names})`,
+					timestamp: Date.now(),
+				});
+			} else if (msg.type === "subagent:ended") {
+				addLog({
+					type: "info",
+					message: "Sub-agent session ended",
+					timestamp: Date.now(),
+				});
+			} else if (msg.type === "clone:progress") {
+				const m = msg as Record<string, unknown>;
+				if (typeof m.line === "string") {
+					addCloneProgress(m.line);
 				}
 			}
 		} catch (err) {

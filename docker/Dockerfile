@@ -44,6 +44,8 @@ EXPOSE 80
 ENV WORKSPACE=/workspace
 ENV CODECK_DIR=/workspace/.codeck
 ENV NODE_OPTIONS="--max-old-space-size=2048"
+ENV CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1
+ENV CLAUDE_AUTOCOMPACT_PCT_OVERRIDE=90
 
 ENTRYPOINT ["/usr/local/bin/init-keyring.sh", "env", "NODE_ENV=production", "node", "apps/runtime/dist/index.js"]
 CMD ["--web"]

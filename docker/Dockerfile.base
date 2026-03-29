@@ -26,6 +26,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     iproute2 \
     dnsutils \
     expect \
+    tmux \
     dbus \
     dbus-x11 \
     gnome-keyring \

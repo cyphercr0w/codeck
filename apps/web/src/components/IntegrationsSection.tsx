@@ -4,7 +4,6 @@ import { showToast } from "../state/store";
 import {
 	IconKey,
 	IconGithub,
-	IconPackage,
 	IconCopy,
 	IconCheck,
 	IconRefresh,
@@ -18,6 +17,9 @@ import {
 	IconGoogle,
 	IconCloudflare,
 	IconFigma,
+	IconSlack,
+	IconLinear,
+	IconAWS,
 } from "./Icons";
 
 // ── Types ──
@@ -52,6 +54,8 @@ interface IntegrationDef {
 	tokenUrl?: string;
 	tokenHint?: string;
 	mcpServerName?: string;
+	mcpCommand?: string;
+	mcpArgs?: string[];
 	// For CLI-based OAuth (device flow)
 	cliAuth?: boolean;
 	cliAuthService?: string;
@@ -77,6 +81,8 @@ const INTEGRATIONS: IntegrationDef[] = [
 		tokenUrl: "https://supabase.com/dashboard/account/tokens",
 		tokenHint: "Generate a token at supabase.com → Account → Access Tokens",
 		mcpServerName: "supabase",
+		mcpCommand: "npx",
+		mcpArgs: ["-y", "@supabase/mcp-server-supabase"],
 	},
 	{
 		id: "vercel",
@@ -85,10 +91,12 @@ const INTEGRATIONS: IntegrationDef[] = [
 		icon: () => <IconVercel size={22} />,
 		available: true,
 		tokenBased: true,
-		tokenEnvKey: "VERCEL_API_KEY",
+		tokenEnvKey: "VERCEL_TOKEN",
 		tokenUrl: "https://vercel.com/account/tokens",
 		tokenHint: "Generate a token at vercel.com → Account → Tokens",
 		mcpServerName: "vercel",
+		mcpCommand: "npx",
+		mcpArgs: ["-y", "vercel-mcp@latest"],
 	},
 	{
 		id: "stripe",
@@ -101,6 +109,8 @@ const INTEGRATIONS: IntegrationDef[] = [
 		tokenUrl: "https://dashboard.stripe.com/apikeys",
 		tokenHint: "Copy your Secret Key from the Stripe Dashboard → API Keys",
 		mcpServerName: "stripe",
+		mcpCommand: "npx",
+		mcpArgs: ["-y", "@stripe/mcp"],
 	},
 	{
 		id: "notion",
@@ -114,6 +124,8 @@ const INTEGRATIONS: IntegrationDef[] = [
 		tokenHint:
 			"Create an integration at notion.so/my-integrations and copy the secret",
 		mcpServerName: "notion",
+		mcpCommand: "npx",
+		mcpArgs: ["-y", "@notionhq/notion-mcp-server"],
 	},
 	{
 		id: "google",
@@ -127,6 +139,8 @@ const INTEGRATIONS: IntegrationDef[] = [
 		tokenHint:
 			"Create an API key or Service Account at Google Cloud Console → APIs & Services → Credentials",
 		mcpServerName: "google",
+		mcpCommand: "npx",
+		mcpArgs: ["-y", "@anthropic-ai/mcp-server-google-maps"],
 	},
 	{
 		id: "cloudflare",
@@ -140,6 +154,8 @@ const INTEGRATIONS: IntegrationDef[] = [
 		tokenHint:
 			"Create an API token at Cloudflare Dashboard → Profile → API Tokens",
 		mcpServerName: "cloudflare",
+		mcpCommand: "npx",
+		mcpArgs: ["-y", "@cloudflare/mcp-server-cloudflare"],
 	},
 	{
 		id: "figma",
@@ -153,6 +169,53 @@ const INTEGRATIONS: IntegrationDef[] = [
 		tokenHint:
 			"Generate a personal access token at Figma → Settings → Personal Access Tokens",
 		mcpServerName: "figma",
+		mcpCommand: "npx",
+		mcpArgs: ["-y", "figma-developer-mcp"],
+	},
+	{
+		id: "slack",
+		name: "Slack",
+		description: "Messages, channels, and team communication",
+		icon: () => <IconSlack size={22} />,
+		available: true,
+		tokenBased: true,
+		tokenEnvKey: "SLACK_BOT_TOKEN",
+		tokenUrl: "https://api.slack.com/apps",
+		tokenHint:
+			"Create a Slack app → OAuth & Permissions → Bot User OAuth Token (xoxb-...)",
+		mcpServerName: "slack",
+		mcpCommand: "npx",
+		mcpArgs: ["-y", "@modelcontextprotocol/server-slack"],
+	},
+	{
+		id: "linear",
+		name: "Linear",
+		description: "Issues, projects, and team workflows",
+		icon: () => <IconLinear size={22} />,
+		available: true,
+		tokenBased: true,
+		tokenEnvKey: "LINEAR_API_KEY",
+		tokenUrl: "https://linear.app/settings/account/api",
+		tokenHint:
+			"Generate a personal API key at Linear → Settings → Account → API",
+		mcpServerName: "linear",
+		mcpCommand: "npx",
+		mcpArgs: ["-y", "mcp-linear"],
+	},
+	{
+		id: "aws",
+		name: "AWS",
+		description: "S3, Lambda, DynamoDB, and cloud services",
+		icon: () => <IconAWS size={22} />,
+		available: true,
+		tokenBased: true,
+		tokenEnvKey: "AWS_ACCESS_KEY_ID",
+		tokenUrl: "https://console.aws.amazon.com/iam/home#/security_credentials",
+		tokenHint:
+			"Create an access key at IAM → Security Credentials → Access Keys. Also set AWS_SECRET_ACCESS_KEY and AWS_REGION in Environment tab.",
+		mcpServerName: "aws",
+		mcpCommand: "npx",
+		mcpArgs: ["-y", "aws-mcp"],
 	},
 ];
 
@@ -341,8 +404,8 @@ function TokenIntegrationDetail({
 				return;
 			}
 
-			// Enable the MCP server if it's disabled
-			if (integ.mcpServerName) {
+			// Create or enable the MCP server
+			if (integ.mcpServerName && integ.mcpCommand) {
 				try {
 					// Check current MCP servers
 					const mcpRes = await apiFetch("/api/mcp-servers");
@@ -353,20 +416,29 @@ function TokenIntegrationDetail({
 					);
 
 					if (server && !server.enabled) {
-						// Enable it
+						// Server exists but is disabled — enable it
 						await apiFetch(
 							`/api/mcp-servers/${encodeURIComponent(integ.mcpServerName!)}/toggle`,
 							{ method: "POST" },
 						);
 					} else if (!server) {
-						// Server doesn't exist yet — add it from disabled list
-						await apiFetch(
-							`/api/mcp-servers/${encodeURIComponent(integ.mcpServerName!)}/toggle`,
-							{ method: "POST" },
-						);
+						// Server doesn't exist — create it with the correct command and env mapping
+						const env: Record<string, string> = {};
+						if (integ.tokenEnvKey) {
+							env[integ.tokenEnvKey] = token.trim();
+						}
+						await apiFetch("/api/mcp-servers", {
+							method: "POST",
+							body: JSON.stringify({
+								name: integ.mcpServerName,
+								command: integ.mcpCommand,
+								args: integ.mcpArgs || [],
+								env,
+							}),
+						});
 					}
 				} catch {
-					/* MCP enable is best-effort */
+					/* MCP setup is best-effort */
 				}
 			}
 
@@ -674,23 +746,36 @@ function GitHubDetail({ onBack }: { onBack: () => void }) {
 		try {
 			const res = await apiFetch("/api/github/login", { method: "POST" });
 			const data = await res.json();
-			if (data.code) {
+			if (data.started || data.code) {
 				setGitHub((prev) => ({
 					...prev,
 					loginInProgress: true,
-					code: data.code,
-					url: data.url,
+					code: data.code ?? prev.code,
+					url: data.url ?? prev.url,
 				}));
-				// Poll for completion
+				// Poll for completion — the code/url arrive asynchronously via status endpoint
 				if (pollRef.current) clearInterval(pollRef.current);
 				pollRef.current = setInterval(async () => {
 					try {
 						const r = await apiFetch("/api/github/login-status");
 						const d = await r.json();
+						// Update code/url as they become available
+						if (d.code || d.url) {
+							setGitHub((prev) => ({
+								...prev,
+								code: d.code ?? prev.code,
+								url: d.url ?? prev.url,
+							}));
+						}
 						if (d.authenticated) {
 							if (pollRef.current) clearInterval(pollRef.current);
 							setGitHub(d);
 							setGhConnecting(false);
+						} else if (!d.inProgress && !d.authenticated) {
+							// Login finished without success
+							if (pollRef.current) clearInterval(pollRef.current);
+							setGhConnecting(false);
+							showToast("GitHub login failed or timed out", "error");
 						}
 					} catch {
 						/* retry */
@@ -704,25 +789,52 @@ function GitHubDetail({ onBack }: { onBack: () => void }) {
 		}
 	}
 
+	async function handleDisconnect() {
+		try {
+			await apiFetch("/api/github/logout", { method: "POST" });
+			setGitHub((prev) => ({
+				...prev,
+				authenticated: false,
+				username: null,
+				email: null,
+			}));
+			showToast("GitHub disconnected", "success");
+		} catch {
+			showToast("Failed to disconnect", "error");
+		}
+	}
+
 	return (
 		<div class="integ-detail">
-			<button class="integ-back" onClick={onBack}>
-				<IconChevronLeft size={14} /> Back to Integrations
-			</button>
+			<div class="integ-detail-topbar">
+				<button class="btn btn-xs btn-ghost" onClick={onBack}>
+					<IconChevronLeft size={12} /> Integrations
+				</button>
+				{github.authenticated && (
+					<button
+						class="btn btn-xs btn-ghost danger"
+						onClick={handleDisconnect}
+					>
+						<IconX size={11} /> Disconnect
+					</button>
+				)}
+			</div>
 
 			<div class="integ-detail-header">
 				<div class="integ-detail-icon">
 					<IconGithub size={28} />
 				</div>
-				<div>
+				<div style="flex: 1">
 					<h3 class="integ-detail-name">GitHub</h3>
 					<p class="integ-detail-desc">
 						SSH keys and account authentication for repositories
 					</p>
 				</div>
-				{github.authenticated && (
-					<span class="badge badge-success">Connected</span>
-				)}
+				<span
+					class={`badge ${github.authenticated ? "badge-success" : "badge-muted"}`}
+				>
+					{github.authenticated ? "Connected" : "Not connected"}
+				</span>
 			</div>
 
 			{/* SSH Section */}

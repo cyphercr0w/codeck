@@ -15,14 +15,21 @@ import {
 	setSessionStatus,
 	clearSessionStatus,
 	claudeUsage,
+	usageStale,
 	contextData,
 	setContextData,
+	showToast,
 	activeSection,
-	recentConversations,
-	fetchRecentConversations,
+	recentFolders,
+	fetchRecentFolders,
 	pendingRestoredSessions,
 	type PendingSession,
+	previewMode,
+	previewPort,
+	mobilePreviewOpen,
 } from "../state/store";
+import { PreviewPanel } from "./PreviewPanel";
+import { MobilePreviewSheet } from "./MobilePreviewSheet";
 import { apiFetch } from "../api";
 import {
 	createTerminal,
@@ -49,7 +56,14 @@ import {
 	setOnContextLoaded,
 	type ContextLoadedData,
 } from "../ws";
-import { IconPlus, IconX, IconShell, IconTerminal, IconRefresh } from "./Icons";
+import {
+	IconPlus,
+	IconX,
+	IconShell,
+	IconTerminal,
+	IconRefresh,
+	IconMonitor,
+} from "./Icons";
 import { MobileTerminalToolbar } from "./MobileTerminalToolbar";
 import { UploadOverlay } from "./UploadOverlay";
 import { SubagentPanel } from "./SubagentPanel";
@@ -68,6 +82,7 @@ function getFileFromDrop(e: DragEvent): File | null {
 interface ClaudeSectionProps {
 	onNewSession: () => void;
 	onNewShell: () => void;
+	onOpenWithDir?: (dir: string) => void;
 }
 
 /**
@@ -107,6 +122,7 @@ function attachSettleRepaint(sessionId: string): void {
 export function ClaudeSection({
 	onNewSession,
 	onNewShell,
+	onOpenWithDir,
 }: ClaudeSectionProps) {
 	const instancesRef = useRef<HTMLDivElement>(null);
 	const [editingTabId, setEditingTabId] = useState<string | null>(null);
@@ -122,7 +138,7 @@ export function ClaudeSection({
 	const [bannerFading, setBannerFading] = useState(false);
 	const [showNewSessionMenu, setShowNewSessionMenu] = useState(false);
 	const [newTabLoading, setNewTabLoading] = useState(false);
-	const recentConvos = recentConversations.value;
+	const recentProjects = recentFolders.value;
 	const sessionList = sessions.value;
 	const activeId = activeSessionId.value;
 
@@ -331,10 +347,23 @@ export function ClaudeSection({
 		prevSessionCount.current = sessionList.length;
 	}, [sessionList.length]);
 
-	// Fetch recent conversations (cached 5 min in store, instant on subsequent views)
+	// Auto-select first session when returning to terminal view with no active selection
+	// BUT not when the user is opening the new-session menu (activeId deliberately null)
+	useEffect(() => {
+		if (
+			!activeId &&
+			sessionList.length > 0 &&
+			!showNewSessionMenu &&
+			!newTabLoading
+		) {
+			setActiveSessionId(sessionList[0].id);
+		}
+	}, [activeId, sessionList.length, showNewSessionMenu, newTabLoading]);
+
+	// Fetch recent folders (cached 5 min in store, instant on subsequent views)
 	useEffect(() => {
 		if (sessionList.length === 0 || showNewSessionMenu) {
-			fetchRecentConversations(apiFetch);
+			fetchRecentFolders(apiFetch);
 		}
 	}, [sessionList.length, showNewSessionMenu]);
 
@@ -473,17 +502,18 @@ export function ClaudeSection({
 		setEditingTabId(null);
 	}
 
-	async function resumeConversation(convId: string, cwd: string) {
+	async function continueInFolder(cwd: string) {
 		if (newTabLoading) return; // prevent double-click
 		setNewTabLoading(true);
 
+		let succeeded = false;
 		// Retry once after a short delay — handles the race where a session was
 		// just destroyed but the server hasn't freed the slot yet.
 		for (let attempt = 0; attempt < 2; attempt++) {
 			try {
-				const res = await apiFetch("/api/console/resume", {
+				const res = await apiFetch("/api/console/continue", {
 					method: "POST",
-					body: JSON.stringify({ conversationId: convId, cwd }),
+					body: JSON.stringify({ cwd }),
 				});
 				const data = await res.json();
 				if (data.sessionId) {
@@ -493,16 +523,18 @@ export function ClaudeSection({
 						cwd: data.cwd,
 						name: data.name || cwd.split("/").pop() || "session",
 						createdAt: Date.now(),
-						conversationId: convId,
 					});
 					setActiveSessionId(data.sessionId);
 					mountTerminalForSession(data.sessionId, data.cwd || cwd, data.name);
-					break; // success
+					succeeded = true;
+					break;
 				}
-				if (data.error && attempt === 0) {
-					// First attempt failed (likely MAX_SESSIONS race) — wait and retry
-					await new Promise((r) => setTimeout(r, 500));
-					continue;
+				if (data.error) {
+					if (attempt === 0) {
+						await new Promise((r) => setTimeout(r, 500));
+						continue;
+					}
+					showToast(data.error, "error");
 				}
 			} catch {
 				if (attempt === 0) {
@@ -510,6 +542,10 @@ export function ClaudeSection({
 					continue;
 				}
 			}
+		}
+
+		if (!succeeded) {
+			showToast("Failed to continue session", "error");
 		}
 
 		setNewTabLoading(false);
@@ -559,330 +595,382 @@ export function ClaudeSection({
 		}
 	}
 
+	// Refit terminal when preview mode changes (container width changes)
+	useEffect(() => {
+		return previewMode.subscribe(() => {
+			const id = activeSessionId.value;
+			if (id && getTerminal(id)) {
+				setTimeout(() => {
+					fitTerminal(id);
+					repaintTerminal(id);
+				}, 200);
+			}
+		});
+	}, []);
+
 	const mobile = isMobile.value;
+	const pMode = previewMode.value;
+	const showPreviewSplit =
+		!mobile && pMode !== "hidden" && pMode !== "full-terminal";
 
 	return (
-		<div class="content-section">
-			<div class={`claude-content${mobile ? " mobile-terminal" : ""}`}>
-				<div class="terminal-tabs">
-					{sessionList.map((s) => (
-						<button
-							key={s.id}
-							class={`terminal-tab${s.id === activeId ? " active" : ""}${s.loading ? " is-loading" : ""}${s.type === "shell" ? " shell" : ""}`}
-							onClick={() => !s.loading && switchToSession(s.id)}
-							title={s.cwd}
-						>
-							{s.loading ? (
-								<span class="terminal-tab-loading">
-									<span class="spinner-sm" />
-								</span>
-							) : editingTabId === s.id ? (
-								<input
-									ref={editInputRef}
-									class="terminal-tab-edit"
-									value={editValue}
-									onInput={(e) =>
-										setEditValue((e.target as HTMLInputElement).value)
-									}
-									onKeyDown={(e) => {
-										if (e.key === "Enter") commitEdit(s.id);
-										if (e.key === "Escape") cancelEdit();
-									}}
-									onBlur={() => commitEdit(s.id)}
-									onClick={(e) => e.stopPropagation()}
-								/>
-							) : (
-								<span
-									onDblClick={(e) => {
-										e.stopPropagation();
-										startEditingTab(s.id, s.name);
-									}}
-								>
-									<span
-										class={`tab-status-dot ${sessionStatus.value[s.id] || "idle"}`}
-									/>
-									{s.type === "shell" && (
-										<span class="tab-shell-badge">
-											<IconShell size={12} />
-										</span>
-									)}
-									{s.name}
-								</span>
-							)}
-							{!s.loading && (
-								<button
-									class="terminal-tab-close"
-									aria-label={`Close ${s.name} session`}
-									onClick={(e) => {
-										e.stopPropagation();
-										closeSession(s.id);
-									}}
-								>
-									<IconX size={12} />
-								</button>
-							)}
-						</button>
-					))}
-					{(showNewSessionMenu || newTabLoading) && (
-						<button
-							class={`terminal-tab${!activeId || newTabLoading ? " active" : ""}`}
-							onClick={() => {
-								if (!newTabLoading) setActiveSessionId(null);
-							}}
-						>
-							{newTabLoading ? (
-								<>
-									<span class="spinner-sm" style={{ flexShrink: 0 }} />
-									<span>Loading</span>
-								</>
-							) : (
-								<span>New Tab</span>
-							)}
-							{!newTabLoading && (
-								<button
-									class="terminal-tab-close"
-									aria-label="Cancel new session"
-									onClick={(e) => {
-										e.stopPropagation();
-										setShowNewSessionMenu(false);
-										const id =
-											sessionList.length > 0
-												? sessionList[sessionList.length - 1].id
-												: null;
-										if (id) {
-											setActiveSessionId(id);
-											requestAnimationFrame(() => {
-												fitTerminal(id);
-												focusTerminal(id);
-											});
+		<div class="content-section terminal-preview-layout">
+			<div
+				class="terminal-side"
+				style={{
+					display: pMode === "full-preview" ? "none" : "flex",
+				}}
+			>
+				<div class={`claude-content${mobile ? " mobile-terminal" : ""}`}>
+					<div class="terminal-tabs">
+						{sessionList.map((s) => (
+							<button
+								key={s.id}
+								class={`terminal-tab${s.id === activeId ? " active" : ""}${s.loading ? " is-loading" : ""}${s.type === "shell" ? " shell" : ""}`}
+								onClick={() => !s.loading && switchToSession(s.id)}
+								title={s.cwd}
+							>
+								{s.loading ? (
+									<span class="terminal-tab-loading">
+										<span class="spinner-sm" />
+									</span>
+								) : editingTabId === s.id ? (
+									<input
+										ref={editInputRef}
+										class="terminal-tab-edit"
+										value={editValue}
+										onInput={(e) =>
+											setEditValue((e.target as HTMLInputElement).value)
 										}
-									}}
-								>
-									<IconX size={12} />
-								</button>
-							)}
-						</button>
-					)}
-					{!showNewSessionMenu && !newTabLoading && (
-						<button
-							class="terminal-tab-new"
-							aria-label="New Session"
-							disabled={sessionList.length >= 5}
-							onClick={() => {
-								setShowNewSessionMenu(true);
-								setActiveSessionId(null);
-							}}
-						>
-							<IconPlus size={14} />
-						</button>
-					)}
-				</div>
-				<div
-					class={`terminal-instances${dragOver ? " drag-over" : ""}`}
-					ref={instancesRef}
-					onClick={handleTerminalTap}
-					onDragOver={handleDragOver}
-					onDragLeave={handleDragLeave}
-					onDrop={handleDrop}
-				>
-					{contextBanner && (
-						<div
-							class={`context-loaded-banner${bannerFading ? " fade-out" : ""}`}
-						>
-							Context loaded: {contextBanner.projectName} &middot;{" "}
-							{contextBanner.kb} KB of memory injected
-						</div>
-					)}
-					{(sessionList.length === 0 ||
-						(showNewSessionMenu && !activeId) ||
-						newTabLoading) &&
-						!restoringPending.value && (
-							<div
-								class="claude-empty"
-								onClick={(e) => {
-									if (e.target === e.currentTarget) {
-										// noop — don't dismiss, user can click X on the tab
-									}
+										onKeyDown={(e) => {
+											if (e.key === "Enter") commitEdit(s.id);
+											if (e.key === "Escape") cancelEdit();
+										}}
+										onBlur={() => commitEdit(s.id)}
+										onClick={(e) => e.stopPropagation()}
+									/>
+								) : (
+									<span
+										onDblClick={(e) => {
+											e.stopPropagation();
+											startEditingTab(s.id, s.name);
+										}}
+									>
+										<span
+											class={`tab-status-dot ${sessionStatus.value[s.id] || "idle"}`}
+										/>
+										{s.type === "shell" && (
+											<span class="tab-shell-badge">
+												<IconShell size={12} />
+											</span>
+										)}
+										{s.name}
+									</span>
+								)}
+								{!s.loading && (
+									<button
+										class="terminal-tab-close"
+										aria-label={`Close ${s.name} session`}
+										onClick={(e) => {
+											e.stopPropagation();
+											closeSession(s.id);
+										}}
+									>
+										<IconX size={12} />
+									</button>
+								)}
+							</button>
+						))}
+						{(showNewSessionMenu || newTabLoading) && (
+							<button
+								class={`terminal-tab${!activeId || newTabLoading ? " active" : ""}`}
+								onClick={() => {
+									if (!newTabLoading) setActiveSessionId(null);
 								}}
 							>
 								{newTabLoading ? (
 									<>
-										<div class="spinner-lg" />
-										<div class="claude-empty-title">Loading session...</div>
+										<span class="spinner-sm" style={{ flexShrink: 0 }} />
+										<span>Loading</span>
 									</>
 								) : (
-									<>
-										<div class="claude-empty-icon">
-											<IconTerminal size={48} />
-										</div>
-										<div class="claude-empty-title">
-											{sessionList.length === 0
-												? "Ready when you are"
-												: "New session"}
-										</div>
-										<div class="claude-empty-desc">
-											{sessionList.length === 0
-												? "Start a new session to begin coding with Claude."
-												: "Choose session type:"}
-										</div>
-										<div class="claude-empty-actions">
-											<button
-												class="claude-empty-btn primary"
-												onClick={() => onNewSession()}
-											>
-												New Agent
-											</button>
-											<button
-												class="claude-empty-btn secondary"
-												onClick={() => onNewShell()}
-											>
-												New Shell
-											</button>
-										</div>
-									</>
+									<span>New Tab</span>
 								)}
-								{recentConvos.length > 0 && !newTabLoading && (
-									<div class="claude-recent-convos">
-										<div class="claude-recent-title">Recent conversations</div>
-										{recentConvos.map((c) => {
-											// Check if this conversation is already open by matching conversationId
-											const openSession = sessionList.find(
-												(s) => s.conversationId === c.id,
-											);
-											return (
-												<button
-													key={c.id}
-													class={`claude-recent-item${openSession ? " open" : ""}`}
-													onClick={() => {
-														if (openSession) {
-															// Switch to the existing tab
-															switchToSession(openSession.id);
-														} else {
-															resumeConversation(c.id, c.cwd);
-														}
-													}}
-												>
-													<span class="claude-recent-text">
-														<span class="claude-recent-project">
-															{c.cwd.split("/").pop() || "workspace"}
-														</span>
-														<span class="claude-recent-date">
-															{new Date(c.mtime).toLocaleString(undefined, {
-																month: "short",
-																day: "numeric",
-																hour: "2-digit",
-																minute: "2-digit",
-															})}
-														</span>
-													</span>
-													<span class="claude-recent-meta">
-														{openSession && (
-															<span class="claude-recent-open-badge">OPEN</span>
-														)}
-													</span>
-												</button>
-											);
-										})}
-									</div>
-								)}
-							</div>
-						)}
-					{activeId &&
-						sessionList.find((s) => s.id === activeId)?.loading &&
-						!getTerminal(activeId) && (
-							<div class="terminal-loading-overlay">
-								<div class="spinner" />
-								<div class="terminal-loading-text">Starting session...</div>
-							</div>
-						)}
-					{/* Pending sessions prompt — user chooses Resume or Discard */}
-					{pendingRestoredSessions.value.length > 0 &&
-						sessionList.length === 0 && (
-							<div class="claude-empty">
-								<div class="claude-empty-icon">
-									<IconRefresh size={48} />
-								</div>
-								<div class="claude-empty-title">Sessions found</div>
-								<div class="claude-empty-desc">
-									You had {pendingRestoredSessions.value.length} terminal
-									{pendingRestoredSessions.value.length > 1 ? "s" : ""} running
-									before the restart.
-								</div>
-								<div class="claude-pending-list">
-									{pendingRestoredSessions.value.map((s: PendingSession) => (
-										<div key={s.id} class="claude-pending-item">
-											<span
-												class={`tab-shell-badge${s.type === "shell" ? "" : " agent"}`}
-											>
-												{s.type === "shell" ? (
-													<IconShell size={12} />
-												) : (
-													<IconTerminal size={12} />
-												)}
-											</span>
-											<span>{s.name}</span>
-											<span class="claude-pending-cwd">{s.cwd}</span>
-										</div>
-									))}
-								</div>
-								<div class="claude-empty-actions">
+								{!newTabLoading && (
 									<button
-										class="claude-empty-btn primary"
-										onClick={() => {
-											const pending = pendingRestoredSessions.value;
-											pendingRestoredSessions.value = [];
-											for (const s of pending) {
-												addSession({
-													id: s.id,
-													type: s.type,
-													cwd: s.cwd,
-													name: s.name,
-													createdAt: Date.now(),
+										class="terminal-tab-close"
+										aria-label="Cancel new session"
+										onClick={(e) => {
+											e.stopPropagation();
+											setShowNewSessionMenu(false);
+											const id =
+												sessionList.length > 0
+													? sessionList[sessionList.length - 1].id
+													: null;
+											if (id) {
+												setActiveSessionId(id);
+												requestAnimationFrame(() => {
+													fitTerminal(id);
+													focusTerminal(id);
 												});
 											}
-											if (pending.length > 0) setActiveSessionId(pending[0].id);
 										}}
 									>
-										Resume{" "}
-										{pendingRestoredSessions.value.length > 1
-											? "all"
-											: "session"}
+										<IconX size={12} />
 									</button>
-									<button
-										class="claude-empty-btn secondary"
-										onClick={() => {
-											// Discard — tell server to destroy the pending sessions
-											for (const s of pendingRestoredSessions.value) {
-												apiFetch("/api/console/destroy", {
-													method: "POST",
-													body: JSON.stringify({ sessionId: s.id }),
-												}).catch(() => {});
-											}
-											pendingRestoredSessions.value = [];
-										}}
-									>
-										Discard
-									</button>
-								</div>
+								)}
+							</button>
+						)}
+						{!showNewSessionMenu && !newTabLoading && (
+							<button
+								class="terminal-tab-new"
+								aria-label="New Session"
+								disabled={sessionList.length >= 5}
+								onClick={() => {
+									setShowNewSessionMenu(true);
+									setActiveSessionId(null);
+								}}
+							>
+								<IconPlus size={14} />
+							</button>
+						)}
+						<div style={{ flex: 1 }} />
+						{!mobile && (
+							<button
+								class={`terminal-tab-new preview-toggle${pMode !== "hidden" ? " active" : ""}`}
+								onClick={() => {
+									previewMode.value = pMode === "hidden" ? "split" : "hidden";
+								}}
+								title={
+									previewPort.value
+										? `Preview :${previewPort.value}`
+										: "Open Preview"
+								}
+								aria-label="Toggle preview"
+							>
+								<IconMonitor size={14} />
+								{previewPort.value && (
+									<span class="preview-port-badge">{previewPort.value}</span>
+								)}
+							</button>
+						)}
+						{mobile && previewPort.value && (
+							<button
+								class="terminal-tab-new preview-toggle active"
+								onClick={() => {
+									mobilePreviewOpen.value = true;
+								}}
+								title={`Preview :${previewPort.value}`}
+							>
+								<IconMonitor size={14} />
+							</button>
+						)}
+					</div>
+					<div
+						class={`terminal-instances${dragOver ? " drag-over" : ""}`}
+						ref={instancesRef}
+						onClick={handleTerminalTap}
+						onDragOver={handleDragOver}
+						onDragLeave={handleDragLeave}
+						onDrop={handleDrop}
+					>
+						{contextBanner && (
+							<div
+								class={`context-loaded-banner${bannerFading ? " fade-out" : ""}`}
+							>
+								Context loaded: {contextBanner.projectName} &middot;{" "}
+								{contextBanner.kb} KB of memory injected
 							</div>
 						)}
-				</div>
-				{mobile && activeId && <MobileTerminalToolbar />}
-				{dragOver && (
-					<div class="image-drop-indicator">
-						<div class="image-drop-indicator-text">Drop file here</div>
+						{(sessionList.length === 0 ||
+							(showNewSessionMenu && !activeId) ||
+							newTabLoading) &&
+							!restoringPending.value && (
+								<div
+									class="claude-empty"
+									onClick={(e) => {
+										if (e.target === e.currentTarget) {
+											// noop — don't dismiss, user can click X on the tab
+										}
+									}}
+								>
+									{newTabLoading ? (
+										<>
+											<div class="spinner-lg" />
+											<div class="claude-empty-title">Loading session...</div>
+										</>
+									) : (
+										<>
+											<div class="claude-empty-icon">
+												<IconTerminal size={48} />
+											</div>
+											<div class="claude-empty-title">
+												{sessionList.length === 0
+													? "Ready when you are"
+													: "New session"}
+											</div>
+											<div class="claude-empty-desc">
+												{sessionList.length === 0
+													? "Start a new session to begin coding with Claude."
+													: "Choose session type:"}
+											</div>
+											<div class="claude-empty-actions">
+												<button
+													class="claude-empty-btn primary"
+													onClick={() => onNewSession()}
+												>
+													New Agent
+												</button>
+												<button
+													class="claude-empty-btn secondary"
+													onClick={() => onNewShell()}
+												>
+													New Shell
+												</button>
+											</div>
+										</>
+									)}
+									{recentProjects.length > 0 && !newTabLoading && (
+										<div class="claude-recent-convos">
+											<div class="claude-recent-title">Recent projects</div>
+											{recentProjects.map((f) => {
+												const openSession = sessionList.find(
+													(s) => s.cwd === f.cwd,
+												);
+												return (
+													<button
+														key={f.cwd}
+														class={`claude-recent-item${openSession ? " open" : ""}`}
+														onClick={() => {
+															if (openSession) {
+																switchToSession(openSession.id);
+															} else if (onOpenWithDir) {
+																onOpenWithDir(f.cwd);
+															}
+														}}
+													>
+														<span class="claude-recent-text">
+															<span class="claude-recent-project">
+																{f.name}
+															</span>
+															<span class="claude-recent-date">
+																{new Date(f.mtime).toLocaleString(undefined, {
+																	month: "short",
+																	day: "numeric",
+																	hour: "2-digit",
+																	minute: "2-digit",
+																})}
+															</span>
+														</span>
+														<span class="claude-recent-meta">
+															<span class="claude-recent-count">
+																{f.conversationCount}
+															</span>
+															{openSession && (
+																<span class="claude-recent-open-badge">
+																	OPEN
+																</span>
+															)}
+														</span>
+													</button>
+												);
+											})}
+										</div>
+									)}
+								</div>
+							)}
+						{activeId &&
+							sessionList.find((s) => s.id === activeId)?.loading &&
+							!getTerminal(activeId) && (
+								<div class="terminal-loading-overlay">
+									<div class="spinner" />
+									<div class="terminal-loading-text">Starting session...</div>
+								</div>
+							)}
+						{/* Session restore removed — users use recent conversations or new agent */}
 					</div>
-				)}
+					{mobile && activeId && <MobileTerminalToolbar />}
+					{dragOver && (
+						<div class="image-drop-indicator">
+							<div class="image-drop-indicator-text">Drop file here</div>
+						</div>
+					)}
+				</div>
+				<UploadOverlay file={pendingFile} onDone={() => setPendingFile(null)} />
+				{activeId && !mobile && <TerminalStatusBar />}
+				{activeId && <SubagentPanel sessionId={activeId} />}
 			</div>
-			<UploadOverlay file={pendingFile} onDone={() => setPendingFile(null)} />
-			{activeId && !mobile && <TerminalStatusBar />}
-			{activeId && <SubagentPanel sessionId={activeId} />}
+			{showPreviewSplit && (
+				<div
+					class={`preview-side${pMode === "full-preview" ? " full" : ""}`}
+					style={{ width: pMode === "full-preview" ? "100%" : "45%" }}
+				>
+					<div class="preview-mode-bar">
+						<button
+							class={`preview-mode-btn${pMode === "split" ? " active" : ""}`}
+							onClick={() => {
+								previewMode.value = "split";
+							}}
+							title="Split view"
+						>
+							<svg
+								width="14"
+								height="14"
+								viewBox="0 0 24 24"
+								fill="none"
+								stroke="currentColor"
+								stroke-width="1.5"
+								stroke-linecap="round"
+								stroke-linejoin="round"
+							>
+								<rect x="3" y="3" width="18" height="18" rx="2" />
+								<line x1="12" y1="3" x2="12" y2="21" />
+							</svg>
+						</button>
+						<button
+							class={`preview-mode-btn${pMode === "full-preview" ? " active" : ""}`}
+							onClick={() => {
+								previewMode.value = "full-preview";
+							}}
+							title="Full preview"
+						>
+							<svg
+								width="14"
+								height="14"
+								viewBox="0 0 24 24"
+								fill="none"
+								stroke="currentColor"
+								stroke-width="1.5"
+								stroke-linecap="round"
+								stroke-linejoin="round"
+							>
+								<polyline points="15 3 21 3 21 9" />
+								<polyline points="9 21 3 21 3 15" />
+								<line x1="21" y1="3" x2="14" y2="10" />
+								<line x1="3" y1="21" x2="10" y2="14" />
+							</svg>
+						</button>
+						<button
+							class="preview-mode-btn"
+							onClick={() => {
+								previewMode.value = "hidden";
+							}}
+							title="Close preview"
+						>
+							<IconX size={13} />
+						</button>
+					</div>
+					<PreviewPanel />
+				</div>
+			)}
+			{mobile && <MobilePreviewSheet />}
 		</div>
 	);
 }
 
 function TerminalStatusBar() {
 	const usage = claudeUsage.value;
+	const stale = usageStale.value;
 	const rawCtx = contextData.value;
 	// Show context data for up to 10 min after last update — covers idle periods
 	// between user messages. Only hide if truly stale (session ended/compacted).
@@ -1000,6 +1088,14 @@ function TerminalStatusBar() {
 							</span>
 						)}
 					</div>
+				)}
+				{stale && usage && (
+					<span
+						class="tsb-stale"
+						title="Usage data may be outdated — could not refresh"
+					>
+						&#9888;
+					</span>
 				)}
 				{/* Model indicator (read-only — use /model in terminal to switch) */}
 				{ctx?.model && (

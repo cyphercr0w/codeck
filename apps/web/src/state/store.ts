@@ -47,8 +47,10 @@ if (typeof window !== "undefined") {
 export type View = "loading" | "auth" | "setup" | "preset" | "main";
 export type Section =
 	| "home"
+	| "chat"
 	| "filesystem"
 	| "claude"
+	| "subagents"
 	| "agents"
 	| "integrations"
 	| "config"
@@ -131,6 +133,16 @@ export const pendingRestoredSessions = signal<PendingSession[]>([]);
 // Logs
 export const logs = signal<LogEntry[]>([]);
 export const logsExpanded = signal(false);
+export const cloneProgress = signal<string[]>([]);
+const MAX_CLONE_LINES = 50;
+export function addCloneProgress(line: string): void {
+	const next = [...cloneProgress.value, line];
+	cloneProgress.value =
+		next.length > MAX_CLONE_LINES ? next.slice(-MAX_CLONE_LINES) : next;
+}
+export function clearCloneProgress(): void {
+	cloneProgress.value = [];
+}
 
 // Preset
 export const presetConfigured = signal(false);
@@ -228,6 +240,20 @@ export function updateStateFromServer(data: Record<string, any>): void {
 	}
 	if (data.pendingRestore === true) {
 		restoringPending.value = true;
+	}
+	// If savedSessions included in status (deferred restore), populate pending list directly
+	if (Array.isArray(data.savedSessions) && data.savedSessions.length > 0) {
+		pendingRestoredSessions.value = data.savedSessions
+			.filter(
+				(s: any) => typeof s.cwd === "string" && typeof s.name === "string",
+			)
+			.map((s: any) => ({
+				id: s.id || crypto.randomUUID(),
+				type: (s.type as "agent" | "shell") || "agent",
+				cwd: s.cwd,
+				name: s.name,
+			}));
+		restoringPending.value = false;
 	}
 	if (data.sessions) {
 		setSessions(
@@ -405,10 +431,28 @@ export interface ClaudeUsageData {
 	sevenDay: { percent: number; resetsAt: string | null } | null;
 }
 
-export const claudeUsage = signal<ClaudeUsageData | null>(null);
+// Load cached usage from localStorage on startup
+const USAGE_CACHE_KEY = "codeck:usageCache";
+function loadCachedUsage(): ClaudeUsageData | null {
+	try {
+		const raw = localStorage.getItem(USAGE_CACHE_KEY);
+		return raw ? JSON.parse(raw) : null;
+	} catch {
+		return null;
+	}
+}
+
+export const claudeUsage = signal<ClaudeUsageData | null>(loadCachedUsage());
+export const usageStale = signal(!!loadCachedUsage()); // true if showing cached data
 
 export function setClaudeUsage(data: ClaudeUsageData): void {
 	claudeUsage.value = data;
+	usageStale.value = false;
+	try {
+		localStorage.setItem(USAGE_CACHE_KEY, JSON.stringify(data));
+	} catch {
+		/* localStorage full */
+	}
 }
 
 // ── Context Data (from statusline) ──
@@ -422,7 +466,7 @@ export interface ContextData {
 }
 
 // Context data stored per session — switching tabs shows that session's data instantly
-export const contextPerSession = signal<Record<string, ContextData>>({});
+const contextPerSession = signal<Record<string, ContextData>>({});
 // Computed: context for the active session
 export const contextData = computed(() => {
 	const id = activeSessionId.value;
@@ -451,6 +495,55 @@ export interface SubagentInfo {
 }
 
 export const activeSubagents = signal<SubagentInfo[]>([]);
+
+// ── Preview state — persisted in sessionStorage across F5 ──
+export type PreviewMode = "hidden" | "split" | "full-preview" | "full-terminal";
+
+const _savedPort = sessionStorage.getItem("codeck:previewPort");
+const _savedUrl = sessionStorage.getItem("codeck:previewUrl");
+const _savedMode = sessionStorage.getItem(
+	"codeck:previewMode",
+) as PreviewMode | null;
+
+export const previewPort = signal<number | null>(
+	_savedPort ? parseInt(_savedPort, 10) : null,
+);
+export const previewUrl = signal<string>(_savedUrl || "localhost:3000");
+export const previewMode = signal<PreviewMode>(
+	_savedMode || (_savedPort ? "split" : "hidden"),
+);
+// Compat: derived from previewMode
+const previewSplit = signal<boolean>(
+	_savedMode
+		? _savedMode === "split" || _savedMode === "full-preview"
+		: _savedPort !== null,
+);
+// Mobile preview overlay
+export const mobilePreviewOpen = signal(false);
+
+// Auto-persist preview state
+previewPort.subscribe((p) => {
+	if (p !== null) {
+		sessionStorage.setItem("codeck:previewPort", String(p));
+	} else {
+		sessionStorage.removeItem("codeck:previewPort");
+	}
+});
+previewUrl.subscribe((u) => {
+	sessionStorage.setItem("codeck:previewUrl", u);
+});
+previewMode.subscribe((m) => {
+	sessionStorage.setItem("codeck:previewMode", m);
+	previewSplit.value = m === "split" || m === "full-preview";
+});
+
+export function togglePreview(): void {
+	if (previewMode.value === "hidden") {
+		previewMode.value = "split";
+	} else {
+		previewMode.value = "hidden";
+	}
+}
 
 const SUBAGENT_EXPIRE_MS = 10 * 60 * 1000; // 10 min auto-expire
 let subagentGcTimer: ReturnType<typeof setInterval> | null = null;
@@ -589,41 +682,60 @@ export function dismissToast(id: number): void {
 	toasts.value = toasts.value.filter((t) => t.id !== id);
 }
 
-// ── Recent Conversations Cache ──
+// ── Recent Project Folders Cache ──
 
-export interface RecentConversation {
-	id: string;
-	title: string;
+export interface RecentFolder {
 	cwd: string;
+	name: string;
 	mtime: number;
+	conversationCount: number;
 }
 
-export const recentConversations = signal<RecentConversation[]>([]);
-let recentConvosFetchedAt = 0;
-const RECENT_CONVOS_TTL = 5 * 60 * 1000; // 5 min cache
+export const recentFolders = signal<RecentFolder[]>([]);
+let recentFoldersFetchedAt = 0;
+let recentFoldersInFlight: Promise<void> | null = null;
+const RECENT_FOLDERS_TTL = 5 * 60 * 1000; // 5 min cache
 
-export async function fetchRecentConversations(
+function isRecentFolder(v: unknown): v is RecentFolder {
+	if (typeof v !== "object" || v === null) return false;
+	const o = v as Record<string, unknown>;
+	return (
+		typeof o.cwd === "string" &&
+		typeof o.name === "string" &&
+		typeof o.mtime === "number" &&
+		typeof o.conversationCount === "number"
+	);
+}
+
+export function fetchRecentFolders(
 	fetchFn: (url: string) => Promise<Response>,
 	force = false,
 ): Promise<void> {
 	const now = Date.now();
 	if (
 		!force &&
-		recentConvosFetchedAt > 0 &&
-		now - recentConvosFetchedAt < RECENT_CONVOS_TTL
+		recentFoldersFetchedAt > 0 &&
+		now - recentFoldersFetchedAt < RECENT_FOLDERS_TTL
 	) {
-		return; // cache still valid
+		return Promise.resolve();
 	}
-	try {
-		const res = await fetchFn("/api/console/recent-conversations");
-		const data = await res.json();
-		if (data.conversations) {
-			recentConversations.value = data.conversations;
-			recentConvosFetchedAt = now;
+	if (recentFoldersInFlight) return recentFoldersInFlight;
+
+	recentFoldersInFlight = (async () => {
+		try {
+			const res = await fetchFn("/api/console/recent-conversations");
+			const data = await res.json();
+			if (Array.isArray(data.folders)) {
+				recentFolders.value = data.folders.filter(isRecentFolder);
+				recentFoldersFetchedAt = Date.now();
+			}
+		} catch {
+			/* non-fatal */
+		} finally {
+			recentFoldersInFlight = null;
 		}
-	} catch {
-		/* non-fatal */
-	}
+	})();
+	return recentFoldersInFlight;
 }
 
 // ── Usage Polling ──
@@ -643,12 +755,13 @@ export function startUsagePolling(
 				setClaudeUsage(data.claude);
 			}
 		} catch {
-			/* ignore */
+			// Mark as stale so the UI shows a warning — but keep the last cached value
+			if (claudeUsage.value) usageStale.value = true;
 		}
 	}
 
 	poll(); // immediate first fetch
-	usagePollTimer = setInterval(poll, 60_000);
+	usagePollTimer = setInterval(poll, 300_000); // 5 min — match backend cache TTL
 }
 
 export function stopUsagePolling(): void {

@@ -1,0 +1,388 @@
+/* ========== Mobile Terminal ========== */
+/* All styles scoped to .mobile-terminal class (set by JS, NOT media queries).
+   A desktop user with a small browser does NOT get mobile features. */
+
+/* Hidden input — offscreen but focusable for native keyboard capture */
+.mobile-hidden-input {
+	position: absolute;
+	opacity: 0;
+	left: -9999px;
+	width: 1px;
+	height: 1px;
+	pointer-events: auto;
+}
+
+/* Key feedback popup */
+.mobile-key-feedback {
+	position: fixed;
+	top: 35%;
+	left: 50%;
+	transform: translate(-50%, -50%);
+	background: rgba(99, 102, 241, 0.92);
+	color: white;
+	padding: 14px 28px;
+	border-radius: var(--radius-lg);
+	font-size: 18px;
+	font-weight: 700;
+	font-family: var(--font-mono);
+	z-index: 10000;
+	pointer-events: none;
+	animation: mobileFeedbackPop 0.8s ease-out forwards;
+	box-shadow: 0 4px 24px rgba(99, 102, 241, 0.4);
+}
+
+@keyframes mobileFeedbackPop {
+	0% {
+		opacity: 0;
+		transform: translate(-50%, -50%) scale(0.7);
+	}
+	15% {
+		opacity: 1;
+		transform: translate(-50%, -50%) scale(1.05);
+	}
+	70% {
+		opacity: 1;
+		transform: translate(-50%, -50%) scale(1);
+	}
+	100% {
+		opacity: 0;
+		transform: translate(-50%, -50%) scale(0.95);
+	}
+}
+
+/* --- Toolbar: normal flow inside .claude-content flex column --- */
+/* With resizes-content, the browser shrinks the viewport when the keyboard opens.
+   The toolbar sits at the bottom of the flex column, naturally above the keyboard.
+   No position:fixed needed — flex layout handles placement. */
+.mobile-toolbar {
+	flex-shrink: 0;
+	display: flex;
+	flex-direction: column;
+	gap: 5px;
+	padding: 6px 8px;
+	padding-bottom: max(6px, env(safe-area-inset-bottom));
+	background: var(--bg-secondary);
+	border-top: 1px solid var(--border);
+}
+
+.mobile-toolbar.collapsed {
+	padding: 0;
+}
+
+.mobile-toolbar-row {
+	display: flex;
+	gap: 5px;
+	align-items: center;
+}
+
+/* --- Navigation keys --- */
+.mobile-nav-key {
+	min-width: 0;
+	height: 40px;
+	border: 1px solid var(--border);
+	border-radius: var(--radius);
+	background: var(--bg-tertiary);
+	color: var(--text-primary);
+	font-size: 17px;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	cursor: pointer;
+	transition:
+		background 0.1s,
+		transform 0.1s;
+	flex: 1;
+	-webkit-tap-highlight-color: transparent;
+}
+
+.mobile-nav-key.esc {
+	font-size: 10px;
+	font-weight: 700;
+	font-family: var(--font-mono);
+	letter-spacing: 0.5px;
+}
+
+.mobile-nav-key.primary {
+	background: var(--accent);
+	color: white;
+	border-color: var(--accent);
+}
+
+.mobile-nav-key:active {
+	background: var(--bg-active);
+	transform: scale(0.92);
+}
+
+.mobile-nav-key.primary:active {
+	background: var(--accent-hover);
+	transform: scale(0.92);
+}
+
+/* --- Toggle button (collapse/expand) --- */
+.mobile-toggle-btn {
+	width: 36px;
+	height: 40px;
+	flex-shrink: 0;
+	border: 1px solid var(--border);
+	border-radius: var(--radius);
+	background: var(--bg-tertiary);
+	color: var(--text-muted);
+	font-size: 14px;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	cursor: pointer;
+	-webkit-tap-highlight-color: transparent;
+	transition: background 0.1s;
+}
+
+.mobile-toggle-btn:active {
+	background: var(--bg-active);
+}
+
+/* --- Collapsed bar --- */
+.mobile-collapsed-bar {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	gap: 8px;
+	width: 100%;
+	padding: 8px 0;
+	padding-bottom: max(8px, env(safe-area-inset-bottom));
+	border: none;
+	background: transparent;
+	color: var(--text-muted);
+	font-size: 12px;
+	font-weight: 500;
+	cursor: pointer;
+	-webkit-tap-highlight-color: transparent;
+}
+
+.mobile-collapsed-bar:active {
+	color: var(--text-primary);
+}
+
+.mobile-collapsed-chevron {
+	font-size: 14px;
+}
+
+/* --- Shortcut keys --- */
+.mobile-shortcut-key {
+	flex: 1;
+	min-width: 0;
+	padding: 6px 4px;
+	border: 1px solid var(--border);
+	border-radius: var(--radius);
+	background: var(--bg-tertiary);
+	color: var(--text-primary);
+	font-size: 12px;
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	gap: 1px;
+	cursor: pointer;
+	transition:
+		background 0.1s,
+		transform 0.1s;
+	-webkit-tap-highlight-color: transparent;
+}
+
+.mobile-shortcut-key:active {
+	background: var(--bg-active);
+	transform: scale(0.93);
+}
+
+.mobile-shortcut-key.yes {
+	background: var(--success-subtle);
+	border-color: var(--success);
+	color: var(--success);
+}
+
+.mobile-shortcut-key.no {
+	background: var(--error-subtle);
+	border-color: var(--error);
+	color: var(--error);
+}
+
+.mobile-shortcut-key.yes:active,
+.mobile-shortcut-key.no:active {
+	opacity: 0.8;
+}
+
+.mobile-shortcut-label {
+	font-weight: 700;
+	font-family: var(--font-mono);
+	font-size: 12px;
+	line-height: 1;
+}
+
+.mobile-shortcut-desc {
+	font-size: 9px;
+	color: var(--text-muted);
+	line-height: 1;
+}
+
+.mobile-shortcut-key.yes .mobile-shortcut-label,
+.mobile-shortcut-key.no .mobile-shortcut-label {
+	font-size: 16px;
+}
+.mobile-shortcut-key.yes .mobile-shortcut-desc {
+	color: var(--success);
+	opacity: 0.8;
+}
+.mobile-shortcut-key.no .mobile-shortcut-desc {
+	color: var(--error);
+	opacity: 0.8;
+}
+
+/* ── Mobile limits bar (below special keys, keyboard closed) ── */
+.mobile-limits-bar {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	padding: 6px 10px;
+	background: var(--bg-secondary);
+	border-top: 1px solid var(--border);
+	gap: 10px;
+	flex-shrink: 0;
+}
+
+.mobile-limits-items {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	flex: 1;
+	min-width: 0;
+}
+
+.mobile-limits-item {
+	display: flex;
+	align-items: center;
+	gap: 3px;
+	flex: 1;
+	min-width: 0;
+}
+
+.mobile-limits-label {
+	font-size: 9px;
+	font-weight: 600;
+	color: var(--text-muted);
+	flex-shrink: 0;
+}
+
+.mobile-limits-bar-track {
+	flex: 1;
+	min-width: 20px;
+	height: 4px;
+	background: var(--bg-tertiary, #333);
+	border-radius: 2px;
+	overflow: hidden;
+}
+
+.mobile-limits-bar-fill {
+	height: 100%;
+	border-radius: 2px;
+	transition: width 0.3s ease;
+}
+
+.mobile-limits-pct {
+	font-size: 9px;
+	color: var(--text-secondary);
+	flex-shrink: 0;
+}
+
+.mobile-limits-reset {
+	display: none;
+}
+
+.mobile-limits-sep {
+	color: var(--border);
+	font-size: 10px;
+	flex-shrink: 0;
+}
+
+.mobile-limits-status {
+	display: flex;
+	align-items: center;
+	gap: 4px;
+	flex-shrink: 0;
+}
+
+.mobile-limits-status-text {
+	font-size: 9px;
+	color: var(--text-secondary);
+	text-transform: capitalize;
+}
+
+.mobile-limits-uptime {
+	font-size: 10px;
+	color: var(--text-muted);
+}
+
+/* ── CTX segmented bar (5 bars × 20% each) ── */
+.ctx-segments {
+	display: flex;
+	gap: 2px;
+	align-items: center;
+}
+
+.ctx-seg {
+	width: 8px;
+	height: 6px;
+	border-radius: 1px;
+	background: var(--bg-tertiary, #333);
+	transition: background 0.3s ease;
+}
+
+/* Desktop: slightly larger */
+.tsb-limit .ctx-segments {
+	gap: 2px;
+}
+.tsb-limit .ctx-seg {
+	width: 10px;
+	height: 5px;
+}
+
+/* Mobile: compact */
+.mobile-limits-item .ctx-segments {
+	gap: 1px;
+	flex-shrink: 0;
+}
+.mobile-limits-item .ctx-seg {
+	width: 6px;
+	height: 4px;
+}
+
+/* --- Mobile terminal layout adjustments --- */
+
+/* Terminal fills remaining space in the flex column (after tabs and toolbar).
+   With resizes-content, the viewport shrinks with the keyboard, and flex
+   distributes the space automatically — no JS height calculation needed. */
+.claude-content.mobile-terminal .terminal-instances {
+	flex: 1 1 0 !important;
+	min-height: 0;
+	overflow: hidden !important;
+	cursor: text;
+	position: relative;
+}
+
+.claude-content.mobile-terminal .terminal-instance {
+	position: absolute !important;
+	inset: 0 !important;
+	height: auto !important;
+	overflow: hidden !important;
+}
+
+/* Native touch scroll on xterm viewport — the viewport is a real scrollable div.
+   pointer-events: none on .xterm-screen (set via JS) lets touches reach the viewport. */
+.claude-content.mobile-terminal .xterm .xterm-viewport {
+	-webkit-overflow-scrolling: touch !important;
+	overscroll-behavior-y: contain;
+	touch-action: pan-y !important;
+}
+
+/* Prevent xterm-screen from intercepting touches — let viewport handle scroll */
+.claude-content.mobile-terminal .xterm .xterm-screen {
+	pointer-events: none !important;
+}
+

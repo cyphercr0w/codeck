@@ -24,7 +24,7 @@ set -euo pipefail
 
 VERSION="1.0.0"
 DEFAULT_IMAGE="ghcr.io/cyphercr0w/codeck:latest"
-DEFAULT_PORT="8080"
+DEFAULT_PORT="80"
 DEFAULT_NAME="codeck"
 
 # Colors

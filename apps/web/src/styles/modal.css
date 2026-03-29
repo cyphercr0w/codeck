@@ -1,0 +1,395 @@
+/* ========== Modal ========== */
+.modal-overlay {
+	position: fixed;
+	inset: 0;
+	background: rgba(0, 0, 0, 0.6);
+	backdrop-filter: blur(4px);
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	z-index: 100;
+}
+
+.modal {
+	background: var(--bg-card);
+	border: 1px solid var(--border);
+	border-radius: var(--radius-lg);
+	padding: 24px;
+	width: 90%;
+	max-width: 420px;
+	box-shadow: var(--shadow);
+	animation: modal-enter 0.2s ease;
+}
+
+@keyframes modal-enter {
+	from {
+		opacity: 0;
+		transform: scale(0.95);
+	}
+	to {
+		opacity: 1;
+		transform: scale(1);
+	}
+}
+
+/* Step transition — applied to step content wrapper on mount */
+@keyframes step-slide-in {
+	from {
+		opacity: 0;
+		transform: translateX(8px);
+	}
+	to {
+		opacity: 1;
+		transform: translateX(0);
+	}
+}
+
+.npm-step-content {
+	animation: step-slide-in 0.15s ease;
+}
+
+.modal-title {
+	font-size: 18px;
+	font-weight: 700;
+	margin-bottom: 16px;
+	display: flex;
+	align-items: center;
+	gap: 8px;
+}
+
+.modal-desc {
+	font-size: 14px;
+	color: var(--text-secondary);
+	margin-bottom: 12px;
+}
+
+/* Step progress indicator container */
+.modal-steps {
+	display: flex;
+	align-items: center;
+	margin-bottom: 16px;
+}
+
+.modal-step {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	font-size: 13px;
+	color: var(--text-secondary);
+	transition: color 0.15s ease;
+}
+
+.modal-step.active {
+	color: var(--text-primary);
+}
+
+.modal-step.active .modal-step-num {
+	background: var(--accent);
+	color: #fff;
+}
+
+/* Connector line between step bubbles */
+.modal-step-connector {
+	flex: 1;
+	height: 1px;
+	background: var(--border-color);
+	margin: 0 10px;
+	min-width: 24px;
+}
+
+.modal-step-num {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: 22px;
+	height: 22px;
+	border-radius: 50%;
+	background: var(--accent-subtle);
+	color: var(--accent);
+	font-size: 12px;
+	font-weight: 700;
+	flex-shrink: 0;
+	transition:
+		background 0.15s ease,
+		color 0.15s ease;
+}
+
+.modal-actions {
+	display: flex;
+	justify-content: flex-end;
+	gap: 8px;
+	margin-top: 16px;
+}
+
+/* ========== New Project Modal ========== */
+.npm-tabs {
+	display: flex;
+	gap: 2px;
+	background: var(--bg-tertiary);
+	border-radius: var(--radius);
+	padding: 3px;
+	margin-bottom: 16px;
+	overflow-x: auto;
+}
+
+.npm-tab {
+	flex: 1;
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	gap: 6px;
+	padding: 7px 10px;
+	border: none;
+	border-radius: calc(var(--radius) - 2px);
+	background: transparent;
+	color: var(--text-secondary);
+	font-size: 12px;
+	font-weight: 500;
+	cursor: pointer;
+	transition: all var(--transition);
+	font-family: inherit;
+	white-space: nowrap;
+}
+
+.npm-tab:hover {
+	color: var(--text-primary);
+}
+.npm-tab.active {
+	background: var(--bg-card);
+	color: var(--text-primary);
+	box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15);
+}
+
+.npm-content {
+	min-height: 120px;
+	margin-bottom: 16px;
+}
+
+.npm-form {
+	display: flex;
+	flex-direction: column;
+	gap: 12px;
+}
+
+.npm-label {
+	font-size: 12px;
+	font-weight: 500;
+	color: var(--text-secondary);
+	margin-bottom: -6px;
+}
+
+.npm-hint {
+	font-size: 12px;
+	color: var(--text-muted);
+	margin: 0;
+	line-height: 1.5;
+}
+
+.npm-link {
+	background: none;
+	border: none;
+	color: var(--accent);
+	font-size: inherit;
+	font-family: inherit;
+	cursor: pointer;
+	padding: 0;
+	text-decoration: underline;
+	text-underline-offset: 2px;
+}
+.npm-link:hover {
+	color: var(--text-primary);
+}
+
+.npm-row {
+	display: flex;
+	gap: 12px;
+}
+
+.npm-warning {
+	font-size: 12px;
+	color: var(--warning);
+	background: var(--warning-subtle);
+	padding: 8px 12px;
+	border-radius: var(--radius);
+	line-height: 1.4;
+}
+
+.npm-launch-options {
+	padding: 12px;
+	background: var(--bg-tertiary);
+	border-radius: var(--radius);
+	margin-bottom: 16px;
+}
+
+.npm-launch-title {
+	font-size: 11px;
+	font-weight: 600;
+	color: var(--text-muted);
+	text-transform: uppercase;
+	letter-spacing: 0.5px;
+	margin-bottom: 8px;
+}
+
+.npm-checkbox {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	font-size: 13px;
+	color: var(--text-primary);
+	cursor: pointer;
+	padding: 4px 0;
+}
+
+.npm-checkbox input[type="checkbox"] {
+	width: 15px;
+	height: 15px;
+	accent-color: var(--accent);
+	cursor: pointer;
+}
+
+.npm-flag {
+	font-size: 11px;
+	color: var(--text-muted);
+	font-family: var(--font-mono);
+	margin-left: auto;
+}
+
+.npm-error {
+	color: var(--error);
+	font-size: 13px;
+	margin-bottom: 12px;
+	background: var(--error-subtle, rgba(239, 68, 68, 0.08));
+	border-left: 3px solid var(--error);
+	padding: 8px 12px;
+	border-radius: var(--radius);
+	line-height: 1.4;
+}
+
+/* ========== Command input area ========== */
+.npm-command-wrap {
+	display: flex;
+	align-items: center;
+	border: 1px solid var(--border);
+	border-radius: var(--radius);
+	background: var(--bg-tertiary);
+	overflow: hidden;
+	font-family: var(--font-mono);
+	font-size: 13px;
+}
+
+.npm-command-prefix {
+	padding: 8px 10px;
+	background: var(--bg-secondary);
+	color: var(--text-secondary);
+	user-select: none;
+	cursor: default;
+	white-space: nowrap;
+	border-right: 1px solid var(--border);
+}
+
+.npm-command-wrap input {
+	flex: 1;
+	background: transparent;
+	border: none;
+	outline: none;
+	padding: 8px 10px;
+	color: var(--text-primary);
+	font-family: var(--font-mono);
+	font-size: 13px;
+}
+
+/* ========== Focus ring ========== */
+.modal *:focus-visible {
+	outline: 2px solid var(--accent);
+	outline-offset: 2px;
+}
+
+/* ========== Radio inputs inside npm-checkbox ========== */
+.npm-checkbox input[type="radio"] {
+	width: 15px;
+	height: 15px;
+	accent-color: var(--accent);
+	cursor: pointer;
+}
+
+/* ========== Experimental badge ========== */
+.npm-flag-experimental {
+	cursor: pointer;
+	text-decoration: underline;
+	text-underline-offset: 2px;
+}
+.npm-flag-experimental:hover {
+	color: var(--text-secondary);
+}
+
+/* ========== Teams tooltip ========== */
+.npm-tooltip {
+	font-size: 12px;
+	color: var(--text-secondary);
+	background: var(--bg-secondary);
+	border: 1px solid var(--border);
+	border-radius: var(--radius);
+	padding: 8px 10px;
+	margin-top: 6px;
+	line-height: 1.5;
+}
+
+/* ========== Dir list states ========== */
+.npm-dirs-loading,
+.npm-dirs-empty {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	padding: 24px 0;
+	color: var(--text-muted);
+	font-size: 13px;
+	gap: 8px;
+}
+
+/* ========== Mobile responsiveness ========== */
+@media (max-width: 420px) {
+	.npm-row {
+		flex-direction: column;
+	}
+
+	.npm-tabs {
+		scrollbar-width: none;
+	}
+	.npm-tabs::-webkit-scrollbar {
+		display: none;
+	}
+}
+
+/* ========== Clone Progress Log ========== */
+.npm-clone-log {
+	margin-top: 12px;
+	padding: 10px 12px;
+	background: var(--bg-primary, #0d0d1a);
+	border: 1px solid var(--border-color, #333);
+	border-radius: 6px;
+	font-family: var(--font-mono);
+	font-size: 11px;
+	line-height: 1.5;
+	max-height: 120px;
+	overflow-y: auto;
+	color: var(--text-secondary, #888);
+}
+.npm-clone-line {
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+.npm-clone-line:last-child {
+	color: var(--text-primary, #e0e0e0);
+}
+
+/* Launch option group subtitles */
+.npm-launch-subtitle {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  color: var(--text-muted, #666);
+  margin-bottom: 6px;
+  margin-top: 4px;
+}

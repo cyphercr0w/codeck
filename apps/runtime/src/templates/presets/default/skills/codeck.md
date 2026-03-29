@@ -1,4 +1,19 @@
-# Codeck Sandbox
+# Codeck
+
+## Live Preview — USE THIS
+
+When you start a dev server, **ALWAYS open a live preview for the user**. The preview appears as a split panel next to the terminal — the user sees their site updating in real-time as you code.
+
+```bash
+# After starting any dev server:
+curl -s -X POST http://localhost/api/preview/navigate-to \
+  -H "Content-Type: application/json" \
+  -d '{"port": 5173}'
+```
+
+This instantly opens the preview panel in the user's browser. HMR works — every code change you make reflects live. **Do this every time you start a dev server. The user expects to see their site.**
+
+Tell the user: "Check the preview — your site is live on port {port}"
 
 ## Your Environment
 
@@ -6,7 +21,7 @@ You are running inside a **Docker container** (the Codeck sandbox). Key facts:
 
 - You have full access to the container filesystem (`/workspace/`)
 - You have access to the **host's Docker daemon** via a mounted socket — you can build images, run sibling containers, and use docker compose
-- **Only the Codeck port (default 80) is mapped to the host by default** — dev servers you start here are NOT reachable from the user's browser unless the port is explicitly exposed
+- **Dev servers are accessible via the preview system** — no port mapping needed. Just start the server and call the preview API above.
 - Sibling containers you start with `docker run -p {port}:{port}` map their ports directly to the host — no extra steps needed for those
 
 ## Port Exposure — CRITICAL
@@ -99,6 +114,32 @@ curl http://localhost/api/ports
 # Request port exposure (requires user confirmation first!)
 curl -X POST http://localhost/api/system/add-port -H "Content-Type: application/json" -d '{"port": 3000}'
 ```
+
+## Browser Preview
+
+The user's Codeck web panel has a **live preview** panel integrated into the terminal view. You can open it for the user after starting a dev server.
+
+### Opening a preview for the user
+
+After starting a dev server (Vite, Next.js, etc.), open the preview:
+
+```bash
+curl -s -X POST http://localhost/api/preview/navigate-to \
+  -H "Content-Type: application/json" \
+  -d '{"port": 4321, "url": "localhost:4321"}'
+```
+
+This broadcasts a WebSocket event that:
+- On desktop: opens a split view with the terminal on the left and the preview on the right
+- On mobile: shows a floating indicator the user can tap to expand
+
+### Key rules
+
+- **ALWAYS** open a preview after starting a dev server — the user expects to see it
+- The preview uses a subdomain proxy (`preview-{port}.localhost` or `p{port}.domain`) so all paths resolve correctly
+- Tell the user: "Check the preview panel — your site is live on port {port}"
+- The preview supports HMR — changes you make to the code will hot-reload in the preview
+- You can change the preview URL at any time by calling the API again with a different port
 
 ## Git & SSH
 

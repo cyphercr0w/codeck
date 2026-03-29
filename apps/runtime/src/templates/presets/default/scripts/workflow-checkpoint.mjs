@@ -13,8 +13,8 @@
  * This makes the implement→review→present flow mechanical, not aspirational.
  *
  * Output format (Claude Code Stop hook contract):
- *   { "decision": "approve" }                    — let Claude stop
- *   { "decision": "block", "reason": "...", "systemMessage": "..." } — force continue
+ *   { "result": "approve" }                    — let Claude stop
+ *   { "result": "block", "reason": "...", "message": "..." } — force continue
  */
 
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'fs';
@@ -40,7 +40,7 @@ try {
 
 // No edits tracked → approve stop (nothing to review)
 if (!edits.count || edits.count === 0) {
-  console.log(JSON.stringify({ decision: 'approve' }));
+  console.log(JSON.stringify({ result: 'approve' }));
   process.exit(0);
 }
 
@@ -49,9 +49,22 @@ if (!edits.count || edits.count === 0) {
 if (edits.count <= 4) {
   // Clear tracker so next stop doesn't re-check these
   writeFileSync(EDIT_TRACKER, JSON.stringify({ files: [], count: 0, since: 0 }));
-  console.log(JSON.stringify({ decision: 'approve' }));
+  console.log(JSON.stringify({ result: 'approve' }));
   process.exit(0);
 }
+
+// If sub-agents are actively working, don't block — review comes after they finish
+try {
+  const subagentFile = join(STATE_DIR, 'active-subagents.json');
+  if (existsSync(subagentFile)) {
+    const subs = JSON.parse(readFileSync(subagentFile, 'utf-8'));
+    if (subs.count > 0 && (Date.now() - subs.lastUpdate) < 600000) {
+      // Sub-agents active within last 10 minutes — approve silently
+      console.log(JSON.stringify({ result: 'approve' }));
+      process.exit(0);
+    }
+  }
+} catch { /* no subagent tracking */ }
 
 // Significant edits (5+ files) — check if review happened
 let reviewRecent = false;
@@ -68,7 +81,7 @@ try {
 if (reviewRecent) {
   // Review was done — approve and clear tracker
   writeFileSync(EDIT_TRACKER, JSON.stringify({ files: [], count: 0, since: 0 }));
-  console.log(JSON.stringify({ decision: 'approve' }));
+  console.log(JSON.stringify({ result: 'approve' }));
   process.exit(0);
 }
 
@@ -79,7 +92,7 @@ const msg = edits.count > 8
   : fileList;
 
 console.log(JSON.stringify({
-  decision: 'block',
+  result: 'block',
   reason: `You modified ${edits.count} files (${msg}) but haven't run code-reviewer yet.`,
-  systemMessage: `WORKFLOW CHECKPOINT: You made significant changes (${edits.count} files) without running a code review. Before presenting results to the user, spawn a code-reviewer sub-agent to review your changes. After the review completes and you address any issues, you can present your work. Write the review marker after: echo '{"timestamp":'$(date +%s%3N)',"agent":"code-reviewer"}' > /workspace/.codeck/state/review-marker.json`,
+  message: `Stop hook feedback:\nYou modified ${edits.count} files (${msg}) but haven't run code-reviewer yet.\nSpawn a code-reviewer sub-agent before presenting results. After review, write marker: echo '{"timestamp":'$(date +%s%3N)',"agent":"code-reviewer"}' > /workspace/.codeck/state/review-marker.json`,
 }));

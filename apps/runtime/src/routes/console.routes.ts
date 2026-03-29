@@ -1,6 +1,6 @@
 import { Router } from "express";
-import { existsSync, readdirSync, statSync, readFileSync } from "fs";
-import { join, basename, resolve, sep } from "path";
+import { existsSync, readdirSync, readFileSync, statSync } from "fs";
+import { join, resolve, sep } from "path";
 import { isClaudeAuthenticated } from "../services/auth-anthropic.js";
 import {
 	createConsoleSession,
@@ -12,51 +12,119 @@ import {
 	renameSession,
 	listSessions,
 	hasResumableConversations,
+	restoreSessionsNow,
 } from "../services/console.js";
 import { broadcastStatus } from "../web/websocket.js";
 import { broadcast } from "../web/logger.js";
+import { asyncHandler } from "../utils/async-handler.js";
 
 const router = Router();
 
 // Create console session (multi-session, max 5)
-router.post("/create", (req, res) => {
-	if (!isClaudeAuthenticated()) {
-		res.status(400).json({ error: "Claude is not authenticated" });
-		return;
-	}
+// Async: if token is refreshing after container restart, waits up to 10s
+router.post(
+	"/create",
+	asyncHandler(async (req, res) => {
+		if (!isClaudeAuthenticated()) {
+			// Token may be refreshing after container restart — retry for up to 10s
+			let authed = false;
+			for (let i = 0; i < 10; i++) {
+				await new Promise((r) => setTimeout(r, 1000));
+				if (isClaudeAuthenticated()) {
+					authed = true;
+					break;
+				}
+			}
+			if (!authed) {
+				res.status(400).json({ error: "Claude is not authenticated" });
+				return;
+			}
+			console.log(
+				"[Console] Auth succeeded after retry (token refresh was in progress)",
+			);
+		}
 
-	if (getSessionCount() >= MAX_SESSIONS) {
-		res
-			.status(400)
-			.json({ error: `Maximum ${MAX_SESSIONS} simultaneous sessions` });
-		return;
-	}
-
-	const { cwd, resume } = req.body || {};
-
-	// Validate cwd stays within /workspace to prevent path traversal
-	if (cwd && typeof cwd === "string") {
-		const WORKSPACE = process.env.WORKSPACE || "/workspace";
-		const resolved = resolve(cwd);
-		if (!resolved.startsWith(WORKSPACE + sep) && resolved !== WORKSPACE) {
-			res.status(403).json({ error: "Access denied: cwd outside workspace" });
+		if (getSessionCount() >= MAX_SESSIONS) {
+			res
+				.status(400)
+				.json({ error: `Maximum ${MAX_SESSIONS} simultaneous sessions` });
 			return;
 		}
-	}
 
-	try {
-		const session = createConsoleSession({ cwd: cwd || undefined, resume });
-		console.log(
-			`[Console] Session created: ${session.id} (cwd: ${session.cwd}, resume: ${!!resume})`,
-		);
-		broadcastStatus();
-		res.json({ sessionId: session.id, cwd: session.cwd, name: session.name });
-	} catch (e) {
-		const detail = e instanceof Error ? e.message : "Failed to create session";
-		console.log(`[Console] Session creation failed: ${detail}`);
-		res.status(400).json({ error: "Failed to create session" });
-	}
-});
+		const {
+			cwd,
+			resume,
+			enableTeams,
+			useContinue,
+			extraArgs: clientExtraArgs,
+		} = req.body || {};
+
+		// Validate cwd stays within /workspace to prevent path traversal
+		if (cwd && typeof cwd === "string") {
+			const WORKSPACE = process.env.WORKSPACE || "/workspace";
+			const resolved = resolve(cwd);
+			if (!resolved.startsWith(WORKSPACE + sep) && resolved !== WORKSPACE) {
+				res.status(403).json({ error: "Access denied: cwd outside workspace" });
+				return;
+			}
+		}
+
+		// Build extra args from feature flags + any user-provided flags
+		const extraArgs: string[] = [];
+		const extraEnv: Record<string, string> = {};
+		if (enableTeams) {
+			extraEnv.CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS = "1";
+		}
+		// Append user-provided extra args with blocklist for dangerous flags
+		const BLOCKED_FLAGS = new Set([
+			"--dangerously-skip-permissions",
+			"--allowedTools",
+			"-p",
+			"--prompt",
+			"--model",
+			"--permission-mode",
+			"--output-format",
+			"--mcp-config",
+			"--append-system-prompt",
+			"--prefill",
+		]);
+		if (Array.isArray(clientExtraArgs)) {
+			let skipNext = false;
+			for (const arg of clientExtraArgs) {
+				if (typeof arg !== "string" || arg.length > 100) continue;
+				if (skipNext) {
+					skipNext = false;
+					continue;
+				}
+				if (BLOCKED_FLAGS.has(arg)) {
+					skipNext = true;
+					continue;
+				}
+				extraArgs.push(arg);
+			}
+		}
+
+		try {
+			const session = createConsoleSession({
+				cwd: cwd || undefined,
+				resume,
+				useContinue: !!useContinue,
+				extraArgs: extraArgs.length > 0 ? extraArgs : undefined,
+				extraEnv: Object.keys(extraEnv).length > 0 ? extraEnv : undefined,
+			});
+			console.log(
+				`[Console] Session created: ${session.id} (cwd: ${session.cwd}, resume: ${!!resume})`,
+			);
+			broadcastStatus();
+			res.json({ sessionId: session.id, cwd: session.cwd, name: session.name });
+		} catch (e) {
+			const detail =
+				e instanceof Error ? e.message : "Failed to create session";
+			console.log(`[Console] Session creation failed: ${detail}`);
+			res.status(400).json({ error: "Failed to create session" });
+		}
+	}),
+);
 
 // Create shell session — does not require Claude OAuth (shells don't use Claude),
 // but is still protected by password auth middleware in server.ts
@@ -119,45 +187,93 @@ router.get("/sessions", (_req, res) => {
 });
 
 // Check if a directory has resumable conversations
-router.get("/has-conversations", async (req, res) => {
-	const cwd = req.query.cwd as string;
-	if (!cwd) {
-		res.status(400).json({ error: "cwd query param required" });
-		return;
-	}
-	// Validate cwd stays within workspace
-	const WORKSPACE = process.env.WORKSPACE || "/workspace";
-	const resolved = resolve(cwd);
-	if (!resolved.startsWith(WORKSPACE + sep) && resolved !== WORKSPACE) {
-		res.status(403).json({ error: "Access denied: cwd outside workspace" });
-		return;
-	}
-	res.json({ hasConversations: await hasResumableConversations(cwd) });
-});
+router.get(
+	"/has-conversations",
+	asyncHandler(async (req, res) => {
+		const cwd = req.query.cwd as string;
+		if (!cwd) {
+			res.status(400).json({ error: "cwd query param required" });
+			return;
+		}
+		// Validate cwd stays within workspace
+		const WORKSPACE = process.env.WORKSPACE || "/workspace";
+		const resolved = resolve(cwd);
+		if (!resolved.startsWith(WORKSPACE + sep) && resolved !== WORKSPACE) {
+			res.status(403).json({ error: "Access denied: cwd outside workspace" });
+			return;
+		}
+		res.json({ hasConversations: await hasResumableConversations(cwd) });
+	}),
+);
 
-// List recent conversations across all projects (for resume UI)
-// Two-pass approach: stat all files (cheap), sort by mtime, only read top N (expensive).
-// This avoids reading all 1000+ .jsonl files just to find the 5 most recent.
-const RECENT_LIMIT = 5;
-const RECENT_READ_CANDIDATES = 20; // read a few extra in case some lack title/cwd
+/**
+ * Decode a Claude Code project directory name back to a filesystem path.
+ * Claude encodes "/workspace/my-project" as "workspace-my-project" (slashes → hyphens).
+ * Ambiguity: hyphens in folder names look identical to path separators.
+ * Solution: try all possible slash/hyphen splits and return the first that exists.
+ */
+function decodeProjectPath(encoded: string, _workspace: string): string | null {
+	// Fast path: simple decode (all hyphens → slashes)
+	const simple = resolve("/" + encoded.replace(/-/g, "/"));
+	if (existsSync(simple)) return simple;
+
+	// Try all possible splits: for each hyphen, it could be "/" or "-".
+	// We use BFS to find the first existing path.
+	const parts = encoded.split("-");
+	if (parts.length <= 1)
+		return existsSync("/" + encoded) ? resolve("/" + encoded) : null;
+
+	// For paths with many hyphens, limit search to avoid combinatorial explosion.
+	// Most real paths have ≤ 6 segments (e.g. workspace-Tierras-Sagradas-AO = 4 parts).
+	if (parts.length > 10) {
+		// Fallback: just use slash decode
+		return existsSync(simple) ? simple : null;
+	}
+
+	// Generate candidates: each hyphen can be "/" or "-"
+	const candidates: string[] = [];
+	const generate = (idx: number, current: string) => {
+		if (idx === parts.length) {
+			candidates.push(resolve(current));
+			return;
+		}
+		if (idx === 0) {
+			generate(idx + 1, "/" + parts[0]);
+			return;
+		}
+		generate(idx + 1, current + "/" + parts[idx]); // slash
+		generate(idx + 1, current + "-" + parts[idx]); // hyphen
+	};
+	generate(0, "");
+
+	// Return first candidate that exists on disk
+	for (const c of candidates) {
+		if (existsSync(c)) return c;
+	}
+	return null;
+}
+
+// List recent project folders with resumable conversations.
+// Groups by cwd folder, returns one entry per folder sorted by most recent activity.
+// Frontend uses POST /continue with the folder's cwd to resume.
+const RECENT_FOLDERS_LIMIT = 8;
 
 router.get("/recent-conversations", (_req, res) => {
 	try {
 		const home = process.env.HOME || "/root";
 		const projectsDir = `${home}/.claude/projects`;
 		if (!existsSync(projectsDir)) {
-			res.json({ conversations: [] });
+			res.json({ folders: [] });
 			return;
 		}
 
-		// Pass 1: collect file paths + mtimes (no content reads)
-		// Only include project directories whose decoded path exists inside the
-		// container. Conversations from external Claude Code processes (e.g. running
-		// from /home/user/...) use a different project dir encoding and can't be
-		// resumed from inside the container — skip them entirely.
 		const WORKSPACE = process.env.WORKSPACE || "/workspace";
-		const candidates: Array<{ id: string; filePath: string; mtime: number }> =
-			[];
+
+		// Map: resolvedCwd → { name, mtime, count }
+		const folderMap = new Map<
+			string,
+			{ name: string; mtime: number; count: number }
+		>();
 
 		for (const projectDir of readdirSync(projectsDir)) {
 			const fullDir = join(projectsDir, projectDir);
@@ -168,117 +284,75 @@ router.get("/recent-conversations", (_req, res) => {
 			}
 
 			// Decode project dir name: "-workspace-codeck" → "/workspace/codeck"
-			const decodedPath = "/" + projectDir.replace(/^-/, "").replace(/-/g, "/");
+			// Claude Code encodes paths by replacing "/" with "-" and prepending "-".
+			// Problem: folder names with hyphens (e.g. "my-project") are ambiguous.
+			// Solution: try progressively joining segments to find existing paths.
+			const encoded = projectDir.replace(/^-/, "");
+			const resolvedCwd = decodeProjectPath(encoded, WORKSPACE);
+			if (!resolvedCwd) continue;
 			if (
-				!decodedPath.startsWith(WORKSPACE + "/") &&
-				decodedPath !== WORKSPACE
+				!resolvedCwd.startsWith(WORKSPACE + sep) &&
+				resolvedCwd !== WORKSPACE
 			) {
-				continue; // skip — from external process, can't resume
+				continue;
 			}
 
+			// Count .jsonl files and find most recent mtime
+			let latestMtime = 0;
+			let fileCount = 0;
 			for (const file of readdirSync(fullDir)) {
 				if (!file.endsWith(".jsonl")) continue;
-				const filePath = join(fullDir, file);
 				try {
-					const mtime = statSync(filePath).mtimeMs;
-					candidates.push({
-						id: basename(file, ".jsonl"),
-						filePath,
-						mtime,
-					});
+					const mtime = statSync(join(fullDir, file)).mtimeMs;
+					fileCount++;
+					if (mtime > latestMtime) latestMtime = mtime;
 				} catch {
-					/* stat failed — skip */
+					/* stat failed */
 				}
+			}
+
+			if (fileCount === 0) continue;
+
+			const name = resolvedCwd.split(sep).pop() || "workspace";
+			const existing = folderMap.get(resolvedCwd);
+			if (existing) {
+				folderMap.set(resolvedCwd, {
+					...existing,
+					count: existing.count + fileCount,
+					mtime: Math.max(existing.mtime, latestMtime),
+				});
+			} else {
+				folderMap.set(resolvedCwd, {
+					name,
+					mtime: latestMtime,
+					count: fileCount,
+				});
 			}
 		}
 
-		// Sort by mtime descending — most recent first
-		candidates.sort((a, b) => b.mtime - a.mtime);
+		// Sort by mtime descending, take top N
+		const folders = [...folderMap.entries()]
+			.sort((a, b) => b[1].mtime - a[1].mtime)
+			.slice(0, RECENT_FOLDERS_LIMIT)
+			.map(([cwd, info]) => ({
+				cwd,
+				name: info.name,
+				mtime: info.mtime,
+				conversationCount: info.count,
+			}));
 
-		// Pass 2: read only the top N candidates to extract title + cwd
-		const convos: Array<{
-			id: string;
-			title: string;
-			cwd: string;
-			mtime: number;
-		}> = [];
-
-		for (const c of candidates.slice(0, RECENT_READ_CANDIDATES)) {
-			if (convos.length >= RECENT_LIMIT) break;
-
-			let title = "";
-			let cwd = "";
-			let sessionId = "";
-			try {
-				const content = readFileSync(c.filePath, "utf-8");
-				for (const line of content.split("\n").slice(0, 30)) {
-					if (!line.trim()) continue;
-					const d = JSON.parse(line);
-					// Extract sessionId from any entry that has it (needed for --resume)
-					if (!sessionId && d.sessionId) {
-						sessionId = d.sessionId;
-					}
-					if (d.type === "user" && !title) {
-						cwd = d.cwd || "";
-						if (!sessionId && d.sessionId) sessionId = d.sessionId;
-						const msg = d.message;
-						if (msg && typeof msg === "object") {
-							const ct = msg.content;
-							if (Array.isArray(ct)) {
-								for (const block of ct) {
-									if (block?.type === "text" && block.text) {
-										title = block.text
-											.replace(/<[^>]*>/g, "")
-											.trim()
-											.slice(0, 80);
-										break;
-									}
-								}
-							} else if (typeof ct === "string") {
-								title = ct
-									.replace(/<[^>]*>/g, "")
-									.trim()
-									.slice(0, 80);
-							}
-						}
-						if (title && sessionId) break;
-					}
-				}
-			} catch {
-				/* non-fatal */
-			}
-
-			// sessionId is what --resume needs; fall back to file-based id
-			const resumeId = sessionId || c.id;
-			if (title && cwd) {
-				// Remap paths from the host or older container layout to current /workspace
-				let resolvedCwd = cwd;
-				if (!existsSync(resolvedCwd)) {
-					const parts = resolvedCwd.split("/");
-					const projectName = parts[parts.length - 1];
-					const candidate = join(WORKSPACE, projectName);
-					if (projectName && existsSync(candidate)) {
-						resolvedCwd = candidate;
-					} else if (existsSync(WORKSPACE)) {
-						resolvedCwd = WORKSPACE;
-					}
-				}
-				convos.push({ id: resumeId, title, cwd: resolvedCwd, mtime: c.mtime });
-			}
-		}
-
-		res.json({ conversations: convos });
+		res.json({ folders });
 	} catch (e) {
 		console.warn(
-			"[Console] Failed to list recent conversations:",
+			"[Console] Failed to list recent folders:",
 			(e as Error).message,
 		);
-		res.json({ conversations: [] });
+		res.json({ folders: [] });
 	}
 });
 
-// Resume a specific conversation by ID
-router.post("/resume", (req, res) => {
+// Continue most recent conversation in a folder (--continue)
+router.post("/continue", (req, res) => {
 	if (!isClaudeAuthenticated()) {
 		res.status(400).json({ error: "Claude is not authenticated" });
 		return;
@@ -290,46 +364,37 @@ router.post("/resume", (req, res) => {
 		return;
 	}
 
-	const { conversationId, cwd } = req.body || {};
-	if (!conversationId || typeof conversationId !== "string") {
-		res.status(400).json({ error: "conversationId required" });
-		return;
-	}
-	// Validate UUID format to prevent CLI flag injection
-	const UUID_RE =
-		/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-	if (!UUID_RE.test(conversationId)) {
-		res.status(400).json({ error: "Invalid conversationId format" });
+	const { cwd } = req.body || {};
+	if (!cwd || typeof cwd !== "string") {
+		res.status(400).json({ error: "cwd required" });
 		return;
 	}
 
-	// Validate cwd stays within /workspace (same check as /create)
-	if (cwd && typeof cwd === "string") {
-		const WORKSPACE = process.env.WORKSPACE || "/workspace";
-		const resolved = resolve(cwd);
-		if (!resolved.startsWith(WORKSPACE + sep) && resolved !== WORKSPACE) {
-			res.status(403).json({ error: "Access denied: cwd outside workspace" });
-			return;
-		}
+	const WORKSPACE = process.env.WORKSPACE || "/workspace";
+	const resolved = resolve(cwd);
+	if (!resolved.startsWith(WORKSPACE + sep) && resolved !== WORKSPACE) {
+		res.status(403).json({ error: "Access denied: cwd outside workspace" });
+		return;
 	}
 
 	try {
 		const session = createConsoleSession({
-			cwd: cwd || undefined,
-			resume: true,
-			conversationId,
+			cwd: resolved,
+			useContinue: true,
 		});
 		console.log(
-			`[Console] Session resumed: ${session.id} (conversation: ${conversationId}, cwd: ${session.cwd})`,
+			`[Console] Session continued: ${session.id} (cwd: ${session.cwd})`,
 		);
 		broadcastStatus();
-		res.json({ sessionId: session.id, cwd: session.cwd, name: session.name });
+		res.json({
+			sessionId: session.id,
+			cwd: session.cwd,
+			name: session.name,
+		});
 	} catch (e) {
 		const detail =
-			e instanceof Error ? e.message : "Failed to resume conversation";
-		console.error(
-			`[Console] Resume failed: ${detail} (conversation: ${conversationId}, cwd: ${cwd})`,
-		);
+			e instanceof Error ? e.message : "Failed to continue conversation";
+		console.error(`[Console] Continue failed: ${detail} (cwd: ${resolved})`);
 		res.status(400).json({ error: detail });
 	}
 });
@@ -385,6 +450,31 @@ const contextBySession = new Map<
 >();
 
 // Destroy console session
+// Restore saved sessions — called when user clicks "Resume" in the restore prompt.
+// Creates the actual PTY processes. Before this, sessions are just metadata.
+router.post(
+	"/restore-sessions",
+	asyncHandler(async (req, res) => {
+		const { sessions: savedSessions } = req.body;
+		if (!Array.isArray(savedSessions) || savedSessions.length === 0) {
+			res.status(400).json({ error: "sessions array required" });
+			return;
+		}
+		try {
+			const restored = await restoreSessionsNow(savedSessions);
+			console.log(
+				`[Console] Restored ${restored.length}/${savedSessions.length} sessions`,
+			);
+			broadcastStatus();
+			res.json({ success: true, sessions: restored });
+		} catch (e) {
+			res
+				.status(500)
+				.json({ error: "Failed to restore: " + (e as Error).message });
+		}
+	}),
+);
+
 router.post("/destroy", (req, res) => {
 	const { sessionId } = req.body;
 	if (!sessionId) {
@@ -669,6 +759,7 @@ router.get("/subagents", (_req, res) => {
 	const agents = [...activeSubagents.values()].map((a) => ({
 		agentId: a.agentId,
 		agentType: a.agentType,
+		sessionId: a.sessionId,
 		startedAt: a.startedAt,
 		lastLine: a.lastLine,
 		elapsed: Date.now() - a.startedAt,

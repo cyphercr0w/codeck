@@ -41,7 +41,7 @@ services:
       resources:
         limits:
           memory: ${CODECK_MEMORY_LIMIT:-0}
-          pids: 512
+          pids: 1024
         reservations:
           memory: 256M
     logging:

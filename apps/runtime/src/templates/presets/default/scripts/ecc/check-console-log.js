@@ -13,59 +13,62 @@
  * console.log is often intentional).
  */
 
-const fs = require('fs');
-const { isGitRepo, getGitModifiedFiles, readFile, log } = require('../lib/utils');
+const fs = require("fs");
+const {
+	isGitRepo,
+	getGitModifiedFiles,
+	readFile,
+	log,
+} = require("../lib/utils");
 
 // Files where console.log is expected and should not trigger warnings
 const EXCLUDED_PATTERNS = [
-  /\.test\.[jt]sx?$/,
-  /\.spec\.[jt]sx?$/,
-  /\.config\.[jt]s$/,
-  /scripts\//,
-  /__tests__\//,
-  /__mocks__\//,
+	/\.test\.[jt]sx?$/,
+	/\.spec\.[jt]sx?$/,
+	/\.config\.[jt]s$/,
+	/scripts\//,
+	/__tests__\//,
+	/__mocks__\//,
 ];
 
 const MAX_STDIN = 1024 * 1024; // 1MB limit
-let data = '';
-process.stdin.setEncoding('utf8');
+let data = "";
+process.stdin.setEncoding("utf8");
 
-process.stdin.on('data', chunk => {
-  if (data.length < MAX_STDIN) {
-    const remaining = MAX_STDIN - data.length;
-    data += chunk.substring(0, remaining);
-  }
+process.stdin.on("data", (chunk) => {
+	if (data.length < MAX_STDIN) {
+		const remaining = MAX_STDIN - data.length;
+		data += chunk.substring(0, remaining);
+	}
 });
 
-process.stdin.on('end', () => {
-  try {
-    if (!isGitRepo()) {
-      process.stdout.write(data);
-      process.exit(0);
-    }
+process.stdin.on("end", () => {
+	try {
+		if (!isGitRepo()) {
+			process.exit(0);
+		}
 
-    const files = getGitModifiedFiles(['\\.tsx?$', '\\.jsx?$'])
-      .filter(f => fs.existsSync(f))
-      .filter(f => !EXCLUDED_PATTERNS.some(pattern => pattern.test(f)));
+		const files = getGitModifiedFiles(["\\.tsx?$", "\\.jsx?$"])
+			.filter((f) => fs.existsSync(f))
+			.filter((f) => !EXCLUDED_PATTERNS.some((pattern) => pattern.test(f)));
 
-    let hasConsole = false;
+		let hasConsole = false;
 
-    for (const file of files) {
-      const content = readFile(file);
-      if (content && content.includes('console.log')) {
-        log(`[Hook] WARNING: console.log found in ${file}`);
-        hasConsole = true;
-      }
-    }
+		for (const file of files) {
+			const content = readFile(file);
+			if (content && content.includes("console.log")) {
+				log(`[Hook] WARNING: console.log found in ${file}`);
+				hasConsole = true;
+			}
+		}
 
-    if (hasConsole) {
-      log('[Hook] Remove console.log statements before committing');
-    }
-  } catch (err) {
-    log(`[Hook] check-console-log error: ${err.message}`);
-  }
+		if (hasConsole) {
+			log("[Hook] Remove console.log statements before committing");
+		}
+	} catch (err) {
+		log(`[Hook] check-console-log error: ${err.message}`);
+	}
 
-  // Always output the original data
-  process.stdout.write(data);
-  process.exit(0);
+	// Output empty — don't pass through stdin as hook output
+	process.exit(0);
 });

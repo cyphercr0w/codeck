@@ -17,6 +17,23 @@
 			"command": "npx",
 			"args": ["-y", "@playwright/mcp@latest", "--headless", "--no-sandbox"]
 		},
+		"memory": {
+			"command": "npx",
+			"args": ["-y", "@modelcontextprotocol/server-memory"],
+			"description": "Persistent memory across sessions"
+		},
+		"magic": {
+			"command": "npx",
+			"args": ["-y", "@magicuidesign/mcp@latest"],
+			"description": "Magic UI components"
+		}
+	},
+	"_disabledMcpServers": {
+		"token-optimizer": {
+			"command": "npx",
+			"args": ["-y", "token-optimizer-mcp"],
+			"description": "Token optimization via content deduplication and compression"
+		},
 		"brave-search": {
 			"command": "npx",
 			"args": ["-y", "@anthropic-ai/mcp-server-brave-search"],
@@ -29,23 +46,6 @@
 			"env": { "GITHUB_TOKEN": "" },
 			"description": "GitHub repos, PRs, issues, and code search"
 		},
-		"memory": {
-			"command": "npx",
-			"args": ["-y", "@modelcontextprotocol/server-memory"],
-			"description": "Persistent memory across sessions"
-		},
-		"magic": {
-			"command": "npx",
-			"args": ["-y", "@magicuidesign/mcp@latest"],
-			"description": "Magic UI components"
-		},
-		"token-optimizer": {
-			"command": "npx",
-			"args": ["-y", "token-optimizer-mcp"],
-			"description": "Token optimization via content deduplication and compression"
-		}
-	},
-	"_disabledMcpServers": {
 		"exa-web-search": {
 			"command": "npx",
 			"args": ["-y", "exa-mcp-server"],
@@ -67,7 +67,7 @@
 		"vercel": {
 			"command": "npx",
 			"args": ["-y", "vercel-mcp@latest"],
-			"env": { "VERCEL_API_KEY": "" },
+			"env": { "VERCEL_TOKEN": "" },
 			"description": "Vercel deployments and projects"
 		},
 		"railway": {
@@ -106,7 +106,7 @@
 		},
 		"notion": {
 			"command": "npx",
-			"args": ["-y", "@notionhq/mcp-server"],
+			"args": ["-y", "@notionhq/notion-mcp-server"],
 			"env": { "NOTION_API_KEY": "" },
 			"description": "Notion pages, databases, and workspaces"
 		},
@@ -124,7 +124,7 @@
 		},
 		"figma": {
 			"command": "npx",
-			"args": ["-y", "figma-mcp-server"],
+			"args": ["-y", "figma-developer-mcp"],
 			"env": { "FIGMA_ACCESS_TOKEN": "" },
 			"description": "Figma design files, components, and styles"
 		}

@@ -1,0 +1,502 @@
+/* ========== Config Section ========== */
+.config-content {
+	padding: 20px;
+	overflow-y: auto;
+	overflow-x: hidden;
+	flex: 1;
+	-webkit-overflow-scrolling: touch;
+}
+.config-header {
+	display: flex;
+	justify-content: space-between;
+	align-items: center;
+	margin-bottom: 16px;
+	padding-bottom: 12px;
+	border-bottom: 1px solid var(--border);
+}
+.config-breadcrumb {
+	display: flex;
+	align-items: center;
+	gap: 2px;
+	font-size: 14px;
+}
+.config-sep {
+	color: var(--text-muted);
+	margin: 0 2px;
+}
+.config-crumb {
+	background: none;
+	border: none;
+	color: var(--text-secondary);
+	cursor: pointer;
+	padding: 2px 4px;
+	border-radius: 4px;
+	font-size: 14px;
+}
+.config-crumb:hover:not(:disabled) {
+	background: var(--bg-hover);
+	color: var(--text-primary);
+}
+.config-crumb:disabled {
+	color: var(--text-primary);
+	cursor: default;
+	font-weight: 500;
+}
+.config-actions {
+	display: flex;
+	gap: 4px;
+}
+.config-viewer {
+	border: 1px solid var(--border);
+	border-radius: 8px;
+	overflow: hidden;
+}
+.config-viewer-header {
+	display: flex;
+	justify-content: space-between;
+	align-items: center;
+	padding: 8px 12px;
+	background: var(--bg-secondary);
+	border-bottom: 1px solid var(--border);
+}
+.config-viewer-name {
+	font-weight: 500;
+	font-size: 14px;
+}
+.config-viewer-actions {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+}
+.config-save-msg {
+	font-size: 12px;
+	padding: 2px 8px;
+	border-radius: 4px;
+}
+.config-save-msg.success {
+	color: var(--success);
+}
+.config-save-msg.error {
+	color: var(--error);
+}
+/* ── Memory Stats ── */
+.mem-stats {
+	display: grid;
+	grid-template-columns: repeat(5, 1fr);
+	gap: 0;
+	margin-bottom: 6px;
+	border: 1px solid var(--border);
+	border-radius: var(--radius);
+	overflow: hidden;
+}
+@media (max-width: 480px) {
+	.mem-stats {
+		grid-template-columns: repeat(3, 1fr);
+	}
+	.mem-stat {
+		border-bottom: 1px solid var(--border);
+	}
+	.mem-stat:nth-child(3n) {
+		border-right: none;
+	}
+	.mem-stat:nth-last-child(-n + 2) {
+		border-bottom: none;
+	}
+}
+.mem-stat {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	min-width: 0;
+	padding: 8px 4px;
+	border-right: 1px solid var(--border);
+}
+.mem-stat:last-child {
+	border-right: none;
+}
+.mem-stat-value {
+	font-size: 14px;
+	font-weight: 700;
+	font-family: var(--font-mono);
+	color: var(--text-primary);
+}
+.mem-stat-label {
+	font-size: 9px;
+	color: var(--text-muted);
+	text-transform: uppercase;
+	letter-spacing: 0.5px;
+	margin-top: 2px;
+}
+
+/* ── Memory Cards (Preset + Migration) ── */
+.mem-card {
+	flex: 1;
+	min-width: 0;
+	padding: 14px;
+	background: var(--bg-card);
+	border: 1px solid var(--border);
+	border-radius: var(--radius-lg);
+}
+.mem-card-header {
+	display: flex;
+	align-items: flex-start;
+	gap: 10px;
+	margin-bottom: 12px;
+}
+.mem-card-header > svg {
+	flex-shrink: 0;
+	color: var(--text-secondary);
+	margin-top: 2px;
+}
+.mem-card-header-info {
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+	min-width: 0;
+}
+.mem-card-title {
+	font-size: 13px;
+	font-weight: 600;
+}
+.mem-card-meta {
+	font-size: 11px;
+	color: var(--text-muted);
+}
+.mem-card-actions {
+	display: flex;
+	gap: 8px;
+	align-items: center;
+}
+/* Destructive tint for the Reset ghost button inside the preset card */
+.mem-card-actions .btn-ghost {
+	color: var(--error);
+	opacity: 0.7;
+}
+.mem-card-actions .btn-ghost:hover {
+	background: var(--error-subtle);
+	color: var(--error);
+	opacity: 1;
+}
+
+/* ── Footer: secondary sections (memory, preset, migration) ── */
+.mem-footer {
+	margin-top: 48px;
+	padding-top: 20px;
+	border-top: 1px solid var(--border);
+	opacity: 0.55;
+	transition: opacity var(--transition);
+}
+.mem-footer:hover {
+	opacity: 1;
+}
+.mem-footer .ac-section-title {
+	font-size: 12px;
+	color: var(--text-secondary);
+}
+.mem-footer .ac-section-header {
+	margin-bottom: 4px;
+}
+
+/* ── Memory Shortcuts Grid ── */
+.mem-shortcuts {
+	display: grid;
+	grid-template-columns: repeat(3, 1fr);
+	gap: 10px;
+}
+@media (max-width: 640px) {
+	.mem-shortcuts {
+		grid-template-columns: repeat(2, 1fr);
+	}
+}
+@media (max-width: 420px) {
+	.mem-shortcuts {
+		grid-template-columns: 1fr;
+	}
+}
+.mem-shortcut {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	text-align: center;
+	gap: 10px;
+	padding: 20px 16px;
+	background: var(--bg-secondary);
+	border: 1px solid var(--border);
+	border-radius: var(--radius-lg);
+	cursor: pointer;
+	transition:
+		background var(--transition),
+		border-color var(--transition),
+		box-shadow var(--transition);
+	font-family: inherit;
+	color: var(--text-primary);
+}
+.mem-shortcut:hover {
+	background: var(--bg-hover);
+	border-color: var(--accent);
+	box-shadow:
+		0 0 0 1px var(--accent-subtle),
+		inset 0 0 0 1px var(--accent-subtle);
+}
+.mem-shortcut:focus-visible {
+	outline: 2px solid var(--accent);
+	outline-offset: 2px;
+}
+.mem-shortcut svg {
+	color: var(--accent);
+	flex-shrink: 0;
+	opacity: 0.85;
+	transition: opacity var(--transition);
+}
+.mem-shortcut:hover svg {
+	opacity: 1;
+}
+.mem-shortcut-title {
+	font-size: 13px;
+	font-weight: 600;
+	line-height: 1.2;
+}
+.mem-shortcut-desc {
+	font-size: 11px;
+	color: var(--text-muted);
+	line-height: 1.4;
+}
+
+/* ── Quick Input ── */
+.mem-quick {
+	border: 1px solid var(--border);
+	border-radius: var(--radius-lg);
+	overflow: hidden;
+	margin-bottom: 0;
+}
+.mem-quick-tabs {
+	display: flex;
+	background: var(--bg-secondary);
+	border-bottom: 1px solid var(--border);
+}
+.mem-quick-tab {
+	flex: 1;
+	padding: 10px 12px;
+	background: none;
+	border: none;
+	font-size: 13px;
+	font-weight: 500;
+	color: var(--text-muted);
+	cursor: pointer;
+	transition: all 0.15s;
+	font-family: inherit;
+	border-bottom: 2px solid transparent;
+}
+.mem-quick-tab:hover {
+	color: var(--text-primary);
+	background: var(--bg-hover);
+}
+.mem-quick-tab.active {
+	color: var(--accent);
+	font-weight: 600;
+	border-bottom-color: var(--accent);
+	background: var(--bg-hover);
+}
+.mem-quick-body {
+	padding: 10px 12px;
+}
+.mem-quick-input {
+	width: 100%;
+	background: var(--bg-primary);
+	border: 1px solid var(--border);
+	border-radius: var(--radius);
+	padding: 8px 10px;
+	font-size: 12px;
+	font-family: var(--font-mono);
+	color: var(--text-primary);
+	resize: vertical;
+	min-height: 40px;
+	outline: none;
+}
+.mem-quick-input:focus {
+	border-color: var(--accent);
+}
+.mem-quick-footer {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	margin-top: 8px;
+	justify-content: flex-end;
+}
+.mem-quick-hint {
+	font-size: 10px;
+	color: var(--text-muted);
+}
+.mem-quick-msg {
+	font-size: 11px;
+	font-weight: 500;
+}
+.mem-quick-msg-success {
+	color: var(--success);
+}
+.mem-quick-msg-error {
+	color: var(--error);
+}
+
+/* ── Skill Marketplace ── */
+
+.skill-market {
+}
+
+.skill-search {
+	width: 100%;
+	background: var(--bg-primary);
+	border: 1px solid var(--border);
+	border-radius: var(--radius);
+	padding: 8px 10px;
+	font-size: 13px;
+	color: var(--text-primary);
+	outline: none;
+	font-family: inherit;
+	margin-bottom: 8px;
+}
+.skill-search:focus {
+	border-color: var(--accent);
+}
+.skill-search::placeholder {
+	color: var(--text-muted);
+}
+
+.skill-list {
+	max-height: 250px;
+	min-height: 80px;
+	overflow-y: auto;
+	border: 1px solid var(--border);
+	border-radius: var(--radius);
+	display: flex;
+	flex-direction: column;
+}
+
+.skill-list .fb-empty {
+	flex: 1;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+}
+
+.skill-item {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	padding: 8px 10px;
+	border-bottom: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.04));
+	font-size: 12px;
+}
+.skill-item:last-child {
+	border-bottom: none;
+}
+.skill-item:hover {
+	background: var(--bg-hover);
+}
+
+.skill-item-info {
+	flex: 1;
+	min-width: 0;
+	display: flex;
+	flex-direction: column;
+	gap: 1px;
+}
+
+.skill-item-name {
+	font-weight: 600;
+	font-family: var(--font-mono);
+	font-size: 12px;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+.skill-item-source {
+	font-size: 10px;
+	color: var(--text-muted);
+}
+
+.skill-item-installs {
+	font-size: 10px;
+	color: var(--text-muted);
+	font-family: var(--font-mono);
+	white-space: nowrap;
+	min-width: 35px;
+	text-align: right;
+}
+
+/* ── Memory Migration ── */
+
+.mem-migration {
+	margin: 16px 20px;
+	padding: 14px 16px;
+	border: 1px solid var(--border);
+	border-radius: var(--radius-lg);
+	background: var(--bg-card);
+}
+
+.mem-migration-label {
+	font-size: 12px;
+	font-weight: 600;
+	color: var(--text-secondary);
+	margin-bottom: 10px;
+}
+
+.mem-migration-actions {
+	display: flex;
+	gap: 8px;
+	margin-bottom: 8px;
+}
+
+.mem-migration-msg {
+	font-size: 12px;
+	margin-bottom: 6px;
+}
+
+.mem-migration-hint {
+	font-size: 11px;
+	color: var(--text-muted);
+	line-height: 1.5;
+}
+
+/* ── Memory separator ── */
+.mem-separator {
+	height: 1px;
+	background: var(--border);
+	margin: 16px 0;
+}
+.btn-danger {
+	background: var(--error);
+	color: #fff;
+	border: none;
+}
+.btn-danger:hover {
+	opacity: 0.9;
+}
+.config-file-content {
+	padding: 12px 16px;
+	margin: 0;
+	font-size: 13px;
+	font-family: var(--font-mono);
+	line-height: 1.6;
+	white-space: pre-wrap;
+	word-wrap: break-word;
+	max-height: 60vh;
+	overflow-y: auto;
+	background: var(--bg-primary);
+}
+.config-editor {
+	width: 100%;
+	min-height: 300px;
+	max-height: 60vh;
+	padding: 12px 16px;
+	margin: 0;
+	border: none;
+	font-family: var(--font-mono);
+	font-size: 13px;
+	line-height: 1.6;
+	background: var(--bg-primary);
+	color: var(--text-primary);
+	resize: vertical;
+	outline: none;
+}

@@ -139,6 +139,7 @@ Manages Claude CLI interactive pseudo-terminal sessions via node-pty.
 
 | Function | Signature | Description |
 |----------|-----------|-------------|
+| `setupLanguageRules` | `(cwd): void` | Detects project language and symlinks matching ruleset from rules-library |
 | `createConsoleSession` | `(options?): ConsoleSession` | Spawns claude CLI in PTY with OAuth env |
 | `createShellSession` | `(options?): ConsoleSession` | Spawns bash shell (no OAuth required) |
 | `getSession` | `(id): ConsoleSession \| undefined` | Lookup by UUID |
@@ -162,7 +163,8 @@ Manages Claude CLI interactive pseudo-terminal sessions via node-pty.
 
 1. `getOAuthEnv()` — reads token from `.credentials.json`
 2. `ensureOnboardingComplete()` — writes onboarding flags to `/root/.claude.json`
-3. `syncToClaudeSettings()` — writes enabled permissions to `settings.json`
+3. `setupLanguageRules(cwd)` — detects project language from indicator files and symlinks the matching ruleset from `/workspace/.codeck/rules-library/` into `~/.claude/rules/`
+4. `syncToClaudeSettings()` — writes enabled permissions to `settings.json`
 4. Build clean env: strip `NODE_ENV`, `PORT`, etc.; inject OAuth token + `TERM=xterm-256color`
 5. `pty.spawn('claude', [--resume?], { name: 'xterm-256color', cols: 120, rows: 30, cwd, env })`
 6. Output buffered in `session.outputBuffer[]` (1MB cap, FIFO) until WS client attaches
@@ -697,3 +699,80 @@ Autonomous, scheduled agents using `claude -p` in non-interactive mode.
 - Default: 5 minutes, configurable per agent
 - Grace period: 15s between SIGTERM and SIGKILL
 - Exit code 0 = success, non-zero = failure, timeout flag = timeout
+
+---
+
+## `services/teams.ts` — Agent Team Templates
+
+CRUD for team templates. Teams define parallel agent groups (no sequential transitions). Stored as JSON in `/workspace/.codeck/teams/templates/`.
+
+### Exports
+
+- `listTeamTemplates()` → `TeamTemplate[]`
+- `getTeamTemplate(id)` → `TeamTemplate | null`
+- `createTeamTemplate(data)` → `TeamTemplate`
+- `updateTeamTemplate(id, data)` → `TeamTemplate | null`
+- `deleteTeamTemplate(id)` → `boolean`
+- `saveTeamExecution(execution)` → void
+- `getTeamExecution(id)` → `TeamExecution | null`
+- `listTeamExecutions()` → `TeamExecution[]`
+- `initTeamTemplates()` — creates built-in templates (Security Audit, Code Review)
+
+---
+
+## `services/tmux-bridge.ts` — Agent Teams Orchestration
+
+**Note:** The tmux-bridge was the original Agent Teams orchestration layer. It has been superseded by the native TeamCreate/Agent/SendMessage system where Claude Code itself manages teams. The tmux-bridge remains for reference but is no longer the active launch path.
+
+The current Agent Teams flow uses `console.ts` → `--append-system-prompt` to inject team leader instructions when `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1` is set. `teammate-watcher.ts` monitors for tmux panes created by Claude's Agent tool.
+
+---
+
+## `services/tmux-pty-adapter.ts` — IPty Wrapper for tmux Panes
+
+Implements the IPty interface by wrapping tmux commands. Allows tmux panes to be registered as console sessions using the existing WebSocket pipeline.
+
+- **Output**: `tmux pipe-pane -O` → temp file → `tail -f` → `onData()` callbacks
+- **Input**: `tmux send-keys -t pane -l` for literals, special key mapping for Enter/Ctrl+C/arrows
+- **Resize**: `tmux resize-pane -t pane -x cols -y rows`
+- **Liveness**: polls `tmux display-message` every 5s, auto-destroys on pane death
+- **Cleanup**: stops pipe-pane, kills tail process, removes temp file
+
+---
+
+## `services/conversation-storage.ts` — Chat Conversation Storage
+
+File-based CRUD for chat conversations. Each conversation stored as a JSON file in `/workspace/.codeck/chat/conversations/`.
+
+### Exports
+
+- `ensureConversationsDir()` — creates conversations directory
+- `readConversation(id)` → `ChatConversation | null`
+- `writeConversation(conversation)` → void
+- `deleteConversation(id)` → void
+- `conversationPath(id)` → string — validated file path
+- `listAllConversations()` → `ConversationSummary[]`
+- `autoName(message)` → string — generates conversation name from first message
+
+### Constants
+
+- `MODEL_MAP` — maps client model names (haiku/sonnet/opus) to Anthropic API model IDs
+
+---
+
+## `services/chat-api-handler.ts` — Chat Streaming Handler
+
+Calls the Anthropic Messages API directly with streaming, web tools, and an agentic tool loop (max 5 rounds).
+
+### Exports
+
+- `handleApiDirectMode(res, params)` — SSE streaming response handler
+
+### How it works
+
+1. Reads OAuth token from credentials
+2. Builds message history from conversation
+3. Calls Anthropic Messages API with streaming
+4. Parses SSE stream, forwards text deltas to client
+5. Executes tool calls (web_search, web_fetch) and loops back to API
+6. Saves assistant response to conversation on completion

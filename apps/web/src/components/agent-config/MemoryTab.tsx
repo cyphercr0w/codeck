@@ -23,6 +23,7 @@ interface PresetStatus {
 	version: string | null;
 	availableVersion: string | null;
 	updateAvailable: boolean;
+	autoUpdate: boolean;
 }
 
 interface MemoryStats {
@@ -218,202 +219,234 @@ export function MemoryTab({ onNavigate }: MemoryTabProps) {
 
 	return (
 		<div class="ac-tab-content">
-			{/* Memory Stats */}
+			{/* Configuration Shortcuts — always visible, top of page */}
 			<div class="ac-section">
-				<div class="ac-section-header">
-					<div class="ac-section-title">
-						<IconBrain size={14} /> Agent Memory
-					</div>
+				<div class="ac-section-title">Configuration</div>
+				<div class="mem-shortcuts">
+					<button class="mem-shortcut" onClick={() => onNavigate?.("skills")}>
+						<IconBookmark size={28} />
+						<div>
+							<div class="mem-shortcut-title">Skills</div>
+							<div class="mem-shortcut-desc">Manage agent capabilities</div>
+						</div>
+					</button>
+					<button class="mem-shortcut" onClick={() => onNavigate?.("mcp")}>
+						<IconPlug size={28} />
+						<div>
+							<div class="mem-shortcut-title">MCP Servers</div>
+							<div class="mem-shortcut-desc">External tool integrations</div>
+						</div>
+					</button>
+					<button class="mem-shortcut" onClick={() => onNavigate?.("rules")}>
+						<IconList size={28} />
+						<div>
+							<div class="mem-shortcut-title">Rules</div>
+							<div class="mem-shortcut-desc">Coding standards & guidelines</div>
+						</div>
+					</button>
+					<button class="mem-shortcut" onClick={() => onNavigate?.("hooks")}>
+						<IconSettings size={28} />
+						<div>
+							<div class="mem-shortcut-title">Hooks</div>
+							<div class="mem-shortcut-desc">Automation scripts</div>
+						</div>
+					</button>
 					<button
-						class="btn btn-xs btn-ghost"
-						onClick={loadMemoryStats}
-						title="Refresh"
+						class="mem-shortcut"
+						onClick={() => onNavigate?.("permissions")}
 					>
-						<IconRefresh size={13} />
+						<IconShield size={28} />
+						<div>
+							<div class="mem-shortcut-title">Permissions</div>
+							<div class="mem-shortcut-desc">Tool access controls</div>
+						</div>
+					</button>
+					<button class="mem-shortcut" onClick={() => onNavigate?.("env")}>
+						<IconKey size={28} />
+						<div>
+							<div class="mem-shortcut-title">Environment</div>
+							<div class="mem-shortcut-desc">Variables & secrets</div>
+						</div>
 					</button>
 				</div>
-				{memStats ? (
-					<div class="mem-stats">
-						<div class="mem-stat">
-							<span class="mem-stat-value">{memStats.sessionsRemembered}</span>
-							<span class="mem-stat-label">sessions</span>
-						</div>
-						<div class="mem-stat">
-							<span class="mem-stat-value">{memStats.projectsTracked}</span>
-							<span class="mem-stat-label">projects</span>
-						</div>
-						<div class="mem-stat">
-							<span class="mem-stat-value">{memStats.decisionsCount}</span>
-							<span class="mem-stat-label">decisions</span>
-						</div>
-						<div class="mem-stat">
-							<span class="mem-stat-value">{memStats.dailyLogCount}</span>
-							<span class="mem-stat-label">daily logs</span>
-						</div>
-						<div class="mem-stat">
-							<span class="mem-stat-value">
-								{memStats.totalMemoryKB >= 1024
-									? `${(memStats.totalMemoryKB / 1024).toFixed(1)} MB`
-									: `${memStats.totalMemoryKB} KB`}
-							</span>
-							<span class="mem-stat-label">total size</span>
-						</div>
-					</div>
-				) : (
-					<div class="ac-empty">
-						<span class="spinner-sm" /> Loading...
-					</div>
-				)}
-				{memStats && (
-					<div class="dash-meta" style="margin-top: 8px">
-						Last active: {formatTimeAgo(memStats.lastActivityAt)}
-					</div>
-				)}
 			</div>
 
-			{/* Preset + Migration side by side on desktop */}
-			<div class="ac-row">
-				{presetStatus?.configured && (
+			{/* ── Footer: memory, preset, migration (secondary) ── */}
+			<div class="mem-footer">
+				{/* Memory Stats */}
+				<div class="ac-section">
+					<div class="ac-section-header">
+						<div class="ac-section-title">
+							<IconBrain size={14} /> Agent Memory
+						</div>
+						<button
+							class="btn btn-xs btn-ghost"
+							onClick={loadMemoryStats}
+							title="Refresh"
+						>
+							<IconRefresh size={13} />
+						</button>
+					</div>
+					{memStats ? (
+						<div class="mem-stats">
+							<div class="mem-stat">
+								<span class="mem-stat-value">
+									{memStats.sessionsRemembered}
+								</span>
+								<span class="mem-stat-label">sessions</span>
+							</div>
+							<div class="mem-stat">
+								<span class="mem-stat-value">{memStats.projectsTracked}</span>
+								<span class="mem-stat-label">projects</span>
+							</div>
+							<div class="mem-stat">
+								<span class="mem-stat-value">{memStats.decisionsCount}</span>
+								<span class="mem-stat-label">decisions</span>
+							</div>
+							<div class="mem-stat">
+								<span class="mem-stat-value">{memStats.dailyLogCount}</span>
+								<span class="mem-stat-label">daily logs</span>
+							</div>
+							<div class="mem-stat">
+								<span class="mem-stat-value">
+									{memStats.totalMemoryKB >= 1024
+										? `${(memStats.totalMemoryKB / 1024).toFixed(1)} MB`
+										: `${memStats.totalMemoryKB} KB`}
+								</span>
+								<span class="mem-stat-label">total size</span>
+							</div>
+						</div>
+					) : (
+						<div class="ac-empty">
+							<span class="spinner-sm" /> Loading...
+						</div>
+					)}
+					{memStats && (
+						<div class="dash-meta" style="margin-top: 8px">
+							Last active: {formatTimeAgo(memStats.lastActivityAt)}
+						</div>
+					)}
+				</div>
+
+				{/* Preset + Migration side by side on desktop */}
+				<div class="ac-row">
+					{presetStatus?.configured && (
+						<div class="mem-card">
+							<div class="mem-card-header">
+								<IconFolder size={16} />
+								<div class="mem-card-header-info">
+									<span class="mem-card-title">
+										{presetStatus.presetName || "Default Preset"}
+									</span>
+									<span class="mem-card-meta">
+										v{presetStatus.version}
+										{hasUpdate && (
+											<span class="badge badge-info" style="margin-left: 6px">
+												v{presetStatus.availableVersion} available
+											</span>
+										)}
+									</span>
+								</div>
+							</div>
+							<div class="mem-card-actions">
+								{hasUpdate ? (
+									<button
+										class="btn btn-sm btn-primary"
+										onClick={() => setShowUpdateModal(true)}
+										disabled={updating}
+										style="flex: 1"
+									>
+										{updating ? <span class="spinner-sm" /> : null}
+										Install v{presetStatus.availableVersion}
+									</button>
+								) : (
+									<button
+										class="btn btn-sm btn-secondary"
+										onClick={() => setShowUpdateModal(true)}
+										disabled={updating}
+										style="flex: 1"
+									>
+										{updating ? <span class="spinner-sm" /> : null}
+										Re-apply preset
+									</button>
+								)}
+								<button
+									class="btn btn-sm btn-ghost"
+									onClick={() => setShowResetModal(true)}
+									disabled={resetting}
+								>
+									{resetting ? <span class="spinner-sm" /> : null}
+									Reset
+								</button>
+							</div>
+							<label class="npm-checkbox" style="margin-top: 8px">
+								<input
+									type="checkbox"
+									checked={presetStatus.autoUpdate !== false}
+									onChange={async (e) => {
+										const enabled = (e.target as HTMLInputElement).checked;
+										await apiFetch("/api/preset/auto-update", {
+											method: "POST",
+											body: JSON.stringify({ enabled }),
+										});
+										loadPresetStatus();
+									}}
+								/>
+								<span>Auto-update on startup</span>
+							</label>
+						</div>
+					)}
+
+					{/* Migration */}
 					<div class="mem-card">
 						<div class="mem-card-header">
-							<IconFolder size={16} />
+							<IconDownload size={16} />
 							<div class="mem-card-header-info">
-								<span class="mem-card-title">
-									{presetStatus.presetName || "Default Preset"}
-								</span>
+								<span class="mem-card-title">Memory Migration</span>
 								<span class="mem-card-meta">
-									v{presetStatus.version}
-									{hasUpdate && (
-										<span class="badge badge-info" style="margin-left: 6px">
-											v{presetStatus.availableVersion} available
-										</span>
-									)}
+									Export or import all memory, preferences, rules, and skills
 								</span>
 							</div>
 						</div>
 						<div class="mem-card-actions">
 							<button
-								class={`btn btn-sm ${hasUpdate ? "btn-primary" : "btn-secondary"}`}
-								onClick={() => setShowUpdateModal(true)}
-								disabled={updating || !hasUpdate}
+								class="btn btn-sm btn-secondary"
+								onClick={handleExport}
+								disabled={exporting}
 								style="flex: 1"
 							>
-								{updating ? <span class="spinner-sm" /> : null}
-								{hasUpdate ? "Update Preset" : "Up to Date"}
+								{exporting ? (
+									<span class="spinner-sm" />
+								) : (
+									<IconDownload size={13} />
+								)}
+								Export
 							</button>
 							<button
-								class="btn btn-sm btn-ghost"
-								onClick={() => setShowResetModal(true)}
-								disabled={resetting}
+								class="btn btn-sm btn-secondary"
+								onClick={() => importInputRef.current?.click()}
+								disabled={importing}
+								style="flex: 1"
 							>
-								{resetting ? <span class="spinner-sm" /> : null}
-								Reset
+								{importing ? (
+									<span class="spinner-sm" />
+								) : (
+									<IconPlus size={13} />
+								)}
+								Import
 							</button>
+							<input
+								ref={importInputRef}
+								type="file"
+								accept=".tar.gz,.tgz"
+								style="display: none"
+								onChange={handleImportSelect}
+							/>
 						</div>
-					</div>
-				)}
-
-				{/* Migration */}
-				<div class="mem-card">
-					<div class="mem-card-header">
-						<IconDownload size={16} />
-						<div class="mem-card-header-info">
-							<span class="mem-card-title">Memory Migration</span>
-							<span class="mem-card-meta">
-								Export or import all memory, preferences, rules, and skills
-							</span>
-						</div>
-					</div>
-					<div class="mem-card-actions">
-						<button
-							class="btn btn-sm btn-secondary"
-							onClick={handleExport}
-							disabled={exporting}
-							style="flex: 1"
-						>
-							{exporting ? (
-								<span class="spinner-sm" />
-							) : (
-								<IconDownload size={13} />
-							)}
-							Export
-						</button>
-						<button
-							class="btn btn-sm btn-secondary"
-							onClick={() => importInputRef.current?.click()}
-							disabled={importing}
-							style="flex: 1"
-						>
-							{importing ? <span class="spinner-sm" /> : <IconPlus size={13} />}
-							Import
-						</button>
-						<input
-							ref={importInputRef}
-							type="file"
-							accept=".tar.gz,.tgz"
-							style="display: none"
-							onChange={handleImportSelect}
-						/>
 					</div>
 				</div>
 			</div>
-			{/* close ac-row */}
-
-			{/* Quick Access Shortcuts */}
-			{onNavigate && (
-				<div class="ac-section">
-					<div class="ac-section-title">Configuration</div>
-					<div class="mem-shortcuts">
-						<button class="mem-shortcut" onClick={() => onNavigate("skills")}>
-							<IconBookmark size={16} />
-							<div>
-								<div class="mem-shortcut-title">Skills</div>
-								<div class="mem-shortcut-desc">Manage agent capabilities</div>
-							</div>
-						</button>
-						<button class="mem-shortcut" onClick={() => onNavigate("mcp")}>
-							<IconPlug size={16} />
-							<div>
-								<div class="mem-shortcut-title">MCP Servers</div>
-								<div class="mem-shortcut-desc">External tool integrations</div>
-							</div>
-						</button>
-						<button class="mem-shortcut" onClick={() => onNavigate("rules")}>
-							<IconList size={16} />
-							<div>
-								<div class="mem-shortcut-title">Rules</div>
-								<div class="mem-shortcut-desc">
-									Coding standards & guidelines
-								</div>
-							</div>
-						</button>
-						<button class="mem-shortcut" onClick={() => onNavigate("hooks")}>
-							<IconSettings size={16} />
-							<div>
-								<div class="mem-shortcut-title">Hooks</div>
-								<div class="mem-shortcut-desc">Automation scripts</div>
-							</div>
-						</button>
-						<button
-							class="mem-shortcut"
-							onClick={() => onNavigate("permissions")}
-						>
-							<IconShield size={16} />
-							<div>
-								<div class="mem-shortcut-title">Permissions</div>
-								<div class="mem-shortcut-desc">Tool access controls</div>
-							</div>
-						</button>
-						<button class="mem-shortcut" onClick={() => onNavigate("env")}>
-							<IconKey size={16} />
-							<div>
-								<div class="mem-shortcut-title">Environment</div>
-								<div class="mem-shortcut-desc">Variables & secrets</div>
-							</div>
-						</button>
-					</div>
-				</div>
-			)}
+			{/* /mem-footer */}
 
 			<ConfirmModal
 				visible={showImportConfirm}

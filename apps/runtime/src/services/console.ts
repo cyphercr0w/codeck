@@ -2,21 +2,21 @@ import { spawn as ptySpawn, type IPty } from "node-pty";
 import {
 	readFileSync,
 	existsSync,
-	readdirSync,
 	mkdirSync,
 	unlinkSync,
 	renameSync,
-	statSync,
+	realpathSync,
+	readdirSync,
+	lstatSync,
+	symlinkSync,
 } from "fs";
-import {
-	readdir as readdirAsync,
-	stat as statAsync,
-	readFile as readFileAsync,
-} from "fs/promises";
+import { readdir as readdirAsync, stat as statAsync } from "fs/promises";
 import { randomUUID } from "crypto";
 import { resolve, join } from "path";
-import { realpathSync } from "fs";
-import { execFileSync } from "child_process";
+import { execFile as execFileCb } from "child_process";
+import { promisify } from "util";
+
+const execFile = promisify(execFileCb);
 import { ACTIVE_AGENT } from "./agent.js";
 import { syncToClaudeSettings } from "./permissions.js";
 import {
@@ -27,12 +27,12 @@ import {
 } from "./session-writer.js";
 import { atomicWriteFileSync } from "./memory.js";
 import { decryptValue } from "./auth-anthropic/encryption.js";
-import { summarizeSession } from "./session-summarizer.js";
 import { broadcast } from "../web/logger.js";
 import {
 	injectContextIntoCLAUDEMd,
 	type ContextInjectionStats,
 } from "./memory-context.js";
+import { startTeammateWatcher } from "./teammate-watcher.js";
 import {
 	getValidAgentBinary,
 	resolveAgentBinary,
@@ -65,6 +65,15 @@ const sessions = new Map<string, ConsoleSession>();
 // that would overwrite the shutdown snapshot with an empty session list.
 let suppressStateSave = false;
 
+// Callbacks invoked when any session's PTY exits — allows external modules
+// (routes, websocket) to clean up per-session state without circular imports.
+type SessionExitCallback = (sessionId: string, exitCode: number) => void;
+const globalSessionExitCallbacks: SessionExitCallback[] = [];
+
+export function onAnySessionExit(cb: SessionExitCallback): void {
+	globalSessionExitCallbacks.push(cb);
+}
+
 console.log(`[Console] Agent binary resolved: ${getAgentBinaryPath()}`);
 
 // Permissions are managed by services/permissions.ts
@@ -76,6 +85,10 @@ interface CreateSessionOptions {
 	useContinue?: boolean; // use --continue (resumes most recent conv for cwd, no picker)
 	continuationPrompt?: string;
 	conversationId?: string;
+	// Peer orchestration: additional args and env for agent PTY sessions
+	extraArgs?: string[];
+	extraEnv?: Record<string, string>;
+	sessionType?: "agent" | "shell";
 }
 
 /**
@@ -206,9 +219,112 @@ function detectConversationId(
 	})();
 }
 
+const RULES_DIR = "/root/.claude/rules";
+const RULES_LIBRARY = "/workspace/.codeck/rules-library";
+
+// Note: symlinks are global state under ~/.claude/rules/. In theory, concurrent
+// session creation with different cwd values could race. In practice Codeck is
+// single-user and sessions are created sequentially, so this is acceptable.
+function setupLanguageRules(cwd: string): void {
+	try {
+		// Detect languages from indicator files
+		const langs: string[] = [];
+
+		// Only tsconfig.json triggers typescript — package.json alone is ambiguous (JS-only projects)
+		if (existsSync(join(cwd, "tsconfig.json"))) {
+			langs.push("typescript");
+		}
+		if (existsSync(join(cwd, "Cargo.toml"))) langs.push("rust");
+		if (existsSync(join(cwd, "go.mod"))) langs.push("golang");
+		if (
+			existsSync(join(cwd, "pom.xml")) ||
+			existsSync(join(cwd, "build.gradle"))
+		) {
+			langs.push("java");
+		}
+		if (existsSync(join(cwd, "build.gradle.kts"))) langs.push("kotlin");
+		if (existsSync(join(cwd, "composer.json"))) langs.push("php");
+		if (
+			existsSync(join(cwd, "requirements.txt")) ||
+			existsSync(join(cwd, "pyproject.toml"))
+		) {
+			langs.push("python");
+		}
+		if (existsSync(join(cwd, "Package.swift"))) langs.push("swift");
+		if (existsSync(join(cwd, "CMakeLists.txt"))) langs.push("cpp");
+		if (
+			existsSync(join(cwd, "cpanfile")) ||
+			existsSync(join(cwd, "Makefile.PL"))
+		) {
+			langs.push("perl");
+		}
+		try {
+			if (
+				readdirSync(cwd).some(
+					(f) => f.endsWith(".csproj") || f.endsWith(".sln"),
+				)
+			) {
+				langs.push("csharp");
+			}
+		} catch {
+			/* non-fatal */
+		}
+
+		// Remove existing language symlinks (never touch common/ or typescript/)
+		if (existsSync(RULES_DIR)) {
+			try {
+				for (const entry of readdirSync(RULES_DIR)) {
+					if (entry === "common" || entry === "typescript") continue;
+					const entryPath = join(RULES_DIR, entry);
+					try {
+						if (lstatSync(entryPath).isSymbolicLink()) {
+							unlinkSync(entryPath);
+						}
+					} catch {
+						/* skip unreadable entry */
+					}
+				}
+			} catch {
+				/* skip if rules dir unreadable */
+			}
+		} else {
+			mkdirSync(RULES_DIR, { recursive: true });
+		}
+
+		// Create symlinks for detected languages (skip typescript — already a real dir)
+		const toLink = langs.filter((l) => l !== "typescript");
+		if (toLink.length === 0) {
+			if (langs.length === 0) {
+				console.log("[Rules] No additional language rules needed");
+			}
+			return;
+		}
+
+		for (const lang of toLink) {
+			const src = join(RULES_LIBRARY, lang);
+			const dest = join(RULES_DIR, lang);
+			if (!existsSync(src)) continue;
+			try {
+				symlinkSync(src, dest);
+			} catch (e) {
+				console.warn(
+					`[Rules] Failed to symlink ${lang}: ${(e as Error).message}`,
+				);
+			}
+		}
+
+		console.log(`[Rules] Detected: ${langs.join(", ")} → symlinked rules`);
+	} catch (e) {
+		console.warn(`[Rules] setupLanguageRules failed: ${(e as Error).message}`);
+	}
+}
+
 // Simple mutex to prevent concurrent session creation from exceeding MAX_SESSIONS.
 // Check-then-create is not atomic without this — two simultaneous POST /api/console/create
 // could both pass the getSessionCount() < MAX_SESSIONS check before either creates a session.
+// IMPORTANT: Synchronous-only mutex — works because createConsoleSession and
+// _createConsoleSessionInner are fully synchronous. If an `await` is ever added inside
+// _createConsoleSessionInner, replace with an async mutex (e.g., p-limit or promise chain).
 let sessionCreationLocked = false;
 
 export function createConsoleSession(
@@ -298,11 +414,13 @@ function _createConsoleSessionInner(
 		}
 	}
 
-	const finalEnv = {
+	const finalEnv: Record<string, string> = {
 		...buildCleanEnv(),
 		...userEnv,
 		...oauthEnv,
+		...(opts.extraEnv || {}),
 		TERM: "xterm-256color",
+		CLAUDE_AUTOCOMPACT_PCT_OVERRIDE: "90",
 		CODECK_SESSION_ID: id, // Must be LAST — prevents oauthEnv from overwriting
 	};
 
@@ -324,6 +442,11 @@ function _createConsoleSessionInner(
 		}
 	}
 
+	// Append extra args for peer sessions (MCP config, channel flags, etc.)
+	if (opts.extraArgs) {
+		args.push(...opts.extraArgs);
+	}
+
 	// Inject memory context into workspace CLAUDE.md before spawning
 	let contextStats: ContextInjectionStats | null = null;
 	try {
@@ -333,6 +456,91 @@ function _createConsoleSessionInner(
 			`[Console] Memory context injection failed: ${(e as Error).message}`,
 		);
 	}
+
+	// Inject Agent Teams instructions when enabled for this session
+	if (finalEnv.CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS === "1") {
+		const teamsLines = [
+			"## You are the LEADER of an Agent Team system.",
+			"",
+			"You do NOT implement code yourself. You are a coordinator. Your job is to:",
+			"1. Understand what the user wants",
+			"2. Break it into tasks",
+			"3. Spawn specialized teammates (sub-agents) to execute each task",
+			"4. Monitor their progress and report back to the user",
+			"5. Review the results and iterate if needed",
+			"",
+			"### ALWAYS use teams for non-trivial work",
+			"- Any task touching 2+ files → spawn teammates",
+			"- Bug fix → implementer + reviewer",
+			"- Feature → planner + implementer + reviewer",
+			"- Research → exploration agent",
+			"- If it can be parallelized, parallelize it.",
+			"",
+			"### How to coordinate",
+			"1. TeamCreate — create a team (once per task group)",
+			"2. TaskCreate — define tasks with clear descriptions",
+			"3. Agent — spawn teammates with team_name, name, and model: 'sonnet'",
+			"   Each teammate gets an ISOLATED context. They know NOTHING about your conversation.",
+			"   You MUST give them everything they need in their prompt:",
+			"   - Exact file paths to read/edit",
+			"   - What was decided (don't make them re-research)",
+			"   - What to do, what NOT to change, what to verify",
+			"   - Think of it as a complete task brief for a new hire",
+			"4. SendMessage — talk to teammates by name",
+			"5. TaskList — check progress",
+			"6. When done: SendMessage with {type: 'shutdown_request'} to each teammate",
+			"",
+			"### Rules",
+			"- Teammates ALWAYS use model: 'sonnet' (never Opus — too slow/expensive)",
+			"- ALWAYS spawn a reviewer after implementation work",
+			"- After spawning teammates, tell the user what each one is doing",
+			"- When teammates report back, summarize findings to the user",
+			"- Never go silent — the user needs to know what's happening",
+		];
+
+		// Load pre-configured sub-agent definitions so the leader knows what's available
+		const agentsDir = join(process.env.HOME || "/root", ".claude", "agents");
+		try {
+			const agentFiles = readdirSync(agentsDir).filter((f) =>
+				f.endsWith(".md"),
+			);
+			if (agentFiles.length > 0) {
+				const catalog: string[] = [];
+				for (const file of agentFiles) {
+					try {
+						const content = readFileSync(join(agentsDir, file), "utf-8");
+						const fmMatch = content.match(/^---\s*\n([\s\S]*?)\n---/);
+						if (!fmMatch) continue;
+						const fm = fmMatch[1];
+						const nameMatch = fm.match(/^name:\s*(.+)/m);
+						const descMatch = fm.match(/^description:\s*(.+)/m);
+						if (nameMatch) {
+							const name = nameMatch[1].trim();
+							const desc = descMatch ? descMatch[1].trim() : "";
+							catalog.push(`- **${name}**: ${desc}`);
+						}
+					} catch {
+						/* skip unreadable files */
+					}
+				}
+				if (catalog.length > 0) {
+					teamsLines.push(
+						"",
+						"### Pre-configured Sub-Agents",
+						"Use `subagent_type` parameter to spawn these specialized agents. Prefer these over generic agents.",
+						"",
+						...catalog,
+					);
+				}
+			}
+		} catch {
+			/* agents dir not found — skip catalog */
+		}
+
+		args.push("--append-system-prompt", teamsLines.join("\n"));
+	}
+
+	setupLanguageRules(workDir);
 
 	const binary = getValidAgentBinary();
 	console.log(
@@ -359,7 +567,7 @@ function _createConsoleSessionInner(
 	const name = workDir.split("/").pop() || workDir;
 	const session: ConsoleSession = {
 		id,
-		type: "agent",
+		type: opts.sessionType || "agent",
 		pty,
 		cwd: workDir,
 		name,
@@ -368,6 +576,11 @@ function _createConsoleSessionInner(
 		outputBufferSize: 0,
 		attached: false,
 	};
+
+	// Start teammate pane watcher only for teams-enabled sessions
+	if (finalEnv.CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS === "1") {
+		startTeammateWatcher(id, pty.pid);
+	}
 
 	// Set or detect conversation ID for agent sessions
 	if (opts.conversationId) {
@@ -384,7 +597,8 @@ function _createConsoleSessionInner(
 	// Start session capture for transcript logging
 	startSessionCapture(id, workDir);
 
-	// Buffer PTY output until a WS client attaches (with size cap)
+	// Always capture PTY output for transcript logging (session JSONL).
+	// Buffer output only when no WS client is attached (with size cap).
 	const dataDisposable = pty.onData((data: string) => {
 		captureOutput(id, data);
 		if (!session.attached) {
@@ -400,6 +614,22 @@ function _createConsoleSessionInner(
 		}
 	});
 	session.dataDisposable = dataDisposable;
+
+	// Register PTY exit handler at creation time — ensures cleanup even if no WS client
+	// ever attaches. Without this, sessions created during restore that never get a WS
+	// attachment become zombie entries in the sessions Map.
+	pty.onExit(({ exitCode }: { exitCode: number }) => {
+		for (const cb of globalSessionExitCallbacks) {
+			try {
+				cb(id, exitCode);
+			} catch {
+				/* non-fatal */
+			}
+		}
+		if (sessions.has(id)) {
+			destroySession(id);
+		}
+	});
 
 	sessions.set(id, session);
 	saveSessionState("session_created");
@@ -431,7 +661,49 @@ export function createShellSession(cwd?: string): ConsoleSession {
 		throw new Error(`Working directory does not exist: ${workDir}`);
 	}
 
-	const finalEnv = { ...buildCleanEnv(), TERM: "xterm-256color" };
+	// Load user env vars (API keys, tokens saved via Integrations UI)
+	const shellUserEnv: Record<string, string> = {};
+	const shellWsDir = join(process.env.WORKSPACE || "/workspace", ".codeck");
+	const shellEncryptedEnvPath = join(shellWsDir, ".env.encrypted");
+	const shellDotenvPath = join(shellWsDir, ".env");
+
+	if (existsSync(shellEncryptedEnvPath)) {
+		try {
+			const store = JSON.parse(readFileSync(shellEncryptedEnvPath, "utf-8"));
+			for (const v of store.vars || []) {
+				if (v.key && v.value) shellUserEnv[v.key] = decryptValue(v.value);
+			}
+		} catch {
+			/* fall through to plaintext */
+		}
+	}
+
+	if (Object.keys(shellUserEnv).length === 0 && existsSync(shellDotenvPath)) {
+		try {
+			const content = readFileSync(shellDotenvPath, "utf-8");
+			for (const line of content.split("\n")) {
+				const trimmed = line.trim();
+				if (!trimmed || trimmed.startsWith("#")) continue;
+				const eqIdx = trimmed.indexOf("=");
+				if (eqIdx > 0) {
+					const key = trimmed.slice(0, eqIdx).trim();
+					const val = trimmed
+						.slice(eqIdx + 1)
+						.trim()
+						.replace(/^["']|["']$/g, "");
+					if (key && val) shellUserEnv[key] = val;
+				}
+			}
+		} catch {
+			/* non-fatal */
+		}
+	}
+
+	const finalEnv = {
+		...buildCleanEnv(),
+		...shellUserEnv,
+		TERM: "xterm-256color",
+	};
 
 	console.log(`[Console] Shell: step1 env built +${Date.now() - t0}ms`);
 
@@ -483,6 +755,20 @@ export function createShellSession(cwd?: string): ConsoleSession {
 		}
 	});
 	session.dataDisposable = shellDataDisposable;
+
+	// Register PTY exit handler at creation time (same as agent sessions)
+	pty.onExit(({ exitCode }: { exitCode: number }) => {
+		for (const cb of globalSessionExitCallbacks) {
+			try {
+				cb(id, exitCode);
+			} catch {
+				/* non-fatal */
+			}
+		}
+		if (sessions.has(id)) {
+			destroySession(id);
+		}
+	});
 
 	sessions.set(id, session);
 	saveSessionState("session_created");
@@ -536,15 +822,16 @@ export function destroySession(id: string): void {
 		session.dataDisposable.dispose();
 	}
 
-	const sessionCwd = session.cwd;
-	sessions.delete(id);
-
-	// Send SIGTERM first to allow graceful shutdown (flush buffers, close files)
+	// Send SIGTERM first to allow graceful shutdown (flush buffers, close files).
+	// Kill before removing from registry so code that checks sessions.has(id)
+	// (e.g., detectConversationId poller) sees the session as present until signaled.
 	try {
 		session.pty.kill("SIGTERM");
 	} catch {
 		// Process may have already exited
 	}
+
+	sessions.delete(id);
 
 	// Force SIGKILL after 2s grace period if still running
 	setTimeout(() => {
@@ -628,28 +915,7 @@ function encodeProjectPath(cwd: string): string {
 }
 
 /**
- * Check if a .jsonl file contains at least one real conversation message (user or assistant type).
- * Filters out files that only contain metadata entries like file-history-snapshot.
- * Sync version — used only in startup paths (restoreSavedSessions).
- */
-function hasRealMessages(filePath: string): boolean {
-	try {
-		const lines = readFileSync(filePath, "utf8").split("\n").filter(Boolean);
-		return lines.some((line) => {
-			try {
-				const d = JSON.parse(line);
-				return d.type === "user" || d.type === "assistant";
-			} catch {
-				return false;
-			}
-		});
-	} catch {
-		return false;
-	}
-}
-
-/**
- * Async version of hasRealMessages — used in polling paths to avoid blocking the event loop.
+ * Check if a .jsonl file contains at least one real conversation message (async).
  * Reading large .jsonl conversation files synchronously was blocking for 100ms+ per file.
  */
 async function hasRealMessagesAsync(filePath: string): Promise<boolean> {
@@ -682,28 +948,39 @@ async function hasRealMessagesAsync(filePath: string): Promise<boolean> {
 }
 
 /**
- * Find the most recent valid conversation ID for the given cwd.
- * "Valid" means the .jsonl file has at least one real user/assistant message.
- * Returns undefined if no valid conversation is found.
+ * Find the most recent valid conversation ID for the given cwd (async).
+ * Uses async I/O to avoid blocking the event loop — the previous sync version
+ * used readdirSync + statSync + readFileSync on every .jsonl file, which blocked
+ * for seconds when project directories had many conversation files.
  */
-function findMostRecentConversation(cwd: string): string | undefined {
+async function findMostRecentConversationAsync(
+	cwd: string,
+): Promise<string | undefined> {
 	const encoded = encodeProjectPath(cwd);
 	const projectDir = `${ACTIVE_AGENT.projectsDir}/${encoded}`;
 	try {
-		if (!existsSync(projectDir)) return undefined;
-		const files = readdirSync(projectDir)
-			.filter((f) => f.endsWith(".jsonl"))
-			.flatMap((f) => {
+		const entries = await readdirAsync(projectDir).catch(() => [] as string[]);
+		const jsonlFiles = entries.filter((f) => f.endsWith(".jsonl"));
+
+		const fileStats = await Promise.all(
+			jsonlFiles.map(async (f) => {
 				try {
-					return [{ name: f, mtime: statSync(`${projectDir}/${f}`).mtimeMs }];
+					const s = await statAsync(`${projectDir}/${f}`);
+					return { name: f, mtime: s.mtimeMs };
 				} catch {
-					return [];
+					return null;
 				}
-			})
-			.sort((a, b) => b.mtime - a.mtime); // most recent first
-		for (const { name } of files) {
-			if (hasRealMessages(`${projectDir}/${name}`))
+			}),
+		);
+
+		const sorted = fileStats
+			.filter((s): s is { name: string; mtime: number } => s !== null)
+			.sort((a, b) => b.mtime - a.mtime);
+
+		for (const { name } of sorted) {
+			if (await hasRealMessagesAsync(`${projectDir}/${name}`)) {
 				return name.replace(".jsonl", "");
+			}
 		}
 		return undefined;
 	} catch {
@@ -748,7 +1025,24 @@ interface SessionsState {
 	sessions: SavedSession[];
 }
 
+let saveStateTimer: ReturnType<typeof setTimeout> | null = null;
+
+/**
+ * Debounced session state save — coalesces rapid saves (e.g., during restore of
+ * multiple sessions) into a single disk write after 500ms of inactivity.
+ */
 export function saveSessionState(
+	reason: string,
+	continuationPrompt?: string,
+): void {
+	if (saveStateTimer) clearTimeout(saveStateTimer);
+	saveStateTimer = setTimeout(() => {
+		saveStateTimer = null;
+		saveSessionStateNow(reason, continuationPrompt);
+	}, 500);
+}
+
+function saveSessionStateNow(
 	reason: string,
 	continuationPrompt?: string,
 ): SessionsState {
@@ -804,36 +1098,38 @@ export function saveSessionState(
 	return state;
 }
 
+// Session restore disabled — caused persistent black screen bugs after container restart.
+// Users restore sessions manually via "recent conversations" or "new agent".
+// The save mechanism is kept so sessions.json has data, but restore is never triggered.
 export function hasSavedSessions(): boolean {
-	return existsSync(SESSIONS_STATE_PATH);
+	return false; // Always false — restore disabled
 }
 
-// True only while a session restore from the previous lifecycle is genuinely in progress.
-// Set at module load (if sessions.json exists) and cleared after restoreSavedSessions() runs.
-// Unlike hasSavedSessions(), this flag is NOT affected by saveSessionState() calls during
-// normal operation — prevents new WS clients from seeing pendingRestore:true after startup.
-let _pendingRestore: boolean = existsSync(SESSIONS_STATE_PATH);
-
 export function isPendingRestore(): boolean {
-	return _pendingRestore;
+	return false; // Always false — restore disabled
 }
 
 export function clearPendingRestore(): void {
-	_pendingRestore = false;
+	// no-op
 }
 
-export function restoreSavedSessions(): Array<{
+/**
+ * Read saved sessions from disk WITHOUT creating PTY processes.
+ * Returns the list for the frontend to show Resume/Discard prompt.
+ * PTY creation happens only when the user explicitly calls restoreSessionsNow().
+ */
+export function readSavedSessions(): Array<{
 	id: string;
 	type: string;
 	cwd: string;
 	name: string;
+	conversationId?: string;
 }> {
 	if (!existsSync(SESSIONS_STATE_PATH)) return [];
 
 	let state: SessionsState;
 	try {
 		const raw = JSON.parse(readFileSync(SESSIONS_STATE_PATH, "utf8"));
-		// Migrate old format (no version field) to v1
 		state = {
 			version: raw.version || 1,
 			savedAt: raw.savedAt || Date.now(),
@@ -847,7 +1143,54 @@ export function restoreSavedSessions(): Array<{
 		return [];
 	}
 
-	console.log(`[Console] Restoring ${state.sessions.length} saved sessions...`);
+	console.log(
+		`[Console] Found ${state.sessions.length} saved sessions (deferred — waiting for user action)`,
+	);
+
+	const result = state.sessions.map((s) => ({
+		id: s.id,
+		type: s.type || "agent",
+		cwd: s.cwd,
+		name: s.name || s.cwd.split("/").pop() || "session",
+		conversationId: s.conversationId,
+	}));
+
+	// Rename to .bak so it doesn't re-trigger on next restart
+	try {
+		renameSync(SESSIONS_STATE_PATH, SESSIONS_STATE_PATH + ".bak");
+	} catch {
+		try {
+			unlinkSync(SESSIONS_STATE_PATH);
+		} catch {
+			/* ignore */
+		}
+	}
+
+	return result;
+}
+
+/**
+ * Actually create PTY processes for saved sessions.
+ * Called when the user clicks "Resume" in the frontend.
+ */
+export async function restoreSessionsNow(
+	savedSessions: Array<{
+		type: string;
+		cwd: string;
+		name: string;
+		conversationId?: string;
+	}>,
+): Promise<
+	Array<{
+		id: string;
+		type: string;
+		cwd: string;
+		name: string;
+	}>
+> {
+	console.log(
+		`[Console] User chose Resume — creating ${savedSessions.length} sessions...`,
+	);
 	const restored: Array<{
 		id: string;
 		type: string;
@@ -855,40 +1198,27 @@ export function restoreSavedSessions(): Array<{
 		name: string;
 	}> = [];
 
-	for (const saved of state.sessions) {
-		console.log(
-			`[Console] Restoring session ${saved.id.slice(0, 8)}: type=${saved.type}, cwd=${saved.cwd}, conversationId=${saved.conversationId?.slice(0, 8) || "none"}`,
-		);
+	for (const saved of savedSessions) {
 		try {
-			// Validate saved cwd exists, fallback to /workspace
 			const cwd = existsSync(saved.cwd) ? saved.cwd : "/workspace";
 			if (saved.type === "agent") {
 				let session: ConsoleSession;
 				if (saved.conversationId) {
-					// Best case: we have the exact conversation ID — resume it directly
 					session = createConsoleSession({
 						cwd,
 						resume: true,
 						conversationId: saved.conversationId,
 					});
 				} else {
-					// Fallback: find the most recent valid conversation (with real user/assistant messages)
-					// and resume it by ID.  Avoids --continue which can fail with trust dialogs or if
-					// it can't find the conversation via its own heuristics.
-					const recentConvId = findMostRecentConversation(cwd);
+					// Async — avoids blocking the event loop with sync stat/readFile
+					const recentConvId = await findMostRecentConversationAsync(cwd);
 					if (recentConvId) {
-						console.log(
-							`[Console] Found recent conversation ${recentConvId.slice(0, 8)} for ${saved.id.slice(0, 8)}, resuming`,
-						);
 						session = createConsoleSession({
 							cwd,
 							resume: true,
 							conversationId: recentConvId,
 						});
 					} else {
-						console.log(
-							`[Console] No valid conversations for ${saved.id.slice(0, 8)}, starting fresh`,
-						);
 						session = createConsoleSession({ cwd });
 					}
 				}
@@ -908,26 +1238,16 @@ export function restoreSavedSessions(): Array<{
 				});
 			}
 		} catch (e) {
-			const errMsg = (e as Error).message;
 			console.warn(
-				`[Console] Failed to restore session ${saved.id.slice(0, 8)}: ${errMsg}`,
+				`[Console] Failed to restore session: ${(e as Error).message}`,
 			);
 		}
 	}
 
-	// Rename sessions.json to .bak after restore (keep for debugging, but won't re-trigger on next restart)
-	try {
-		renameSync(SESSIONS_STATE_PATH, SESSIONS_STATE_PATH + ".bak");
-	} catch {
-		try {
-			unlinkSync(SESSIONS_STATE_PATH);
-		} catch {
-			/* ignore */
-		}
-	}
+	// .bak rename already handled by readSavedSessions() — no duplicate rename needed
 
 	console.log(
-		`[Console] Restored ${restored.length}/${state.sessions.length} sessions`,
+		`[Console] Restored ${restored.length}/${savedSessions.length} sessions`,
 	);
 	return restored;
 }
@@ -935,17 +1255,20 @@ export function restoreSavedSessions(): Array<{
 /**
  * Safely update the agent CLI binary and re-resolve the path.
  * Returns the new version string or throws on failure.
+ * Async to avoid blocking the event loop during npm install (5-30s).
  */
-export function updateAgentBinary(): { version: string; binaryPath: string } {
+export async function updateAgentBinary(): Promise<{
+	version: string;
+	binaryPath: string;
+}> {
 	const pkg = "@anthropic-ai/claude-code";
 
-	// Run npm update
+	// Run npm update (async — does not block event loop)
 	console.log(`[Console] Updating ${pkg}...`);
 	try {
-		execFileSync("npm", ["install", "-g", `${pkg}@latest`], {
+		await execFile("npm", ["install", "-g", `${pkg}@latest`], {
 			encoding: "utf8",
 			timeout: 120000,
-			stdio: "pipe",
 		});
 	} catch (e) {
 		const msg = e instanceof Error ? e.message : String(e);
@@ -961,30 +1284,15 @@ export function updateAgentBinary(): { version: string; binaryPath: string } {
 	// Validate the new binary works
 	let version = "unknown";
 	try {
-		version = execFileSync(newPath, [ACTIVE_AGENT.flags.version], {
+		const result = await execFile(newPath, [ACTIVE_AGENT.flags.version], {
 			encoding: "utf8",
 			timeout: 10000,
-			stdio: "pipe",
-		}).trim();
+		});
+		version = result.stdout.trim();
 	} catch {
 		console.warn("[Console] Could not get version after update");
 	}
 
 	console.log(`[Console] Update complete: ${version} at ${newPath}`);
 	return { version, binaryPath: newPath };
-}
-
-export async function flushAllSessions(timeoutMs = 10000): Promise<void> {
-	const agentSessions = Array.from(sessions.values()).filter(
-		(s) => s.type === "agent",
-	);
-	if (agentSessions.length === 0) return;
-
-	console.log(
-		`[Console] Flushing ${agentSessions.length} agent sessions (timeout: ${timeoutMs}ms)`,
-	);
-	for (const session of agentSessions) {
-		session.pty.write("/compact\n");
-	}
-	await new Promise((r) => setTimeout(r, timeoutMs));
 }

@@ -181,17 +181,17 @@ router.get("/projects/:name", (req, res) => {
 
 // ── Status ──
 
-router.get("/status", async (_req, res) => {
+router.get("/status", asyncHandler(async (_req, res) => {
 	res.json(await getMemoryStatus());
-});
+}));
 
-router.get("/stats", async (_req, res) => {
+router.get("/stats", asyncHandler(async (_req, res) => {
 	res.json(await getMemoryStats());
-});
+}));
 
-router.get("/files", async (_req, res) => {
+router.get("/files", asyncHandler(async (_req, res) => {
 	res.json({ files: await listMemoryFiles() });
-});
+}));
 
 // ── Durable Memory (MEMORY.md) ──
 
@@ -506,11 +506,11 @@ router.get("/flush/state", (_req, res) => {
 
 // ── Sessions ──
 
-router.get("/sessions", async (_req, res) => {
+router.get("/sessions", asyncHandler(async (_req, res) => {
 	res.json({ sessions: await listSessionFiles() });
-});
+}));
 
-router.get("/sessions/:id", async (req, res) => {
+router.get("/sessions/:id", asyncHandler(async (req, res) => {
 	const id = req.params.id.replace(/[^a-zA-Z0-9_\-]/g, "");
 	const result = await readSessionTranscript(id);
 	if (!result.exists) {
@@ -518,9 +518,9 @@ router.get("/sessions/:id", async (req, res) => {
 		return;
 	}
 	res.json(result);
-});
+}));
 
-router.get("/sessions/:id/summary", async (req, res) => {
+router.get("/sessions/:id/summary", asyncHandler(async (req, res) => {
 	const id = req.params.id.replace(/[^a-zA-Z0-9_\-]/g, "");
 	const result = await getSessionSummary(id);
 	if (!result.exists) {
@@ -528,7 +528,7 @@ router.get("/sessions/:id/summary", async (req, res) => {
 		return;
 	}
 	res.json(result.summary);
-});
+}));
 
 // ── Search ──
 

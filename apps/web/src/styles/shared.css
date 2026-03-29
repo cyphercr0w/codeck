@@ -1,0 +1,290 @@
+/* ========== Shared: Forms ========== */
+
+.form-group {
+	margin-bottom: 14px;
+}
+
+.form-label {
+	display: block;
+	font-size: 13px;
+	font-weight: 500;
+	color: var(--text-secondary);
+	margin-bottom: 6px;
+}
+
+.form-success {
+	font-size: 13px;
+	color: var(--success);
+	margin-bottom: 12px;
+}
+
+.flow-agent-editor .form-row {
+	display: flex;
+	gap: 12px;
+}
+
+.form-row .form-group {
+	flex: 1;
+}
+
+/* ========== Shared: Tables ========== */
+
+.dash-table-wrap {
+	overflow-x: auto;
+}
+
+.dash-table {
+	width: 100%;
+	border-collapse: collapse;
+	font-size: 13px;
+}
+
+.dash-table th {
+	text-align: left;
+	padding: 6px 10px;
+	color: var(--text-muted);
+	font-weight: 500;
+	border-bottom: 1px solid var(--border);
+}
+
+.dash-table td {
+	padding: 8px 10px;
+	border-bottom: 1px solid var(--border);
+}
+
+.dash-table tr:last-child td {
+	border-bottom: none;
+}
+
+.dash-table code {
+	font-family: var(--font-mono);
+	font-size: 12px;
+}
+
+/* ========== Session Groups ========== */
+
+.session-groups {
+	display: flex;
+	flex-direction: column;
+	gap: 12px;
+}
+
+.session-group {
+	border: 1px solid var(--border);
+	border-radius: 8px;
+	overflow: hidden;
+}
+
+/* ── Environment Variables ── */
+
+.env-hint {
+	font-size: 11px;
+	color: var(--text-muted);
+	margin-bottom: 10px;
+	line-height: 1.4;
+}
+
+.env-list {
+	display: flex;
+	flex-direction: column;
+	gap: 4px;
+	margin-bottom: 10px;
+}
+
+.env-row {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	padding: 4px 8px;
+	background: var(--bg-secondary);
+	border-radius: 4px;
+	font-size: 12px;
+}
+
+.env-key {
+	font-family: var(--font-mono);
+	font-size: 11px;
+	font-weight: 600;
+	min-width: 80px;
+}
+
+.env-value {
+	flex: 1;
+	font-size: 11px;
+	color: var(--text-muted);
+}
+
+.env-add {
+	display: flex;
+	gap: 6px;
+	align-items: center;
+}
+
+.env-input {
+	flex: 1;
+	font-size: 12px;
+	padding: 5px 8px;
+	min-width: 0;
+}
+
+.env-msg {
+	font-size: 11px;
+	margin-top: 6px;
+}
+
+.text-success {
+	color: var(--success);
+}
+
+.session-group-toggle {
+	display: flex;
+	align-items: center;
+	color: var(--text-muted);
+	flex-shrink: 0;
+}
+
+.session-group-header {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	padding: 8px 12px;
+	background: var(--bg-secondary);
+	gap: 8px;
+}
+
+.session-group-ip {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	font-size: 13px;
+}
+
+.session-group-ip code {
+	font-family: var(--font-mono);
+	font-size: 12px;
+	font-weight: 600;
+}
+
+.session-group-list {
+	display: flex;
+	flex-direction: column;
+}
+
+.session-group-item {
+	display: flex;
+	align-items: center;
+	gap: 12px;
+	padding: 6px 12px;
+	font-size: 12px;
+	color: var(--text-secondary);
+	border-top: 1px solid var(--border);
+}
+
+.session-group-item > span:first-child {
+	min-width: 60px;
+}
+
+.session-group-item > span:nth-child(2) {
+	flex: 1;
+}
+
+.session-current-label {
+	font-size: 11px;
+	color: var(--text-muted);
+	font-style: italic;
+}
+
+/* ========== Shared: Text utilities ========== */
+
+.text-error {
+	color: var(--error);
+	font-weight: 600;
+}
+
+/* ========== Shared: Empty state ========== */
+
+.empty-state {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	text-align: center;
+	padding: 60px 20px;
+	color: var(--text-secondary);
+}
+
+.empty-state h3 {
+	font-size: 18px;
+	font-weight: 600;
+	color: var(--text-primary);
+	margin-bottom: 8px;
+}
+
+.empty-state p {
+	max-width: 400px;
+	line-height: 1.5;
+	margin-bottom: 20px;
+	font-size: 14px;
+}
+
+/* ========== Shared: Detail rows ========== */
+
+.detail-rows {
+	display: flex;
+	flex-direction: column;
+}
+
+.detail-row {
+	display: flex;
+	padding: 8px 0;
+	font-size: 13px;
+	gap: 12px;
+}
+
+.detail-row + .detail-row {
+	border-top: 1px solid var(--border);
+}
+
+.detail-label {
+	font-weight: 600;
+	color: var(--text-muted);
+	min-width: 130px;
+	flex-shrink: 0;
+	font-size: 12px;
+	text-transform: uppercase;
+	letter-spacing: 0.3px;
+}
+
+/* ========== Shared: Output block ========== */
+
+.output-block {
+	background: var(--bg-primary);
+	border: 1px solid var(--border);
+	border-radius: var(--radius);
+	padding: 12px;
+	font-family: var(--font-mono);
+	font-size: 12px;
+	line-height: 1.5;
+	white-space: pre-wrap;
+	word-wrap: break-word;
+	max-height: 400px;
+	overflow-y: auto;
+	color: var(--text-secondary);
+}
+
+/* ========== Shared: Schedule presets ========== */
+
+.schedule-presets {
+	display: flex;
+	gap: 6px;
+	flex-wrap: wrap;
+	margin-bottom: 8px;
+}
+
+/* ========== Shared: Badges (info variant) ========== */
+
+.badge-info {
+	background: var(--info-subtle);
+	color: var(--info);
+}
+

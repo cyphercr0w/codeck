@@ -1,0 +1,376 @@
+/* ========== Directory Picker (shared) ========== */
+.dir-list {
+	display: flex;
+	flex-direction: column;
+	gap: 4px;
+	max-height: 220px;
+	overflow-y: auto;
+}
+
+.dir-item {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	padding: 10px 14px;
+	background: var(--bg-tertiary);
+	border: 1px solid var(--border);
+	border-radius: var(--radius);
+	cursor: pointer;
+	transition: all var(--transition);
+	font-size: 13px;
+	color: var(--text-primary);
+}
+
+.dir-item:hover {
+	background: var(--bg-hover);
+	border-color: var(--border-light);
+}
+.dir-item.selected {
+	border-color: var(--accent);
+	background: var(--accent-subtle);
+}
+
+/* ========== Integrations ========== */
+.integ-content {
+	padding: 32px;
+	overflow-y: auto;
+	overflow-x: hidden;
+	flex: 1;
+	-webkit-overflow-scrolling: touch;
+}
+
+.integ-header {
+	margin-bottom: 24px;
+}
+.integ-title {
+	font-size: 20px;
+	font-weight: 700;
+	margin-bottom: 4px;
+	display: flex;
+	align-items: center;
+	gap: 8px;
+}
+.integ-subtitle {
+	color: var(--text-secondary);
+	font-size: 14px;
+	margin: 0;
+}
+
+/* Integration grid (tile list) */
+.integ-loading {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	gap: 10px;
+	padding: 48px 0;
+	color: var(--text-muted);
+	font-size: 13px;
+}
+
+.integ-grid {
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+}
+
+.integ-section-group {
+	margin-bottom: 20px;
+}
+.integ-section-label {
+	font-size: 11px;
+	font-weight: 600;
+	text-transform: uppercase;
+	letter-spacing: 0.5px;
+	color: var(--text-muted);
+	margin-bottom: 8px;
+	padding-left: 2px;
+}
+
+.integ-tile {
+	display: flex;
+	align-items: center;
+	gap: 16px;
+	padding: 16px 20px;
+	background: var(--bg-card);
+	border: 1px solid var(--border);
+	border-radius: var(--radius-lg);
+	cursor: pointer;
+	transition: all 0.15s;
+	text-align: left;
+	font-family: inherit;
+	color: inherit;
+	width: 100%;
+}
+.integ-tile:hover:not(:disabled) {
+	border-color: var(--accent);
+	background: var(--bg-hover);
+}
+.integ-tile.disabled {
+	opacity: 0.45;
+	cursor: default;
+}
+.integ-tile-connected {
+	border-color: color-mix(in srgb, var(--success) 30%, var(--border));
+}
+.integ-tile-connected:hover {
+	border-color: var(--success);
+}
+
+.integ-tile-icon {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	width: 44px;
+	height: 44px;
+	border-radius: 12px;
+	background: var(--bg-secondary);
+	color: var(--text-secondary);
+	flex-shrink: 0;
+}
+.integ-tile-icon-active {
+	background: color-mix(in srgb, var(--success) 12%, var(--bg-secondary));
+	color: var(--success);
+}
+
+.integ-tile-info {
+	flex: 1;
+	min-width: 0;
+	display: flex;
+	flex-direction: column;
+	gap: 3px;
+}
+.integ-tile-name {
+	font-size: 14px;
+	font-weight: 600;
+}
+.integ-tile-desc {
+	font-size: 12px;
+	color: var(--text-muted);
+}
+.integ-tile-account {
+	font-size: 12px;
+	color: var(--text-secondary);
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.integ-tile-status {
+	width: 10px;
+	height: 10px;
+	border-radius: 50%;
+	flex-shrink: 0;
+}
+.integ-tile-status.connected {
+	background: var(--success);
+	box-shadow: 0 0 6px color-mix(in srgb, var(--success) 50%, transparent);
+}
+
+/* Detail view */
+.integ-detail {
+}
+
+.integ-detail-topbar {
+	display: flex;
+	justify-content: space-between;
+	align-items: center;
+	margin-bottom: 16px;
+}
+.integ-detail-topbar .btn-ghost {
+	display: flex;
+	align-items: center;
+	gap: 4px;
+	background: none;
+	border: 1px solid var(--border);
+	color: var(--text-secondary);
+	padding: 4px 10px;
+	border-radius: var(--radius);
+	font-size: 12px;
+	cursor: pointer;
+	transition: all 0.15s;
+}
+.integ-detail-topbar .btn-ghost:hover {
+	background: var(--bg-hover);
+	color: var(--text-primary);
+	border-color: var(--text-muted);
+}
+.integ-detail-topbar .btn-ghost.danger {
+	color: var(--error);
+	border-color: color-mix(in srgb, var(--error) 30%, transparent);
+}
+.integ-detail-topbar .btn-ghost.danger:hover {
+	background: color-mix(in srgb, var(--error) 10%, transparent);
+	border-color: var(--error);
+}
+
+.integ-detail-header {
+	display: flex;
+	align-items: center;
+	gap: 12px;
+	margin-bottom: 24px;
+	color: var(--text-primary);
+}
+.integ-detail-title {
+	font-size: 20px;
+	font-weight: 700;
+	margin: 0;
+}
+.integ-detail-desc {
+	font-size: 13px;
+	color: var(--text-muted);
+	margin: 0;
+}
+
+.integ-error {
+	background: var(--error-subtle);
+	color: var(--error);
+	padding: 8px 12px;
+	border-radius: var(--radius);
+	font-size: 13px;
+	margin-bottom: 16px;
+}
+
+/* Sections inside detail */
+.integ-section {
+	background: var(--bg-card);
+	border: 1px solid var(--border);
+	border-radius: var(--radius-lg);
+	margin-bottom: 12px;
+	overflow: hidden;
+}
+
+.integ-section-header {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	padding: 10px 16px;
+	background: var(--bg-secondary);
+	border-bottom: 1px solid var(--border);
+	font-size: 13px;
+	font-weight: 600;
+}
+.integ-section-header .badge {
+	margin-left: auto;
+}
+
+.integ-section-body {
+	padding: 16px;
+}
+
+.integ-section-info {
+	font-size: 13px;
+	color: var(--text-secondary);
+	margin: 0 0 12px;
+	line-height: 1.5;
+}
+.integ-section-info a {
+	color: var(--accent);
+	text-decoration: none;
+}
+.integ-section-info a:hover {
+	text-decoration: underline;
+}
+
+.integ-section-hint {
+	font-size: 12px;
+	color: var(--text-muted);
+	margin: 8px 0 0;
+	line-height: 1.5;
+}
+.integ-section-hint a {
+	color: var(--accent);
+	text-decoration: none;
+}
+.integ-section-hint a:hover {
+	text-decoration: underline;
+}
+
+/* Key block */
+.integ-key-block {
+	margin-bottom: 4px;
+}
+.integ-key-label {
+	font-size: 11px;
+	color: var(--text-muted);
+	text-transform: uppercase;
+	letter-spacing: 0.5px;
+}
+.integ-key-container {
+	background: var(--bg-tertiary);
+	border: 1px solid var(--border);
+	border-radius: var(--radius);
+	padding: 8px 10px;
+	margin: 6px 0 8px;
+	overflow-x: auto;
+}
+.integ-key-text {
+	font-size: 11px;
+	font-family: var(--font-mono);
+	word-break: break-all;
+	line-height: 1.5;
+	color: var(--text-secondary);
+}
+.integ-key-actions {
+	display: flex;
+	gap: 6px;
+}
+
+/* Device code flow */
+.integ-login-flow {
+	text-align: center;
+}
+.integ-device-code {
+	font-size: 28px;
+	font-weight: 700;
+	font-family: var(--font-mono);
+	letter-spacing: 4px;
+	padding: 12px 0;
+	color: var(--accent);
+}
+.integ-waiting {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	gap: 8px;
+	font-size: 13px;
+	color: var(--text-muted);
+	padding: 8px 0;
+}
+
+/* Connected info */
+.integ-connected-info {
+	display: flex;
+	flex-direction: column;
+	gap: 4px;
+	margin-bottom: 4px;
+}
+.integ-account-details {
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+}
+.integ-account-row {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+}
+.integ-account-label {
+	font-size: 11px;
+	color: var(--text-muted);
+	min-width: 60px;
+	flex-shrink: 0;
+}
+.integ-account-value {
+	font-size: 12px;
+	color: var(--text-primary);
+	font-family: var(--font-mono);
+}
+.integ-username {
+	font-weight: 600;
+	font-size: 14px;
+}
+.integ-email {
+	font-size: 12px;
+	color: var(--text-muted);
+}
+

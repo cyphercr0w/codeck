@@ -5,6 +5,7 @@
 import { Router } from 'express';
 import { startCLIAuth, getAuthState, cancelCLIAuth, getSupportedCLIAuthServices, isValidService, isCLIAuthenticated } from '../services/cli-auth.js';
 import { broadcastStatus } from '../web/websocket.js';
+import { asyncHandler } from '../utils/async-handler.js';
 
 const router = Router();
 
@@ -42,7 +43,7 @@ router.post('/:service/cancel', (req, res) => {
 // GET /:service/authenticated — check if CLI is logged in (vercel whoami, etc.)
 // Rate-limited: max 3 req/min per IP (spawns subprocess, avoid DoS)
 const authCheckTimestamps = new Map<string, number>();
-router.get('/:service/authenticated', async (req, res) => {
+router.get('/:service/authenticated', asyncHandler(async (req, res) => {
   const key = `${req.ip}:${req.params.service}`;
   const last = authCheckTimestamps.get(key) || 0;
   if (Date.now() - last < 20_000) { // 20s cooldown per service per IP
@@ -52,6 +53,6 @@ router.get('/:service/authenticated', async (req, res) => {
   authCheckTimestamps.set(key, Date.now());
   const result = await isCLIAuthenticated(req.params.service);
   res.json(result);
-});
+}));
 
 export default router;

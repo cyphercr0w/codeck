@@ -1,0 +1,283 @@
+/* ========== Mobile Header ========== */
+.mobile-header {
+	display: none;
+	align-items: center;
+	justify-content: space-between;
+	padding: 10px 16px;
+	background: var(--bg-secondary);
+	border-bottom: 1px solid var(--border);
+	min-height: 48px;
+	position: sticky;
+	top: 0;
+	z-index: 100;
+}
+
+.mobile-header-brand {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	color: var(--accent);
+}
+
+.mobile-header-title {
+	font-weight: 600;
+	font-size: 15px;
+	color: var(--text-primary);
+}
+
+.hamburger-btn {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	width: 36px;
+	height: 36px;
+	border: none;
+	border-radius: var(--radius);
+	background: transparent;
+	color: var(--text-secondary);
+	cursor: pointer;
+	transition:
+		background var(--transition),
+		color var(--transition),
+		transform 0.3s ease;
+}
+
+.hamburger-btn:hover {
+	background: var(--bg-hover);
+	color: var(--text-primary);
+}
+.hamburger-btn:focus-visible {
+	outline: 2px solid var(--accent);
+	outline-offset: -2px;
+}
+.hamburger-btn.open {
+	transform: rotate(180deg);
+}
+
+/* Sidebar Backdrop (mobile) — no longer used, replaced by MobileMenu */
+.sidebar-backdrop {
+	display: none;
+}
+
+/* ========== Mobile Menu (slide-down below navbar) ========== */
+.mobile-menu-backdrop {
+	display: none;
+	position: fixed;
+	top: 48px;
+	left: 0;
+	right: 0;
+	bottom: 0;
+	background: rgba(0, 0, 0, 0.5);
+	z-index: 89;
+	opacity: 0;
+	transition: opacity 0.3s ease;
+	pointer-events: none;
+}
+
+.mobile-menu-backdrop.visible {
+	opacity: 1;
+	pointer-events: auto;
+}
+
+.mobile-menu {
+	display: none;
+	position: fixed;
+	top: 48px;
+	left: 0;
+	right: 0;
+	bottom: 0;
+	z-index: 90;
+	background: var(--bg-primary);
+	flex-direction: column;
+	transform: translateY(-20px);
+	opacity: 0;
+	transition:
+		transform 0.3s ease,
+		opacity 0.3s ease;
+	pointer-events: none;
+}
+
+.mobile-menu.open {
+	transform: translateY(0);
+	opacity: 1;
+	pointer-events: auto;
+}
+
+.mobile-menu-nav {
+	flex: 1;
+	display: flex;
+	flex-direction: column;
+	padding: 16px;
+	gap: 4px;
+}
+
+.mobile-menu-item {
+	display: flex;
+	align-items: center;
+	gap: 16px;
+	padding: 16px 20px;
+	border-radius: var(--radius-lg);
+	color: var(--text-secondary);
+	cursor: pointer;
+	transition: all var(--transition);
+	border: none;
+	background: none;
+	font-size: 17px;
+	font-weight: 500;
+	width: 100%;
+	text-align: left;
+	font-family: inherit;
+}
+
+.mobile-menu-item:hover {
+	background: var(--bg-hover);
+	color: var(--text-primary);
+}
+
+.mobile-menu-item.active {
+	background: var(--accent-subtle);
+	color: var(--accent);
+}
+
+.mobile-menu-icon {
+	width: 28px;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	opacity: 0.8;
+}
+
+.mobile-menu-item.active .mobile-menu-icon {
+	opacity: 1;
+}
+
+.mobile-menu-footer {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	padding: 20px 24px;
+	border-top: 1px solid var(--border);
+	font-size: 13px;
+	color: var(--text-muted);
+}
+
+/* ========== Utils ========== */
+.hidden {
+	display: none !important;
+}
+.text-muted {
+	color: var(--text-muted);
+}
+.text-sm {
+	font-size: 12px;
+}
+.mb-16 {
+	margin-bottom: 16px;
+}
+
+/* ========== Responsive: <= 1100px ========== */
+@media (max-width: 1100px) {
+	/* Hide sidebar on mobile — replaced by slide-down MobileMenu */
+	.sidebar {
+		display: none;
+	}
+
+	/* Show mobile header, menu, and backdrop */
+	.mobile-header {
+		display: flex;
+	}
+	.mobile-menu {
+		display: flex;
+	}
+	.mobile-menu-backdrop {
+		display: block;
+	}
+
+	/* Ensure touch scrolling works on all scrollable sections */
+	.home-content,
+	.config-content,
+	.integ-content,
+	.memory-tab-content,
+	.files-list {
+		touch-action: pan-y;
+		overscroll-behavior-y: contain;
+	}
+
+	/* Home adjustments */
+	.home-content {
+		padding: 20px 16px;
+	}
+	.info-cards {
+		grid-template-columns: 1fr 1fr;
+	}
+
+	/* Files adjustments */
+	.files-list {
+		padding: 8px 12px;
+	}
+	.files-header {
+		padding: 10px 16px;
+	}
+
+	/* Terminal tabs scroll */
+	.terminal-tabs {
+		padding: 0 8px;
+	}
+
+	/* Logs drawer */
+	.logs-drawer.expanded {
+		height: 180px;
+	}
+}
+
+/* ========== Responsive: <= 700px ========== */
+@media (max-width: 700px) {
+	.info-cards {
+		grid-template-columns: 1fr;
+	}
+	.dash-grid {
+		grid-template-columns: 1fr;
+	}
+
+	.home-content {
+		padding: 16px 12px;
+	}
+
+	.modal {
+		max-width: 95%;
+		padding: 20px 16px;
+	}
+
+	.setup-card {
+		padding: 28px 20px;
+	}
+
+	/* Auth view: anchor card to top so keyboard doesn't cover inputs.
+   * With resizes-content the viewport shrinks when keyboard opens —
+   * anchoring to top keeps the card visible and scrollable. */
+	.view-setup {
+		align-items: flex-start;
+		padding: 40px 0 80px;
+		overflow-y: auto;
+	}
+
+	/* Terminal: prevent virtual keyboard from breaking layout */
+	.terminal-instance {
+		position: relative;
+		inset: auto;
+		height: 100%;
+	}
+	.terminal-instances {
+		position: relative;
+	}
+
+	.terminal-tab {
+		padding: 6px 10px;
+		font-size: 12px;
+	}
+	.terminal-tab-new {
+		width: 26px;
+		height: 26px;
+	}
+}
+

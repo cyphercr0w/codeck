@@ -152,6 +152,16 @@ FileReader base64 encoding loads entire file into memory. No size validation bef
 
 **Severity:** Medium (browser DoS)
 
+### 23. SendMessage to completed agent resumes in background silently
+
+**File:** Claude Code native behavior (Agent Teams)
+
+When using `SendMessage` to a completed/idle agent, the system resumes it in background mode automatically. The caller gets no streaming output and only a task-notification when done. This can cause confusion when the user expects foreground interaction.
+
+**Workaround:** Re-launch a new `Agent` in foreground instead of using `SendMessage` to resume a completed agent.
+
+**Severity:** Low (UX confusion, no data loss)
+
 ---
 
 ## Performance

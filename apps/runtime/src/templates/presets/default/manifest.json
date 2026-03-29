@@ -1,15 +1,14 @@
 {
 	"id": "default",
 	"name": "Default (Recommended)",
-	"description": "Persistent memory system, rules, sandbox skills, plus 28 sub-agents, 59 slash commands, 116 skills, 65 rules, and dev hooks from everything-claude-code v1.9.0.",
-	"version": "8.2.0",
+	"description": "Persistent memory system, rules, sandbox skills, plus 66 sub-agents, 59 slash commands, 116 skills, 65 rules, and dev hooks from everything-claude-code v1.9.0.",
+	"version": "8.6.1",
 	"author": "codeck",
 	"icon": "⚡",
 	"tags": ["general", "recommended"],
 	"extends": null,
 	"files": [
 		{ "src": "CLAUDE.md", "dest": "/root/.claude/CLAUDE.md" },
-		{ "src": "../../CLAUDE.md", "dest": "/workspace/CLAUDE.md" },
 		{ "src": "mcp.json", "dest": "/root/.claude/mcp.json" },
 		{ "src": "AGENTS.md", "dest": "/workspace/.codeck/AGENTS.md" },
 		{ "src": "constitution.md", "dest": "/workspace/.codeck/constitution.md" },
@@ -28,8 +27,8 @@
 			"skipIfExists": true
 		},
 		{
-			"src": "skills/sandbox.md",
-			"dest": "/workspace/.codeck/skills/sandbox.md"
+			"src": "skills/codeck.md",
+			"dest": "/workspace/.codeck/skills/codeck.md"
 		},
 		{
 			"src": "skills/docker.md",
@@ -37,15 +36,18 @@
 		},
 		{
 			"src": "memory/summary.md",
-			"dest": "/workspace/.codeck/memory/summary.md"
+			"dest": "/workspace/.codeck/memory/summary.md",
+			"skipIfExists": true
 		},
 		{
 			"src": "memory/decisions.md",
-			"dest": "/workspace/.codeck/memory/decisions.md"
+			"dest": "/workspace/.codeck/memory/decisions.md",
+			"skipIfExists": true
 		},
 		{
 			"src": "memory/MEMORY.md",
-			"dest": "/workspace/.codeck/memory/MEMORY.md"
+			"dest": "/workspace/.codeck/memory/MEMORY.md",
+			"skipIfExists": true
 		},
 		{
 			"src": "ecc/settings.json",
@@ -141,6 +143,18 @@
 			"dest": "/workspace/.codeck/scripts/credential-persist.mjs"
 		},
 		{
+			"src": "scripts/cwd-changed-hook.mjs",
+			"dest": "/workspace/.codeck/scripts/cwd-changed-hook.mjs"
+		},
+		{
+			"src": "scripts/skill-metrics-hook.mjs",
+			"dest": "/workspace/.codeck/scripts/skill-metrics-hook.mjs"
+		},
+		{
+			"src": "scripts/anticipatory-prefetch.mjs",
+			"dest": "/workspace/.codeck/scripts/anticipatory-prefetch.mjs"
+		},
+		{
 			"src": "integrations/vercel.md",
 			"dest": "/workspace/.codeck/integrations/vercel.md"
 		},
@@ -165,12 +179,48 @@
 			"dest": "/workspace/.codeck/integrations/cloudflare.md"
 		},
 		{
+			"src": "scripts/task-created-hook.mjs",
+			"dest": "/workspace/.codeck/scripts/task-created-hook.mjs"
+		},
+		{
+			"src": "scripts/stop-failure-hook.mjs",
+			"dest": "/workspace/.codeck/scripts/stop-failure-hook.mjs"
+		},
+		{
 			"src": "scripts/repo-map-generator.mjs",
 			"dest": "/workspace/.codeck/scripts/repo-map-generator.mjs"
 		},
 		{
 			"src": "scripts/decision-guidance.mjs",
 			"dest": "/workspace/.codeck/scripts/decision-guidance.mjs"
+		},
+		{
+			"src": "scripts/skill-proposal-hook.mjs",
+			"dest": "/workspace/.codeck/scripts/skill-proposal-hook.mjs"
+		},
+		{
+			"src": "scripts/skill-evolution.mjs",
+			"dest": "/workspace/.codeck/scripts/skill-evolution.mjs"
+		},
+		{
+			"src": "scripts/visual-brainstorm.mjs",
+			"dest": "/workspace/.codeck/scripts/visual-brainstorm.mjs"
+		},
+		{
+			"src": "scripts/consolidation-apply.mjs",
+			"dest": "/workspace/.codeck/scripts/consolidation-apply.mjs"
+		},
+		{
+			"src": "scripts/consolidation-decay.mjs",
+			"dest": "/workspace/.codeck/scripts/consolidation-decay.mjs"
+		},
+		{
+			"src": "scripts/generate-weekly-digest.mjs",
+			"dest": "/workspace/.codeck/scripts/generate-weekly-digest.mjs"
+		},
+		{
+			"src": "rules-library/README.md",
+			"dest": "/workspace/.codeck/rules-library/README.md"
 		}
 	],
 	"directories": [
@@ -186,7 +236,8 @@
 		"/workspace/.codeck/scripts",
 		"/workspace/.codeck/scripts/ecc",
 		"/workspace/.codeck/scripts/lib",
-		"/workspace/.codeck/agents"
+		"/workspace/.codeck/agents",
+		"/workspace/.codeck/rules-library"
 	],
 	"recursive_dirs": [
 		{
@@ -222,6 +273,12 @@
 		{
 			"src": "scripts/lib",
 			"dest": "/workspace/.codeck/scripts/lib",
+			"recursive": true,
+			"skipIfExists": false
+		},
+		{
+			"src": "rules-library",
+			"dest": "/workspace/.codeck/rules-library",
 			"recursive": true,
 			"skipIfExists": false
 		}

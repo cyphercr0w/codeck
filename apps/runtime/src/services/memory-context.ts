@@ -230,7 +230,10 @@ export function buildSessionContext(cwd: string): {
  *
  * Migration: if CLAUDE.md has old markers, strip them once.
  */
-const CONTEXT_SIDECAR = join(PATHS.WORKSPACE, ".codeck/state/session-context.md");
+const CONTEXT_SIDECAR = join(
+	PATHS.WORKSPACE,
+	".codeck/state/session-context.md",
+);
 
 export function injectContextIntoCLAUDEMd(
 	cwd: string,
@@ -240,21 +243,42 @@ export function injectContextIntoCLAUDEMd(
 	// Write context to sidecar file (read by UserPromptSubmit hook)
 	const dir = join(PATHS.WORKSPACE, ".codeck/state");
 	if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
-	writeFileSync(CONTEXT_SIDECAR, context || "");
+
+	// Hard 8KB cap — keep the first section (most recent/relevant) and truncate the rest
+	const MAX_BYTES = 8192;
+	const TRUNCATION_NOTE = "\n\n[truncated — run /learn for full context]";
+	let finalContext = context || "";
+	if (Buffer.byteLength(finalContext) > MAX_BYTES) {
+		const noteBytes = Buffer.byteLength(TRUNCATION_NOTE);
+		const allowedBytes = MAX_BYTES - noteBytes;
+		finalContext = Buffer.from(finalContext)
+			.slice(0, allowedBytes)
+			.toString("utf-8");
+		// Trim to last complete line to avoid cutting mid-word
+		const lastNewline = finalContext.lastIndexOf("\n");
+		if (lastNewline > 0) finalContext = finalContext.slice(0, lastNewline);
+		finalContext += TRUNCATION_NOTE;
+	}
+
+	writeFileSync(CONTEXT_SIDECAR, finalContext);
 
 	// Strip old markers from CLAUDE.md if they exist (one-time migration)
 	if (existsSync(WORKSPACE_CLAUDE_MD)) {
 		const content = readFileSync(WORKSPACE_CLAUDE_MD, "utf-8");
 		if (content.includes(MARKER_START)) {
 			removeContextSection();
-			console.log("[MemoryContext] Migrated: removed dynamic content from CLAUDE.md (now uses sidecar)");
+			console.log(
+				"[MemoryContext] Migrated: removed dynamic content from CLAUDE.md (now uses sidecar)",
+			);
 		}
 	}
 
 	if (!context) return null;
 
+	const writtenBytes = Buffer.byteLength(finalContext);
+	const truncated = writtenBytes < Buffer.byteLength(context);
 	console.log(
-		`[MemoryContext] Wrote ${stats.charsInjected} chars to session-context.md (sources: ${stats.sources.join(", ")})`,
+		`[MemoryContext] Wrote ${writtenBytes} bytes to session-context.md${truncated ? " (truncated from " + Buffer.byteLength(context) + ")" : ""} (sources: ${stats.sources.join(", ")})`,
 	);
 	return stats;
 }

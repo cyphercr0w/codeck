@@ -385,3 +385,56 @@ Uses `?token=` because browser downloads can't set headers.
 ```
 
 **Heartbeat:** Sent every 25s. Client closes/reconnects if no data arrives within 45s.
+
+---
+
+## Chat
+
+Conversational interface using `claude -p` with streaming JSON output. Conversations persisted as JSON files in `/workspace/.codeck/conversations/`.
+
+| Method | Endpoint | Body | Response | Description |
+|--------|----------|------|----------|-------------|
+| `POST` | `/api/chat/message` | `{ message, context?, conversationId?, model? }` | SSE stream | Send message, get streaming response |
+| `POST` | `/api/chat/cancel` | `{ chatId?, executionId? }` | `{ success }` | Cancel active stream or team execution |
+| `GET` | `/api/chat/conversations` | — | `{ conversations: [...] }` | List all conversations (newest first) |
+| `GET` | `/api/chat/conversations/:id` | — | `ChatConversation` | Get conversation with all messages |
+| `POST` | `/api/chat/conversations` | `{ name? }` | `{ id, name }` | Create empty conversation |
+| `PUT` | `/api/chat/conversations/:id/name` | `{ name }` | `{ id, name }` | Rename conversation |
+| `DELETE` | `/api/chat/conversations/:id` | — | `{ success }` | Delete conversation |
+
+---
+
+## Agent Teams (localhost bypass)
+
+Team templates define parallel agent groups powered by Claude Code Agent Teams (experimental). Each agent gets its own tmux pane, bridged to the frontend via `TmuxPtyAdapter` → standard `console:*` WebSocket messages.
+
+### Template CRUD
+
+| Method | Endpoint | Body | Response | Description |
+|--------|----------|------|----------|-------------|
+| `GET` | `/api/teams` | — | `{ templates: TeamTemplate[] }` | List all team templates |
+| `GET` | `/api/teams/:id` | — | `TeamTemplate` | Get template by ID |
+| `POST` | `/api/teams` | `{ name, description?, agents }` | `TeamTemplate` (201) | Create template. Each agent needs `name`, `role`, `systemPrompt`, optional `allowedTools[]`. |
+| `PUT` | `/api/teams/:id` | `{ name?, description?, agents? }` | `TeamTemplate` | Update template |
+| `DELETE` | `/api/teams/:id` | — | `{ ok: true }` | Delete template |
+
+### Execution
+
+| Method | Endpoint | Body | Response | Description |
+|--------|----------|------|----------|-------------|
+| `POST` | `/api/teams/:id/launch` | `{ input?, cwd? }` | `{ executionId, status, leaderSessionId }` (202) | Launch team from template. Creates tmux session, starts Claude with Agent Teams. |
+| `POST` | `/api/teams/launch-inline` | `{ agents, name?, input?, cwd? }` | `{ executionId, status, leaderSessionId }` (202) | Launch ad-hoc team without template. |
+| `POST` | `/api/teams/executions/:id/stop` | — | `{ ok: true, status }` | Stop running team. Kills tmux session. |
+| `GET` | `/api/teams/executions/list` | — | `{ executions: TeamExecution[] }` | List active + recent executions |
+| `GET` | `/api/teams/executions/:id` | — | `TeamExecution` | Get execution status |
+
+### WebSocket Events
+
+```jsonc
+{ "type": "team:launched", "data": { "executionId": "...", "templateName": "...", "agents": [...], "leaderSessionId": "..." } }
+{ "type": "team:agent:detected", "data": { "executionId": "...", "agentId": "...", "name": "...", "role": "...", "sessionId": "...", "tmuxPane": "..." } }
+{ "type": "team:agent:shutdown", "data": { "executionId": "...", "agentId": "..." } }
+{ "type": "team:stopped", "data": { "executionId": "...", "status": "completed|cancelled|failed" } }
+```
+
+Agent terminal output streams via standard `console:output` messages using the agent's `sessionId`.

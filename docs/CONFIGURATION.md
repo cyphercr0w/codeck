@@ -329,6 +329,10 @@ Use `"extends": "default"` to inherit all files from the default preset. Your pr
 
 Files in `memory/` paths, named `preferences.md`, or in `rules/` paths are "data files". Only copied on first apply; subsequent applies skip them to preserve user customizations. Use `POST /api/presets/reset` (force) to overwrite.
 
+### On-demand language rules loading
+
+Language-specific rules (rust, java, kotlin, csharp, php, perl, swift, cpp, python, golang) live in `/workspace/.codeck/rules-library/` rather than `~/.claude/rules/`. Only `common/` and `typescript/` are permanently installed in `~/.claude/rules/`. When a Claude session starts, `setupLanguageRules(cwd)` in `console.ts` detects the project language from indicator files (e.g., `Cargo.toml` → rust, `requirements.txt` → python) and symlinks the matching ruleset into `~/.claude/rules/` before spawning Claude Code. Projects using undetected languages load only the common rules. This saves ~84KB (~21,000 tokens) of context per session for projects that don't use those languages.
+
 ---
 
 ## MCP Server Configuration

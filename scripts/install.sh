@@ -24,7 +24,7 @@ set -euo pipefail
 
 VERSION="1.0.0"
 DEFAULT_IMAGE="ghcr.io/cyphercr0w/codeck:latest"
-DEFAULT_PORT="8080"
+DEFAULT_PORT="80"
 DEFAULT_NAME="codeck"
 
 # Colors
@@ -78,7 +78,17 @@ echo ""
 
 if [[ "$EUID" -ne 0 ]]; then
   if command -v sudo &>/dev/null; then
-    exec sudo -E bash "$0" "$@"
+    if [[ -f "$0" ]]; then
+      exec sudo -E bash "$0" "$@"
+    else
+      # Running via pipe (curl | bash) — $0 is "bash", not a file.
+      # Save the running script to a temp file and re-exec with sudo.
+      TMPSCRIPT="$(mktemp /tmp/codeck-install.XXXXXX.sh)"
+      # The entire script is already in memory (main() wrapper), so we can
+      # extract it from the current process by re-downloading.
+      curl -fsSL https://codeck.xyz/install > "$TMPSCRIPT"
+      exec sudo -E bash "$TMPSCRIPT" "$@"
+    fi
   fi
 fi
 

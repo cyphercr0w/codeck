@@ -74,6 +74,7 @@ interface PresetConfig {
 	presetName: string;
 	configuredAt: string;
 	version: string;
+	autoUpdate?: boolean;
 }
 
 export interface PresetStatus {
@@ -84,6 +85,60 @@ export interface PresetStatus {
 	version: string | null;
 	availableVersion: string | null;
 	updateAvailable: boolean;
+	autoUpdate: boolean;
+}
+
+// ── Startup Sanitization ────────────────────────────────────────────
+
+/**
+ * Remove ghost hooks from settings.json at runtime startup.
+ * Ghost hooks are entries whose command is empty or not a valid executable
+ * (e.g. plain text prompts injected by agents, npx commands, etc.).
+ * Runs once at startup before any sessions are created.
+ */
+export function sanitizeSettingsHooks(): void {
+	const settingsPath = rewritePath("/root/.claude/settings.json");
+	try {
+		if (!existsSync(settingsPath)) return;
+		const settings = JSON.parse(readFileSync(settingsPath, "utf-8"));
+		if (!settings.hooks || typeof settings.hooks !== "object") return;
+
+		let totalRemoved = 0;
+		for (const event of Object.keys(settings.hooks)) {
+			const entries = settings.hooks[event];
+			if (!Array.isArray(entries)) continue;
+
+			const before = entries.length;
+			settings.hooks[event] = entries.filter(
+				(entry: { hooks?: Array<{ command?: string }> }) => {
+					const hooks = entry.hooks || [];
+					if (hooks.length === 0) return false;
+					return hooks.every((h: { command?: string }) => {
+						const cmd = (h.command || "").trim();
+						if (!cmd) return false;
+						return (
+							cmd.startsWith("node ") ||
+							cmd.startsWith("bash ") ||
+							cmd.startsWith("sh ") ||
+							cmd.startsWith("python ") ||
+							cmd.startsWith("python3 ") ||
+							cmd.startsWith("/")
+						);
+					});
+				},
+			);
+			totalRemoved += before - settings.hooks[event].length;
+		}
+
+		if (totalRemoved > 0) {
+			writeFileSync(settingsPath, JSON.stringify(settings, null, "\t"));
+			console.log(
+				`[Preset] Sanitized settings.json: removed ${totalRemoved} ghost hook(s)`,
+			);
+		}
+	} catch {
+		/* non-fatal */
+	}
 }
 
 // ── Validation ──────────────────────────────────────────────────────
@@ -216,6 +271,7 @@ export function getPresetStatus(): PresetStatus {
 		version: null,
 		availableVersion: null,
 		updateAvailable: false,
+		autoUpdate: true,
 	};
 	if (!existsSync(CONFIG_FILE)) return empty;
 	try {
@@ -236,11 +292,175 @@ export function getPresetStatus(): PresetStatus {
 			version: config.version,
 			availableVersion,
 			updateAvailable,
+			autoUpdate: config.autoUpdate !== false,
 		};
 	} catch (e) {
 		console.warn("[Preset] Failed to read config:", (e as Error).message);
 		return empty;
 	}
+}
+
+/**
+ * Check if the bundled preset template is newer than the installed version.
+ * If so, copy only script files (scripts/*.mjs, scripts/*.sh, scripts/ecc/*, scripts/lib/*)
+ * to /workspace/.codeck/scripts/ and update the installed version in config.json.
+ *
+ * Safe files that are NEVER overwritten:
+ *   preferences.md, MEMORY.md, constitution.md, settings.json,
+ *   memory/**, state/**
+ */
+export function setAutoUpdate(enabled: boolean): void {
+	try {
+		let config: Record<string, unknown> = {};
+		if (existsSync(CONFIG_FILE)) {
+			const parsed = JSON.parse(readFileSync(CONFIG_FILE, "utf-8"));
+			if (
+				typeof parsed === "object" &&
+				parsed !== null &&
+				!Array.isArray(parsed)
+			) {
+				config = parsed;
+			}
+		}
+		config.autoUpdate = enabled;
+		writeFileSync(CONFIG_FILE, JSON.stringify(config, null, 2), {
+			mode: 0o600,
+		});
+	} catch (e) {
+		console.warn("[Preset] Failed to set autoUpdate:", (e as Error).message);
+	}
+}
+
+export function checkPresetUpdate(): void {
+	const status = getPresetStatus();
+	if (!status.configured || !status.presetId || !status.version) return;
+	if (!status.autoUpdate) return;
+
+	const manifest = loadManifest(status.presetId);
+	if (!manifest) return;
+
+	if (!isNewerVersion(status.version, manifest.version)) return;
+
+	console.log(
+		`[Preset] Auto-updating files from ${status.version} to ${manifest.version}...`,
+	);
+
+	const presetDir = join(TEMPLATES_DIR, status.presetId);
+	let copied = 0;
+
+	// Copy all manifest files except user-customizable or protected user data
+	for (const file of manifest.files) {
+		if (file.skipIfExists) continue; // user-customizable file — never overwrite
+		const dest = rewritePath(file.dest);
+		// Protect user data paths even if not marked skipIfExists
+		if (
+			dest.endsWith("preferences.md") ||
+			dest.endsWith("MEMORY.md") ||
+			dest.endsWith("constitution.md") ||
+			dest.endsWith("settings.json") ||
+			dest.includes("/memory/") ||
+			dest.includes("/state/")
+		)
+			continue;
+
+		const srcPath = join(presetDir, file.src);
+		const resolvedSrc = resolve(srcPath);
+		if (
+			!resolvedSrc.startsWith(TEMPLATES_DIR + "/") &&
+			resolvedSrc !== TEMPLATES_DIR
+		)
+			continue;
+		if (!existsSync(srcPath)) continue;
+		if (!isAllowedDestPath(dest)) continue;
+
+		try {
+			const destDir = dirname(dest);
+			if (!existsSync(destDir)) mkdirSync(destDir, { recursive: true });
+			copyFileSync(srcPath, dest);
+			copied++;
+		} catch (e) {
+			console.warn(
+				`[Preset]   Failed to copy ${file.src}: ${(e as Error).message}`,
+			);
+		}
+	}
+
+	// Copy all recursive dirs with skipIfExists=false — skipIfExists protects user dirs
+	// Note: rules-library is preset-managed (overwritten on update). Users customize
+	// rules in ~/.claude/rules/ or /workspace/.codeck/rules/user/, not the library.
+	if (manifest.recursive_dirs) {
+		for (const rd of manifest.recursive_dirs) {
+			if (rd.skipIfExists) continue; // only auto-update non-user dirs
+			const destDir = rewritePath(rd.dest);
+			if (!isAllowedDestPath(destDir)) continue;
+
+			const srcDir = join(presetDir, rd.src);
+			const resolvedSrc = resolve(srcDir);
+			if (
+				!resolvedSrc.startsWith(TEMPLATES_DIR + "/") &&
+				resolvedSrc !== TEMPLATES_DIR
+			)
+				continue;
+			if (!existsSync(srcDir)) continue;
+
+			copied += copyScriptDirRecursive(srcDir, destDir);
+		}
+	}
+
+	// Merge new hooks from preset template into user settings
+	mergePresetHooks(presetDir);
+
+	// Note: mergePresetHooks already removes ghost hooks and stale preset-managed
+	// hooks during its bidirectional sync — no separate cleanup step needed.
+
+	// Update installed version in config.json
+	try {
+		let config: Record<string, unknown> = {};
+		if (existsSync(CONFIG_FILE)) {
+			const parsed = JSON.parse(readFileSync(CONFIG_FILE, "utf-8"));
+			if (
+				typeof parsed === "object" &&
+				parsed !== null &&
+				!Array.isArray(parsed)
+			) {
+				config = parsed;
+			}
+		}
+		config.version = manifest.version;
+		writeFileSync(CONFIG_FILE, JSON.stringify(config, null, 2), {
+			mode: 0o600,
+		});
+	} catch (e) {
+		console.warn(
+			"[Preset] Failed to update config version:",
+			(e as Error).message,
+		);
+	}
+
+	console.log(
+		`[Preset] Auto-updated files from ${status.version} to ${manifest.version} (${copied} files)`,
+	);
+}
+
+/** Copy script files from srcDir to destDir recursively. Returns count of files copied. */
+function copyScriptDirRecursive(srcDir: string, destDir: string): number {
+	if (!existsSync(destDir)) mkdirSync(destDir, { recursive: true });
+	let count = 0;
+	for (const entry of readdirSync(srcDir)) {
+		const srcEntry = join(srcDir, entry);
+		const destEntry = join(destDir, entry);
+		const stat = statSync(srcEntry);
+		if (stat.isDirectory()) {
+			count += copyScriptDirRecursive(srcEntry, destEntry);
+		} else {
+			const destEntryDir = dirname(destEntry);
+			if (!existsSync(destEntryDir))
+				mkdirSync(destEntryDir, { recursive: true });
+			copyFileSync(srcEntry, destEntry);
+			count++;
+		}
+	}
+	return count;
 }
 
 /**
@@ -317,10 +537,12 @@ function extractCommands(entries: unknown[]): Set<string> {
 }
 
 /**
- * Merge preset hooks into an existing settings.json (additive-only).
- * Only adds hooks whose command points to PRESET_HOOK_PREFIX.
- * Never removes hooks, never touches permissions or other fields.
+ * Sync preset hooks with settings.json.
+ * Adds missing preset hooks and removes stale preset-managed hooks
+ * (commands under PRESET_HOOK_PREFIX that are no longer in the template).
+ * User-added hooks (non-preset) are never touched.
  */
+
 function mergePresetHooks(presetDir: string): void {
 	const templatePath = join(presetDir, "ecc", "settings.json");
 	const settingsDest = rewritePath("/root/.claude/settings.json");
@@ -386,6 +608,66 @@ function mergePresetHooks(presetDir: string): void {
 			}
 		}
 
+		// Remove stale preset-managed hooks that are no longer in the template
+		// and remove non-executable ghost hooks (plain text commands)
+		let removed = 0;
+		for (const event of Object.keys(current.hooks)) {
+			const entries = current.hooks[event];
+			if (!Array.isArray(entries)) continue;
+
+			// Build set of template commands for this event (rewritten paths)
+			const templateCmds = new Set<string>();
+			const tEntries = templateHooks[event];
+			if (Array.isArray(tEntries)) {
+				for (const te of tEntries) {
+					if (!te || typeof te !== "object") continue;
+					const th = (te as Record<string, unknown>).hooks;
+					if (!Array.isArray(th)) continue;
+					for (const h of th) {
+						if (
+							h &&
+							typeof h === "object" &&
+							typeof (h as Record<string, unknown>).command === "string"
+						) {
+							templateCmds.add(
+								rewritePath((h as Record<string, unknown>).command as string),
+							);
+						}
+					}
+				}
+			}
+
+			const before = entries.length;
+			current.hooks[event] = entries.filter(
+				(entry: { hooks?: Array<{ command?: string }> }) => {
+					const hooks = entry.hooks || [];
+					if (hooks.length === 0) return false;
+
+					for (const h of hooks) {
+						const cmd = (h.command || "").trim();
+						// Remove ghost hooks (plain text, not executable)
+						if (
+							cmd &&
+							!cmd.startsWith("node ") &&
+							!cmd.startsWith("bash ") &&
+							!cmd.startsWith("sh ") &&
+							!cmd.startsWith("python ") &&
+							!cmd.startsWith("python3 ") &&
+							!cmd.startsWith("/")
+						) {
+							return false;
+						}
+						// Remove stale preset-managed hooks no longer in template
+						if (cmd.includes(PRESET_HOOK_PREFIX) && !templateCmds.has(cmd)) {
+							return false;
+						}
+					}
+					return true;
+				},
+			);
+			removed += before - current.hooks[event].length;
+		}
+
 		// Also merge statusLine if present in template and not in current
 		if (template.statusLine && !current.statusLine) {
 			const sl = JSON.parse(JSON.stringify(template.statusLine));
@@ -397,9 +679,11 @@ function mergePresetHooks(presetDir: string): void {
 			console.log(`[Preset]   MERGE statusLine: ${sl.command}`);
 		}
 
-		if (added > 0) {
+		if (added > 0 || removed > 0) {
 			writeFileSync(settingsDest, JSON.stringify(current, null, 2));
-			console.log(`[Preset]   Merged ${added} new hook(s) into settings.json`);
+			if (added > 0) console.log(`[Preset]   Merged ${added} new hook(s)`);
+			if (removed > 0)
+				console.log(`[Preset]   Removed ${removed} stale/invalid hook(s)`);
 		}
 	} catch (e) {
 		console.warn(`[Preset]   Failed to merge hooks:`, (e as Error).message);
@@ -647,6 +931,7 @@ async function applyPresetRecursive(
 		const isDataFile =
 			dest.includes("/memory/") ||
 			dest.endsWith("preferences.md") ||
+			dest.endsWith("constitution.md") ||
 			dest.includes("/rules/user/");
 		if (!force && file.skipIfExists && existsSync(dest)) {
 			console.log(`[Preset]   KEEP ${dest} (skipIfExists)`);

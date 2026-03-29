@@ -1,0 +1,203 @@
+/* ========== Reconnect Overlay ========== */
+.reconnect-overlay {
+	position: fixed;
+	inset: 0;
+	background: rgba(0, 0, 0, 0.4);
+	backdrop-filter: blur(4px);
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	z-index: 200;
+}
+
+.reconnect-content {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	gap: 12px;
+}
+
+.reconnect-text {
+	color: var(--text-secondary);
+	font-size: 14px;
+}
+
+.reconnect-retry-btn {
+	margin-top: 8px;
+	padding: 8px 20px;
+	background: var(--accent);
+	color: #fff;
+	border: none;
+	border-radius: 6px;
+	font-size: 13px;
+	cursor: pointer;
+	transition: opacity 0.15s;
+}
+
+.reconnect-retry-btn:hover {
+	opacity: 0.85;
+}
+
+/* ========== Pull to Refresh ========== */
+.pull-to-refresh {
+	position: fixed;
+	top: 0;
+	left: 50%;
+	transform: translateX(-50%);
+	z-index: 9999;
+	pointer-events: none;
+	transition: opacity 0.15s;
+}
+
+.pull-to-refresh-icon {
+	width: 36px;
+	height: 36px;
+	background: var(--bg-tertiary);
+	border: 1px solid var(--border);
+	border-radius: 50%;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	color: var(--text-secondary);
+	box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+
+/* ========== Image Upload Overlay ========== */
+.image-upload-overlay {
+	position: fixed;
+	inset: 0;
+	background: rgba(0, 0, 0, 0.5);
+	backdrop-filter: blur(6px);
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	z-index: 200;
+}
+
+.image-upload-content {
+	background: var(--bg-primary);
+	border: 1px solid var(--border);
+	border-radius: 12px;
+	padding: 20px;
+	max-width: 480px;
+	width: 90vw;
+	display: flex;
+	flex-direction: column;
+	gap: 14px;
+}
+
+.image-upload-preview {
+	display: flex;
+	justify-content: center;
+	background: var(--bg-secondary);
+	border-radius: 8px;
+	overflow: hidden;
+	max-height: 300px;
+}
+
+.image-upload-preview img {
+	max-width: 100%;
+	max-height: 300px;
+	object-fit: contain;
+}
+
+.upload-text-preview {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	gap: 10px;
+	padding: 20px;
+	background: var(--bg-secondary);
+	border-radius: 8px;
+}
+
+.upload-text-badge {
+	font-size: 18px;
+	font-weight: 700;
+	font-family: var(--font-mono);
+	color: var(--accent);
+	background: color-mix(in srgb, var(--accent) 15%, transparent);
+	padding: 6px 12px;
+	border-radius: 6px;
+}
+
+.upload-text-chars {
+	font-size: 13px;
+	color: var(--text-muted);
+	font-family: var(--font-mono);
+}
+
+.image-upload-info {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 8px;
+}
+
+.image-upload-name {
+	color: var(--text-primary);
+	font-size: 13px;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.image-upload-size {
+	color: var(--text-muted);
+	font-size: 12px;
+	flex-shrink: 0;
+}
+
+.image-upload-actions {
+	display: flex;
+	justify-content: flex-end;
+	gap: 8px;
+}
+
+.image-upload-status {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	gap: 8px;
+	color: var(--text-secondary);
+	font-size: 13px;
+	padding: 6px 0;
+}
+
+.image-upload-status.done {
+	color: var(--accent);
+}
+
+.image-upload-status.error {
+	color: var(--error, #ef4444);
+	flex-direction: column;
+	gap: 10px;
+}
+
+/* Drag-over indicator on terminal area */
+.terminal-instances.drag-over {
+	outline: 2px dashed var(--accent);
+	outline-offset: -2px;
+}
+
+.image-drop-indicator {
+	position: absolute;
+	inset: 0;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	background: rgba(99, 102, 241, 0.08);
+	pointer-events: none;
+	z-index: 10;
+}
+
+.image-drop-indicator-text {
+	color: var(--accent);
+	font-size: 16px;
+	font-weight: 500;
+	padding: 12px 24px;
+	border-radius: 8px;
+	background: var(--bg-primary);
+	border: 1px solid var(--accent);
+}
+

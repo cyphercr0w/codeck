@@ -18,11 +18,24 @@ const PERSIST_DIR = '/workspace/.codeck/credentials';
 if (!existsSync(PERSIST_DIR)) mkdirSync(PERSIST_DIR, { recursive: true, mode: 0o700 });
 
 // Map: persistent name → ephemeral system path
+// ALL integration credentials that must survive container rebuilds.
 const CREDENTIAL_PATHS = {
-  'gh':       '/root/.config/gh',           // GitHub CLI
+  'gh':       '/root/.config/gh',           // GitHub CLI (hosts.yml, config.yml)
+  'ssh':      '/root/.ssh',                 // SSH keys + config + known_hosts
+  'claude':   '/root/.claude',              // Claude OAuth + settings + credentials
   'vercel':   '/root/.local/share/com.vercel.cli', // Vercel CLI (v39+)
   'vercel2':  '/root/.vercel',              // Vercel CLI (legacy path)
   'npm':      '/root/.npmrc',               // npm auth tokens
+  'docker':   '/root/.docker',              // Docker Hub credentials
+  'aws':      '/root/.aws',                 // AWS CLI credentials
+  'gcloud':   '/root/.config/gcloud',       // Google Cloud CLI
+  'azure':    '/root/.azure',               // Azure CLI
+  'stripe':   '/root/.config/stripe',       // Stripe CLI
+  'supabase': '/root/.config/supabase',     // Supabase CLI
+  'fly':      '/root/.fly',                 // Fly.io CLI
+  'railway':  '/root/.config/railway',      // Railway CLI
+  'netlify':  '/root/.config/netlify',      // Netlify CLI
+  'heroku':   '/root/.netrc',               // Heroku CLI (uses .netrc)
 };
 
 for (const [name, systemPath] of Object.entries(CREDENTIAL_PATHS)) {

@@ -12,6 +12,7 @@ import {
 	canAutoRestart,
 } from "../services/port-manager.js";
 import { saveSessionState, updateAgentBinary } from "../services/console.js";
+import { asyncHandler } from "../utils/async-handler.js";
 
 const router = Router();
 
@@ -74,133 +75,214 @@ router.get("/network-info", (_req, res) => {
 });
 
 // POST /api/system/add-port — expose a port to the host
-router.post("/add-port", async (req, res) => {
-	const { port } = req.body;
-	if (!port || typeof port !== "number" || port < 1 || port > 65535) {
-		res.status(400).json({ error: "Invalid port number (1-65535)" });
-		return;
-	}
-
-	// Managed mode: delegate to daemon
-	if (DAEMON_URL) {
-		try {
-			const result = await delegateToDaemon("POST", "/api/system/add-port", {
-				port,
-			});
-			res.status(result.status).json(result.data);
-		} catch (e) {
-			console.error("[System] Daemon delegation failed:", (e as Error).message);
-			res
-				.status(502)
-				.json({
-					success: false,
-					error: "Could not reach daemon for port management",
-				});
+router.post(
+	"/add-port",
+	asyncHandler(async (req, res) => {
+		const { port } = req.body;
+		if (!port || typeof port !== "number" || port < 1 || port > 65535) {
+			res.status(400).json({ error: "Invalid port number (1-65535)" });
+			return;
 		}
-		return;
-	}
 
-	// Isolated mode: existing Docker CLI path (requires Docker socket)
-	if (isPortExposed(port)) {
-		res.json({ success: true, alreadyMapped: true });
-		return;
-	}
-
-	if (!canAutoRestart()) {
-		res.json({
-			success: false,
-			requiresRestart: true,
-			instructions: `Port ${port} is not mapped. Add "${port}:${port}" to docker/compose.override.yml and restart the container.`,
-		});
-		return;
-	}
-
-	try {
-		const allPorts = [...getMappedPorts(), port];
-		writePortOverride(allPorts);
-		addMappedPort(port);
-		saveSessionState(
-			"port-add",
-			`Port ${port} has been exposed. Continue your previous task.`,
-		);
-		res.json({ success: true, restarting: true });
-		setTimeout(() => {
+		// Managed mode: delegate to daemon
+		if (DAEMON_URL) {
 			try {
-				spawnComposeRestart();
+				const result = await delegateToDaemon("POST", "/api/system/add-port", {
+					port,
+				});
+				res.status(result.status).json(result.data);
 			} catch (e) {
-				removeMappedPort(port);
 				console.error(
-					"[System] Failed to spawn restart, rolled back port add:",
+					"[System] Daemon delegation failed:",
 					(e as Error).message,
 				);
-			}
-		}, 500);
-	} catch (e) {
-		console.error("[System] Auto-restart failed:", (e as Error).message);
-		res.json({
-			success: false,
-			requiresRestart: true,
-			instructions: `Auto-restart failed. Manually add "${port}:${port}" to docker/compose.override.yml and restart.`,
-		});
-	}
-});
-
-// POST /api/system/remove-port — remove a port mapping
-router.post("/remove-port", async (req, res) => {
-	const { port } = req.body;
-	if (!port || typeof port !== "number" || port < 1 || port > 65535) {
-		res.status(400).json({ error: "Invalid port number (1-65535)" });
-		return;
-	}
-
-	// Managed mode: delegate to daemon
-	if (DAEMON_URL) {
-		try {
-			const result = await delegateToDaemon("POST", "/api/system/remove-port", {
-				port,
-			});
-			res.status(result.status).json(result.data);
-		} catch (e) {
-			console.error("[System] Daemon delegation failed:", (e as Error).message);
-			res
-				.status(502)
-				.json({
+				res.status(502).json({
 					success: false,
 					error: "Could not reach daemon for port management",
 				});
+			}
+			return;
 		}
-		return;
-	}
 
-	// Isolated mode: existing Docker CLI path
-	if (port === getCodeckPort()) {
-		res.status(400).json({ error: "Cannot remove the Codeck port" });
-		return;
-	}
+		// Isolated mode: existing Docker CLI path (requires Docker socket)
+		if (isPortExposed(port)) {
+			res.json({ success: true, alreadyMapped: true });
+			return;
+		}
 
-	if (!isPortExposed(port)) {
-		res.json({ success: true, notMapped: true });
-		return;
-	}
+		if (!canAutoRestart()) {
+			res.json({
+				success: false,
+				requiresRestart: true,
+				instructions: `Port ${port} is not mapped. Add "${port}:${port}" to docker/compose.override.yml and restart the container.`,
+			});
+			return;
+		}
 
-	if (!canAutoRestart()) {
-		res.json({
-			success: false,
-			requiresRestart: true,
-			instructions: `Remove the "${port}:${port}" line from docker/compose.override.yml and restart the container.`,
-		});
-		return;
-	}
+		try {
+			const allPorts = [...getMappedPorts(), port];
+			writePortOverride(allPorts);
+			addMappedPort(port);
+			saveSessionState(
+				"port-add",
+				`Port ${port} has been exposed. Continue your previous task.`,
+			);
+			res.json({ success: true, restarting: true });
+			setTimeout(() => {
+				try {
+					spawnComposeRestart();
+				} catch (e) {
+					removeMappedPort(port);
+					console.error(
+						"[System] Failed to spawn restart, rolled back port add:",
+						(e as Error).message,
+					);
+				}
+			}, 500);
+		} catch (e) {
+			console.error("[System] Auto-restart failed:", (e as Error).message);
+			res.json({
+				success: false,
+				requiresRestart: true,
+				instructions: `Auto-restart failed. Manually add "${port}:${port}" to docker/compose.override.yml and restart.`,
+			});
+		}
+	}),
+);
 
-	try {
-		removeMappedPort(port);
-		const remainingPorts = getMappedPorts();
-		writePortOverride(remainingPorts);
+// POST /api/system/remove-port — remove a port mapping
+router.post(
+	"/remove-port",
+	asyncHandler(async (req, res) => {
+		const { port } = req.body;
+		if (!port || typeof port !== "number" || port < 1 || port > 65535) {
+			res.status(400).json({ error: "Invalid port number (1-65535)" });
+			return;
+		}
+
+		// Managed mode: delegate to daemon
+		if (DAEMON_URL) {
+			try {
+				const result = await delegateToDaemon(
+					"POST",
+					"/api/system/remove-port",
+					{
+						port,
+					},
+				);
+				res.status(result.status).json(result.data);
+			} catch (e) {
+				console.error(
+					"[System] Daemon delegation failed:",
+					(e as Error).message,
+				);
+				res.status(502).json({
+					success: false,
+					error: "Could not reach daemon for port management",
+				});
+			}
+			return;
+		}
+
+		// Isolated mode: existing Docker CLI path
+		if (port === getCodeckPort()) {
+			res.status(400).json({ error: "Cannot remove the Codeck port" });
+			return;
+		}
+
+		if (!isPortExposed(port)) {
+			res.json({ success: true, notMapped: true });
+			return;
+		}
+
+		if (!canAutoRestart()) {
+			res.json({
+				success: false,
+				requiresRestart: true,
+				instructions: `Remove the "${port}:${port}" line from docker/compose.override.yml and restart the container.`,
+			});
+			return;
+		}
+
+		try {
+			removeMappedPort(port);
+			const remainingPorts = getMappedPorts();
+			writePortOverride(remainingPorts);
+			saveSessionState(
+				"port-remove",
+				`Port ${port} has been unmapped. Continue your previous task.`,
+			);
+			res.json({ success: true, restarting: true, remainingPorts });
+			setTimeout(() => {
+				try {
+					spawnComposeRestart();
+				} catch (e) {
+					console.error(
+						"[System] Failed to spawn restart:",
+						(e as Error).message,
+					);
+				}
+			}, 500);
+		} catch (e) {
+			console.error("[System] Port removal failed:", (e as Error).message);
+			addMappedPort(port);
+			res.json({
+				success: false,
+				requiresRestart: true,
+				instructions: `Auto-restart failed. Manually edit docker/compose.override.yml and restart.`,
+			});
+		}
+	}),
+);
+
+// POST /api/system/restart — restart the runtime container via the daemon.
+// In managed mode the runtime is isolated: host-level restarts must go through
+// the daemon (which owns Docker lifecycle). This preserves the security boundary
+// where the runtime cannot execute arbitrary host commands.
+router.post(
+	"/restart",
+	asyncHandler(async (req, res) => {
+		if (DAEMON_URL) {
+			// Managed mode: save sessions so they restore after restart, then delegate.
+			saveSessionState(
+				"restart",
+				"Container restarting. Sessions will be restored automatically.",
+			);
+			try {
+				const result = await delegateToDaemon(
+					"POST",
+					"/api/system/restart",
+					null,
+				);
+				res.status(result.status).json(result.data);
+			} catch (e) {
+				console.error(
+					"[System] Daemon restart delegation failed:",
+					(e as Error).message,
+				);
+				res
+					.status(502)
+					.json({
+						success: false,
+						error: "Could not reach daemon for restart",
+					});
+			}
+			return;
+		}
+
+		// Isolated mode: use compose restart if Docker socket is available.
+		if (!canAutoRestart()) {
+			res.status(501).json({
+				success: false,
+				error: "Restart requires managed mode or a Docker socket",
+			});
+			return;
+		}
 		saveSessionState(
-			"port-remove",
-			`Port ${port} has been unmapped. Continue your previous task.`,
+			"restart",
+			"Container restarting. Sessions will be restored automatically.",
 		);
-		res.json({ success: true, restarting: true, remainingPorts });
+		res.json({ success: true, restarting: true });
 		setTimeout(() => {
 			try {
 				spawnComposeRestart();
@@ -211,82 +293,23 @@ router.post("/remove-port", async (req, res) => {
 				);
 			}
 		}, 500);
-	} catch (e) {
-		console.error("[System] Port removal failed:", (e as Error).message);
-		addMappedPort(port);
-		res.json({
-			success: false,
-			requiresRestart: true,
-			instructions: `Auto-restart failed. Manually edit docker/compose.override.yml and restart.`,
-		});
-	}
-});
-
-// POST /api/system/restart — restart the runtime container via the daemon.
-// In managed mode the runtime is isolated: host-level restarts must go through
-// the daemon (which owns Docker lifecycle). This preserves the security boundary
-// where the runtime cannot execute arbitrary host commands.
-router.post("/restart", async (req, res) => {
-	if (DAEMON_URL) {
-		// Managed mode: save sessions so they restore after restart, then delegate.
-		saveSessionState(
-			"restart",
-			"Container restarting. Sessions will be restored automatically.",
-		);
-		try {
-			const result = await delegateToDaemon(
-				"POST",
-				"/api/system/restart",
-				null,
-			);
-			res.status(result.status).json(result.data);
-		} catch (e) {
-			console.error(
-				"[System] Daemon restart delegation failed:",
-				(e as Error).message,
-			);
-			res
-				.status(502)
-				.json({ success: false, error: "Could not reach daemon for restart" });
-		}
-		return;
-	}
-
-	// Isolated mode: use compose restart if Docker socket is available.
-	if (!canAutoRestart()) {
-		res
-			.status(501)
-			.json({
-				success: false,
-				error: "Restart requires managed mode or a Docker socket",
-			});
-		return;
-	}
-	saveSessionState(
-		"restart",
-		"Container restarting. Sessions will be restored automatically.",
-	);
-	res.json({ success: true, restarting: true });
-	setTimeout(() => {
-		try {
-			spawnComposeRestart();
-		} catch (e) {
-			console.error("[System] Failed to spawn restart:", (e as Error).message);
-		}
-	}, 500);
-});
+	}),
+);
 
 // POST /api/system/update-agent — safely update the agent CLI binary
-router.post("/update-agent", (_req, res) => {
-	try {
-		const result = updateAgentBinary();
-		res.json({ success: true, ...result });
-	} catch (e) {
-		const detail = e instanceof Error ? e.message : String(e);
-		console.log(`[System] Agent CLI update failed: ${detail}`);
-		res.status(500).json({ success: false, error: "Agent update failed" });
-	}
-});
+router.post(
+	"/update-agent",
+	asyncHandler(async (_req, res) => {
+		try {
+			const result = await updateAgentBinary();
+			res.json({ success: true, ...result });
+		} catch (e) {
+			const detail = e instanceof Error ? e.message : String(e);
+			console.log(`[System] Agent CLI update failed: ${detail}`);
+			res.status(500).json({ success: false, error: "Agent update failed" });
+		}
+	}),
+);
 
 // ── Model switching ──
 

@@ -20,7 +20,7 @@ Browser → nginx (optional SSL) → Container :80
 |----------|---------------|
 | [ARCHITECTURE.md](ARCHITECTURE.md) | System design, auth flows, PTY lifecycle, WebSocket protocol, preset system, security model |
 | [API.md](API.md) | REST endpoints and WebSocket messages with request/response formats |
-| [SERVICES.md](SERVICES.md) | Backend services: auth, console, memory, git, agents, permissions |
+| [SERVICES.md](SERVICES.md) | Backend services: auth, console, memory, git, agents, teams, permissions |
 | [FRONTEND.md](FRONTEND.md) | Preact SPA: components, signals state, terminal, toast system |
 | [CONFIGURATION.md](CONFIGURATION.md) | Docker config, env vars, volumes, presets, MCP servers |
 | [DEPLOYMENT.md](DEPLOYMENT.md) | Install on VPS, update flow, resource allocation, reverse proxy |

@@ -26,6 +26,7 @@ import {
 	replaceSession,
 	addLocalLog,
 	sessionStatus,
+	showToast,
 	type View,
 	type Section,
 } from "./state/store";
@@ -57,6 +58,8 @@ import { AgentConfigSection } from "./components/AgentConfigSection";
 import { ToastContainer } from "./components/ToastContainer";
 
 import { AgentsSection } from "./components/AgentsSection";
+import { SubAgentsSection } from "./components/SubAgentsSection";
+import { ChatSection } from "./components/ChatSection";
 import { SettingsSection } from "./components/SettingsSection";
 import { MobileMenu } from "./components/MobileMenu";
 import { IconBridge } from "./components/Icons";
@@ -120,6 +123,9 @@ export function App() {
 	const [section, setSection] = useState<Section>("home");
 	const [loginModalOpen, setLoginModalOpen] = useState(false);
 	const [newProjectOpen, setNewProjectOpen] = useState(false);
+	const [newProjectInitialDir, setNewProjectInitialDir] = useState<
+		string | undefined
+	>();
 	const [sidebarOpen, setSidebarOpen] = useState(false);
 	const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
@@ -348,7 +354,7 @@ export function App() {
 					setActiveSection(sectionFromUrl());
 					setView("main");
 					if (!hasAccount) loadAccountInfo(signal);
-					if (!hasSessions) restoreSessions();
+					// Session auto-restore disabled — users restore manually via recent conversations
 				}
 			} else {
 				setView("setup");
@@ -482,7 +488,7 @@ export function App() {
 		setPresetConfigured(true);
 		setActiveSection(sectionFromUrl());
 		setView("main");
-		await restoreSessions();
+		// Session auto-restore disabled
 	}
 
 	// ========== Section change ==========
@@ -513,6 +519,20 @@ export function App() {
 			);
 			return;
 		}
+		setNewProjectInitialDir(undefined);
+		setNewProjectOpen(true);
+	}
+
+	/** Open modal at step 2 with a pre-selected dir (used by recent projects) */
+	function handleOpenWithDir(dir: string) {
+		if (sessions.value.length >= SESSION_LIMIT) {
+			addLocalLog(
+				"warn",
+				`Maximum of ${SESSION_LIMIT} sessions reached. Close an existing session to create a new one.`,
+			);
+			return;
+		}
+		setNewProjectInitialDir(dir);
 		setNewProjectOpen(true);
 	}
 
@@ -567,7 +587,7 @@ export function App() {
 
 	async function handleProjectConfirm(
 		dir: string,
-		options: { resume: boolean },
+		options: { command: string; enableTeams: boolean },
 	) {
 		setNewProjectOpen(false);
 		if (sessions.value.length >= SESSION_LIMIT) {
@@ -576,6 +596,20 @@ export function App() {
 				`Maximum of ${SESSION_LIMIT} sessions reached. Close an existing session to create a new one.`,
 			);
 			return;
+		}
+
+		// Parse flags from the command string
+		const tokens = options.command.trim().split(/\s+/);
+		const hasResume = tokens.includes("--resume");
+		const hasContinue = tokens.includes("--continue");
+
+		// Collect extra args (anything beyond "claude" and known flags)
+		const knownFlags = new Set(["claude", "--resume", "--continue"]);
+		const extraArgs: string[] = [];
+		for (let i = 0; i < tokens.length; i++) {
+			const t = tokens[i];
+			if (knownFlags.has(t)) continue;
+			extraArgs.push(t);
 		}
 
 		// Show tab immediately with loading state
@@ -596,18 +630,25 @@ export function App() {
 		try {
 			const res = await apiFetch("/api/console/create", {
 				method: "POST",
-				body: JSON.stringify({ cwd: dir, resume: options.resume }),
+				body: JSON.stringify({
+					cwd: dir,
+					resume: hasResume || hasContinue,
+					useContinue: hasContinue,
+					enableTeams: options.enableTeams,
+					extraArgs: extraArgs.length > 0 ? extraArgs : undefined,
+				}),
 			});
 			clearTimeout(loadingTimeout);
 			const data = await res.json();
 			if (data.error) {
 				removeSession(tempId);
 				if (data.error === "Claude is not authenticated") {
-					addLocalLog(
+					showToast(
+						"Claude is authenticating — try again in a few seconds",
 						"error",
-						"Claude session expired — please re-authenticate",
 					);
-					setLoginModalOpen(true);
+				} else {
+					showToast(data.error, "error");
 				}
 				return;
 			}
@@ -712,11 +753,9 @@ export function App() {
 						{section === "home" && (
 							<HomeSection onRelogin={startLogin} onLogout={handleLogout} />
 						)}
+						{section === "chat" && <ChatSection />}
 						{section === "filesystem" && <FilesSection />}
-						{/* ClaudeSection is always mounted — never unmount it.
-                Unmounting destroys xterm instances (expensive WebGL teardown + init on remount,
-                causes 5-10s input freeze) and loses the attach state (black terminal on return).
-                CSS display:none/contents hides/shows it without touching the DOM tree. */}
+						{/* ClaudeSection always mounted — preview is integrated within it */}
 						<div
 							style={
 								section !== "claude"
@@ -727,9 +766,11 @@ export function App() {
 							<ClaudeSection
 								onNewSession={handleNewSession}
 								onNewShell={handleNewShell}
+								onOpenWithDir={handleOpenWithDir}
 							/>
 						</div>
 
+						{section === "subagents" && <SubAgentsSection />}
 						{section === "agents" && <AgentsSection />}
 						{section === "integrations" && <IntegrationsSection />}
 						{section === "config" && <AgentConfigSection />}
@@ -745,7 +786,11 @@ export function App() {
 			/>
 			<NewProjectModal
 				visible={newProjectOpen}
-				onCancel={() => setNewProjectOpen(false)}
+				initialDir={newProjectInitialDir}
+				onCancel={() => {
+					setNewProjectOpen(false);
+					setNewProjectInitialDir(undefined);
+				}}
 				onConfirm={handleProjectConfirm}
 			/>
 			<ReconnectOverlay />

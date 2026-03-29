@@ -102,6 +102,7 @@ describe("services/console.ts - Session Management", () => {
 		// Setup mock PTY spawn to return a mock PTY object
 		mockPtySpawn.mockReturnValue({
 			onData: mockPtyOnData,
+			onExit: vi.fn(),
 			write: mockPtyWrite,
 			resize: mockPtyResize,
 			kill: mockPtyKill,

@@ -1,53 +1,57 @@
 # Codeck
 
-You are running inside a sandboxed Docker container with persistent workspace and tools.
+You are running inside **Codeck** — a persistent cloud sandbox with Docker, tools, and memory. The user accesses you via a web terminal from any device.
 
-## Workspace Layout
+## Your Container
 
-```
-/workspace/
-  ├── .codeck/                       # Agent data (memory, rules, skills, preferences)
-  ├── CLAUDE.md                        # This file (workspace rules + project listing)
-  └── <projects>/                       # User projects
-```
+- Full filesystem access at `/workspace/`
+- Node.js 22, Python 3, Git, GitHub CLI, Docker CLI pre-installed
+- Persistent workspace — projects, packages, and data survive restarts
+- Memory system at `/workspace/.codeck/memory/` — you remember across sessions
 
 ## Rules
 
-- Your scope is `/workspace`. Do NOT navigate outside `/workspace`.
-- Work inside your current working directory (cwd). The user chose this directory when opening the session — respect it. Do NOT create new folders under /workspace/ unless the user explicitly asks for a new project elsewhere.
-- If your cwd IS /workspace/ root, then create a project subfolder (e.g., /workspace/{project-name}/) — never scatter files in the root.
-- NEVER run interactive commands. Always use non-interactive flags: `--yes`, `--no-input`, `--default`, `-y`, etc. Examples:
-  - `npx create-next-app@latest my-app --yes --typescript --tailwind --eslint --app --src-dir --import-alias "@/*"` (NOT bare `create-next-app`)
-  - `pnpm init` (already non-interactive)
-  - `git commit -m "msg"` (NOT `git commit` without -m)
-  If a CLI tool has no non-interactive flag, create files manually instead.
+- Scope: `/workspace/` only. Do NOT navigate outside.
+- Work in the current directory (cwd). Don't create folders under `/workspace/` unless asked.
+- If cwd IS `/workspace/` root, create a project subfolder first.
+- NEVER run interactive commands. Always use `--yes`, `-y`, `--no-input`, etc.
+- NEVER show `172.x.x.x` Docker internal IPs — unreachable from outside.
 
-## Dev Server Preview
+## Live Preview — ALWAYS USE THIS
 
-You are inside a Docker container. **Only the Codeck port (default 80) is mapped by default.**
+When you start a dev server, **open the live preview immediately**:
 
-**Starting servers — ALWAYS bind to `0.0.0.0`:**
-- `npx vite --host 0.0.0.0`, `next dev -H 0.0.0.0`, `python -m http.server --bind 0.0.0.0`
-- Without `0.0.0.0`, the server is unreachable from outside the container.
-
-**After starting any dev server, you MUST check if the port is exposed:**
 ```bash
-curl -s http://localhost/api/ports
+# 1. Start server (ALWAYS bind to 0.0.0.0)
+npx vite --host 0.0.0.0 --port 5173 &
+
+# 2. Open preview for the user
+curl -s -X POST http://localhost/api/preview/navigate-to \
+  -H "Content-Type: application/json" \
+  -d '{"port": 5173}'
 ```
-- If `exposed: true` → show `http://localhost:{port}` (local) + `http://codeck.local:{port}` (LAN)
-- If `exposed: false` → call `POST http://localhost/api/system/add-port` with `{"port": N}` and follow the response instructions
 
-See `/workspace/.codeck/skills/sandbox.md` for the full port exposure flow.
+This opens a split panel next to the terminal with the site rendering in real-time. HMR works — every code change reflects instantly. **Do this every time you start a server.**
 
-NEVER show `172.x.x.x` addresses — Docker internal, unreachable from outside.
+Tell the user: "I opened the preview — your site is live on port {port}."
 
-## Inter-service URLs
+## Networking
 
-- **Same container** (services you started directly): `localhost:{port}`
-- **Sibling containers** (started via `docker run`/`docker compose`): `host.docker.internal:{port}`
-- **NEVER** use `172.x.x.x` container IPs — they change on restart and are unreachable from outside Docker
+| Scenario | URL |
+|----------|-----|
+| Services in this container | `localhost:{port}` |
+| Sibling containers (docker run -p) | `host.docker.internal:{port}` |
+| Preview URLs | `{port}.localhost` (local) or `{port}.domain` (production) |
+
+## Panel API
+
+```bash
+curl http://localhost/api/ports          # Active ports
+curl http://localhost/api/status         # System status
+curl -X POST http://localhost/api/preview/navigate-to \
+  -H "Content-Type: application/json" -d '{"port": 3000}'  # Open preview
+```
 
 ## Current Projects
 
-<!-- PROJECTS_LIST (auto-generated, do not edit manually) -->
 _No projects cloned yet_

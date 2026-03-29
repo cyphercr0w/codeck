@@ -1,3 +1,9 @@
+<!--
+  Source: affaan-m/everything-claude-code (MIT License)
+  https://github.com/affaan-m/everything-claude-code
+  Author: Affaan Mustafa — integrated into Codeck with modifications.
+-->
+
 # Testing Requirements
 
 ## Minimum Test Coverage: 80%
@@ -27,3 +33,26 @@ MANDATORY workflow:
 ## Agent Support
 
 - **tdd-guide** - Use PROACTIVELY for new features, enforces write-tests-first
+
+---
+
+## Iron Law
+
+**80% Coverage Is Non-Negotiable — measure before marking done.** Run the coverage tool. If below 80%, you are not done.
+
+---
+
+## Verification Before Completion
+
+**Never claim success without fresh evidence.** Before saying "done", "fixed", "working", or "tests pass":
+
+1. **Run the build** — if it doesn't compile, it's not done
+2. **Run the tests** — if they don't pass, it's not done
+3. **Show the output** — paste the actual result, not "it should work"
+
+Banned phrases without accompanying verification output:
+- "should work", "probably works", "seems to work"
+- "I believe this fixes", "this likely resolves"
+- "tests should pass", "the build should succeed"
+
+If you catch yourself using these words, STOP and run the actual command instead.

@@ -88,6 +88,59 @@ export interface PresetStatus {
 	autoUpdate: boolean;
 }
 
+// ── Startup Sanitization ────────────────────────────────────────────
+
+/**
+ * Remove ghost hooks from settings.json at runtime startup.
+ * Ghost hooks are entries whose command is empty or not a valid executable
+ * (e.g. plain text prompts injected by agents, npx commands, etc.).
+ * Runs once at startup before any sessions are created.
+ */
+export function sanitizeSettingsHooks(): void {
+	const settingsPath = rewritePath("/root/.claude/settings.json");
+	try {
+		if (!existsSync(settingsPath)) return;
+		const settings = JSON.parse(readFileSync(settingsPath, "utf-8"));
+		if (!settings.hooks || typeof settings.hooks !== "object") return;
+
+		let totalRemoved = 0;
+		for (const event of Object.keys(settings.hooks)) {
+			const entries = settings.hooks[event];
+			if (!Array.isArray(entries)) continue;
+
+			const before = entries.length;
+			settings.hooks[event] = entries.filter(
+				(entry: { hooks?: Array<{ command?: string }> }) => {
+					const hooks = entry.hooks || [];
+					if (hooks.length === 0) return false;
+					return hooks.every((h: { command?: string }) => {
+						const cmd = (h.command || "").trim();
+						if (!cmd) return false;
+						return (
+							cmd.startsWith("node ") ||
+							cmd.startsWith("bash ") ||
+							cmd.startsWith("sh ") ||
+							cmd.startsWith("python ") ||
+							cmd.startsWith("python3 ") ||
+							cmd.startsWith("/")
+						);
+					});
+				},
+			);
+			totalRemoved += before - settings.hooks[event].length;
+		}
+
+		if (totalRemoved > 0) {
+			writeFileSync(settingsPath, JSON.stringify(settings, null, "\t"));
+			console.log(
+				`[Preset] Sanitized settings.json: removed ${totalRemoved} ghost hook(s)`,
+			);
+		}
+	} catch {
+		/* non-fatal */
+	}
+}
+
 // ── Validation ──────────────────────────────────────────────────────
 
 /** Validate that a preset ID contains only safe characters (no path traversal). */

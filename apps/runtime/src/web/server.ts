@@ -42,7 +42,11 @@ import {
 	clearPendingRestore,
 	listSessions,
 } from "../services/console.js";
-import { getPresetStatus, checkPresetUpdate } from "../services/preset.js";
+import {
+	getPresetStatus,
+	checkPresetUpdate,
+	sanitizeSettingsHooks,
+} from "../services/preset.js";
 import agentRoutes from "../routes/agent.routes.js";
 import githubRoutes from "../routes/github.routes.js";
 import cliAuthRoutes from "../routes/cli-auth.routes.js";
@@ -724,6 +728,7 @@ export async function startWebServer(): Promise<void> {
 		// Restore credential symlinks BEFORE any auth checks
 		restoreCredentialSymlinks();
 		initGitHub();
+		sanitizeSettingsHooks();
 		checkPresetUpdate();
 		updateClaudeMd();
 		ensureDirectories();

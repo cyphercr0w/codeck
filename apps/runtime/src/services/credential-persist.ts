@@ -2,10 +2,10 @@
  * Credential persistence — symlinks ephemeral config dirs to /workspace/.codeck/credentials/.
  *
  * Runs at runtime startup (before auth checks) to restore credential symlinks
- * that were lost during container rebuild. Also runs as SessionStart hook for
- * migrating newly-created credentials.
+ * that were lost during container rebuild.
  *
- * All integration credentials survive rebuilds via this mechanism.
+ * Uses readFileSync/writeFileSync (content-only copy) instead of cpSync to avoid
+ * EPERM errors when files are owned by a different UID (e.g. uid=999 from gh CLI).
  */
 
 import {
@@ -13,12 +13,13 @@ import {
 	mkdirSync,
 	symlinkSync,
 	lstatSync,
-	cpSync,
+	readdirSync,
+	readFileSync,
+	writeFileSync,
 	rmSync,
 	renameSync,
 } from "fs";
-import { dirname } from "path";
-import { join } from "path";
+import { dirname, join } from "path";
 
 const PERSIST_DIR = "/workspace/.codeck/credentials";
 
@@ -40,6 +41,26 @@ const CREDENTIAL_PATHS: Record<string, string> = {
 	netlify: "/root/.config/netlify",
 	heroku: "/root/.netrc",
 };
+
+/**
+ * Content-only recursive copy. Uses readFileSync/writeFileSync to avoid EPERM
+ * when source files are owned by a different UID (e.g. uid=999 from gh CLI).
+ * Does NOT preserve ownership or permissions — writes as current user (root).
+ */
+function safeCopyRecursive(src: string, dest: string): void {
+	const stat = lstatSync(src);
+	if (stat.isDirectory()) {
+		if (!existsSync(dest)) mkdirSync(dest, { recursive: true });
+		for (const entry of readdirSync(src)) {
+			safeCopyRecursive(join(src, entry), join(dest, entry));
+		}
+	} else if (stat.isFile()) {
+		const parentDir = dirname(dest);
+		if (!existsSync(parentDir)) mkdirSync(parentDir, { recursive: true });
+		writeFileSync(dest, readFileSync(src));
+	}
+	// Skip symlinks and special files inside credential dirs
+}
 
 /**
  * Restore credential symlinks from persistent storage.
@@ -66,17 +87,13 @@ export function restoreCredentialSymlinks(): void {
 
 			// Case 1: real data at system path, no persistent copy → migrate
 			if (sysLstat && !existsSync(persistPath)) {
-				if (sysLstat.isDirectory()) {
-					cpSync(systemPath, persistPath, { recursive: true });
-				} else {
-					cpSync(systemPath, persistPath);
-				}
+				safeCopyRecursive(systemPath, persistPath);
 				try {
 					rmSync(systemPath, { recursive: true, force: true });
 					symlinkSync(persistPath, systemPath);
 					migrated++;
 				} catch {
-					// Can't replace (busy) — symlink on next restart
+					// Can't replace (busy mount) — data is at least persisted now
 				}
 				continue;
 			}
@@ -89,13 +106,7 @@ export function restoreCredentialSymlinks(): void {
 					symlinkSync(persistPath, systemPath);
 				} catch {
 					// Symlink failed — fall back to copying files
-					const pStat = lstatSync(persistPath);
-					if (pStat.isDirectory()) {
-						mkdirSync(systemPath, { recursive: true });
-						cpSync(persistPath, systemPath, { recursive: true });
-					} else {
-						cpSync(persistPath, systemPath);
-					}
+					safeCopyRecursive(persistPath, systemPath);
 				}
 				restored++;
 				continue;
@@ -104,12 +115,7 @@ export function restoreCredentialSymlinks(): void {
 			// Case 3: both exist, system is real (not symlink) → replace with symlink
 			if (existsSync(persistPath) && sysLstat && !sysLstat.isSymbolicLink()) {
 				// Update persistent copy first (system may have newer data)
-				if (sysLstat.isDirectory()) {
-					cpSync(systemPath, persistPath, { recursive: true });
-				} else {
-					cpSync(systemPath, persistPath);
-				}
-				// Try to replace with symlink; if dir is busy (Docker mount), fall back to file copy
+				safeCopyRecursive(systemPath, persistPath);
 				try {
 					const backupPath = systemPath + ".bak";
 					try {
@@ -120,12 +126,8 @@ export function restoreCredentialSymlinks(): void {
 					symlinkSync(persistPath, systemPath);
 					migrated++;
 				} catch {
-					// Directory can't be removed (busy mount) — copy files from persist into it
-					if (sysLstat.isDirectory()) {
-						cpSync(persistPath, systemPath, { recursive: true });
-					} else {
-						cpSync(persistPath, systemPath);
-					}
+					// Directory can't be removed (busy mount) — copy from persist into it
+					safeCopyRecursive(persistPath, systemPath);
 					restored++;
 				}
 			}

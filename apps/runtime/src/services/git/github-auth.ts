@@ -4,10 +4,10 @@
 import { spawn, spawnSync, execFile } from "child_process";
 import {
 	existsSync,
+	readFileSync,
 	writeFileSync,
 	unlinkSync,
 	mkdirSync,
-	copyFileSync,
 } from "fs";
 import { join } from "path";
 
@@ -28,7 +28,7 @@ function backupGhCredentials(): void {
 		if (!existsSync(GH_HOSTS_FILE)) return;
 		if (!existsSync(BACKUP_DIR))
 			mkdirSync(BACKUP_DIR, { recursive: true, mode: 0o700 });
-		copyFileSync(GH_HOSTS_FILE, BACKUP_HOSTS);
+		writeFileSync(BACKUP_HOSTS, readFileSync(GH_HOSTS_FILE));
 		console.log("[GitHub] Credentials backed up to workspace");
 	} catch (e) {
 		console.warn("[GitHub] Credential backup failed:", (e as Error).message);
@@ -41,7 +41,7 @@ function restoreGhCredentials(): boolean {
 		if (existsSync(GH_HOSTS_FILE)) return false; // already has credentials
 		if (!existsSync(GH_CONFIG_DIR))
 			mkdirSync(GH_CONFIG_DIR, { recursive: true, mode: 0o700 });
-		copyFileSync(BACKUP_HOSTS, GH_HOSTS_FILE);
+		writeFileSync(GH_HOSTS_FILE, readFileSync(BACKUP_HOSTS));
 		console.log("[GitHub] Credentials restored from workspace backup");
 		return true;
 	} catch (e) {

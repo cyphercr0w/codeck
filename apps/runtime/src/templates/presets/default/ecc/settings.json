@@ -409,6 +409,15 @@
 		],
 		"Stop": [
 			{
+				"matcher": "",
+				"hooks": [
+					{
+						"type": "command",
+						"command": "node /workspace/.codeck/scripts/memory-stop-hook.mjs"
+					}
+				]
+			},
+			{
 				"matcher": "*",
 				"hooks": [
 					{

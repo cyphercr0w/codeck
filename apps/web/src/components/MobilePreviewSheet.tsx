@@ -4,13 +4,15 @@
  */
 import { previewPort, previewUrl, mobilePreviewOpen } from "../state/store";
 import { buildPreviewUrl } from "../utils/preview-url";
-import { IconX, IconChevronDown } from "./Icons";
+import { IconX, IconChevronDown, IconRefresh } from "./Icons";
 import { useRef, useState } from "preact/hooks";
 
 export function MobilePreviewSheet() {
 	const port = previewPort.value;
 	const open = mobilePreviewOpen.value;
 	const [iframeReady, setIframeReady] = useState(false);
+	const [editingUrl, setEditingUrl] = useState(false);
+	const [urlInput, setUrlInput] = useState("");
 	const iframeRef = useRef<HTMLIFrameElement>(null);
 
 	if (!port && !open) return null;
@@ -34,9 +36,66 @@ export function MobilePreviewSheet() {
 			{open && port && (
 				<div class="mobile-preview-sheet">
 					<div class="mobile-preview-sheet-header">
-						<span class="mobile-preview-sheet-url">
-							{previewUrl.value || `localhost:${port}`}
-						</span>
+						{editingUrl ? (
+							<form
+								class="mobile-preview-url-form"
+								onSubmit={(e) => {
+									e.preventDefault();
+									const trimmed = urlInput.trim();
+									if (!trimmed) {
+										setEditingUrl(false);
+										return;
+									}
+									// Parse port from URL like "localhost:3000" or "http://localhost:3000/path"
+									let parsed = trimmed;
+									if (!/^https?:\/\//.test(parsed)) parsed = `http://${parsed}`;
+									try {
+										const url = new URL(parsed);
+										const newPort = parseInt(url.port || "80", 10);
+										if (newPort && newPort !== 80) {
+											previewPort.value = newPort;
+											previewUrl.value = parsed;
+										}
+									} catch {
+										/* ignore invalid */
+									}
+									setEditingUrl(false);
+								}}
+							>
+								<input
+									class="mobile-preview-url-input"
+									type="text"
+									value={urlInput}
+									onInput={(e) =>
+										setUrlInput((e.target as HTMLInputElement).value)
+									}
+									placeholder="localhost:3000"
+									autoFocus
+									onBlur={() => setEditingUrl(false)}
+								/>
+							</form>
+						) : (
+							<span
+								class="mobile-preview-sheet-url"
+								onClick={() => {
+									setUrlInput(previewUrl.value || `localhost:${port}`);
+									setEditingUrl(true);
+								}}
+							>
+								{previewUrl.value || `localhost:${port}`}
+							</span>
+						)}
+						<button
+							class="btn btn-xs btn-ghost"
+							onClick={() => {
+								if (iframeRef.current) {
+									iframeRef.current.src = buildPreviewUrl(port);
+								}
+							}}
+							title="Refresh"
+						>
+							<IconRefresh size={16} />
+						</button>
 						<button
 							class="btn btn-xs btn-ghost"
 							onClick={() => {

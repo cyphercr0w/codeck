@@ -228,6 +228,26 @@
 	overflow: hidden;
 	text-overflow: ellipsis;
 	white-space: nowrap;
+	cursor: pointer;
+}
+.mobile-preview-sheet-url:active {
+	color: var(--text-secondary);
+}
+
+.mobile-preview-url-form {
+	flex: 1;
+	display: flex;
+}
+.mobile-preview-url-input {
+	width: 100%;
+	font-size: 13px;
+	font-family: var(--font-mono);
+	color: var(--text);
+	background: var(--bg-tertiary);
+	border: 1px solid var(--accent);
+	border-radius: 4px;
+	padding: 4px 8px;
+	outline: none;
 }
 
 .mobile-preview-sheet-iframe {

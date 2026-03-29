@@ -384,6 +384,45 @@ export function ChatSection() {
 
 	// Quick action chips removed per user request
 
+	// ── Attachment chips shared between empty + non-empty states ──
+	function AttachmentChips() {
+		if (attachments.length === 0) return null;
+		return (
+			<div class="chat-attachments">
+				{attachments.map((f, i) => {
+					const ext = f.name.includes(".")
+						? f.name.split(".").pop()!.toLowerCase().slice(0, 4)
+						: "file";
+					const sizeLabel =
+						f.size < 1024
+							? `${f.size} B`
+							: f.size < 1024 * 1024
+								? `${(f.size / 1024).toFixed(0)} KB`
+								: `${(f.size / (1024 * 1024)).toFixed(1)} MB`;
+					return (
+						<span
+							key={`${f.name}-${f.size}-${f.lastModified}`}
+							class="chat-attachment-pill"
+						>
+							<span class="chat-attachment-ext">{ext}</span>
+							<span class="chat-attachment-name" title={f.name}>
+								{f.name.length > 24 ? f.name.slice(0, 22) + "…" : f.name}
+							</span>
+							<span class="chat-attachment-size">{sizeLabel}</span>
+							<button
+								class="chat-attachment-remove"
+								onClick={() => removeAttachment(i)}
+								title="Remove"
+							>
+								×
+							</button>
+						</span>
+					);
+				})}
+			</div>
+		);
+	}
+
 	if (isEmpty) {
 		return (
 			<div class="chat-layout">
@@ -491,6 +530,7 @@ export function ChatSection() {
 								</svg>
 							</button>
 						</div>
+						<AttachmentChips />
 					</div>
 				</div>
 			</div>
@@ -578,24 +618,7 @@ export function ChatSection() {
 						);
 					})}
 				</div>
-				{attachments.length > 0 && (
-					<div class="chat-attachments">
-						{attachments.map((f, i) => (
-							<span
-								key={`${f.name}-${f.size}-${f.lastModified}`}
-								class="chat-attachment-pill"
-							>
-								{f.name}
-								<button
-									class="chat-attachment-remove"
-									onClick={() => removeAttachment(i)}
-								>
-									×
-								</button>
-							</span>
-						))}
-					</div>
-				)}
+				<AttachmentChips />
 				<div class="chat-input-wrap">
 					<input
 						ref={fileInputRef}

@@ -255,9 +255,13 @@ export function createTerminal(
 		);
 	}
 
-	term.onData((data) => {
-		wsSend({ type: "console:input", sessionId, data });
-	});
+	// On mobile, input is handled exclusively by MobileTerminalToolbar's hidden input.
+	// Registering onData on mobile causes double-send (xterm + toolbar both fire).
+	if (!isMobile.value) {
+		term.onData((data) => {
+			wsSend({ type: "console:input", sessionId, data });
+		});
+	}
 
 	// Debounce resize to avoid excessive events on orientation changes / keyboard.
 	// Single resize path for both mobile and desktop: ResizeObserver → fit → send.

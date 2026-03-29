@@ -5,252 +5,258 @@
  * Creates a new Claude Code session (requires Claude auth, max 5 sessions)
  */
 
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import express, { Express } from 'express';
-import request from 'supertest';
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+import express, { Express } from "express";
+import request from "supertest";
 
 // Hoist mock functions
-const { mockCreateConsoleSession, mockGetSessionCount, mockBroadcastStatus, mockIsClaudeAuthenticated } = vi.hoisted(() => ({
-  mockCreateConsoleSession: vi.fn(),
-  mockGetSessionCount: vi.fn(),
-  mockBroadcastStatus: vi.fn(),
-  mockIsClaudeAuthenticated: vi.fn(),
+const {
+	mockCreateConsoleSession,
+	mockGetSessionCount,
+	mockBroadcastStatus,
+	mockIsClaudeAuthenticated,
+} = vi.hoisted(() => ({
+	mockCreateConsoleSession: vi.fn(),
+	mockGetSessionCount: vi.fn(),
+	mockBroadcastStatus: vi.fn(),
+	mockIsClaudeAuthenticated: vi.fn(),
 }));
 
 // Mock dependencies before importing router
-vi.mock('../../apps/runtime/src/services/auth-anthropic.js', () => ({
-  isClaudeAuthenticated: mockIsClaudeAuthenticated,
+vi.mock("../../apps/runtime/src/services/auth-anthropic.js", () => ({
+	isClaudeAuthenticated: mockIsClaudeAuthenticated,
 }));
 
-vi.mock('../../apps/runtime/src/services/console.js', () => ({
-  createConsoleSession: mockCreateConsoleSession,
-  createShellSession: vi.fn(),
-  getSessionCount: mockGetSessionCount,
-  MAX_SESSIONS: 5,
-  resizeSession: vi.fn(),
-  destroySession: vi.fn(),
-  renameSession: vi.fn(),
-  listSessions: vi.fn(() => []),
-  hasResumableConversations: vi.fn(),
+vi.mock("../../apps/runtime/src/services/console.js", () => ({
+	createConsoleSession: mockCreateConsoleSession,
+	createShellSession: vi.fn(),
+	getSessionCount: mockGetSessionCount,
+	MAX_SESSIONS: 5,
+	resizeSession: vi.fn(),
+	destroySession: vi.fn(),
+	renameSession: vi.fn(),
+	listSessions: vi.fn(() => []),
+	hasResumableConversations: vi.fn(),
 }));
 
-vi.mock('../../apps/runtime/src/web/websocket.js', () => ({
-  broadcastStatus: mockBroadcastStatus,
+vi.mock("../../apps/runtime/src/web/websocket.js", () => ({
+	broadcastStatus: mockBroadcastStatus,
 }));
 
 // Import router after mocks
-import consoleRouter from '../../apps/runtime/src/routes/console.routes.js';
+import consoleRouter from "../../apps/runtime/src/routes/console.routes.js";
 
-describe('POST /api/console/create', () => {
-  let app: Express;
-  const TEST_WORKSPACE = process.env.WORKSPACE || '/workspace';
+describe("POST /api/console/create", () => {
+	let app: Express;
+	const TEST_WORKSPACE = process.env.WORKSPACE || "/workspace";
 
-  beforeEach(() => {
-    // Create test Express app
-    app = express();
-    app.use(express.json());
-    app.use('/api/console', consoleRouter);
+	beforeEach(() => {
+		// Create test Express app
+		app = express();
+		app.use(express.json());
+		app.use("/api/console", consoleRouter);
 
-    // Reset mocks
-    vi.clearAllMocks();
+		// Reset mocks
+		vi.clearAllMocks();
 
-    // Default mock behaviors
-    mockIsClaudeAuthenticated.mockReturnValue(true);
-    mockGetSessionCount.mockReturnValue(0);
-    mockBroadcastStatus.mockImplementation(() => {});
-  });
+		// Default mock behaviors
+		mockIsClaudeAuthenticated.mockReturnValue(true);
+		mockGetSessionCount.mockReturnValue(0);
+		mockBroadcastStatus.mockImplementation(() => {});
+	});
 
-  afterEach(() => {
-    vi.clearAllMocks();
-  });
+	afterEach(() => {
+		vi.clearAllMocks();
+	});
 
-  it('should create a Claude session successfully', async () => {
-    // Arrange
-    const mockSession = {
-      id: 'session-123',
-      cwd: TEST_WORKSPACE,
-      name: 'Claude Session 1',
-      type: 'claude' as const,
-      pid: 12345,
-    };
-    mockCreateConsoleSession.mockReturnValue(mockSession);
+	it("should create a Claude session successfully", async () => {
+		// Arrange
+		const mockSession = {
+			id: "session-123",
+			cwd: TEST_WORKSPACE,
+			name: "Claude Session 1",
+			type: "claude" as const,
+			pid: 12345,
+		};
+		mockCreateConsoleSession.mockReturnValue(mockSession);
 
-    // Act
-    const response = await request(app)
-      .post('/api/console/create')
-      .send({ cwd: TEST_WORKSPACE });
+		// Act
+		const response = await request(app)
+			.post("/api/console/create")
+			.send({ cwd: TEST_WORKSPACE });
 
-    // Assert
-    expect(response.status).toBe(200);
-    expect(response.body).toEqual({
-      sessionId: 'session-123',
-      cwd: TEST_WORKSPACE,
-      name: 'Claude Session 1',
-    });
-    expect(mockCreateConsoleSession).toHaveBeenCalledWith({
-      cwd: TEST_WORKSPACE,
-      resume: undefined,
-    });
-    expect(mockBroadcastStatus).toHaveBeenCalledOnce();
-  });
+		// Assert
+		expect(response.status).toBe(200);
+		expect(response.body).toEqual({
+			sessionId: "session-123",
+			cwd: TEST_WORKSPACE,
+			name: "Claude Session 1",
+		});
+		expect(mockCreateConsoleSession).toHaveBeenCalledWith({
+			cwd: TEST_WORKSPACE,
+			resume: undefined,
+			useContinue: false,
+		});
+		expect(mockBroadcastStatus).toHaveBeenCalledOnce();
+	});
 
-  it('should reject when Claude is not authenticated', async () => {
-    // Arrange
-    mockIsClaudeAuthenticated.mockReturnValue(false);
+	it("should reject when Claude is not authenticated", async () => {
+		// Arrange
+		mockIsClaudeAuthenticated.mockReturnValue(false);
 
-    // Act
-    const response = await request(app)
-      .post('/api/console/create')
-      .send({ cwd: TEST_WORKSPACE });
+		// Act — route retries auth for up to 10s; allow full time to elapse
+		const response = await request(app)
+			.post("/api/console/create")
+			.send({ cwd: TEST_WORKSPACE });
 
-    // Assert
-    expect(response.status).toBe(400);
-    expect(response.body).toEqual({
-      error: 'Claude is not authenticated',
-    });
-    expect(mockCreateConsoleSession).not.toHaveBeenCalled();
-    expect(mockBroadcastStatus).not.toHaveBeenCalled();
-  });
+		// Assert
+		expect(response.status).toBe(400);
+		expect(response.body).toEqual({
+			error: "Claude is not authenticated",
+		});
+		expect(mockCreateConsoleSession).not.toHaveBeenCalled();
+		expect(mockBroadcastStatus).not.toHaveBeenCalled();
+	}, 15000);
 
-  it('should reject when max sessions (5) reached', async () => {
-    // Arrange
-    mockGetSessionCount.mockReturnValue(5);
+	it("should reject when max sessions (5) reached", async () => {
+		// Arrange
+		mockGetSessionCount.mockReturnValue(5);
 
-    // Act
-    const response = await request(app)
-      .post('/api/console/create')
-      .send({ cwd: TEST_WORKSPACE });
+		// Act
+		const response = await request(app)
+			.post("/api/console/create")
+			.send({ cwd: TEST_WORKSPACE });
 
-    // Assert
-    expect(response.status).toBe(400);
-    expect(response.body).toEqual({
-      error: 'Maximum 5 simultaneous sessions',
-    });
-    expect(mockCreateConsoleSession).not.toHaveBeenCalled();
-    expect(mockBroadcastStatus).not.toHaveBeenCalled();
-  });
+		// Assert
+		expect(response.status).toBe(400);
+		expect(response.body).toEqual({
+			error: "Maximum 5 simultaneous sessions",
+		});
+		expect(mockCreateConsoleSession).not.toHaveBeenCalled();
+		expect(mockBroadcastStatus).not.toHaveBeenCalled();
+	});
 
-  it('should use default cwd when not provided', async () => {
-    // Arrange
-    const mockSession = {
-      id: 'session-456',
-      cwd: TEST_WORKSPACE,
-      name: 'Claude Session 1',
-      type: 'claude' as const,
-      pid: 12345,
-    };
-    mockCreateConsoleSession.mockReturnValue(mockSession);
+	it("should use default cwd when not provided", async () => {
+		// Arrange
+		const mockSession = {
+			id: "session-456",
+			cwd: TEST_WORKSPACE,
+			name: "Claude Session 1",
+			type: "claude" as const,
+			pid: 12345,
+		};
+		mockCreateConsoleSession.mockReturnValue(mockSession);
 
-    // Act
-    const response = await request(app)
-      .post('/api/console/create')
-      .send({});
+		// Act
+		const response = await request(app).post("/api/console/create").send({});
 
-    // Assert
-    expect(response.status).toBe(200);
-    expect(mockCreateConsoleSession).toHaveBeenCalledWith({
-      cwd: undefined,
-      resume: undefined,
-    });
-  });
+		// Assert
+		expect(response.status).toBe(200);
+		expect(mockCreateConsoleSession).toHaveBeenCalledWith({
+			cwd: undefined,
+			resume: undefined,
+			useContinue: false,
+		});
+	});
 
-  it('should pass resume parameter when provided', async () => {
-    // Arrange
-    const mockSession = {
-      id: 'session-789',
-      cwd: `${TEST_WORKSPACE}/project`,
-      name: 'Claude Session (resumed)',
-      type: 'claude' as const,
-      pid: 67890,
-    };
-    mockCreateConsoleSession.mockReturnValue(mockSession);
+	it("should pass resume parameter when provided", async () => {
+		// Arrange
+		const mockSession = {
+			id: "session-789",
+			cwd: `${TEST_WORKSPACE}/project`,
+			name: "Claude Session (resumed)",
+			type: "claude" as const,
+			pid: 67890,
+		};
+		mockCreateConsoleSession.mockReturnValue(mockSession);
 
-    // Act
-    const response = await request(app)
-      .post('/api/console/create')
-      .send({ cwd: `${TEST_WORKSPACE}/project`, resume: true });
+		// Act
+		const response = await request(app)
+			.post("/api/console/create")
+			.send({ cwd: `${TEST_WORKSPACE}/project`, resume: true });
 
-    // Assert
-    expect(response.status).toBe(200);
-    expect(response.body.sessionId).toBe('session-789');
-    expect(mockCreateConsoleSession).toHaveBeenCalledWith({
-      cwd: `${TEST_WORKSPACE}/project`,
-      resume: true,
-    });
-  });
+		// Assert
+		expect(response.status).toBe(200);
+		expect(response.body.sessionId).toBe("session-789");
+		expect(mockCreateConsoleSession).toHaveBeenCalledWith({
+			cwd: `${TEST_WORKSPACE}/project`,
+			resume: true,
+			useContinue: false,
+		});
+	});
 
-  it('should handle session creation failure gracefully', async () => {
-    // Arrange
-    mockCreateConsoleSession.mockImplementation(() => {
-      throw new Error('Failed to spawn process');
-    });
+	it("should handle session creation failure gracefully", async () => {
+		// Arrange
+		mockCreateConsoleSession.mockImplementation(() => {
+			throw new Error("Failed to spawn process");
+		});
 
-    // Act
-    const response = await request(app)
-      .post('/api/console/create')
-      .send({ cwd: `${TEST_WORKSPACE}/nonexistent` });
+		// Act
+		const response = await request(app)
+			.post("/api/console/create")
+			.send({ cwd: `${TEST_WORKSPACE}/nonexistent` });
 
-    // Assert
-    expect(response.status).toBe(400);
-    expect(response.body).toEqual({
-      error: 'Failed to create session',
-    });
-    expect(mockBroadcastStatus).not.toHaveBeenCalled();
-  });
+		// Assert
+		expect(response.status).toBe(400);
+		expect(response.body).toEqual({
+			error: "Failed to create session",
+		});
+		expect(mockBroadcastStatus).not.toHaveBeenCalled();
+	});
 
-  it('should handle non-Error exceptions during creation', async () => {
-    // Arrange
-    mockCreateConsoleSession.mockImplementation(() => {
-      throw 'String error'; // Non-Error exception
-    });
+	it("should handle non-Error exceptions during creation", async () => {
+		// Arrange
+		mockCreateConsoleSession.mockImplementation(() => {
+			throw "String error"; // Non-Error exception
+		});
 
-    // Act
-    const response = await request(app)
-      .post('/api/console/create')
-      .send({ cwd: TEST_WORKSPACE });
+		// Act
+		const response = await request(app)
+			.post("/api/console/create")
+			.send({ cwd: TEST_WORKSPACE });
 
-    // Assert
-    expect(response.status).toBe(400);
-    expect(response.body).toEqual({
-      error: 'Failed to create session',
-    });
-  });
+		// Assert
+		expect(response.status).toBe(400);
+		expect(response.body).toEqual({
+			error: "Failed to create session",
+		});
+	});
 
-  it('should check session count before creating session', async () => {
-    // Arrange
-    mockGetSessionCount.mockReturnValue(4); // 4 existing sessions
-    const mockSession = {
-      id: 'session-last',
-      cwd: TEST_WORKSPACE,
-      name: 'Claude Session 5',
-      type: 'claude' as const,
-      pid: 99999,
-    };
-    mockCreateConsoleSession.mockReturnValue(mockSession);
+	it("should check session count before creating session", async () => {
+		// Arrange
+		mockGetSessionCount.mockReturnValue(4); // 4 existing sessions
+		const mockSession = {
+			id: "session-last",
+			cwd: TEST_WORKSPACE,
+			name: "Claude Session 5",
+			type: "claude" as const,
+			pid: 99999,
+		};
+		mockCreateConsoleSession.mockReturnValue(mockSession);
 
-    // Act
-    const response = await request(app)
-      .post('/api/console/create')
-      .send({ cwd: TEST_WORKSPACE });
+		// Act
+		const response = await request(app)
+			.post("/api/console/create")
+			.send({ cwd: TEST_WORKSPACE });
 
-    // Assert - should succeed with 4 existing (5th is allowed)
-    expect(response.status).toBe(200);
-    expect(mockGetSessionCount).toHaveBeenCalled();
-  });
+		// Assert - should succeed with 4 existing (5th is allowed)
+		expect(response.status).toBe(200);
+		expect(mockGetSessionCount).toHaveBeenCalled();
+	});
 
-  it('should validate authentication before checking session count', async () => {
-    // Arrange
-    mockIsClaudeAuthenticated.mockReturnValue(false);
-    mockGetSessionCount.mockReturnValue(0);
+	it("should validate authentication before checking session count", async () => {
+		// Arrange
+		mockIsClaudeAuthenticated.mockReturnValue(false);
+		mockGetSessionCount.mockReturnValue(0);
 
-    // Act
-    const response = await request(app)
-      .post('/api/console/create')
-      .send({ cwd: TEST_WORKSPACE });
+		// Act — route retries auth for up to 10s; allow full time to elapse
+		const response = await request(app)
+			.post("/api/console/create")
+			.send({ cwd: TEST_WORKSPACE });
 
-    // Assert - should fail on auth, not proceed to session count
-    expect(response.status).toBe(400);
-    expect(response.body.error).toBe('Claude is not authenticated');
-    // Session count should still be checked (getSessionCount happens after auth check in route)
-  });
+		// Assert - should fail on auth, not proceed to session count
+		expect(response.status).toBe(400);
+		expect(response.body.error).toBe("Claude is not authenticated");
+		// Session count should still be checked (getSessionCount happens after auth check in route)
+	}, 15000);
 });

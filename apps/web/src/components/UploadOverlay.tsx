@@ -85,6 +85,7 @@ function fileToText(file: File): Promise<string> {
 export function UploadOverlay({ file, onDone }: UploadOverlayProps) {
 	const [state, setState] = useState<UploadState>("preview");
 	const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+	const [imgError, setImgError] = useState(false);
 	const [error, setError] = useState("");
 	const abortRef = useRef<AbortController | null>(null);
 
@@ -92,12 +93,13 @@ export function UploadOverlay({ file, onDone }: UploadOverlayProps) {
 
 	useEffect(() => {
 		if (!file) return;
-		if (uploadType === "image" || uploadType === "video") {
-			const url = URL.createObjectURL(file);
-			setPreviewUrl(url);
-			return () => URL.revokeObjectURL(url);
-		}
-		setPreviewUrl(null);
+		// Always create an object URL — for images and videos we show a preview,
+		// for other types we still need it available in case type detection was wrong
+		// (e.g. clipboard images with empty MIME type).
+		const url = URL.createObjectURL(file);
+		setPreviewUrl(url);
+		setImgError(false);
+		return () => URL.revokeObjectURL(url);
 	}, [file]);
 
 	useEffect(() => {
@@ -205,15 +207,15 @@ export function UploadOverlay({ file, onDone }: UploadOverlayProps) {
 				? file.name.split(".").pop()?.toUpperCase() || "TXT"
 				: null;
 
+	const fileExt = file
+		? "." + (file.name.split(".").pop()?.toLowerCase() || "")
+		: "";
+	const extLabel = fileExt && fileExt !== "." ? fileExt : ".bin";
+
 	return (
 		<div class="image-upload-overlay" onClick={handleCancel}>
 			<div class="image-upload-content" onClick={(e) => e.stopPropagation()}>
 				{/* Preview */}
-				{previewUrl && uploadType === "image" && (
-					<div class="image-upload-preview">
-						<img src={previewUrl} alt="Upload preview" />
-					</div>
-				)}
 				{previewUrl && uploadType === "video" && (
 					<div class="image-upload-preview">
 						<video
@@ -223,15 +225,30 @@ export function UploadOverlay({ file, onDone }: UploadOverlayProps) {
 						/>
 					</div>
 				)}
+				{/* Show image preview for image type, or for "file" type while attempting
+				    to load — handles clipboard images with empty MIME type gracefully */}
+				{previewUrl && (uploadType === "image" || uploadType === "file") && (
+					<div
+						class="image-upload-preview"
+						style={imgError ? "display:none" : ""}
+					>
+						<img
+							src={previewUrl}
+							alt="Upload preview"
+							onError={() => setImgError(true)}
+						/>
+					</div>
+				)}
+				{/* File info box: always shown for text/document, shown for "file" type
+				    only after image load fails (not a displayable image) */}
 				{(uploadType === "text" ||
 					uploadType === "document" ||
-					uploadType === "file") &&
-					badge && (
-						<div class="upload-text-preview">
-							<span class="upload-text-badge">{badge}</span>
-							<span class="upload-text-chars">{sizeLabel}</span>
-						</div>
-					)}
+					(uploadType === "file" && imgError)) && (
+					<div class="upload-text-preview">
+						<span class="upload-text-badge">{badge || extLabel}</span>
+						<span class="upload-text-chars">{sizeLabel}</span>
+					</div>
+				)}
 
 				<div class="image-upload-info">
 					<span class="image-upload-name">

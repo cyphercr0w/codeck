@@ -36,15 +36,18 @@
 		},
 		{
 			"src": "memory/summary.md",
-			"dest": "/workspace/.codeck/memory/summary.md"
+			"dest": "/workspace/.codeck/memory/summary.md",
+			"skipIfExists": true
 		},
 		{
 			"src": "memory/decisions.md",
-			"dest": "/workspace/.codeck/memory/decisions.md"
+			"dest": "/workspace/.codeck/memory/decisions.md",
+			"skipIfExists": true
 		},
 		{
 			"src": "memory/MEMORY.md",
-			"dest": "/workspace/.codeck/memory/MEMORY.md"
+			"dest": "/workspace/.codeck/memory/MEMORY.md",
+			"skipIfExists": true
 		},
 		{
 			"src": "ecc/settings.json",

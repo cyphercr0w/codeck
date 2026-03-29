@@ -342,17 +342,17 @@ export function checkPresetUpdate(): void {
 	if (!isNewerVersion(status.version, manifest.version)) return;
 
 	console.log(
-		`[Preset] Auto-updating scripts from ${status.version} to ${manifest.version}...`,
+		`[Preset] Auto-updating files from ${status.version} to ${manifest.version}...`,
 	);
 
 	const presetDir = join(TEMPLATES_DIR, status.presetId);
 	let copied = 0;
 
-	// Copy script files declared in manifest.files whose dest is under /scripts/
+	// Copy all manifest files except user-customizable or protected user data
 	for (const file of manifest.files) {
+		if (file.skipIfExists) continue; // user-customizable file — never overwrite
 		const dest = rewritePath(file.dest);
-		// Only update script files — never touch user data or settings
-		if (!dest.includes("/scripts/")) continue;
+		// Protect user data paths even if not marked skipIfExists
 		if (
 			dest.endsWith("preferences.md") ||
 			dest.endsWith("MEMORY.md") ||
@@ -373,18 +373,25 @@ export function checkPresetUpdate(): void {
 		if (!existsSync(srcPath)) continue;
 		if (!isAllowedDestPath(dest)) continue;
 
-		const destDir = dirname(dest);
-		if (!existsSync(destDir)) mkdirSync(destDir, { recursive: true });
-		copyFileSync(srcPath, dest);
-		copied++;
+		try {
+			const destDir = dirname(dest);
+			if (!existsSync(destDir)) mkdirSync(destDir, { recursive: true });
+			copyFileSync(srcPath, dest);
+			copied++;
+		} catch (e) {
+			console.warn(
+				`[Preset]   Failed to copy ${file.src}: ${(e as Error).message}`,
+			);
+		}
 	}
 
-	// Copy recursive script dirs (scripts/ecc, scripts/lib) — skipIfExists=false entries only
+	// Copy all recursive dirs with skipIfExists=false — skipIfExists protects user dirs
+	// Note: rules-library is preset-managed (overwritten on update). Users customize
+	// rules in ~/.claude/rules/ or /workspace/.codeck/rules/user/, not the library.
 	if (manifest.recursive_dirs) {
 		for (const rd of manifest.recursive_dirs) {
 			if (rd.skipIfExists) continue; // only auto-update non-user dirs
 			const destDir = rewritePath(rd.dest);
-			if (!destDir.includes("/scripts/")) continue;
 			if (!isAllowedDestPath(destDir)) continue;
 
 			const srcDir = join(presetDir, rd.src);
@@ -431,7 +438,7 @@ export function checkPresetUpdate(): void {
 	}
 
 	console.log(
-		`[Preset] Auto-updated scripts from ${status.version} to ${manifest.version} (${copied} files)`,
+		`[Preset] Auto-updated files from ${status.version} to ${manifest.version} (${copied} files)`,
 	);
 }
 

@@ -414,6 +414,28 @@ function _createConsoleSessionInner(
 		}
 	}
 
+	// Read user's token optimization settings
+	let tokenSettings = {
+		compactionPct: 50,
+		effortLevel: "medium",
+		mcpDeferThreshold: 5,
+		thinkingTokens: 10000,
+	};
+	try {
+		const configPath = join(
+			process.env.WORKSPACE || "/workspace",
+			".codeck",
+			"config.json",
+		);
+		if (existsSync(configPath)) {
+			const cfg = JSON.parse(readFileSync(configPath, "utf-8"));
+			if (cfg.tokenSettings)
+				tokenSettings = { ...tokenSettings, ...cfg.tokenSettings };
+		}
+	} catch {
+		/* use defaults */
+	}
+
 	// Dynamic compaction threshold based on model context window size.
 	// Larger windows (1M) can compact earlier (30%) since 300K is still plenty.
 	// Smaller windows (200K) need more headroom so compact later (50%).
@@ -422,8 +444,9 @@ function _createConsoleSessionInner(
 		process.env.ANTHROPIC_MODEL ||
 		"sonnet"
 	).toLowerCase();
-	const isLargeContext = model.includes("opus");
-	const defaultCompactPct = isLargeContext ? "30" : "50";
+	const defaultCompactPct = model.includes("opus") ? "30" : "50";
+	// User preference takes priority over model-based default
+	const compactPct = String(tokenSettings.compactionPct || defaultCompactPct);
 
 	const finalEnv: Record<string, string> = {
 		...buildCleanEnv(),
@@ -432,7 +455,13 @@ function _createConsoleSessionInner(
 		...(opts.extraEnv || {}),
 		TERM: "xterm-256color",
 		CLAUDE_AUTOCOMPACT_PCT_OVERRIDE:
-			userEnv.CLAUDE_AUTOCOMPACT_PCT_OVERRIDE || defaultCompactPct,
+			userEnv.CLAUDE_AUTOCOMPACT_PCT_OVERRIDE || compactPct,
+		ENABLE_TOOL_SEARCH:
+			userEnv.ENABLE_TOOL_SEARCH || `auto:${tokenSettings.mcpDeferThreshold}`,
+		MAX_THINKING_TOKENS:
+			userEnv.MAX_THINKING_TOKENS || String(tokenSettings.thinkingTokens),
+		CLAUDE_CODE_EFFORT_LEVEL:
+			userEnv.CLAUDE_CODE_EFFORT_LEVEL || tokenSettings.effortLevel,
 		CODECK_SESSION_ID: id, // Must be LAST — prevents oauthEnv from overwriting
 	};
 

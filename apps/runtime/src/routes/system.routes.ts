@@ -260,12 +260,10 @@ router.post(
 					"[System] Daemon restart delegation failed:",
 					(e as Error).message,
 				);
-				res
-					.status(502)
-					.json({
-						success: false,
-						error: "Could not reach daemon for restart",
-					});
+				res.status(502).json({
+					success: false,
+					error: "Could not reach daemon for restart",
+				});
 			}
 			return;
 		}
@@ -314,6 +312,7 @@ router.post(
 // ── Model switching ──
 
 import { readFileSync, writeFileSync, existsSync } from "fs";
+import { join } from "path";
 import { ACTIVE_AGENT } from "../services/agent.js";
 
 const VALID_MODELS: Record<string, string> = {
@@ -355,6 +354,67 @@ router.post("/model", (req, res) => {
 		res.json({ success: true, model: settings.model });
 	} catch (e) {
 		res.status(500).json({ error: (e as Error).message });
+	}
+});
+
+// GET /api/system/token-settings — returns current token optimization settings
+router.get("/token-settings", (req, res) => {
+	try {
+		const configPath = join(
+			process.env.WORKSPACE || "/workspace",
+			".codeck",
+			"config.json",
+		);
+		let config: any = {};
+		if (existsSync(configPath)) {
+			config = JSON.parse(readFileSync(configPath, "utf-8"));
+		}
+		const defaults = {
+			compactionPct: 50,
+			effortLevel: "medium",
+			mcpDeferThreshold: 5,
+			thinkingTokens: 10000,
+		};
+		res.json({ ...defaults, ...config.tokenSettings });
+	} catch (err) {
+		res.status(500).json({ error: "Failed to read settings" });
+	}
+});
+
+// POST /api/system/token-settings — save token optimization settings
+router.post("/token-settings", (req, res) => {
+	try {
+		const configPath = join(
+			process.env.WORKSPACE || "/workspace",
+			".codeck",
+			"config.json",
+		);
+		let config: any = {};
+		if (existsSync(configPath)) {
+			config = JSON.parse(readFileSync(configPath, "utf-8"));
+		}
+		const body = req.body;
+		config.tokenSettings = {
+			compactionPct: Math.max(
+				10,
+				Math.min(90, Number(body.compactionPct) || 50),
+			),
+			effortLevel: ["low", "medium", "high"].includes(body.effortLevel)
+				? body.effortLevel
+				: "medium",
+			mcpDeferThreshold: Math.max(
+				1,
+				Math.min(20, Number(body.mcpDeferThreshold) || 5),
+			),
+			thinkingTokens: Math.max(
+				1000,
+				Math.min(50000, Number(body.thinkingTokens) || 10000),
+			),
+		};
+		writeFileSync(configPath, JSON.stringify(config, null, 2));
+		res.json({ success: true, ...config.tokenSettings });
+	} catch (err) {
+		res.status(500).json({ error: "Failed to save settings" });
 	}
 });
 

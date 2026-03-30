@@ -72,15 +72,15 @@ async function ensureAgentsDir(): Promise<void> {
 	await mkdir(AGENTS_DIR, { recursive: true });
 }
 
-// GET /api/sub-agents — list all agents (parsed frontmatter only)
+// GET /api/sub-agents — list agents, optional ?q= text search
 router.get(
 	"/",
-	asyncHandler(async (_req, res) => {
+	asyncHandler(async (req, res) => {
 		await ensureAgentsDir();
 		const entries = await readdir(AGENTS_DIR).catch(() => [] as string[]);
 		const mdFiles = entries.filter((f) => f.endsWith(".md"));
 
-		const agents = await Promise.all(
+		let agents = await Promise.all(
 			mdFiles.map(async (file) => {
 				const name = file.slice(0, -3); // strip .md
 				try {
@@ -102,6 +102,16 @@ router.get(
 				}
 			}),
 		);
+
+		// Text search filter: matches against name and description
+		const q = ((req.query.q as string) || "").trim().toLowerCase();
+		if (q) {
+			const terms = q.split(/\s+/);
+			agents = agents.filter((a) => {
+				const haystack = `${a.name} ${a.description}`.toLowerCase();
+				return terms.some((t) => haystack.includes(t));
+			});
+		}
 
 		res.json({ agents });
 	}),

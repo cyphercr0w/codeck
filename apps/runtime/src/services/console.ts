@@ -502,43 +502,24 @@ function _createConsoleSessionInner(
 		];
 
 		// Load pre-configured sub-agent definitions so the leader knows what's available
-		const agentsDir = join(process.env.HOME || "/root", ".claude", "agents");
+		// Sub-agent catalog: on-demand via API search instead of injecting all 50+ agents into system prompt
+		// Saves ~2,400 tokens per session. Agent searches when it needs a specialist.
+		let agentCount = 0;
 		try {
-			const agentFiles = readdirSync(agentsDir).filter((f) =>
+			const agentsDir = join(process.env.HOME || "/root", ".claude", "agents");
+			agentCount = readdirSync(agentsDir).filter((f) =>
 				f.endsWith(".md"),
-			);
-			if (agentFiles.length > 0) {
-				const catalog: string[] = [];
-				for (const file of agentFiles) {
-					try {
-						const content = readFileSync(join(agentsDir, file), "utf-8");
-						const fmMatch = content.match(/^---\s*\n([\s\S]*?)\n---/);
-						if (!fmMatch) continue;
-						const fm = fmMatch[1];
-						const nameMatch = fm.match(/^name:\s*(.+)/m);
-						const descMatch = fm.match(/^description:\s*(.+)/m);
-						if (nameMatch) {
-							const name = nameMatch[1].trim();
-							const desc = descMatch ? descMatch[1].trim() : "";
-							catalog.push(`- **${name}**: ${desc}`);
-						}
-					} catch {
-						/* skip unreadable files */
-					}
-				}
-				if (catalog.length > 0) {
-					teamsLines.push(
-						"",
-						"### Pre-configured Sub-Agents",
-						"Use `subagent_type` parameter to spawn these specialized agents. Prefer these over generic agents.",
-						"",
-						...catalog,
-					);
-				}
-			}
+			).length;
 		} catch {
-			/* agents dir not found — skip catalog */
+			/* skip */
 		}
+		teamsLines.push(
+			"",
+			"### Pre-configured Sub-Agents",
+			`${agentCount}+ specialized sub-agents available (reviewers, implementers, researchers, builders, etc).`,
+			"Search before spawning: `curl -s http://localhost/api/sub-agents?q=<keyword> | jq '.agents[] | .name, .description'`",
+			"Use the `subagent_type` parameter with the agent name to spawn the right specialist.",
+		);
 
 		args.push("--append-system-prompt", teamsLines.join("\n"));
 	}

@@ -8,6 +8,7 @@ import {
 	realpathSync,
 	statSync,
 	renameSync,
+	rmSync,
 } from "fs";
 import { execFileSync } from "child_process";
 import { join, dirname, resolve } from "path";
@@ -86,6 +87,362 @@ export interface PresetStatus {
 	availableVersion: string | null;
 	updateAvailable: boolean;
 	autoUpdate: boolean;
+}
+
+export interface PresetOverrides {
+	hooks: { disabled: string[] };
+	skills: { disabled: string[] };
+	agents: { disabled: string[] };
+	mcpServers: { disabled: string[] };
+}
+
+const OVERRIDES_FILE = join(WORKSPACE_CODECK, "preset-overrides.json");
+
+const DEFAULT_OVERRIDES: PresetOverrides = {
+	hooks: { disabled: [] },
+	skills: { disabled: [] },
+	agents: { disabled: [] },
+	mcpServers: { disabled: [] },
+};
+
+export function readOverrides(): PresetOverrides {
+	try {
+		if (!existsSync(OVERRIDES_FILE))
+			return {
+				...DEFAULT_OVERRIDES,
+				hooks: { disabled: [] },
+				skills: { disabled: [] },
+				agents: { disabled: [] },
+				mcpServers: { disabled: [] },
+			};
+		const raw = JSON.parse(readFileSync(OVERRIDES_FILE, "utf-8"));
+		return {
+			hooks: {
+				disabled: Array.isArray(raw?.hooks?.disabled) ? raw.hooks.disabled : [],
+			},
+			skills: {
+				disabled: Array.isArray(raw?.skills?.disabled)
+					? raw.skills.disabled
+					: [],
+			},
+			agents: {
+				disabled: Array.isArray(raw?.agents?.disabled)
+					? raw.agents.disabled
+					: [],
+			},
+			mcpServers: {
+				disabled: Array.isArray(raw?.mcpServers?.disabled)
+					? raw.mcpServers.disabled
+					: [],
+			},
+		};
+	} catch {
+		return {
+			hooks: { disabled: [] },
+			skills: { disabled: [] },
+			agents: { disabled: [] },
+			mcpServers: { disabled: [] },
+		};
+	}
+}
+
+export function writeOverrides(overrides: PresetOverrides): void {
+	if (!existsSync(WORKSPACE_CODECK)) {
+		mkdirSync(WORKSPACE_CODECK, { recursive: true, mode: 0o700 });
+	}
+	writeFileSync(OVERRIDES_FILE, JSON.stringify(overrides, null, 2), {
+		mode: 0o600,
+	});
+}
+
+/**
+ * Apply preset overrides: remove disabled hooks from settings.json,
+ * delete disabled skill dirs, delete disabled agent .md files,
+ * and set disabled:true on disabled MCP servers in .claude.json.
+ */
+export function applyOverrides(overrides: PresetOverrides): void {
+	const settingsPath = rewritePath("/root/.claude/settings.json");
+	const claudeJsonPath = join(home, ".claude.json");
+	const agentsDir = rewritePath("/root/.claude/agents");
+	const skillsDir = rewritePath("/root/.claude/skills");
+
+	// ── Hooks ──────────────────────────────────────────────────────────
+	if (overrides.hooks.disabled.length > 0 && existsSync(settingsPath)) {
+		try {
+			const settings = JSON.parse(readFileSync(settingsPath, "utf-8"));
+			if (settings.hooks && typeof settings.hooks === "object") {
+				for (const event of Object.keys(settings.hooks)) {
+					const entries = settings.hooks[event];
+					if (!Array.isArray(entries)) continue;
+					settings.hooks[event] = entries.filter(
+						(entry: { hooks?: Array<{ command?: string }> }) => {
+							const hooks = entry.hooks || [];
+							return !hooks.some((h: { command?: string }) => {
+								const cmd = h.command || "";
+								return overrides.hooks.disabled.some((disabled) =>
+									cmd.includes(disabled),
+								);
+							});
+						},
+					);
+				}
+				writeFileSync(settingsPath, JSON.stringify(settings, null, 2));
+				console.log(
+					`[Preset] Applied hook overrides: ${overrides.hooks.disabled.join(", ")}`,
+				);
+			}
+		} catch (e) {
+			console.warn(
+				"[Preset] Failed to apply hook overrides:",
+				(e as Error).message,
+			);
+		}
+	}
+
+	// ── Skills ─────────────────────────────────────────────────────────
+	for (const skillId of overrides.skills.disabled) {
+		const skillDir = join(skillsDir, skillId);
+		if (existsSync(skillDir)) {
+			try {
+				rmSync(skillDir, { recursive: true, force: true });
+				console.log(`[Preset] Removed disabled skill: ${skillId}`);
+			} catch (e) {
+				console.warn(
+					`[Preset] Failed to remove skill ${skillId}:`,
+					(e as Error).message,
+				);
+			}
+		}
+	}
+
+	// ── Agents ─────────────────────────────────────────────────────────
+	for (const agentId of overrides.agents.disabled) {
+		const agentFile = join(agentsDir, `${agentId}.md`);
+		if (existsSync(agentFile)) {
+			try {
+				rmSync(agentFile, { force: true });
+				console.log(`[Preset] Removed disabled agent: ${agentId}`);
+			} catch (e) {
+				console.warn(
+					`[Preset] Failed to remove agent ${agentId}:`,
+					(e as Error).message,
+				);
+			}
+		}
+	}
+
+	// ── MCP Servers ────────────────────────────────────────────────────
+	if (overrides.mcpServers.disabled.length > 0 && existsSync(claudeJsonPath)) {
+		try {
+			const claudeJson = JSON.parse(readFileSync(claudeJsonPath, "utf-8"));
+			if (claudeJson.mcpServers && typeof claudeJson.mcpServers === "object") {
+				for (const name of overrides.mcpServers.disabled) {
+					if (claudeJson.mcpServers[name]) {
+						(claudeJson.mcpServers[name] as Record<string, unknown>).disabled =
+							true;
+					}
+				}
+				writeFileSync(claudeJsonPath, JSON.stringify(claudeJson, null, 2));
+				console.log(
+					`[Preset] Applied MCP server overrides: ${overrides.mcpServers.disabled.join(", ")}`,
+				);
+			}
+		} catch (e) {
+			console.warn(
+				"[Preset] Failed to apply MCP server overrides:",
+				(e as Error).message,
+			);
+		}
+	}
+}
+
+// ── Preset Contents (for API) ─────────────────────────────────────────────
+
+export interface PresetContentItem {
+	id: string;
+	name: string;
+	description: string;
+	enabled: boolean;
+}
+
+export interface PresetContents {
+	hooks: PresetContentItem[];
+	skills: PresetContentItem[];
+	agents: PresetContentItem[];
+	mcpServers: PresetContentItem[];
+}
+
+/** Parse YAML frontmatter between --- markers. Returns key-value pairs. */
+function parseFrontmatter(content: string): Record<string, string> {
+	const match = content.match(/^---\r?\n([\s\S]*?)\r?\n---/);
+	if (!match) return {};
+	const result: Record<string, string> = {};
+	for (const line of match[1].split("\n")) {
+		const colon = line.indexOf(":");
+		if (colon < 0) continue;
+		const key = line.slice(0, colon).trim();
+		const value = line
+			.slice(colon + 1)
+			.trim()
+			.replace(/^["']|["']$/g, "");
+		if (key) result[key] = value;
+	}
+	return result;
+}
+
+/** Extract hook name and description from first JSDoc comment in a script file. */
+function parseHookJsDoc(content: string): {
+	name: string;
+	description: string;
+} {
+	const match = content.match(/\/\*\*([\s\S]*?)\*\//);
+	if (!match) return { name: "", description: "" };
+	const lines = match[1]
+		.split("\n")
+		.map((l) => l.replace(/^\s*\*\s?/, "").trim())
+		.filter(Boolean);
+	const name = lines[0] || "";
+	const description = lines.slice(1).join(" ").trim();
+	return { name, description };
+}
+
+/**
+ * Read the default preset contents and cross-reference with current overrides.
+ * Returns all hooks, skills, agents, and MCP servers with enabled/disabled status.
+ */
+export function getPresetContents(presetId = "default"): PresetContents {
+	const overrides = readOverrides();
+	const presetDir = join(TEMPLATES_DIR, presetId);
+
+	// ── Hooks ──────────────────────────────────────────────────────────
+	const hooks: PresetContentItem[] = [];
+	const templateSettingsPath = join(presetDir, "ecc", "settings.json");
+	if (existsSync(templateSettingsPath)) {
+		try {
+			const settings = JSON.parse(readFileSync(templateSettingsPath, "utf-8"));
+			const scriptFilenames = new Set<string>();
+			if (settings.hooks && typeof settings.hooks === "object") {
+				for (const entries of Object.values(settings.hooks)) {
+					if (!Array.isArray(entries)) continue;
+					for (const entry of entries) {
+						const hookList = (entry as Record<string, unknown>).hooks;
+						if (!Array.isArray(hookList)) continue;
+						for (const h of hookList) {
+							const cmd = (h as Record<string, unknown>).command as
+								| string
+								| undefined;
+							if (!cmd) continue;
+							const match = cmd.match(
+								/([^/\s]+\.mjs|[^/\s]+\.sh|[^/\s]+\.js)(?:\s|$)/,
+							);
+							if (match) scriptFilenames.add(match[1]);
+						}
+					}
+				}
+			}
+			for (const filename of scriptFilenames) {
+				const scriptPath = join(presetDir, "scripts", filename);
+				let name = filename.replace(/\.(mjs|js|sh)$/, "").replace(/-/g, " ");
+				let description = "";
+				if (existsSync(scriptPath)) {
+					const content = readFileSync(scriptPath, "utf-8");
+					const parsed = parseHookJsDoc(content);
+					if (parsed.name) name = parsed.name;
+					if (parsed.description) description = parsed.description;
+				}
+				hooks.push({
+					id: filename,
+					name,
+					description,
+					enabled: !overrides.hooks.disabled.includes(filename),
+				});
+			}
+		} catch (e) {
+			console.warn(
+				"[Preset] Failed to read hooks for contents:",
+				(e as Error).message,
+			);
+		}
+	}
+
+	// ── Skills ─────────────────────────────────────────────────────────
+	const skills: PresetContentItem[] = [];
+	const skillsTemplatDir = join(presetDir, "ecc", "skills");
+	if (existsSync(skillsTemplatDir)) {
+		try {
+			for (const entry of readdirSync(skillsTemplatDir)) {
+				const skillMdPath = join(skillsTemplatDir, entry, "SKILL.md");
+				if (!existsSync(skillMdPath)) continue;
+				const content = readFileSync(skillMdPath, "utf-8");
+				const fm = parseFrontmatter(content);
+				skills.push({
+					id: entry,
+					name: fm.name || entry,
+					description: fm.description || "",
+					enabled: !overrides.skills.disabled.includes(entry),
+				});
+			}
+		} catch (e) {
+			console.warn(
+				"[Preset] Failed to read skills for contents:",
+				(e as Error).message,
+			);
+		}
+	}
+
+	// ── Agents ─────────────────────────────────────────────────────────
+	const agents: PresetContentItem[] = [];
+	const agentsTemplateDir = join(presetDir, "ecc", "agents");
+	if (existsSync(agentsTemplateDir)) {
+		try {
+			for (const entry of readdirSync(agentsTemplateDir)) {
+				if (!entry.endsWith(".md")) continue;
+				const agentId = entry.replace(/\.md$/, "");
+				const content = readFileSync(join(agentsTemplateDir, entry), "utf-8");
+				const fm = parseFrontmatter(content);
+				agents.push({
+					id: agentId,
+					name: fm.name || agentId,
+					description: fm.description || "",
+					enabled: !overrides.agents.disabled.includes(agentId),
+				});
+			}
+		} catch (e) {
+			console.warn(
+				"[Preset] Failed to read agents for contents:",
+				(e as Error).message,
+			);
+		}
+	}
+
+	// ── MCP Servers ────────────────────────────────────────────────────
+	const mcpServers: PresetContentItem[] = [];
+	const mcpTemplatePath = join(presetDir, "mcp.json");
+	if (existsSync(mcpTemplatePath)) {
+		try {
+			const mcpTemplate = JSON.parse(readFileSync(mcpTemplatePath, "utf-8"));
+			const allServers: Record<string, Record<string, unknown>> = {
+				...(mcpTemplate.mcpServers || {}),
+				...(mcpTemplate._disabledMcpServers || {}),
+			};
+			for (const [name, config] of Object.entries(allServers)) {
+				const description = (config.description as string | undefined) || "";
+				mcpServers.push({
+					id: name,
+					name,
+					description,
+					enabled: !overrides.mcpServers.disabled.includes(name),
+				});
+			}
+		} catch (e) {
+			console.warn(
+				"[Preset] Failed to read MCP servers for contents:",
+				(e as Error).message,
+			);
+		}
+	}
+
+	return { hooks, skills, agents, mcpServers };
 }
 
 // ── Startup Sanitization ────────────────────────────────────────────
@@ -440,6 +797,9 @@ export function checkPresetUpdate(): void {
 	console.log(
 		`[Preset] Auto-updated files from ${status.version} to ${manifest.version} (${copied} files)`,
 	);
+
+	// Re-apply user overrides after auto-update so disabled items stay removed
+	applyOverrides(readOverrides());
 }
 
 /** Copy script files from srcDir to destDir recursively. Returns count of files copied. */
@@ -1036,6 +1396,11 @@ async function applyPresetRecursive(
 	console.log(
 		`[Preset] ✓ "${manifest.id}" applied. Config written to ${CONFIG_FILE}`,
 	);
+
+	// Apply user overrides after preset files are in place (top-level call only)
+	if (depth === 0) {
+		applyOverrides(readOverrides());
+	}
 }
 
 function loadManifest(presetId: string): PresetManifest | null {

@@ -1196,11 +1196,13 @@ export function mountTerminalForSession(
 	}
 	setActiveSessionId(sessionId);
 
+	markSessionAttaching(sessionId);
 	attachSession(sessionId);
 	// Use ensureTerminalVisible instead of a single rAF — on mobile the container
 	// may not have final dimensions yet (header hiding, toolbar appearing, layout shift).
 	ensureTerminalVisible(sessionId);
 	requestAnimationFrame(() => {
+		attachSettleRepaint(sessionId);
 		instance.term.focus();
 	});
 

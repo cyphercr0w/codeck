@@ -2,6 +2,7 @@
 	"name": "codeck",
 	"version": "0.1.0",
 	"description": "Docker sandbox for working with Claude CLI",
+	"license": "AGPL-3.0-only",
 	"type": "module",
 	"main": "apps/runtime/dist/index.js",
 	"workspaces": [

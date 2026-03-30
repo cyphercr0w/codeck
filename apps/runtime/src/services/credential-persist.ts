@@ -23,6 +23,25 @@ import { dirname, join } from "path";
 
 const PERSIST_DIR = "/workspace/.codeck/credentials";
 
+/** Check if a persistent credential dir/file is empty (all files 0 bytes). */
+function isPersistEmpty(persistPath: string): boolean {
+	try {
+		const stat = lstatSync(persistPath);
+		if (stat.isFile()) return stat.size === 0;
+		if (stat.isDirectory()) {
+			const entries = readdirSync(persistPath);
+			if (entries.length === 0) return true;
+			return entries.every((e) => {
+				const s = lstatSync(join(persistPath, e));
+				return s.isFile() && s.size === 0;
+			});
+		}
+	} catch {
+		/* */
+	}
+	return false;
+}
+
 // /root/.claude.json is a single file outside the Docker volume.
 // CLAUDE_JSON_SYSTEM: ephemeral path used by Claude Code at runtime.
 // CLAUDE_JSON_PERSIST: durable backup inside the /workspace volume.
@@ -61,6 +80,8 @@ function safeCopyRecursive(src: string, dest: string): void {
 			safeCopyRecursive(join(src, entry), join(dest, entry));
 		}
 	} else if (stat.isFile()) {
+		// Skip empty files — likely mid-write or corrupt
+		if (stat.size === 0) return;
 		const parentDir = dirname(dest);
 		if (!existsSync(parentDir)) mkdirSync(parentDir, { recursive: true });
 		writeFileSync(dest, readFileSync(src));
@@ -106,6 +127,13 @@ export function restoreCredentialSymlinks(): void {
 
 			// Case 2: persistent copy exists, system path gone (post-rebuild) → restore
 			if (existsSync(persistPath) && !sysLstat) {
+				// Validate persistent copy isn't empty/corrupt before restoring
+				if (isPersistEmpty(persistPath)) {
+					console.warn(
+						`[CredentialPersist] ${name}: persistent copy is empty, skipping restore`,
+					);
+					continue;
+				}
 				const parentDir = dirname(systemPath);
 				if (!existsSync(parentDir)) mkdirSync(parentDir, { recursive: true });
 				try {

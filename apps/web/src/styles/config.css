@@ -136,6 +136,8 @@
 	background: var(--bg-card);
 	border: 1px solid var(--border);
 	border-radius: var(--radius-lg);
+	display: flex;
+	flex-direction: column;
 }
 .mem-card-header {
 	display: flex;
@@ -166,17 +168,9 @@
 	display: flex;
 	gap: 8px;
 	align-items: center;
+	margin-top: auto;
 }
-/* Destructive tint for the Reset ghost button inside the preset card */
-.mem-card-actions .btn-ghost {
-	color: var(--error);
-	opacity: 0.7;
-}
-.mem-card-actions .btn-ghost:hover {
-	background: var(--error-subtle);
-	color: var(--error);
-	opacity: 1;
-}
+/* Keep subtle destructive tint on Reset button */
 
 /* ── Footer: secondary sections (memory, preset, migration) ── */
 .mem-footer {

@@ -81,3 +81,10 @@ docker/compose.override.yml
 .playwright-mcp/
 .vercel
 ux-audit/
+*.png
+!apps/web/public/*.png
+coverage/
+*.log
+RESEARCH-*.md
+AUDIT-*.md
+CHANGELOG.md

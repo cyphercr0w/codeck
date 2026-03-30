@@ -1,7 +1,15 @@
 import { useState, useEffect, useRef } from "preact/hooks";
 import { apiFetch } from "../api";
 import { INTEGRATIONS } from "./integrations/registry";
+import { WizardSteps } from "./WizardSteps";
 import "../styles/integration-wizard.css";
+
+const WIZARD_STEPS = [
+	{ label: "Password" },
+	{ label: "Claude" },
+	{ label: "Preset" },
+	{ label: "Integrations" },
+];
 
 interface IntegrationWizardProps {
 	onComplete: () => void;
@@ -164,6 +172,8 @@ export function IntegrationWizard({ onComplete }: IntegrationWizardProps) {
 
 	return (
 		<div class="iw-container">
+			<WizardSteps steps={WIZARD_STEPS} currentStep={3} />
+
 			<div class="iw-header">
 				<h2 class="iw-title">Connect Integrations</h2>
 				<p class="iw-subtitle">

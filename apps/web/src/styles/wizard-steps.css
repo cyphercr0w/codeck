@@ -1,0 +1,105 @@
+/* ========== Wizard Step Indicator ========== */
+
+.wizard-steps {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	gap: 0;
+	margin-bottom: 32px;
+	width: 100%;
+	max-width: 420px;
+}
+
+.wizard-step {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	gap: 6px;
+	flex: 1;
+	position: relative;
+}
+
+/* Connector line between steps */
+.wizard-step + .wizard-step::before {
+	content: "";
+	position: absolute;
+	top: 14px;
+	left: calc(-50% + 14px);
+	right: calc(50% + 14px);
+	height: 1px;
+	background: var(--border);
+	z-index: 0;
+}
+
+.wizard-step--completed + .wizard-step::before,
+.wizard-step--completed + .wizard-step.wizard-step--active::before {
+	background: var(--accent);
+}
+
+/* Step circle */
+.wizard-step-circle {
+	width: 28px;
+	height: 28px;
+	border-radius: 50%;
+	border: 1.5px solid var(--border);
+	background: var(--bg-card);
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	font-size: 12px;
+	font-weight: 600;
+	color: var(--text-muted);
+	position: relative;
+	z-index: 1;
+	transition:
+		background 0.2s ease,
+		border-color 0.2s ease,
+		color 0.2s ease;
+}
+
+.wizard-step--completed .wizard-step-circle {
+	background: var(--accent);
+	border-color: var(--accent);
+	color: #fff;
+}
+
+.wizard-step--active .wizard-step-circle {
+	border-color: var(--accent);
+	color: var(--accent);
+	box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 15%, transparent);
+}
+
+/* Step label */
+.wizard-step-label {
+	font-size: 11px;
+	color: var(--text-muted);
+	font-weight: 500;
+	white-space: nowrap;
+}
+
+.wizard-step--active .wizard-step-label {
+	color: var(--accent);
+	font-weight: 600;
+}
+
+.wizard-step--completed .wizard-step-label {
+	color: var(--text-secondary);
+}
+
+/* Check icon inside circle */
+.wizard-step-check {
+	width: 12px;
+	height: 12px;
+	stroke: currentColor;
+}
+
+/* Mobile */
+@media (max-width: 480px) {
+	.wizard-steps {
+		max-width: 320px;
+	}
+
+	.wizard-step-label {
+		font-size: 10px;
+	}
+}

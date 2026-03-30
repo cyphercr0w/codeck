@@ -1,7 +1,15 @@
 import { useState, useEffect } from "preact/hooks";
 import { apiFetch } from "../api";
 import { IconBridge, IconChevronDown } from "./Icons";
+import { WizardSteps } from "./WizardSteps";
 import "../styles/preset-configurator.css";
+
+const WIZARD_STEPS = [
+	{ label: "Password" },
+	{ label: "Claude" },
+	{ label: "Preset" },
+	{ label: "Integrations" },
+];
 
 interface PresetItem {
 	id: string;
@@ -189,6 +197,8 @@ export function PresetConfigurator({ onComplete }: PresetConfiguratorProps) {
 
 	return (
 		<div class="pc-wrapper">
+			<WizardSteps steps={WIZARD_STEPS} currentStep={2} />
+
 			<div class="pc-header">
 				<div class="pc-header-icon">
 					<IconBridge size={48} />

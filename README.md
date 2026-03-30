@@ -8,7 +8,7 @@
 
 <p align="center">
   <a href="https://github.com/cyphercr0w/codeck/releases"><img src="https://img.shields.io/github/v/release/cyphercr0w/codeck?style=flat-square" alt="Release"></a>
-  <a href="https://github.com/cyphercr0w/codeck/blob/main/LICENSE"><img src="https://img.shields.io/github/license/cyphercr0w/codeck?style=flat-square" alt="License"></a>
+  <a href="https://github.com/cyphercr0w/codeck/blob/main/LICENSE"><img src="https://img.shields.io/github/license/cyphercr0w/codeck?style=flat-square" alt="AGPL-3.0"></a>
   <a href="https://github.com/cyphercr0w/codeck/stargazers"><img src="https://img.shields.io/github/stars/cyphercr0w/codeck?style=flat-square" alt="Stars"></a>
   <a href="https://ghcr.io/cyphercr0w/codeck"><img src="https://img.shields.io/badge/docker-ghcr.io-blue?style=flat-square&logo=docker" alt="Docker"></a>
 </p>
@@ -74,66 +74,10 @@ docker run -d --name codeck \
 
 Open `http://localhost` in your browser. Sign in with your Anthropic account. Done.
 
-> **VPS install** (production, systemd):
+> **VPS install** (one-liner):
 > ```bash
-> curl -fsSL https://raw.githubusercontent.com/cyphercr0w/codeck/main/scripts/install.sh | sudo bash
+> curl -fsSL https://codeck.xyz/install | bash
 > ```
-
-<details>
-<summary><strong>More deployment options</strong></summary>
-
-### CLI install (isolated mode)
-
-Runs inside a Docker container. No daemon, no Docker socket. Safe for local use on any platform.
-
-```bash
-git clone https://github.com/cyphercr0w/codeck
-cd codeck && npm install && npm run build:cli
-codeck init        # interactive setup — choose "Isolated"
-codeck start       # -> http://localhost
-codeck stop
-codeck status
-codeck logs
-codeck open
-codeck restart
-codeck doctor      # diagnose configuration issues
-```
-
-Or with npm workspace: `npx -w @codeck/cli codeck init`. Link globally with `npm link -w @codeck/cli`.
-
-### Managed mode (daemon + container)
-
-Daemon on host handles auth, webapp, and port exposure. Runtime in isolated container. Works on Linux, macOS, and Windows.
-
-```bash
-codeck init        # choose "Managed"
-codeck start       # starts runtime container + daemon (Ctrl+C to stop)
-```
-
-### LAN access (macOS / Windows)
-
-```bash
-codeck lan start   # codeck.local resolves on all LAN devices
-codeck lan stop
-codeck lan status
-```
-
-On Linux, LAN access uses host networking — configure via `codeck init`.
-
-### Linux VPS — systemd service
-
-For production VPS, the managed mode daemon runs as a systemd service:
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/cyphercr0w/codeck/main/scripts/install.sh | sudo bash
-```
-
-```bash
-systemctl status codeck
-journalctl -u codeck -f
-```
-
-</details>
 
 ## How It Works
 
@@ -175,7 +119,7 @@ Or use the helper script: `bash scripts/self-deploy.sh`
 
 **Important:**
 - The service restart kills your terminal session. The frontend auto-reconnects.
-- `systemctl restart codeck` manages both the daemon and the runtime container.
+- `systemctl restart codeck` restarts the Codeck container.
 - Always `git commit` before deploying — your files stay on disk, but committed code is safer.
 - If a deploy breaks the server, SSH in: `sudo git checkout . && sudo npm run build && docker build -t codeck -f docker/Dockerfile . && sudo systemctl restart codeck`
 
@@ -193,4 +137,4 @@ See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) for the full development workflow.
 
 ## License
 
-[MIT](LICENSE)
+[AGPL-3.0](LICENSE)

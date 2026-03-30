@@ -16,7 +16,7 @@
 		"start": "node apps/runtime/dist/index.js",
 		"start:web": "node apps/runtime/dist/index.js --web",
 		"dev": "npm run dev -w @codeck/runtime",
-		"clean": "rm -rf dist apps/runtime/dist apps/web/dist",
+		"clean": "node -e \"['dist','apps/runtime/dist','apps/web/dist'].forEach(p=>{try{require('fs').rmSync(p,{recursive:true,force:true})}catch{}})\"",
 		"test": "vitest",
 		"test:ui": "vitest --ui",
 		"test:coverage": "vitest --coverage",

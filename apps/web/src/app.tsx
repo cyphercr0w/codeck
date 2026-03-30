@@ -143,10 +143,11 @@ export function App() {
 	// Pull-to-refresh is handled by the PullToRefresh component.
 	// It replaces the old preventPullToRefresh handler that blocked all pull gestures.
 
-	// Start usage polling when entering main view
+	// Start usage polling when entering main view; stop when leaving
 	useEffect(() => {
 		if (currentView === "main") {
 			startUsagePolling(apiFetch);
+			return () => stopUsagePolling();
 		}
 	}, [currentView]);
 

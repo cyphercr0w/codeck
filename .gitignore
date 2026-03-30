@@ -80,3 +80,4 @@ docker/compose.override.yml
 .codeck-data/
 .playwright-mcp/
 .vercel
+ux-audit/

@@ -183,11 +183,6 @@
 	margin-top: 48px;
 	padding-top: 20px;
 	border-top: 1px solid var(--border);
-	opacity: 0.55;
-	transition: opacity var(--transition);
-}
-.mem-footer:hover {
-	opacity: 1;
 }
 .mem-footer .ac-section-title {
 	font-size: 12px;

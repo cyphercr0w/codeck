@@ -64,28 +64,9 @@ for (const [type, regex] of Object.entries(signals)) {
 
 if (detected.length === 0) process.exit(0); // Can't determine task type
 
-// Build context based on detected task types
+// Build context — only skill suggestions + integration instructions (MCP reminders removed: redundant, Claude already knows its tools)
 const hints = [];
 
-// Always remind about available MCP servers
-const mcpHints = [];
-if (detected.some(t => ['implementation', 'debugging', 'frontend', 'backend'].includes(t))) {
-  mcpHints.push('Context7 (mcp__context7): look up current library docs before using unfamiliar APIs');
-  mcpHints.push('ESLint (mcp__eslint__lint-files): lint changed files after edits');
-}
-if (detected.includes('frontend')) {
-  mcpHints.push('Playwright (mcp__playwright): test UI changes in a real browser');
-}
-if (detected.some(t => ['implementation', 'debugging', 'review'].includes(t))) {
-  mcpHints.push('Sequential Thinking (mcp__sequential-thinking): break down complex problems step-by-step');
-}
-
-if (mcpHints.length > 0) {
-  hints.push('Available MCP tools for this task:');
-  hints.push(...mcpHints.map(h => `  - ${h}`));
-}
-
-// Skill suggestions based on task type
 const skillSuggestions = [];
 const SKILLS_DIR = '/root/.claude/skills';
 let availableSkills = new Set();
@@ -111,14 +92,6 @@ for (const type of detected) {
 
 if (skillSuggestions.length > 0) {
   hints.push(`Relevant skills available: ${skillSuggestions.map(s => '/learn ' + s).join(', ')}`);
-}
-
-// Workflow reminders based on task type
-if (detected.includes('implementation') || detected.includes('refactor')) {
-  hints.push('Workflow: implement → build/test → code-reviewer sub-agent → present results');
-}
-if (detected.includes('debugging')) {
-  hints.push('Workflow: reproduce → diagnose root cause → fix → test → verify');
 }
 
 // ── Integration context injection ──

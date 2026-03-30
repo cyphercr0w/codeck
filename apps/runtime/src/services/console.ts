@@ -414,13 +414,25 @@ function _createConsoleSessionInner(
 		}
 	}
 
+	// Dynamic compaction threshold based on model context window size.
+	// Larger windows (1M) can compact earlier (30%) since 300K is still plenty.
+	// Smaller windows (200K) need more headroom so compact later (50%).
+	const model = (
+		userEnv.ANTHROPIC_MODEL ||
+		process.env.ANTHROPIC_MODEL ||
+		"sonnet"
+	).toLowerCase();
+	const isLargeContext = model.includes("opus");
+	const defaultCompactPct = isLargeContext ? "30" : "50";
+
 	const finalEnv: Record<string, string> = {
 		...buildCleanEnv(),
 		...userEnv,
 		...oauthEnv,
 		...(opts.extraEnv || {}),
 		TERM: "xterm-256color",
-		CLAUDE_AUTOCOMPACT_PCT_OVERRIDE: "90",
+		CLAUDE_AUTOCOMPACT_PCT_OVERRIDE:
+			userEnv.CLAUDE_AUTOCOMPACT_PCT_OVERRIDE || defaultCompactPct,
 		CODECK_SESSION_ID: id, // Must be LAST — prevents oauthEnv from overwriting
 	};
 

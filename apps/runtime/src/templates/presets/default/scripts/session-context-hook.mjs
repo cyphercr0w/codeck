@@ -31,11 +31,21 @@ try {
 
 const SKILL_INDEX_PATH = join(STATE_DIR, 'skill-index.md');
 
-// Read sidecar context (memory)
+// Read sidecar context (memory) — only inject project-memory section, skip durable-memory
+// to save ~800 tokens per session. Durable memory is generic cross-project context;
+// project-memory is already cwd-filtered and more relevant.
 let memoryContext = '';
 try {
   if (existsSync(SIDECAR_PATH)) {
-    memoryContext = readFileSync(SIDECAR_PATH, 'utf-8').trim();
+    const raw = readFileSync(SIDECAR_PATH, 'utf-8').trim();
+    // Extract only <project-memory>...</project-memory> section
+    const pmMatch = raw.match(/<project-memory>([\s\S]*?)<\/project-memory>/);
+    if (pmMatch) {
+      memoryContext = `<project-memory>${pmMatch[1]}</project-memory>`;
+    } else {
+      // Fallback: if no project-memory section, use full content but truncate
+      memoryContext = raw.slice(0, 3000);
+    }
   }
 } catch { /* non-fatal */ }
 

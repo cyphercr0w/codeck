@@ -13,6 +13,7 @@ import {
 	IconShield,
 	IconSettings,
 	IconKey,
+	IconActivity,
 } from "../Icons";
 import { ConfirmModal } from "../ConfirmModal";
 
@@ -57,6 +58,246 @@ interface MemoryTabProps {
 			| "permissions"
 			| "env",
 	) => void;
+}
+
+interface TokenSettings {
+	compactionPct: number;
+	effortLevel: "low" | "medium" | "high";
+	mcpDeferThreshold: number;
+	thinkingTokens: number;
+}
+
+function TokenOptimizationCard() {
+	const [settings, setSettings] = useState<TokenSettings>({
+		compactionPct: 50,
+		effortLevel: "medium",
+		mcpDeferThreshold: 5,
+		thinkingTokens: 10000,
+	});
+	const [saving, setSaving] = useState(false);
+	const [dirty, setDirty] = useState(false);
+	const [saved, setSaved] = useState(false);
+
+	useEffect(() => {
+		apiFetch("/api/system/token-settings")
+			.then((r) => r.json())
+			.then(setSettings)
+			.catch(() => {});
+	}, []);
+
+	async function saveSettings() {
+		setSaving(true);
+		setSaved(false);
+		try {
+			await apiFetch("/api/system/token-settings", {
+				method: "POST",
+				body: JSON.stringify(settings),
+			});
+			setDirty(false);
+			setSaved(true);
+			setTimeout(() => setSaved(false), 2000);
+		} catch {
+		} finally {
+			setSaving(false);
+		}
+	}
+
+	function update<K extends keyof TokenSettings>(
+		key: K,
+		value: TokenSettings[K],
+	) {
+		setSettings((prev) => ({ ...prev, [key]: value }));
+		setDirty(true);
+		setSaved(false);
+	}
+
+	const row: any = {
+		display: "flex",
+		alignItems: "flex-start",
+		justifyContent: "space-between",
+		gap: "16px",
+		padding: "12px 0",
+		borderBottom: "1px solid var(--border)",
+	};
+	const labelCol: any = { flex: "1", minWidth: "0" };
+	const ctrlCol: any = {
+		flexShrink: "0",
+		display: "flex",
+		alignItems: "center",
+		gap: "8px",
+		minWidth: "160px",
+		justifyContent: "flex-end",
+	};
+	const desc: any = {
+		fontSize: "11px",
+		color: "var(--text-muted)",
+		marginTop: "2px",
+		lineHeight: "1.4",
+	};
+	const levels: Array<"low" | "medium" | "high"> = ["low", "medium", "high"];
+
+	return (
+		<div class="dash-card">
+			<div class="dash-card-title">
+				<IconActivity size={14} /> <span>Token Optimization</span>
+			</div>
+
+			<div style={row}>
+				<div style={labelCol}>
+					<div style={{ fontWeight: 500, fontSize: "13px" }}>
+						Auto-compact at
+					</div>
+					<div style={desc}>
+						Lower = aggressive compaction. Opus 1M: 30%. Sonnet 200K: 50%.
+					</div>
+				</div>
+				<div style={ctrlCol}>
+					<input
+						type="range"
+						min={10}
+						max={90}
+						value={settings.compactionPct}
+						onInput={(e) =>
+							update(
+								"compactionPct",
+								parseInt((e.target as HTMLInputElement).value, 10),
+							)
+						}
+						style={{ accentColor: "var(--accent)", width: "100px" }}
+					/>
+					<span
+						style={{ fontSize: "12px", minWidth: "32px", textAlign: "right" }}
+					>
+						{settings.compactionPct}%
+					</span>
+				</div>
+			</div>
+
+			<div style={row}>
+				<div style={labelCol}>
+					<div style={{ fontWeight: 500, fontSize: "13px" }}>
+						Default effort level
+					</div>
+					<div style={desc}>
+						Low = fast & cheap. Medium = balanced. High = thorough.
+					</div>
+				</div>
+				<div style={ctrlCol}>
+					<div style={{ display: "flex" }}>
+						{levels.map((l, i) => (
+							<button
+								key={l}
+								onClick={() => update("effortLevel", l)}
+								style={{
+									padding: "4px 10px",
+									fontSize: "12px",
+									border: "1px solid var(--border)",
+									borderLeft: i === 0 ? "1px solid var(--border)" : "none",
+									borderRadius:
+										i === 0 ? "4px 0 0 4px" : i === 2 ? "0 4px 4px 0" : "0",
+									background:
+										settings.effortLevel === l
+											? "var(--accent)"
+											: "transparent",
+									color:
+										settings.effortLevel === l ? "#fff" : "var(--text-muted)",
+									cursor: "pointer",
+									transition: "background 0.15s, color 0.15s",
+								}}
+							>
+								{l}
+							</button>
+						))}
+					</div>
+				</div>
+			</div>
+
+			<div style={row}>
+				<div style={labelCol}>
+					<div style={{ fontWeight: 500, fontSize: "13px" }}>
+						MCP tool defer threshold
+					</div>
+					<div style={desc}>
+						Defer tool definitions when exceeding X% of context.
+					</div>
+				</div>
+				<div style={ctrlCol}>
+					<input
+						type="range"
+						min={1}
+						max={20}
+						value={settings.mcpDeferThreshold}
+						onInput={(e) =>
+							update(
+								"mcpDeferThreshold",
+								parseInt((e.target as HTMLInputElement).value, 10),
+							)
+						}
+						style={{ accentColor: "var(--accent)", width: "100px" }}
+					/>
+					<span
+						style={{ fontSize: "12px", minWidth: "32px", textAlign: "right" }}
+					>
+						{settings.mcpDeferThreshold}%
+					</span>
+				</div>
+			</div>
+
+			<div style={{ ...row, borderBottom: "none" }}>
+				<div style={labelCol}>
+					<div style={{ fontWeight: 500, fontSize: "13px" }}>
+						Max thinking tokens
+					</div>
+					<div style={desc}>Cap extended thinking budget. Lower = cheaper.</div>
+				</div>
+				<div style={ctrlCol}>
+					<input
+						type="range"
+						min={1000}
+						max={50000}
+						step={1000}
+						value={settings.thinkingTokens}
+						onInput={(e) =>
+							update(
+								"thinkingTokens",
+								parseInt((e.target as HTMLInputElement).value, 10),
+							)
+						}
+						style={{ accentColor: "var(--accent)", width: "100px" }}
+					/>
+					<span
+						style={{ fontSize: "12px", minWidth: "32px", textAlign: "right" }}
+					>
+						{settings.thinkingTokens >= 1000
+							? `${(settings.thinkingTokens / 1000).toFixed(0)}K`
+							: settings.thinkingTokens}
+					</span>
+				</div>
+			</div>
+
+			<div
+				style={{
+					marginTop: "16px",
+					display: "flex",
+					alignItems: "center",
+					gap: "10px",
+				}}
+			>
+				<button
+					class="btn btn-sm btn-primary"
+					onClick={saveSettings}
+					disabled={!dirty || saving}
+				>
+					{saving ? "Saving..." : "Save"}
+				</button>
+				{saved && (
+					<span style={{ fontSize: "12px", color: "var(--text-muted)" }}>
+						Saved
+					</span>
+				)}
+			</div>
+		</div>
+	);
 }
 
 export function MemoryTab({ onNavigate }: MemoryTabProps) {
@@ -269,6 +510,11 @@ export function MemoryTab({ onNavigate }: MemoryTabProps) {
 						</div>
 					</button>
 				</div>
+			</div>
+
+			{/* Token Optimization — always visible below shortcuts */}
+			<div class="ac-section" style={{ marginTop: "20px" }}>
+				<TokenOptimizationCard />
 			</div>
 
 			{/* ── Footer: memory, preset, migration (secondary) ── */}

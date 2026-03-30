@@ -1,0 +1,341 @@
+/* ========== Integration Wizard ========== */
+
+.iw-container {
+	max-width: 640px;
+	margin: 0 auto;
+	padding: 32px 16px;
+	display: flex;
+	flex-direction: column;
+	gap: 20px;
+}
+
+.iw-header {
+	text-align: center;
+	margin-bottom: 4px;
+}
+
+.iw-title {
+	font-size: 22px;
+	font-weight: 700;
+	margin: 0 0 6px;
+	color: var(--text);
+}
+
+.iw-subtitle {
+	color: var(--text-secondary);
+	font-size: 14px;
+	margin: 0;
+}
+
+/* ── GitHub card (prominent) ── */
+
+.iw-github-card {
+	background: var(--bg-card);
+	border: 1px solid var(--border);
+	border-left: 3px solid var(--accent);
+	border-radius: var(--radius-lg);
+	padding: 24px;
+	transition: border-color var(--transition);
+}
+
+.iw-github-card--connected {
+	border-left-color: var(--success);
+	border-color: color-mix(in srgb, var(--success) 35%, var(--border));
+	box-shadow: 0 0 0 1px color-mix(in srgb, var(--success) 15%, transparent);
+}
+
+/* ── Token-based services grid ── */
+
+.iw-grid {
+	display: grid;
+	grid-template-columns: 1fr 1fr;
+	gap: 12px;
+}
+
+.iw-service-card {
+	background: var(--bg-card);
+	border: 1px solid var(--border);
+	border-radius: var(--radius-md);
+	padding: 16px;
+	transition: border-color var(--transition);
+}
+
+.iw-service-card--connected {
+	border-color: color-mix(in srgb, var(--success) 35%, var(--border));
+	box-shadow: 0 0 0 1px color-mix(in srgb, var(--success) 12%, transparent);
+}
+
+/* ── Card header layout ── */
+
+.iw-card-header {
+	display: flex;
+	align-items: center;
+	gap: 12px;
+}
+
+.iw-card-icon {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	width: 44px;
+	height: 44px;
+	border-radius: 10px;
+	background: var(--bg-hover);
+	color: var(--text-secondary);
+	flex-shrink: 0;
+}
+
+.iw-card-icon--sm {
+	width: 36px;
+	height: 36px;
+	border-radius: 8px;
+}
+
+.iw-card-info {
+	flex: 1;
+	min-width: 0;
+}
+
+.iw-card-name {
+	font-size: 14px;
+	font-weight: 600;
+	color: var(--text);
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+.iw-card-desc {
+	font-size: 12px;
+	color: var(--text-muted);
+	margin-top: 2px;
+	line-height: 1.4;
+	overflow: hidden;
+	display: -webkit-box;
+	-webkit-line-clamp: 2;
+	-webkit-box-orient: vertical;
+}
+
+/* ── Connected badge ── */
+
+.iw-connected-badge {
+	display: flex;
+	align-items: center;
+	gap: 5px;
+	color: var(--success);
+	font-size: 13px;
+	font-weight: 600;
+	flex-shrink: 0;
+}
+
+.iw-connected-badge--sm {
+	font-size: 11px;
+	gap: 3px;
+}
+
+/* ── Connecting label ── */
+
+.iw-connecting-label {
+	font-size: 13px;
+	color: var(--text-secondary);
+	flex-shrink: 0;
+}
+
+/* ── Device auth flow ── */
+
+.iw-device-flow {
+	margin-top: 20px;
+	padding-top: 20px;
+	border-top: 1px solid var(--border);
+	text-align: center;
+}
+
+.iw-device-label {
+	font-size: 13px;
+	color: var(--text-secondary);
+	margin: 0 0 10px;
+}
+
+.iw-device-code {
+	font-family: var(--font-mono, monospace);
+	font-size: 28px;
+	font-weight: 700;
+	letter-spacing: 5px;
+	color: var(--accent);
+	padding: 8px 0;
+}
+
+.iw-device-link {
+	display: inline-block;
+	margin: 8px 0;
+	color: var(--accent);
+	font-size: 14px;
+	text-decoration: none;
+}
+
+.iw-device-link:hover {
+	text-decoration: underline;
+}
+
+.iw-device-hint {
+	font-size: 12px;
+	color: var(--text-muted);
+	margin: 6px 0 0;
+}
+
+/* ── Token form (inline) ── */
+
+.iw-token-form {
+	margin-top: 12px;
+	padding-top: 12px;
+	border-top: 1px solid var(--border);
+}
+
+.iw-token-hint {
+	font-size: 12px;
+	color: var(--text-muted);
+	margin: 0 0 8px;
+	line-height: 1.4;
+}
+
+.iw-token-row {
+	display: flex;
+	gap: 8px;
+}
+
+.iw-token-input {
+	flex: 1;
+	min-width: 0;
+	background: var(--bg);
+	border: 1px solid var(--border);
+	border-radius: var(--radius-md);
+	padding: 7px 10px;
+	font-family: var(--font-mono, monospace);
+	font-size: 12px;
+	color: var(--text);
+	transition: border-color var(--transition);
+	outline: none;
+}
+
+.iw-token-input:focus {
+	border-color: var(--accent);
+}
+
+.iw-token-input::placeholder {
+	color: var(--text-muted);
+}
+
+.iw-token-error {
+	font-size: 12px;
+	color: var(--error);
+	margin: 6px 0 0;
+}
+
+/* ── Buttons ── */
+
+.iw-btn {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	gap: 6px;
+	padding: 7px 14px;
+	border-radius: var(--radius-md);
+	font-size: 13px;
+	font-weight: 500;
+	font-family: inherit;
+	cursor: pointer;
+	transition: all var(--transition);
+	border: 1px solid transparent;
+	white-space: nowrap;
+	flex-shrink: 0;
+}
+
+.iw-btn:disabled {
+	opacity: 0.5;
+	cursor: not-allowed;
+}
+
+.iw-btn--primary {
+	background: var(--accent);
+	color: #fff;
+	border-color: var(--accent);
+}
+
+.iw-btn--primary:hover:not(:disabled) {
+	opacity: 0.88;
+}
+
+.iw-btn--secondary {
+	background: transparent;
+	color: var(--text-secondary);
+	border-color: var(--border);
+}
+
+.iw-btn--secondary:hover:not(:disabled) {
+	border-color: var(--border-light);
+	color: var(--text);
+	background: var(--bg-hover);
+}
+
+.iw-btn--active {
+	border-color: var(--border-light);
+	color: var(--text);
+}
+
+.iw-btn--ghost {
+	background: transparent;
+	color: var(--text-secondary);
+	border-color: var(--border);
+}
+
+.iw-btn--ghost:hover:not(:disabled) {
+	background: var(--bg-hover);
+	color: var(--text);
+}
+
+/* ── Footer ── */
+
+.iw-footer {
+	display: flex;
+	align-items: center;
+	justify-content: flex-end;
+	gap: 12px;
+	padding-top: 4px;
+}
+
+/* ── Mobile ── */
+
+@media (max-width: 600px) {
+	.iw-container {
+		padding: 20px 12px;
+		gap: 14px;
+	}
+
+	.iw-github-card {
+		padding: 16px;
+	}
+
+	.iw-grid {
+		grid-template-columns: 1fr;
+	}
+
+	.iw-card-icon {
+		width: 36px;
+		height: 36px;
+	}
+
+	.iw-device-code {
+		font-size: 22px;
+		letter-spacing: 3px;
+	}
+
+	.iw-footer {
+		flex-direction: column-reverse;
+		align-items: stretch;
+	}
+
+	.iw-footer .iw-btn {
+		width: 100%;
+		justify-content: center;
+	}
+}

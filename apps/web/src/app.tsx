@@ -52,7 +52,8 @@ import {
 import { LoginModal } from "./components/LoginModal";
 import { NewProjectModal } from "./components/NewProjectModal";
 // LogsDrawer removed — logs now inline in SettingsSection
-import { PresetWizard } from "./components/PresetWizard";
+import { PresetConfigurator } from "./components/PresetConfigurator";
+import { IntegrationWizard } from "./components/IntegrationWizard";
 import { IntegrationsSection } from "./components/IntegrationsSection";
 import { AgentConfigSection } from "./components/AgentConfigSection";
 import { ToastContainer } from "./components/ToastContainer";
@@ -486,9 +487,12 @@ export function App() {
 	// ========== Preset wizard ==========
 	async function handlePresetComplete() {
 		setPresetConfigured(true);
+		setView("integrations");
+	}
+
+	async function handleIntegrationsComplete() {
 		setActiveSection(sectionFromUrl());
 		setView("main");
-		// Session auto-restore disabled
 	}
 
 	// ========== Section change ==========
@@ -683,7 +687,9 @@ export function App() {
 		);
 	}
 	if (currentView === "preset")
-		return <PresetWizard onComplete={handlePresetComplete} />;
+		return <PresetConfigurator onComplete={handlePresetComplete} />;
+	if (currentView === "integrations")
+		return <IntegrationWizard onComplete={handleIntegrationsComplete} />;
 
 	// Main view
 	return (

@@ -44,7 +44,13 @@ if (typeof window !== "undefined") {
 	screenMq.addEventListener("change", updateMobile);
 }
 
-export type View = "loading" | "auth" | "setup" | "preset" | "main";
+export type View =
+	| "loading"
+	| "auth"
+	| "setup"
+	| "preset"
+	| "integrations"
+	| "main";
 export type Section =
 	| "home"
 	| "chat"

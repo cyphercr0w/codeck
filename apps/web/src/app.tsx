@@ -147,6 +147,14 @@ export function App() {
 		};
 	}, []);
 
+	// Collapse sidebar immediately when auto-close is toggled on
+	useEffect(() => {
+		const unsub = sidebarAutoClose.subscribe((v) => {
+			if (v) setSidebarCollapsed(true);
+		});
+		return unsub;
+	}, []);
+
 	// Pull-to-refresh is handled by the PullToRefresh component.
 	// It replaces the old preventPullToRefresh handler that blocked all pull gestures.
 

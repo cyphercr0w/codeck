@@ -85,7 +85,7 @@
 
 .modal-step.active .modal-step-num {
 	background: var(--accent);
-	color: #fff;
+	color: var(--accent-fg);
 }
 
 /* Connector line between step bubbles */

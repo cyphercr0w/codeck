@@ -316,7 +316,7 @@
 
 .model-seg.active {
 	background: var(--accent);
-	color: #fff;
+	color: var(--accent-fg);
 }
 
 /* ── Sidebar Position Buttons ── */

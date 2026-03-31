@@ -173,6 +173,9 @@ export function applyAccentColor(hex: string): void {
 			`#${[d(r), d(g), d(b)].map((v) => v.toString(16).padStart(2, "0")).join("")}`,
 		);
 		root.style.setProperty("--accent-subtle", `rgba(${r}, ${g}, ${b}, 0.10)`);
+		// Contrast-aware foreground: black on light accents, white on dark
+		const luminance = 0.299 * r + 0.587 * g + 0.114 * b;
+		root.style.setProperty("--accent-fg", luminance > 150 ? "#000" : "#fff");
 	}
 }
 

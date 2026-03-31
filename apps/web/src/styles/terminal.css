@@ -685,7 +685,7 @@
 
 .claude-empty-btn.primary {
 	background: var(--accent);
-	color: #fff;
+	color: var(--accent-fg);
 	border-color: var(--accent);
 }
 .claude-empty-btn.primary:hover {

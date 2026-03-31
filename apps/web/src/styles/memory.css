@@ -280,7 +280,7 @@
 }
 .memory-scope-pill.active {
 	background: var(--accent);
-	color: #fff;
+	color: var(--accent-fg);
 	border-color: var(--accent);
 }
 .memory-search-results {

@@ -732,6 +732,7 @@ export function App() {
 				open={sidebarOpen}
 				onClose={() => setSidebarOpen(false)}
 				onSectionChange={handleSectionChange}
+				onLogout={handleCodeckLogout}
 			/>
 			<div class="content-area">
 				<header

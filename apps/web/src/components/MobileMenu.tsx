@@ -1,7 +1,6 @@
 import {
 	activeSection,
 	wsConnected,
-	claudeUsage,
 	setActiveSection,
 	type Section,
 } from "../state/store";
@@ -10,20 +9,14 @@ import {
 	IconFolder,
 	IconTerminal,
 	IconBot,
-	IconMonitor,
 	IconPlug,
 	IconSettings,
 	IconBrain,
 	IconChat,
 	IconFlow,
+	IconLogout,
 } from "./Icons";
 import { NAV_ITEMS } from "./nav-items";
-
-function barColor(p: number): string {
-	if (p < 60) return "var(--accent)";
-	if (p < 85) return "var(--warning)";
-	return "var(--error)";
-}
 
 const SECTION_ICONS: Record<Section, () => preact.JSX.Element> = {
 	home: () => <IconHome size={22} />,
@@ -41,12 +34,14 @@ interface MobileMenuProps {
 	open: boolean;
 	onClose: () => void;
 	onSectionChange: (section: Section) => void;
+	onLogout?: () => void;
 }
 
 export function MobileMenu({
 	open,
 	onClose,
 	onSectionChange,
+	onLogout,
 }: MobileMenuProps) {
 	const current = activeSection.value;
 	const connected = wsConnected.value;
@@ -77,18 +72,19 @@ export function MobileMenu({
 					))}
 				</nav>
 				<div class="mobile-menu-footer">
-					<button
-						class={`sidebar-settings-btn${current === "settings" ? " active" : ""}`}
-						onClick={() => {
-							setActiveSection("settings");
-							onSectionChange("settings");
-							onClose();
-						}}
-					>
-						<IconSettings size={14} />
-					</button>
 					<span class={`status-dot${connected ? " online" : ""}`} />
-					<span>{connected ? "Connected" : "Disconnected"}</span>
+					<span class="mobile-menu-status">
+						{connected ? "Connected" : "Disconnected"}
+					</span>
+					<span class="mobile-menu-version">v0.6</span>
+					<button
+						class="sidebar-logout-icon"
+						onClick={onLogout}
+						aria-label="Logout"
+						title="Logout"
+					>
+						<IconLogout size={14} />
+					</button>
 				</div>
 			</div>
 		</>

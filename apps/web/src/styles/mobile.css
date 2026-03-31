@@ -164,6 +164,17 @@
 	font-size: 13px;
 	color: var(--text-muted);
 }
+.mobile-menu-status {
+	font-size: 12px;
+}
+.mobile-menu-version {
+	font-size: 11px;
+	font-family: var(--font-mono);
+	margin-left: auto;
+}
+.mobile-menu-footer .sidebar-logout-icon {
+	margin-left: 0;
+}
 
 /* ========== Utils ========== */
 .hidden {

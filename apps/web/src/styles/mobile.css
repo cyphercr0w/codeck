@@ -172,9 +172,6 @@
 	font-family: var(--font-mono);
 	margin-left: auto;
 }
-.mobile-menu-footer .sidebar-logout-icon {
-	margin-left: 0;
-}
 
 /* ========== Utils ========== */
 .hidden {

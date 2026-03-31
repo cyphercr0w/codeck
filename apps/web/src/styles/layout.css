@@ -214,7 +214,6 @@
 	cursor: pointer;
 	padding: 0;
 	flex-shrink: 0;
-	margin-left: auto;
 	transition: all 0.15s;
 }
 .sidebar-logout-icon:hover {

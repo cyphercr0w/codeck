@@ -217,11 +217,6 @@ export function Sidebar({
 				<div class="sidebar-footer">
 					{!collapsed && (
 						<div class="sidebar-footer-row">
-							<span class={`status-dot${connected ? " online" : ""}`} />
-							<span class="sidebar-status-text">
-								{connected ? "Connected" : "Disconnected"}
-							</span>
-							<span class="sidebar-version">v0.6</span>
 							<button
 								class="sidebar-logout-icon"
 								onClick={onLogout}
@@ -230,6 +225,11 @@ export function Sidebar({
 							>
 								<IconLogout size={14} />
 							</button>
+							<span class={`status-dot${connected ? " online" : ""}`} />
+							<span class="sidebar-status-text">
+								{connected ? "Connected" : "Disconnected"}
+							</span>
+							<span class="sidebar-version">v0.6</span>
 						</div>
 					)}
 					{collapsed && (

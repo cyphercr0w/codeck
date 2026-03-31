@@ -72,11 +72,6 @@ export function MobileMenu({
 					))}
 				</nav>
 				<div class="mobile-menu-footer">
-					<span class={`status-dot${connected ? " online" : ""}`} />
-					<span class="mobile-menu-status">
-						{connected ? "Connected" : "Disconnected"}
-					</span>
-					<span class="mobile-menu-version">v0.6</span>
 					<button
 						class="sidebar-logout-icon"
 						onClick={onLogout}
@@ -85,6 +80,11 @@ export function MobileMenu({
 					>
 						<IconLogout size={14} />
 					</button>
+					<span class={`status-dot${connected ? " online" : ""}`} />
+					<span class="mobile-menu-status">
+						{connected ? "Connected" : "Disconnected"}
+					</span>
+					<span class="mobile-menu-version">v0.6</span>
 				</div>
 			</div>
 		</>

@@ -104,12 +104,25 @@
 	gap: 16px;
 }
 
+.settings-desktop-only {
+	display: block;
+}
+.settings-mobile-only {
+	display: none;
+}
+
 @media (max-width: 640px) {
 	.settings-appearance {
 		grid-template-columns: 1fr;
 	}
 	.settings-divider {
 		display: none;
+	}
+	.settings-desktop-only {
+		display: none;
+	}
+	.settings-mobile-only {
+		display: block;
 	}
 }
 

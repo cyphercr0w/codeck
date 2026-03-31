@@ -207,103 +207,103 @@ function TerminalFontCard() {
 
 // ── Sidebar Card ──────────────────────────────────────────────────────────
 
+const LayoutIcon = ({ side }: { side: "left" | "right" }) => (
+	<svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+		<rect
+			x={side === "left" ? 1 : 11}
+			y="1"
+			width="4"
+			height="14"
+			rx="1"
+			fill="currentColor"
+			opacity="0.9"
+		/>
+		<rect
+			x={side === "left" ? 6 : 1}
+			y="1"
+			width="9"
+			height="14"
+			rx="1"
+			fill="currentColor"
+			opacity="0.3"
+		/>
+	</svg>
+);
+
 function SidebarCard() {
 	const pos = sidebarPosition.value;
 	const autoClose = sidebarAutoClose.value;
 
 	return (
 		<div class="dash-card">
-			<div class="dash-card-title">Sidebar</div>
+			<div class="dash-card-title">Layout</div>
 
-			<div class="settings-label-row" style="margin-bottom: 12px">
-				<span class="form-label" style="margin-bottom: 0">
-					Position
-				</span>
-				<div class="sidebar-pos-btns">
-					<button
-						class={`sidebar-pos-btn${pos === "left" ? " active" : ""}`}
-						onClick={() => setSidebarPosition("left")}
-						title="Left"
-					>
-						<svg
-							width="16"
-							height="16"
-							viewBox="0 0 16 16"
-							fill="none"
-							xmlns="http://www.w3.org/2000/svg"
+			{/* Desktop only: sidebar position + auto-close */}
+			<div class="settings-desktop-only">
+				<div class="settings-label-row" style="margin-bottom: 12px">
+					<span class="form-label" style="margin-bottom: 0">
+						Sidebar position
+					</span>
+					<div class="sidebar-pos-btns">
+						<button
+							class={`sidebar-pos-btn${pos === "left" ? " active" : ""}`}
+							onClick={() => setSidebarPosition("left")}
+							title="Left"
 						>
-							<rect
-								x="1"
-								y="1"
-								width="4"
-								height="14"
-								rx="1"
-								fill="currentColor"
-								opacity="0.9"
-							/>
-							<rect
-								x="6"
-								y="1"
-								width="9"
-								height="14"
-								rx="1"
-								fill="currentColor"
-								opacity="0.3"
-							/>
-						</svg>
-					</button>
-					<button
-						class={`sidebar-pos-btn${pos === "right" ? " active" : ""}`}
-						onClick={() => setSidebarPosition("right")}
-						title="Right"
-					>
-						<svg
-							width="16"
-							height="16"
-							viewBox="0 0 16 16"
-							fill="none"
-							xmlns="http://www.w3.org/2000/svg"
+							<LayoutIcon side="left" />
+						</button>
+						<button
+							class={`sidebar-pos-btn${pos === "right" ? " active" : ""}`}
+							onClick={() => setSidebarPosition("right")}
+							title="Right"
 						>
-							<rect
-								x="1"
-								y="1"
-								width="9"
-								height="14"
-								rx="1"
-								fill="currentColor"
-								opacity="0.3"
-							/>
-							<rect
-								x="11"
-								y="1"
-								width="4"
-								height="14"
-								rx="1"
-								fill="currentColor"
-								opacity="0.9"
-							/>
-						</svg>
-					</button>
+							<LayoutIcon side="right" />
+						</button>
+					</div>
+				</div>
+				<div class="settings-label-row">
+					<span class="form-label" style="margin-bottom: 0">
+						Auto-close on hover
+					</span>
+					<label class="settings-toggle">
+						<input
+							type="checkbox"
+							checked={autoClose}
+							onChange={(e) =>
+								setSidebarAutoClose((e.target as HTMLInputElement).checked)
+							}
+						/>
+						<span class="settings-toggle-slider" />
+					</label>
 				</div>
 			</div>
 
-			<div class="settings-label-row" style="margin-bottom: 16px">
-				<span class="form-label" style="margin-bottom: 0">
-					Auto-close on hover
-				</span>
-				<label class="settings-toggle">
-					<input
-						type="checkbox"
-						checked={autoClose}
-						onChange={(e) =>
-							setSidebarAutoClose((e.target as HTMLInputElement).checked)
-						}
-					/>
-					<span class="settings-toggle-slider" />
-				</label>
+			{/* Mobile only: menu position (hamburger left or right) */}
+			<div class="settings-mobile-only">
+				<div class="settings-label-row">
+					<span class="form-label" style="margin-bottom: 0">
+						Menu position
+					</span>
+					<div class="sidebar-pos-btns">
+						<button
+							class={`sidebar-pos-btn${pos === "left" ? " active" : ""}`}
+							onClick={() => setSidebarPosition("left")}
+							title="Menu left"
+						>
+							<LayoutIcon side="left" />
+						</button>
+						<button
+							class={`sidebar-pos-btn${pos === "right" ? " active" : ""}`}
+							onClick={() => setSidebarPosition("right")}
+							title="Menu right"
+						>
+							<LayoutIcon side="right" />
+						</button>
+					</div>
+				</div>
 			</div>
 
-			<div style="border-top: 1px solid var(--border); padding-top: 16px">
+			<div style="border-top: 1px solid var(--border); margin-top: 16px; padding-top: 16px">
 				<ChangePasswordInline />
 			</div>
 		</div>

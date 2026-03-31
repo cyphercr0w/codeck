@@ -735,7 +735,7 @@ export function App() {
 			/>
 			<div class="content-area">
 				<header
-					class="mobile-header"
+					class={`mobile-header${sidebarPosition.value === "right" ? " menu-right" : ""}`}
 					style={mobileKeyboardOpen.value ? "display:none" : ""}
 				>
 					<button

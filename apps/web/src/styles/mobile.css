@@ -12,6 +12,10 @@
 	z-index: 100;
 }
 
+.mobile-header.menu-right {
+	flex-direction: row-reverse;
+}
+
 .mobile-header-brand {
 	display: flex;
 	align-items: center;
@@ -280,4 +284,3 @@
 		height: 26px;
 	}
 }
-

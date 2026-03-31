@@ -159,14 +159,9 @@
 .preview-toggle.active {
 	color: var(--accent);
 }
-.preview-port-badge {
-	font-size: 9px;
-	font-family: var(--font-mono);
-	background: rgba(99, 102, 241, 0.15);
-	color: var(--accent);
-	padding: 0 4px;
-	border-radius: 3px;
-	margin-left: 2px;
+.preview-label {
+	font-size: 11px;
+	margin-left: 4px;
 }
 
 /* ── Mobile Preview ── */

@@ -749,9 +749,7 @@ export function ClaudeSection({
 								aria-label="Toggle preview"
 							>
 								<IconMonitor size={14} />
-								{previewPort.value && (
-									<span class="preview-port-badge">{previewPort.value}</span>
-								)}
+								<span class="preview-label">Preview</span>
 							</button>
 						)}
 						{mobile && previewPort.value && (

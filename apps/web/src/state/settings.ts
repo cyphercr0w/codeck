@@ -1,51 +1,117 @@
 import { signal } from "@preact/signals";
+import { apiFetch } from "../api";
 
-// ── Storage helpers ───────────────────────────────────────────────────────
+// ── Local cache (localStorage as offline fallback) ────────────────────────
 
-function load(key: string, fallback: string): string {
+function cacheGet(key: string, fallback: string): string {
 	return localStorage.getItem(`codeck-${key}`) || fallback;
 }
 
-function loadNum(key: string, fallback: number): number {
+function cacheGetNum(key: string, fallback: number): number {
 	const v = localStorage.getItem(`codeck-${key}`);
 	return v ? Number(v) : fallback;
 }
 
-function loadBool(key: string, fallback: boolean): boolean {
+function cacheGetBool(key: string, fallback: boolean): boolean {
 	const v = localStorage.getItem(`codeck-${key}`);
 	return v ? v === "true" : fallback;
 }
 
-function save(key: string, value: string | number | boolean): void {
+function cacheSet(key: string, value: string | number | boolean): void {
 	localStorage.setItem(`codeck-${key}`, String(value));
 }
 
-// ── Signals ───────────────────────────────────────────────────────────────
+// ── Persist to server ─────────────────────────────────────────────────────
 
-export const terminalFontSize = signal(loadNum("font-size", 14));
+function persistToServer(key: string, value: string | number | boolean): void {
+	cacheSet(key, value);
+	apiFetch("/api/system/ui-settings", {
+		method: "POST",
+		body: JSON.stringify({ [key]: value }),
+	}).catch(() => {});
+}
+
+// ── Signals (initialized from localStorage cache, hydrated from server) ──
+
+export const terminalFontSize = signal(cacheGetNum("font-size", 14));
 export const terminalFontFamily = signal(
-	load("font-family", "'JetBrains Mono', monospace"),
+	cacheGet("font-family", "'JetBrains Mono', monospace"),
 );
-export const defaultModel = signal(load("default-model", "sonnet"));
+export const defaultModel = signal(cacheGet("default-model", "sonnet"));
 export const sidebarPosition = signal<"left" | "right">(
-	load("sidebar-position", "left") as "left" | "right",
+	cacheGet("sidebar-position", "left") as "left" | "right",
 );
-export const sidebarAutoClose = signal(loadBool("sidebar-autoclose", false));
-export const accentColor = signal(load("accent-color", "#6366f1"));
-export const appLanguage = signal(load("language", "en"));
+export const sidebarAutoClose = signal(
+	cacheGetBool("sidebar-autoclose", false),
+);
+export const accentColor = signal(cacheGet("accent-color", "#6366f1"));
+export const appLanguage = signal(cacheGet("language", "en"));
 
-// ── Setters (update signal + persist) ─────────────────────────────────────
+// ── Hydrate from server (called after app mounts) ─────────────────────────
+
+export async function hydrateFromServer(): Promise<void> {
+	try {
+		const res = await apiFetch("/api/system/ui-settings");
+		const data = await res.json();
+		if (!data || typeof data !== "object") return;
+
+		if (data["font-size"] != null) {
+			const v = Number(data["font-size"]);
+			terminalFontSize.value = v;
+			cacheSet("font-size", v);
+		}
+		if (data["font-family"]) {
+			terminalFontFamily.value = data["font-family"];
+			cacheSet("font-family", data["font-family"]);
+			ensureFontLoaded(data["font-family"]);
+		}
+		if (data["default-model"]) {
+			defaultModel.value = data["default-model"];
+			cacheSet("default-model", data["default-model"]);
+		}
+		if (data["sidebar-position"]) {
+			sidebarPosition.value = data["sidebar-position"];
+			cacheSet("sidebar-position", data["sidebar-position"]);
+		}
+		if (data["sidebar-autoclose"] != null) {
+			sidebarAutoClose.value =
+				data["sidebar-autoclose"] === true ||
+				data["sidebar-autoclose"] === "true";
+			cacheSet("sidebar-autoclose", sidebarAutoClose.value);
+		}
+		if (data["accent-color"]) {
+			accentColor.value = data["accent-color"];
+			cacheSet("accent-color", data["accent-color"]);
+			applyAccentColor(data["accent-color"]);
+		}
+		if (data["language"]) {
+			appLanguage.value = data["language"];
+			cacheSet("language", data["language"]);
+		}
+
+		// Re-apply visual settings after hydration
+		applyAccentColor(accentColor.value);
+		if (sidebarPosition.value === "right") {
+			document.querySelector(".app-layout")?.classList.add("sidebar-right");
+		} else {
+			document.querySelector(".app-layout")?.classList.remove("sidebar-right");
+		}
+		applyTerminalFont();
+	} catch {
+		// Server unreachable — localStorage cache is used as-is
+	}
+}
+
+// ── Setters (update signal + persist to server) ──────────────────────────
 
 export function setFontSize(v: number): void {
 	terminalFontSize.value = v;
-	save("font-size", v);
+	persistToServer("font-size", v);
 	applyTerminalFont();
 }
 
-// Dynamically load Google Fonts for non-bundled font families
 const loadedFonts = new Set<string>();
 export function ensureFontLoaded(family: string): void {
-	// JetBrains Mono is self-hosted, skip
 	if (family.includes("JetBrains")) return;
 	const name = family.replace(/'/g, "").split(",")[0].trim();
 	if (loadedFonts.has(name)) return;
@@ -59,34 +125,34 @@ export function ensureFontLoaded(family: string): void {
 export function setFontFamily(v: string): void {
 	ensureFontLoaded(v);
 	terminalFontFamily.value = v;
-	save("font-family", v);
+	persistToServer("font-family", v);
 	applyTerminalFont();
 }
 
 export function setDefaultModel(v: string): void {
 	defaultModel.value = v;
-	save("default-model", v);
+	persistToServer("default-model", v);
 }
 
 export function setSidebarPosition(v: "left" | "right"): void {
 	sidebarPosition.value = v;
-	save("sidebar-position", v);
+	persistToServer("sidebar-position", v);
 }
 
 export function setSidebarAutoClose(v: boolean): void {
 	sidebarAutoClose.value = v;
-	save("sidebar-autoclose", v);
+	persistToServer("sidebar-autoclose", v);
 }
 
 export function setAccentColor(hex: string): void {
 	accentColor.value = hex;
-	save("accent-color", hex);
+	persistToServer("accent-color", hex);
 	applyAccentColor(hex);
 }
 
 export function setAppLanguage(v: string): void {
 	appLanguage.value = v;
-	save("language", v);
+	persistToServer("language", v);
 }
 
 // ── Apply accent color to CSS vars ────────────────────────────────────────
@@ -122,15 +188,12 @@ export function applyTerminalFont(): void {
 	_applyFn?.();
 }
 
-// ── Boot-time: apply all stored settings ──────────────────────────────────
+// ── Boot-time: apply cached settings immediately (no flash) ───────────────
 
 export function applyStoredSettings(): void {
 	const hex = accentColor.value;
 	if (hex !== "#6366f1") applyAccentColor(hex);
-
-	// Load non-bundled font if previously selected
 	ensureFontLoaded(terminalFontFamily.value);
-
 	if (sidebarPosition.value === "right") {
 		document.querySelector(".app-layout")?.classList.add("sidebar-right");
 	}

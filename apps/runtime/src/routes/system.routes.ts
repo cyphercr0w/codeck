@@ -184,6 +184,50 @@ router.post("/model", (req, res) => {
 	}
 });
 
+// GET /api/system/ui-settings — returns persisted UI settings (theme, font, sidebar)
+router.get("/ui-settings", (_req, res) => {
+	try {
+		const configPath = join(
+			process.env.WORKSPACE || "/workspace",
+			".codeck",
+			"config.json",
+		);
+		let config: Record<string, unknown> = {};
+		if (existsSync(configPath)) {
+			config = JSON.parse(readFileSync(configPath, "utf-8"));
+		}
+		res.json((config as Record<string, unknown>).uiSettings || {});
+	} catch {
+		res.json({});
+	}
+});
+
+// POST /api/system/ui-settings — save UI settings
+router.post("/ui-settings", (req, res) => {
+	try {
+		const configPath = join(
+			process.env.WORKSPACE || "/workspace",
+			".codeck",
+			"config.json",
+		);
+		let config: Record<string, unknown> = {};
+		if (existsSync(configPath)) {
+			config = JSON.parse(readFileSync(configPath, "utf-8"));
+		}
+		config.uiSettings = {
+			...((config.uiSettings as Record<string, unknown>) || {}),
+			...req.body,
+		};
+		writeFileSync(configPath, JSON.stringify(config, null, 2));
+		res.json({
+			success: true,
+			...(config.uiSettings as Record<string, unknown>),
+		});
+	} catch {
+		res.status(500).json({ error: "Failed to save settings" });
+	}
+});
+
 // GET /api/system/token-settings — returns current token optimization settings
 router.get("/token-settings", (req, res) => {
 	try {

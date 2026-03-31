@@ -67,7 +67,11 @@ import { IconBridge } from "./components/Icons";
 import { PullToRefresh } from "./components/PullToRefresh";
 import { ReconnectOverlay } from "./components/ReconnectOverlay";
 import { initRouter, sectionFromUrl, pushSection } from "./router";
-import { sidebarPosition, sidebarAutoClose } from "./state/settings";
+import {
+	sidebarPosition,
+	sidebarAutoClose,
+	hydrateFromServer,
+} from "./state/settings";
 
 // ========== Error Boundary ==========
 class ErrorBoundary extends Component<
@@ -346,6 +350,7 @@ export function App() {
 			}
 
 			updateStateFromServer(data);
+			hydrateFromServer();
 
 			const hasAccount = !!data.account;
 			const hasSessions = !!data.sessions;

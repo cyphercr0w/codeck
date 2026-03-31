@@ -155,6 +155,18 @@
 			"dest": "/workspace/.codeck/scripts/anticipatory-prefetch.mjs"
 		},
 		{
+			"src": "scripts/config-watcher.mjs",
+			"dest": "/workspace/.codeck/scripts/config-watcher.mjs"
+		},
+		{
+			"src": "scripts/config-changed.mjs",
+			"dest": "/workspace/.codeck/scripts/config-changed.mjs"
+		},
+		{
+			"src": "scripts/async-test-runner.mjs",
+			"dest": "/workspace/.codeck/scripts/async-test-runner.mjs"
+		},
+		{
 			"src": "integrations/vercel.md",
 			"dest": "/workspace/.codeck/integrations/vercel.md"
 		},

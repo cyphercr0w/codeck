@@ -189,35 +189,33 @@
 	gap: 8px;
 }
 
-.sidebar-settings-btn {
-	display: flex;
-	align-items: center;
-	justify-content: center;
-	width: 26px;
-	height: 26px;
-	border-radius: 6px;
-	border: none;
-	background: transparent;
+.sidebar-status-text {
+	font-size: 12px;
 	color: var(--text-muted);
-	cursor: pointer;
-	padding: 0;
-	flex-shrink: 0;
-	transition: all 0.15s;
-}
-.sidebar-settings-btn:hover {
-	background: var(--bg-hover);
-	color: var(--text-primary);
-}
-.sidebar-settings-btn.active {
-	color: var(--accent);
 }
 
-.sidebar-status {
+.sidebar-logout-btn {
 	display: flex;
 	align-items: center;
 	gap: 8px;
-	font-size: 12px;
+	width: 100%;
+	padding: 6px 8px;
+	border-radius: var(--radius);
+	border: none;
+	background: transparent;
 	color: var(--text-muted);
+	font-size: 12px;
+	font-family: inherit;
+	cursor: pointer;
+	transition: all 0.15s;
+}
+.sidebar-logout-btn:hover {
+	background: var(--error-subtle);
+	color: var(--error);
+}
+.sidebar.collapsed .sidebar-logout-btn {
+	justify-content: center;
+	padding: 6px;
 }
 
 .sidebar-version {

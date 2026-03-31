@@ -21,6 +21,7 @@ import {
 	IconChevronRight,
 	IconChat,
 	IconFlow,
+	IconLogout,
 } from "./Icons";
 import { NAV_ITEMS } from "./nav-items";
 
@@ -121,6 +122,7 @@ interface SidebarProps {
 	collapsed: boolean;
 	onToggleCollapse: () => void;
 	autoClose?: boolean;
+	onLogout?: () => void;
 }
 
 export function Sidebar({
@@ -130,6 +132,7 @@ export function Sidebar({
 	collapsed,
 	onToggleCollapse,
 	autoClose,
+	onLogout,
 }: SidebarProps) {
 	const connected = wsConnected.value;
 	const current = activeSection.value;
@@ -213,25 +216,22 @@ export function Sidebar({
 				</nav>
 				<div class="sidebar-footer">
 					<div class="sidebar-footer-row">
-						<button
-							class={`sidebar-settings-btn${current === "settings" ? " active" : ""}`}
-							onClick={() => {
-								setActiveSection("settings");
-								onSectionChange("settings");
-								onClose();
-							}}
-							aria-label="Settings"
-							title="Settings"
-						>
-							<IconSettings size={14} />
-						</button>
+						<span class={`status-dot${connected ? " online" : ""}`} />
 						{!collapsed && (
-							<div class="sidebar-status">
-								<span class={`status-dot${connected ? " online" : ""}`} />
-								<span>{connected ? "Connected" : "Disconnected"}</span>
-							</div>
+							<span class="sidebar-status-text">
+								{connected ? "Connected" : "Disconnected"}
+							</span>
 						)}
 					</div>
+					<button
+						class="sidebar-logout-btn"
+						onClick={onLogout}
+						aria-label="Logout"
+						title="Logout"
+					>
+						<IconLogout size={14} />
+						{!collapsed && <span>Logout</span>}
+					</button>
 				</div>
 			</aside>
 		</>

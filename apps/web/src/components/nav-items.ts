@@ -9,4 +9,5 @@ export const NAV_ITEMS: { section: Section; label: string }[] = [
 	{ section: "agents", label: "Automated Agents" },
 	{ section: "integrations", label: "Integrations" },
 	{ section: "config", label: "Agent Config" },
+	{ section: "settings", label: "Settings" },
 ];

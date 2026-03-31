@@ -461,6 +461,12 @@ export function App() {
 		setView("setup");
 	}
 
+	function handleCodeckLogout() {
+		if (!confirm("Are you sure you want to log out of Codeck?")) return;
+		clearAuthToken();
+		setView("auth");
+	}
+
 	async function handleLoginSuccess() {
 		setLoginModalOpen(false);
 		let data: Record<string, any> = {};
@@ -707,6 +713,7 @@ export function App() {
 				collapsed={sidebarCollapsed}
 				onToggleCollapse={() => setSidebarCollapsed((c) => !c)}
 				autoClose={sidebarAutoClose.value}
+				onLogout={handleCodeckLogout}
 			/>
 			<MobileMenu
 				open={sidebarOpen}

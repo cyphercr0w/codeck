@@ -4,14 +4,12 @@ import { showToast, logs, clearLogs, type LogEntry } from "../state/store";
 import {
 	terminalFontSize,
 	terminalFontFamily,
-	defaultModel,
 	sidebarPosition,
 	sidebarAutoClose,
 	accentColor,
 	appLanguage,
 	setFontSize,
 	setFontFamily,
-	setDefaultModel,
 	setSidebarPosition,
 	setSidebarAutoClose,
 	setAccentColor,
@@ -199,46 +197,6 @@ function TerminalFontCard() {
 }
 
 // ── Default Model Card ────────────────────────────────────────────────────
-
-const MODEL_OPTIONS = [
-	{ label: "Haiku", value: "haiku" },
-	{ label: "Sonnet", value: "sonnet" },
-	{ label: "Opus", value: "opus" },
-	{ label: "Opus 1M", value: "opus[1m]" },
-];
-
-function DefaultModelCard() {
-	const current = defaultModel.value;
-
-	async function handleModelChange(v: string) {
-		setDefaultModel(v);
-		try {
-			await apiFetch("/api/system/model", {
-				method: "POST",
-				body: JSON.stringify({ model: v }),
-			});
-		} catch {
-			// ignore — signal already updated
-		}
-	}
-
-	return (
-		<div class="dash-card">
-			<div class="dash-card-title">Default Model</div>
-			<div class="model-segmented">
-				{MODEL_OPTIONS.map((opt) => (
-					<button
-						key={opt.value}
-						class={`model-seg${current === opt.value ? " active" : ""}`}
-						onClick={() => handleModelChange(opt.value)}
-					>
-						{opt.label}
-					</button>
-				))}
-			</div>
-		</div>
-	);
-}
 
 // ── Sidebar Card ──────────────────────────────────────────────────────────
 
@@ -1019,7 +977,6 @@ export function SettingsSection() {
 					<div class="settings-divider" />
 					<div class="settings-col">
 						<TerminalFontCard />
-						<DefaultModelCard />
 					</div>
 				</div>
 

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "preact/hooks";
 import { apiFetch, getAuthToken } from "../../api";
 import { showToast } from "../../state/store";
+import { defaultModel, setDefaultModel } from "../../state/settings";
 import {
 	IconBrain,
 	IconFolder,
@@ -65,6 +66,46 @@ interface TokenSettings {
 	effortLevel: "low" | "medium" | "high";
 	mcpDeferThreshold: number;
 	thinkingTokens: number;
+}
+
+const MODEL_OPTIONS = [
+	{ label: "Haiku", value: "haiku" },
+	{ label: "Sonnet", value: "sonnet" },
+	{ label: "Opus", value: "opus" },
+	{ label: "Opus 1M", value: "opus[1m]" },
+];
+
+function ModelSelector() {
+	const current = defaultModel.value;
+
+	async function handleChange(v: string) {
+		setDefaultModel(v);
+		try {
+			await apiFetch("/api/system/model", {
+				method: "POST",
+				body: JSON.stringify({ model: v }),
+			});
+		} catch {
+			/* signal already updated */
+		}
+	}
+
+	return (
+		<div class="dash-card">
+			<div class="dash-card-title">Default Model</div>
+			<div class="model-segmented">
+				{MODEL_OPTIONS.map((opt) => (
+					<button
+						key={opt.value}
+						class={`model-seg${current === opt.value ? " active" : ""}`}
+						onClick={() => handleChange(opt.value)}
+					>
+						{opt.label}
+					</button>
+				))}
+			</div>
+		</div>
+	);
 }
 
 function TokenOptimizationCard() {
@@ -512,9 +553,12 @@ export function MemoryTab({ onNavigate }: MemoryTabProps) {
 				</div>
 			</div>
 
-			{/* Token Optimization — always visible below shortcuts */}
+			{/* Model + Token Optimization — always visible below shortcuts */}
 			<div class="ac-section" style={{ marginTop: "20px" }}>
-				<TokenOptimizationCard />
+				<ModelSelector />
+				<div style={{ marginTop: "12px" }}>
+					<TokenOptimizationCard />
+				</div>
 			</div>
 
 			{/* ── Footer: memory, preset, migration (secondary) ── */}

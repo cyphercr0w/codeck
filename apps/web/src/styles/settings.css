@@ -210,6 +210,19 @@
 	font-weight: 500;
 }
 
+.font-size-sep {
+	color: var(--border-light);
+	font-size: 14px;
+}
+
+.font-size-preview {
+	font-weight: 600;
+	color: var(--text-primary);
+	transition: font-size 0.15s ease;
+	line-height: 1;
+	min-width: 30px;
+}
+
 /* ── Font Family Options ── */
 
 .font-family-options {
@@ -448,4 +461,42 @@
 	margin-top: 16px;
 	padding-top: 16px;
 	border-top: 1px solid var(--border);
+}
+
+/* ── Inline Change Password ── */
+
+.settings-password-form {
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+}
+
+.settings-input {
+	padding: 7px 10px;
+	background: var(--bg-primary);
+	border: 1px solid var(--border);
+	border-radius: var(--radius);
+	color: var(--text-primary);
+	font-size: 12px;
+	font-family: inherit;
+	outline: none;
+	transition: border-color var(--transition);
+}
+
+.settings-input:focus {
+	border-color: var(--accent);
+}
+
+.settings-input::placeholder {
+	color: var(--text-muted);
+}
+
+.settings-pw-error {
+	font-size: 11px;
+	color: var(--error);
+}
+
+.settings-pw-success {
+	font-size: 11px;
+	color: var(--success);
 }

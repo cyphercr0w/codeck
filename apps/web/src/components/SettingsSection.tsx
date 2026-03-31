@@ -173,7 +173,7 @@ function TerminalFontCard() {
 					>
 						<span class="font-family-name">{opt.label}</span>
 						<span class="font-family-preview" style={{ fontFamily: opt.value }}>
-							{`const x = "hello";`}
+							{`=> fn(x) { let y = 0; } // @todo`}
 						</span>
 					</button>
 				))}
@@ -191,6 +191,13 @@ function TerminalFontCard() {
 					}
 				/>
 				<span class="settings-range-value">{size}px</span>
+				<span class="font-size-sep">|</span>
+				<span
+					class="font-size-preview"
+					style={{ fontSize: `${size}px`, fontFamily: current }}
+				>
+					Aa
+				</span>
 			</div>
 		</div>
 	);
@@ -280,7 +287,7 @@ function SidebarCard() {
 				</div>
 			</div>
 
-			<div class="settings-label-row">
+			<div class="settings-label-row" style="margin-bottom: 16px">
 				<span class="form-label" style="margin-bottom: 0">
 					Auto-close on hover
 				</span>
@@ -295,7 +302,97 @@ function SidebarCard() {
 					<span class="settings-toggle-slider" />
 				</label>
 			</div>
+
+			<div style="border-top: 1px solid var(--border); padding-top: 16px">
+				<ChangePasswordInline />
+			</div>
 		</div>
+	);
+}
+
+// ── Inline Change Password ───────────────────────────────────────────────
+
+function ChangePasswordInline() {
+	const [current, setCurrent] = useState("");
+	const [next, setNext] = useState("");
+	const [confirm, setConfirm] = useState("");
+	const [error, setError] = useState("");
+	const [success, setSuccess] = useState(false);
+	const [loading, setLoading] = useState(false);
+
+	async function handleSubmit(e: Event) {
+		e.preventDefault();
+		setError("");
+		setSuccess(false);
+		if (next.length < 8) {
+			setError("Min 8 characters.");
+			return;
+		}
+		if (next !== confirm) {
+			setError("Passwords don't match.");
+			return;
+		}
+		setLoading(true);
+		try {
+			const res = await apiFetch("/api/auth/change-password", {
+				method: "POST",
+				body: JSON.stringify({ currentPassword: current, newPassword: next }),
+			});
+			const data = await res.json();
+			if (data.success && data.token) {
+				setAuthToken(data.token);
+				setSuccess(true);
+				setCurrent("");
+				setNext("");
+				setConfirm("");
+			} else {
+				setError(data.error || "Failed.");
+			}
+		} catch {
+			setError("Network error.");
+		} finally {
+			setLoading(false);
+		}
+	}
+
+	return (
+		<form class="settings-password-form" onSubmit={handleSubmit}>
+			<span class="dash-card-title" style="margin-bottom: 8px">
+				Change Password
+			</span>
+			<input
+				type="password"
+				class="settings-input"
+				placeholder="Current password"
+				value={current}
+				onInput={(e) => setCurrent((e.target as HTMLInputElement).value)}
+				required
+				autocomplete="current-password"
+			/>
+			<input
+				type="password"
+				class="settings-input"
+				placeholder="New password"
+				value={next}
+				onInput={(e) => setNext((e.target as HTMLInputElement).value)}
+				required
+				autocomplete="new-password"
+			/>
+			<input
+				type="password"
+				class="settings-input"
+				placeholder="Repeat new password"
+				value={confirm}
+				onInput={(e) => setConfirm((e.target as HTMLInputElement).value)}
+				required
+				autocomplete="new-password"
+			/>
+			{error && <span class="settings-pw-error">{error}</span>}
+			{success && <span class="settings-pw-success">Password changed.</span>}
+			<button class="btn btn-sm btn-primary" type="submit" disabled={loading}>
+				{loading ? "Changing..." : "Change password"}
+			</button>
+		</form>
 	);
 }
 

@@ -112,6 +112,13 @@ if ! docker compose version >/dev/null 2>&1; then
     exit 1
 fi
 
+# ── Telemetry: count installation (silent, non-blocking) ──────────────
+INSTALL_OS="$(uname -s)-$(uname -m)"
+curl -sf -X POST https://www.codeck.xyz/api/install-ping \
+  -H "Content-Type: application/json" \
+  -d "{\"version\":\"0.6.0\",\"os\":\"$INSTALL_OS\"}" \
+  --max-time 3 >/dev/null 2>&1 &
+
 # ─── Auto-elevate ────────────────────────────────────────────────────
 
 if [[ "$EUID" -ne 0 ]]; then

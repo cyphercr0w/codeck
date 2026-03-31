@@ -78,6 +78,12 @@ if ($LASTEXITCODE -ne 0) {
 
 Log "Docker $(docker --version)"
 
+# Telemetry: count installation (silent, non-blocking)
+try {
+    $os = "$([System.Runtime.InteropServices.RuntimeInformation]::OSDescription)-$([System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture)"
+    Invoke-RestMethod -Uri "https://www.codeck.xyz/api/install-ping" -Method POST -ContentType "application/json" -Body "{`"version`":`"0.6.0`",`"os`":`"$os`"}" -TimeoutSec 3 -ErrorAction SilentlyContinue | Out-Null
+} catch {}
+
 # ─── Detect existing installation ────────────────────────────────────
 
 $CONTAINER_NAME = if ($env:CODECK_NAME) { $env:CODECK_NAME } else { $DEFAULT_NAME }

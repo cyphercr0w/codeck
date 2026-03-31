@@ -107,22 +107,6 @@ Full technical reference in [`docs/`](docs/README.md):
 | [Deployment](docs/DEPLOYMENT.md) | systemd install, VPS setup, troubleshooting |
 | [Known Issues](docs/KNOWN-ISSUES.md) | Bugs, tech debt, planned improvements |
 
-## Self-Deploy
-
-If you are running on a VPS where this repo IS the live Codeck installation (`/opt/codeck`), you can deploy your own changes:
-
-```bash
-npm run build && docker build -t codeck -f docker/Dockerfile . && sudo systemctl restart codeck
-```
-
-Or use the helper script: `bash scripts/self-deploy.sh`
-
-**Important:**
-- The service restart kills your terminal session. The frontend auto-reconnects.
-- `systemctl restart codeck` restarts the Codeck container.
-- Always `git commit` before deploying — your files stay on disk, but committed code is safer.
-- If a deploy breaks the server, SSH in: `sudo git checkout . && sudo npm run build && docker build -t codeck -f docker/Dockerfile . && sudo systemctl restart codeck`
-
 ## Contributing
 
 Contributions are welcome. To develop Codeck from inside a running instance:

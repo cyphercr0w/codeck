@@ -142,32 +142,7 @@ function ThemeColorCard() {
 	);
 }
 
-// ── Font Size Card ────────────────────────────────────────────────────────
-
-function FontSizeCard() {
-	const size = terminalFontSize.value;
-
-	return (
-		<div class="dash-card">
-			<div class="dash-card-title">Terminal Font Size</div>
-			<div class="settings-slider-row">
-				<input
-					type="range"
-					class="settings-range"
-					min={10}
-					max={20}
-					value={size}
-					onInput={(e) =>
-						setFontSize(Number((e.target as HTMLInputElement).value))
-					}
-				/>
-				<span class="settings-range-value">{size}</span>
-			</div>
-		</div>
-	);
-}
-
-// ── Font Family Card ──────────────────────────────────────────────────────
+// ── Terminal Font Card (family + size combined) ──────────────────────────
 
 const FONT_OPTIONS = [
 	{ label: "JetBrains Mono", value: "'JetBrains Mono', monospace" },
@@ -176,18 +151,16 @@ const FONT_OPTIONS = [
 	{ label: "Cascadia Code", value: "'Cascadia Code', monospace" },
 ];
 
-function FontFamilyCard() {
+function TerminalFontCard() {
 	const current = terminalFontFamily.value;
+	const size = terminalFontSize.value;
 	const [fontsReady, setFontsReady] = useState(false);
 
-	// Load all preview fonts on mount, re-render when loaded
 	useEffect(() => {
 		for (const opt of FONT_OPTIONS) ensureFontLoaded(opt.value);
-		// Wait for fonts to actually load, then force re-render
 		document.fonts.ready.then(() => setFontsReady(true));
 	}, []);
 
-	// Suppress unused var warning — fontsReady triggers re-render so previews use loaded fonts
 	void fontsReady;
 
 	return (
@@ -206,6 +179,20 @@ function FontFamilyCard() {
 						</span>
 					</button>
 				))}
+			</div>
+			<div class="font-size-row">
+				<span class="font-size-label">Size</span>
+				<input
+					type="range"
+					class="settings-range settings-range-sm"
+					min={10}
+					max={20}
+					value={size}
+					onInput={(e) =>
+						setFontSize(Number((e.target as HTMLInputElement).value))
+					}
+				/>
+				<span class="settings-range-value">{size}px</span>
 			</div>
 		</div>
 	);
@@ -1023,33 +1010,17 @@ export function SettingsSection() {
 					</div>
 				</div>
 
-				{/* Appearance */}
-				<h3 class="settings-section-title">Appearance</h3>
-				<div style="margin-bottom: 12px">
-					<ThemeColorCard />
+				{/* Appearance — two-column layout */}
+				<div class="settings-appearance">
+					<div class="settings-col">
+						<ThemeColorCard />
+						<SidebarCard />
+					</div>
+					<div class="settings-col">
+						<TerminalFontCard />
+						<DefaultModelCard />
+					</div>
 				</div>
-				<div style="margin-bottom: 12px">
-					<FontSizeCard />
-				</div>
-				<div style="margin-bottom: 24px">
-					<FontFamilyCard />
-				</div>
-
-				{/* Terminal */}
-				<h3 class="settings-section-title">Terminal</h3>
-				<div style="margin-bottom: 12px">
-					<DefaultModelCard />
-				</div>
-				<div style="margin-bottom: 24px">
-					<SidebarCard />
-				</div>
-
-				{/* Language — commented out until i18n is implemented
-				<h3 class="settings-section-title">Language</h3>
-				<div style="margin-bottom: 24px">
-					<LanguageCard />
-				</div>
-				*/}
 
 				{/* Audit & Security — collapsible */}
 				<button

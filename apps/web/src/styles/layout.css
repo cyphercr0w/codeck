@@ -354,3 +354,13 @@
 .sidebar.sidebar-auto.collapsed {
 	width: var(--sidebar-collapsed-width);
 }
+
+/* When sidebar is in auto-close mode, content needs left margin to avoid overlap */
+.app-layout:has(.sidebar-auto) .content-area {
+	margin-left: var(--sidebar-collapsed-width);
+}
+
+.app-layout.sidebar-right:has(.sidebar-auto) .content-area {
+	margin-left: 0;
+	margin-right: var(--sidebar-collapsed-width);
+}

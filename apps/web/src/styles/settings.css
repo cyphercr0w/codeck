@@ -70,6 +70,41 @@
 	font-size: 11px;
 }
 
+/* ── Appearance 2-Column Layout ── */
+
+.settings-appearance {
+	display: grid;
+	grid-template-columns: 1fr 1fr;
+	gap: 16px;
+	margin-bottom: 24px;
+	background: var(--bg-card);
+	border: 1px solid var(--border);
+	border-radius: var(--radius-lg);
+	padding: 16px;
+}
+
+.settings-appearance .dash-card {
+	background: transparent;
+	border: none;
+	padding: 0;
+}
+
+.settings-appearance .dash-card:hover {
+	border-color: transparent;
+}
+
+.settings-col {
+	display: flex;
+	flex-direction: column;
+	gap: 16px;
+}
+
+@media (max-width: 640px) {
+	.settings-appearance {
+		grid-template-columns: 1fr;
+	}
+}
+
 /* ── Section Titles ── */
 
 .settings-section-title {
@@ -146,6 +181,25 @@
 	border: 1px solid var(--border);
 	border-radius: var(--radius);
 	padding: 2px 6px;
+}
+
+.settings-range-sm {
+	max-width: 140px;
+}
+
+.font-size-row {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	margin-top: 12px;
+	padding-top: 12px;
+	border-top: 1px solid var(--border);
+}
+
+.font-size-label {
+	font-size: 12px;
+	color: var(--text-muted);
+	font-weight: 500;
 }
 
 /* ── Font Family Options ── */

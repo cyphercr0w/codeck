@@ -593,6 +593,21 @@ export function MemoryTab({ onNavigate }: MemoryTabProps) {
 										)}
 									</span>
 								</div>
+								<label class="npm-checkbox" style="margin-left: auto">
+									<input
+										type="checkbox"
+										checked={presetStatus?.autoUpdate !== false}
+										onChange={async (e) => {
+											const enabled = (e.target as HTMLInputElement).checked;
+											await apiFetch("/api/preset/auto-update", {
+												method: "POST",
+												body: JSON.stringify({ enabled }),
+											});
+											loadPresetStatus();
+										}}
+									/>
+									<span>Auto-update</span>
+								</label>
 							</div>
 							<div class="mem-card-actions">
 								{hasUpdate ? (
@@ -628,31 +643,6 @@ export function MemoryTab({ onNavigate }: MemoryTabProps) {
 							</div>
 						</div>
 					)}
-
-					{/* Auto-update checkbox — centered between cards */}
-					<div
-						style={{
-							display: "flex",
-							justifyContent: "center",
-							padding: "8px 0",
-						}}
-					>
-						<label class="npm-checkbox">
-							<input
-								type="checkbox"
-								checked={presetStatus?.autoUpdate !== false}
-								onChange={async (e) => {
-									const enabled = (e.target as HTMLInputElement).checked;
-									await apiFetch("/api/preset/auto-update", {
-										method: "POST",
-										body: JSON.stringify({ enabled }),
-									});
-									loadPresetStatus();
-								}}
-							/>
-							<span>Auto-update on startup</span>
-						</label>
-					</div>
 
 					{/* Migration */}
 					<div class="mem-card">

@@ -1010,12 +1010,13 @@ export function SettingsSection() {
 					</div>
 				</div>
 
-				{/* Appearance — two-column layout */}
+				{/* Settings — two-column layout */}
 				<div class="settings-appearance">
 					<div class="settings-col">
 						<ThemeColorCard />
 						<SidebarCard />
 					</div>
+					<div class="settings-divider" />
 					<div class="settings-col">
 						<TerminalFontCard />
 						<DefaultModelCard />

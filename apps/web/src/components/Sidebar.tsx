@@ -1,3 +1,4 @@
+import { useRef } from "preact/hooks";
 import {
 	activeSection,
 	wsConnected,
@@ -119,6 +120,7 @@ interface SidebarProps {
 	onClose: () => void;
 	collapsed: boolean;
 	onToggleCollapse: () => void;
+	autoClose?: boolean;
 }
 
 export function Sidebar({
@@ -127,11 +129,31 @@ export function Sidebar({
 	onClose,
 	collapsed,
 	onToggleCollapse,
+	autoClose,
 }: SidebarProps) {
 	const connected = wsConnected.value;
 	const current = activeSection.value;
+	const autoCloseTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-	const sidebarClass = `sidebar${mobileOpen ? " open" : ""}${collapsed ? " collapsed" : ""}`;
+	const sidebarClass = `sidebar${mobileOpen ? " open" : ""}${collapsed ? " collapsed" : ""}${autoClose ? " sidebar-auto" : ""}`;
+
+	const handleMouseEnter = autoClose
+		? () => {
+				if (autoCloseTimer.current) {
+					clearTimeout(autoCloseTimer.current);
+					autoCloseTimer.current = null;
+				}
+				if (collapsed) onToggleCollapse();
+			}
+		: undefined;
+
+	const handleMouseLeave = autoClose
+		? () => {
+				autoCloseTimer.current = setTimeout(() => {
+					if (!collapsed) onToggleCollapse();
+				}, 300);
+			}
+		: undefined;
 
 	return (
 		<>
@@ -140,6 +162,8 @@ export function Sidebar({
 				class={sidebarClass}
 				role="navigation"
 				aria-label="Main navigation"
+				onMouseEnter={handleMouseEnter}
+				onMouseLeave={handleMouseLeave}
 			>
 				<div class={`sidebar-brand${collapsed ? " collapsed" : ""}`}>
 					<div class="sidebar-brand-row">

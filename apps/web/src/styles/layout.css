@@ -341,3 +341,16 @@
 	overflow: hidden;
 }
 
+.app-layout.sidebar-right {
+	flex-direction: row-reverse;
+}
+
+.sidebar.sidebar-auto {
+	position: absolute;
+	z-index: 50;
+	height: 100%;
+}
+
+.sidebar.sidebar-auto.collapsed {
+	width: var(--sidebar-collapsed-width);
+}

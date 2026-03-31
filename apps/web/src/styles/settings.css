@@ -70,6 +70,289 @@
 	font-size: 11px;
 }
 
+/* ── Section Titles ── */
+
+.settings-section-title {
+	font-size: 11px;
+	font-weight: 600;
+	text-transform: uppercase;
+	letter-spacing: 0.08em;
+	color: var(--text-muted);
+	margin: 0 0 10px 2px;
+	padding: 0;
+}
+
+/* ── Font Size Slider ── */
+
+.settings-slider-row {
+	display: flex;
+	align-items: center;
+	gap: 12px;
+}
+
+.settings-range {
+	flex: 1;
+	-webkit-appearance: none;
+	appearance: none;
+	height: 4px;
+	background: var(--bg-secondary);
+	border-radius: 2px;
+	outline: none;
+	cursor: pointer;
+	transition: var(--transition);
+}
+
+.settings-range::-webkit-slider-thumb {
+	-webkit-appearance: none;
+	appearance: none;
+	width: 16px;
+	height: 16px;
+	border-radius: 50%;
+	background: var(--accent);
+	cursor: pointer;
+	border: 2px solid var(--bg-primary);
+	box-shadow: 0 0 0 1px var(--accent);
+	transition: var(--transition);
+}
+
+.settings-range::-webkit-slider-thumb:hover {
+	transform: scale(1.15);
+}
+
+.settings-range::-moz-range-thumb {
+	width: 16px;
+	height: 16px;
+	border-radius: 50%;
+	background: var(--accent);
+	cursor: pointer;
+	border: 2px solid var(--bg-primary);
+	box-shadow: 0 0 0 1px var(--accent);
+	transition: var(--transition);
+}
+
+.settings-range::-moz-range-track {
+	background: var(--bg-secondary);
+	height: 4px;
+	border-radius: 2px;
+}
+
+.settings-range-value {
+	min-width: 28px;
+	text-align: center;
+	font-size: 12px;
+	font-weight: 600;
+	color: var(--text-primary);
+	background: var(--bg-secondary);
+	border: 1px solid var(--border);
+	border-radius: var(--radius);
+	padding: 2px 6px;
+}
+
+/* ── Font Family Options ── */
+
+.font-family-options {
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+}
+
+.font-family-option {
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+	padding: 10px 12px;
+	background: var(--bg-secondary);
+	border: 1px solid var(--border);
+	border-radius: var(--radius);
+	cursor: pointer;
+	text-align: left;
+	transition: var(--transition);
+	width: 100%;
+}
+
+.font-family-option:hover {
+	border-color: var(--border-light);
+}
+
+.font-family-option.active {
+	border-color: var(--accent);
+	background: var(--accent-subtle);
+}
+
+.font-family-name {
+	font-size: 12px;
+	font-weight: 600;
+	color: var(--text-primary);
+}
+
+.font-family-preview {
+	font-size: 13px;
+	color: var(--text-secondary);
+	background: var(--bg-card);
+	border: 1px solid var(--border);
+	border-radius: var(--radius);
+	padding: 6px 10px;
+	display: block;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+/* ── Model Segmented Control ── */
+
+.model-segmented {
+	display: flex;
+	border: 1px solid var(--border);
+	border-radius: var(--radius-lg);
+	overflow: hidden;
+}
+
+.model-seg {
+	flex: 1;
+	padding: 7px 4px;
+	text-align: center;
+	font-size: 12px;
+	font-weight: 500;
+	font-family: inherit;
+	color: var(--text-secondary);
+	background: transparent;
+	border: none;
+	cursor: pointer;
+	transition: var(--transition);
+}
+
+.model-seg:hover:not(.active) {
+	background: var(--bg-secondary);
+	color: var(--text-primary);
+}
+
+.model-seg.active {
+	background: var(--accent);
+	color: #fff;
+}
+
+/* ── Sidebar Position Buttons ── */
+
+.sidebar-pos-btns {
+	display: flex;
+	gap: 6px;
+}
+
+.sidebar-pos-btn {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	width: 36px;
+	height: 32px;
+	background: var(--bg-secondary);
+	border: 1px solid var(--border);
+	border-radius: var(--radius);
+	color: var(--text-muted);
+	cursor: pointer;
+	transition: var(--transition);
+	padding: 0;
+}
+
+.sidebar-pos-btn:hover {
+	border-color: var(--border-light);
+	color: var(--text-primary);
+}
+
+.sidebar-pos-btn.active {
+	background: var(--accent-subtle);
+	border-color: var(--accent);
+	color: var(--accent);
+}
+
+/* ── Toggle Switch ── */
+
+.settings-toggle {
+	position: relative;
+	display: inline-block;
+	width: 36px;
+	height: 20px;
+	flex-shrink: 0;
+}
+
+.settings-toggle input {
+	opacity: 0;
+	width: 0;
+	height: 0;
+	position: absolute;
+}
+
+.settings-toggle-slider {
+	position: absolute;
+	cursor: pointer;
+	inset: 0;
+	background: var(--bg-secondary);
+	border: 1px solid var(--border);
+	border-radius: 20px;
+	transition: var(--transition);
+}
+
+.settings-toggle-slider::before {
+	content: "";
+	position: absolute;
+	width: 14px;
+	height: 14px;
+	left: 2px;
+	top: 50%;
+	transform: translateY(-50%);
+	background: var(--text-muted);
+	border-radius: 50%;
+	transition: var(--transition);
+}
+
+.settings-toggle input:checked + .settings-toggle-slider {
+	background: var(--accent);
+	border-color: var(--accent);
+}
+
+.settings-toggle input:checked + .settings-toggle-slider::before {
+	transform: translateX(16px) translateY(-50%);
+	background: #fff;
+}
+
+/* ── Language Select ── */
+
+.settings-select {
+	width: 100%;
+	padding: 8px 12px;
+	background: var(--bg-secondary);
+	border: 1px solid var(--border);
+	border-radius: var(--radius);
+	color: var(--text-primary);
+	font-size: 13px;
+	font-family: inherit;
+	cursor: pointer;
+	outline: none;
+	transition: var(--transition);
+	-webkit-appearance: none;
+	appearance: none;
+	background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23666' stroke-width='2'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
+	background-repeat: no-repeat;
+	background-position: right 10px center;
+	padding-right: 32px;
+}
+
+.settings-select:hover {
+	border-color: var(--border-light);
+}
+
+.settings-select:focus {
+	border-color: var(--accent);
+	box-shadow: 0 0 0 2px var(--accent-subtle);
+}
+
+/* ── Settings Label Row ── */
+
+.settings-label-row {
+	display: flex;
+	justify-content: space-between;
+	align-items: center;
+}
+
 /* ── Audit & Security Toggle ── */
 
 .settings-audit-toggle {

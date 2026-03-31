@@ -67,6 +67,7 @@ import { IconBridge } from "./components/Icons";
 import { PullToRefresh } from "./components/PullToRefresh";
 import { ReconnectOverlay } from "./components/ReconnectOverlay";
 import { initRouter, sectionFromUrl, pushSection } from "./router";
+import { sidebarPosition, sidebarAutoClose } from "./state/settings";
 
 // ========== Error Boundary ==========
 class ErrorBoundary extends Component<
@@ -128,7 +129,9 @@ export function App() {
 		string | undefined
 	>();
 	const [sidebarOpen, setSidebarOpen] = useState(false);
-	const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+	const [sidebarCollapsed, setSidebarCollapsed] = useState(
+		sidebarAutoClose.value,
+	);
 
 	// Sync signals → local state for reliable re-renders
 	useEffect(() => {
@@ -694,13 +697,16 @@ export function App() {
 
 	// Main view
 	return (
-		<div class="app-layout">
+		<div
+			class={`app-layout${sidebarPosition.value === "right" ? " sidebar-right" : ""}`}
+		>
 			<Sidebar
 				onSectionChange={handleSectionChange}
 				mobileOpen={false}
 				onClose={() => {}}
 				collapsed={sidebarCollapsed}
 				onToggleCollapse={() => setSidebarCollapsed((c) => !c)}
+				autoClose={sidebarAutoClose.value}
 			/>
 			<MobileMenu
 				open={sidebarOpen}

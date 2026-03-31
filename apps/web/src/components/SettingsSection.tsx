@@ -2,6 +2,22 @@ import { useState, useEffect, useRef } from "preact/hooks";
 import { apiFetch, setAuthToken } from "../api";
 import { showToast, logs, clearLogs, type LogEntry } from "../state/store";
 import {
+	terminalFontSize,
+	terminalFontFamily,
+	defaultModel,
+	sidebarPosition,
+	sidebarAutoClose,
+	accentColor,
+	appLanguage,
+	setFontSize,
+	setFontFamily,
+	setDefaultModel,
+	setSidebarPosition,
+	setSidebarAutoClose,
+	setAccentColor,
+	setAppLanguage,
+} from "../state/settings";
+import {
 	IconShield,
 	IconKey,
 	IconList,
@@ -78,6 +94,293 @@ const PERMISSION_LABELS: Record<string, string> = {
 	WebFetch: "Fetch URLs",
 	WebSearch: "Web search",
 };
+
+// ── Theme Color Picker ────────────────────────────────────────────────────
+
+const THEME_PRESETS = [
+	{ name: "Indigo", value: "#6366f1" },
+	{ name: "Violet", value: "#8b5cf6" },
+	{ name: "Blue", value: "#3b82f6" },
+	{ name: "Cyan", value: "#06b6d4" },
+	{ name: "Emerald", value: "#10b981" },
+	{ name: "Amber", value: "#f59e0b" },
+	{ name: "Rose", value: "#f43f5e" },
+	{ name: "Pink", value: "#ec4899" },
+];
+
+function ThemeColorCard() {
+	const color = accentColor.value;
+
+	function pickColor(hex: string) {
+		setAccentColor(hex);
+	}
+
+	return (
+		<div class="dash-card">
+			<div class="dash-card-title">Theme Color</div>
+			<div class="theme-presets">
+				{THEME_PRESETS.map((p) => (
+					<button
+						key={p.value}
+						class={`theme-swatch${color === p.value ? " active" : ""}`}
+						style={{ background: p.value }}
+						onClick={() => pickColor(p.value)}
+						title={p.name}
+					/>
+				))}
+				<label class="theme-custom" title="Custom color">
+					<input
+						type="color"
+						value={color}
+						onInput={(e) => pickColor((e.target as HTMLInputElement).value)}
+					/>
+					<span class="theme-custom-label">Custom</span>
+				</label>
+			</div>
+		</div>
+	);
+}
+
+// ── Font Size Card ────────────────────────────────────────────────────────
+
+function FontSizeCard() {
+	const size = terminalFontSize.value;
+
+	return (
+		<div class="dash-card">
+			<div class="dash-card-title">Terminal Font Size</div>
+			<div class="settings-slider-row">
+				<input
+					type="range"
+					class="settings-range"
+					min={10}
+					max={20}
+					value={size}
+					onInput={(e) =>
+						setFontSize(Number((e.target as HTMLInputElement).value))
+					}
+				/>
+				<span class="settings-range-value">{size}</span>
+			</div>
+		</div>
+	);
+}
+
+// ── Font Family Card ──────────────────────────────────────────────────────
+
+const FONT_OPTIONS = [
+	{ label: "JetBrains Mono", value: "'JetBrains Mono', monospace" },
+	{ label: "Fira Code", value: "'Fira Code', monospace" },
+	{ label: "Source Code Pro", value: "'Source Code Pro', monospace" },
+	{ label: "Cascadia Code", value: "'Cascadia Code', monospace" },
+];
+
+function FontFamilyCard() {
+	const current = terminalFontFamily.value;
+
+	return (
+		<div class="dash-card">
+			<div class="dash-card-title">Terminal Font</div>
+			<div class="font-family-options">
+				{FONT_OPTIONS.map((opt) => (
+					<button
+						key={opt.value}
+						class={`font-family-option${current === opt.value ? " active" : ""}`}
+						onClick={() => setFontFamily(opt.value)}
+					>
+						<span class="font-family-name">{opt.label}</span>
+						<span class="font-family-preview" style={{ fontFamily: opt.value }}>
+							{`const x = "hello";`}
+						</span>
+					</button>
+				))}
+			</div>
+		</div>
+	);
+}
+
+// ── Default Model Card ────────────────────────────────────────────────────
+
+const MODEL_OPTIONS = [
+	{ label: "Haiku", value: "haiku" },
+	{ label: "Sonnet", value: "sonnet" },
+	{ label: "Opus", value: "opus" },
+	{ label: "Opus 1M", value: "opus[1m]" },
+];
+
+function DefaultModelCard() {
+	const current = defaultModel.value;
+
+	async function handleModelChange(v: string) {
+		setDefaultModel(v);
+		try {
+			await apiFetch("/api/system/model", {
+				method: "POST",
+				body: JSON.stringify({ model: v }),
+			});
+		} catch {
+			// ignore — signal already updated
+		}
+	}
+
+	return (
+		<div class="dash-card">
+			<div class="dash-card-title">Default Model</div>
+			<div class="model-segmented">
+				{MODEL_OPTIONS.map((opt) => (
+					<button
+						key={opt.value}
+						class={`model-seg${current === opt.value ? " active" : ""}`}
+						onClick={() => handleModelChange(opt.value)}
+					>
+						{opt.label}
+					</button>
+				))}
+			</div>
+		</div>
+	);
+}
+
+// ── Sidebar Card ──────────────────────────────────────────────────────────
+
+function SidebarCard() {
+	const pos = sidebarPosition.value;
+	const autoClose = sidebarAutoClose.value;
+
+	return (
+		<div class="dash-card">
+			<div class="dash-card-title">Sidebar</div>
+
+			<div class="settings-label-row" style="margin-bottom: 12px">
+				<span class="form-label" style="margin-bottom: 0">
+					Position
+				</span>
+				<div class="sidebar-pos-btns">
+					<button
+						class={`sidebar-pos-btn${pos === "left" ? " active" : ""}`}
+						onClick={() => setSidebarPosition("left")}
+						title="Left"
+					>
+						<svg
+							width="16"
+							height="16"
+							viewBox="0 0 16 16"
+							fill="none"
+							xmlns="http://www.w3.org/2000/svg"
+						>
+							<rect
+								x="1"
+								y="1"
+								width="4"
+								height="14"
+								rx="1"
+								fill="currentColor"
+								opacity="0.9"
+							/>
+							<rect
+								x="6"
+								y="1"
+								width="9"
+								height="14"
+								rx="1"
+								fill="currentColor"
+								opacity="0.3"
+							/>
+						</svg>
+					</button>
+					<button
+						class={`sidebar-pos-btn${pos === "right" ? " active" : ""}`}
+						onClick={() => setSidebarPosition("right")}
+						title="Right"
+					>
+						<svg
+							width="16"
+							height="16"
+							viewBox="0 0 16 16"
+							fill="none"
+							xmlns="http://www.w3.org/2000/svg"
+						>
+							<rect
+								x="1"
+								y="1"
+								width="9"
+								height="14"
+								rx="1"
+								fill="currentColor"
+								opacity="0.3"
+							/>
+							<rect
+								x="11"
+								y="1"
+								width="4"
+								height="14"
+								rx="1"
+								fill="currentColor"
+								opacity="0.9"
+							/>
+						</svg>
+					</button>
+				</div>
+			</div>
+
+			<div class="settings-label-row">
+				<span class="form-label" style="margin-bottom: 0">
+					Auto-close on hover
+				</span>
+				<label class="settings-toggle">
+					<input
+						type="checkbox"
+						checked={autoClose}
+						onChange={(e) =>
+							setSidebarAutoClose((e.target as HTMLInputElement).checked)
+						}
+					/>
+					<span class="settings-toggle-slider" />
+				</label>
+			</div>
+		</div>
+	);
+}
+
+// ── Language Card ─────────────────────────────────────────────────────────
+
+const LANGUAGE_OPTIONS = [
+	{ label: "English", value: "en" },
+	{ label: "Español", value: "es" },
+	{ label: "Português", value: "pt" },
+	{ label: "Français", value: "fr" },
+	{ label: "Deutsch", value: "de" },
+	{ label: "日本語", value: "ja" },
+	{ label: "中文", value: "zh" },
+	{ label: "한국어", value: "ko" },
+];
+
+function LanguageCard() {
+	const lang = appLanguage.value;
+
+	return (
+		<div class="dash-card">
+			<div class="dash-card-title">Language</div>
+			<select
+				class="settings-select"
+				value={lang}
+				onChange={(e) => setAppLanguage((e.target as HTMLSelectElement).value)}
+			>
+				{LANGUAGE_OPTIONS.map((opt) => (
+					<option key={opt.value} value={opt.value}>
+						{opt.label}
+					</option>
+				))}
+			</select>
+			<div
+				class="dash-meta"
+				style="border-top: none; margin-top: 8px; padding-top: 0; font-size: 11px"
+			>
+				Translation support coming soon — setting saved for future use.
+			</div>
+		</div>
+	);
+}
 
 // ── Change Password Card ───────────────────────────────────────────────────
 
@@ -693,93 +996,10 @@ function LogsCard() {
 	);
 }
 
-// ── Main export ────────────────────────────────────────────────────────────
-
-// ── Theme Color Picker ────────────────────────────────────────────────────
-
-const THEME_PRESETS = [
-	{ name: "Indigo", value: "#6366f1" },
-	{ name: "Violet", value: "#8b5cf6" },
-	{ name: "Blue", value: "#3b82f6" },
-	{ name: "Cyan", value: "#06b6d4" },
-	{ name: "Emerald", value: "#10b981" },
-	{ name: "Amber", value: "#f59e0b" },
-	{ name: "Rose", value: "#f43f5e" },
-	{ name: "Pink", value: "#ec4899" },
-];
-
-function hexToRgb(hex: string): { r: number; g: number; b: number } | null {
-	const m = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
-	return m
-		? { r: parseInt(m[1], 16), g: parseInt(m[2], 16), b: parseInt(m[3], 16) }
-		: null;
-}
-
-function applyAccentColor(hex: string): void {
-	const root = document.documentElement;
-	root.style.setProperty("--accent", hex);
-	const rgb = hexToRgb(hex);
-	if (rgb) {
-		const darken = (v: number) => Math.max(0, Math.round(v * 0.88));
-		root.style.setProperty(
-			"--accent-hover",
-			`#${[darken(rgb.r), darken(rgb.g), darken(rgb.b)].map((v) => v.toString(16).padStart(2, "0")).join("")}`,
-		);
-		root.style.setProperty(
-			"--accent-subtle",
-			`rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.10)`,
-		);
-	}
-}
-
-function getStoredAccent(): string {
-	return localStorage.getItem("codeck-accent-color") || "#6366f1";
-}
-
-function ThemeColorCard() {
-	const [color, setColor] = useState(getStoredAccent);
-
-	function pickColor(hex: string) {
-		setColor(hex);
-		applyAccentColor(hex);
-		localStorage.setItem("codeck-accent-color", hex);
-	}
-
-	return (
-		<div class="dash-card">
-			<div class="dash-card-title">Theme Color</div>
-			<div class="theme-presets">
-				{THEME_PRESETS.map((p) => (
-					<button
-						key={p.value}
-						class={`theme-swatch${color === p.value ? " active" : ""}`}
-						style={{ background: p.value }}
-						onClick={() => pickColor(p.value)}
-						title={p.name}
-					/>
-				))}
-				<label class="theme-custom" title="Custom color">
-					<input
-						type="color"
-						value={color}
-						onInput={(e) => pickColor((e.target as HTMLInputElement).value)}
-					/>
-					<span class="theme-custom-label">Custom</span>
-				</label>
-			</div>
-		</div>
-	);
-}
-
 // ── Settings Section (exported) ───────────────────────────────────────────
 
 export function SettingsSection() {
 	const [auditOpen, setAuditOpen] = useState(false);
-
-	useEffect(() => {
-		const stored = getStoredAccent();
-		if (stored !== "#6366f1") applyAccentColor(stored);
-	}, []);
 
 	return (
 		<div class="content-section">
@@ -791,9 +1011,31 @@ export function SettingsSection() {
 					</div>
 				</div>
 
-				{/* Theme */}
-				<div style="margin-bottom: 24px">
+				{/* Appearance */}
+				<h3 class="settings-section-title">Appearance</h3>
+				<div style="margin-bottom: 12px">
 					<ThemeColorCard />
+				</div>
+				<div style="margin-bottom: 12px">
+					<FontSizeCard />
+				</div>
+				<div style="margin-bottom: 24px">
+					<FontFamilyCard />
+				</div>
+
+				{/* Terminal */}
+				<h3 class="settings-section-title">Terminal</h3>
+				<div style="margin-bottom: 12px">
+					<DefaultModelCard />
+				</div>
+				<div style="margin-bottom: 24px">
+					<SidebarCard />
+				</div>
+
+				{/* Language */}
+				<h3 class="settings-section-title">Language</h3>
+				<div style="margin-bottom: 24px">
+					<LanguageCard />
 				</div>
 
 				{/* Audit & Security — collapsible */}

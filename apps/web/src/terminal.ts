@@ -3,6 +3,11 @@ import { FitAddon } from "@xterm/addon-fit";
 import { wsSend } from "./ws";
 import { isMobile } from "./state/store";
 import { sanitizeAnsiOutput } from "./ansi-sanitizer";
+import {
+	terminalFontSize,
+	terminalFontFamily,
+	registerTerminalApply,
+} from "./state/settings";
 
 interface TerminalInstance {
 	term: Terminal;
@@ -14,6 +19,14 @@ interface TerminalInstance {
 }
 
 const terminals = new Map<string, TerminalInstance>();
+
+registerTerminalApply(() => {
+	for (const [, inst] of terminals) {
+		inst.term.options.fontSize = terminalFontSize.value;
+		inst.term.options.fontFamily = terminalFontFamily.value;
+		inst.fitAddon.fit();
+	}
+});
 
 /** Check if a terminal instance exists for this session. */
 export function hasTerminal(sessionId: string): boolean {
@@ -82,8 +95,10 @@ export function createTerminal(
 ): TerminalInstance {
 	const term = new Terminal({
 		theme: { background: "#0a0a0b", foreground: "#fafafa", cursor: "#6366f1" },
-		fontFamily: "'JetBrains Mono', 'Fira Code', monospace",
-		fontSize: isMobile.value ? 12 : 14,
+		fontFamily: terminalFontFamily.value,
+		fontSize: isMobile.value
+			? Math.min(terminalFontSize.value, 12)
+			: terminalFontSize.value,
 		cursorBlink: true,
 		scrollback: 5000,
 	});

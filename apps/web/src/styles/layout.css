@@ -194,9 +194,17 @@
 	color: var(--text-muted);
 }
 
+.sidebar-version {
+	font-size: 11px;
+	color: var(--text-muted);
+	font-family: var(--font-mono);
+	margin-left: auto;
+}
+
 .sidebar-logout-btn {
 	display: flex;
 	align-items: center;
+	justify-content: center;
 	gap: 8px;
 	width: 100%;
 	padding: 6px 8px;

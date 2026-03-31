@@ -201,29 +201,25 @@
 	margin-left: auto;
 }
 
-.sidebar-logout-btn {
+.sidebar-logout-icon {
 	display: flex;
 	align-items: center;
 	justify-content: center;
-	gap: 8px;
-	width: 100%;
-	padding: 6px 8px;
-	border-radius: var(--radius);
+	width: 26px;
+	height: 26px;
+	border-radius: 6px;
 	border: none;
 	background: transparent;
 	color: var(--text-muted);
-	font-size: 12px;
-	font-family: inherit;
 	cursor: pointer;
+	padding: 0;
+	flex-shrink: 0;
+	margin-left: auto;
 	transition: all 0.15s;
 }
-.sidebar-logout-btn:hover {
+.sidebar-logout-icon:hover {
 	background: var(--error-subtle);
 	color: var(--error);
-}
-.sidebar.collapsed .sidebar-logout-btn {
-	justify-content: center;
-	padding: 6px;
 }
 
 .sidebar-version {

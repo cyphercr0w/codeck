@@ -215,26 +215,34 @@ export function Sidebar({
 					))}
 				</nav>
 				<div class="sidebar-footer">
-					<div class="sidebar-footer-row">
-						<span class={`status-dot${connected ? " online" : ""}`} />
-						{!collapsed && (
-							<>
-								<span class="sidebar-status-text">
-									{connected ? "Connected" : "Disconnected"}
-								</span>
-								<span class="sidebar-version">v0.6</span>
-							</>
-						)}
-					</div>
-					<button
-						class="sidebar-logout-btn"
-						onClick={onLogout}
-						aria-label="Logout"
-						title="Logout"
-					>
-						<IconLogout size={14} />
-						{!collapsed && <span>Logout</span>}
-					</button>
+					{!collapsed && (
+						<div class="sidebar-footer-row">
+							<span class={`status-dot${connected ? " online" : ""}`} />
+							<span class="sidebar-status-text">
+								{connected ? "Connected" : "Disconnected"}
+							</span>
+							<span class="sidebar-version">v0.6</span>
+							<button
+								class="sidebar-logout-icon"
+								onClick={onLogout}
+								aria-label="Logout"
+								title="Logout"
+							>
+								<IconLogout size={14} />
+							</button>
+						</div>
+					)}
+					{collapsed && (
+						<button
+							class="sidebar-logout-icon"
+							onClick={onLogout}
+							aria-label="Logout"
+							title="Logout"
+							style="margin: 0 auto"
+						>
+							<IconLogout size={14} />
+						</button>
+					)}
 				</div>
 			</aside>
 		</>

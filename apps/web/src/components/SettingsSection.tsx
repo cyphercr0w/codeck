@@ -178,11 +178,17 @@ const FONT_OPTIONS = [
 
 function FontFamilyCard() {
 	const current = terminalFontFamily.value;
+	const [fontsReady, setFontsReady] = useState(false);
 
-	// Load all preview fonts on mount
+	// Load all preview fonts on mount, re-render when loaded
 	useEffect(() => {
 		for (const opt of FONT_OPTIONS) ensureFontLoaded(opt.value);
+		// Wait for fonts to actually load, then force re-render
+		document.fonts.ready.then(() => setFontsReady(true));
 	}, []);
+
+	// Suppress unused var warning — fontsReady triggers re-render so previews use loaded fonts
+	void fontsReady;
 
 	return (
 		<div class="dash-card">

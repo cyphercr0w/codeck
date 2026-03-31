@@ -780,7 +780,7 @@ export function ClaudeSection({
 								}
 								aria-label="Toggle preview"
 							>
-								<IconMonitor size={14} />
+								<IconMonitor size={16} />
 								<span class="preview-label">Preview</span>
 							</button>
 						)}

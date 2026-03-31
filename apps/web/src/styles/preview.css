@@ -154,14 +154,30 @@
 
 .preview-toggle {
 	margin-left: 4px;
+	margin-right: 6px;
 	position: relative;
+	display: flex;
+	align-items: center;
+	gap: 5px;
+	padding: 5px 12px;
+	border-radius: var(--radius);
+	font-size: 12px;
+	font-weight: 500;
+	background: var(--bg-secondary);
+	border: 1px solid var(--border);
+	transition: all var(--transition);
+}
+.preview-toggle:hover {
+	border-color: var(--border-light);
+	background: var(--bg-hover);
 }
 .preview-toggle.active {
 	color: var(--accent);
+	border-color: var(--accent);
+	background: var(--accent-subtle);
 }
 .preview-label {
-	font-size: 11px;
-	margin-left: 4px;
+	font-size: 12px;
 }
 
 /* ── Mobile Preview ── */

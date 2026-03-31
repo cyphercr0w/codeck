@@ -338,6 +338,16 @@ export function replaceSession(oldId: string, session: TerminalSession): void {
 	sessions.value = sessions.value.map((s) => (s.id === oldId ? session : s));
 }
 
+export function reorderSessions(fromId: string, toId: string): void {
+	const list = [...sessions.value];
+	const fromIdx = list.findIndex((s) => s.id === fromId);
+	const toIdx = list.findIndex((s) => s.id === toId);
+	if (fromIdx === -1 || toIdx === -1) return;
+	const [moved] = list.splice(fromIdx, 1);
+	list.splice(toIdx, 0, moved);
+	sessions.value = list;
+}
+
 export function renameSession(id: string, name: string): void {
 	sessions.value = sessions.value.map((s) =>
 		s.id === id ? { ...s, name } : s,

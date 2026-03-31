@@ -405,6 +405,13 @@
 	outline-offset: -1px;
 }
 
+.terminal-tab.tab-dragging {
+	opacity: 0.4;
+}
+.terminal-tab.tab-drag-over {
+	border-left: 2px solid var(--accent);
+}
+
 .terminal-tab-new {
 	display: flex;
 	align-items: center;

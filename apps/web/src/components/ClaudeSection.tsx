@@ -7,6 +7,7 @@ import {
 	addSession,
 	removeSession,
 	renameSession,
+	reorderSessions,
 	agentName,
 	isMobile,
 	restoringPending,
@@ -138,6 +139,8 @@ export function ClaudeSection({
 	const [bannerFading, setBannerFading] = useState(false);
 	const [showNewSessionMenu, setShowNewSessionMenu] = useState(false);
 	const [newTabLoading, setNewTabLoading] = useState(false);
+	const [dragTabId, setDragTabId] = useState<string | null>(null);
+	const [dragOverTabId, setDragOverTabId] = useState<string | null>(null);
 	const recentProjects = recentFolders.value;
 	const sessionList = sessions.value;
 	const activeId = activeSessionId.value;
@@ -626,8 +629,37 @@ export function ClaudeSection({
 						{sessionList.map((s) => (
 							<button
 								key={s.id}
-								class={`terminal-tab${s.id === activeId ? " active" : ""}${s.loading ? " is-loading" : ""}${s.type === "shell" ? " shell" : ""}`}
+								class={`terminal-tab${s.id === activeId ? " active" : ""}${s.loading ? " is-loading" : ""}${s.type === "shell" ? " shell" : ""}${dragTabId === s.id ? " tab-dragging" : ""}${dragOverTabId === s.id ? " tab-drag-over" : ""}`}
 								onClick={() => !s.loading && switchToSession(s.id)}
+								onMouseDown={(e) => {
+									if (e.button === 1) {
+										e.preventDefault();
+										closeSession(s.id);
+									}
+								}}
+								draggable={!s.loading && sessionList.length > 1}
+								onDragStart={(e) => {
+									setDragTabId(s.id);
+									e.dataTransfer!.effectAllowed = "move";
+								}}
+								onDragOver={(e) => {
+									e.preventDefault();
+									e.dataTransfer!.dropEffect = "move";
+									setDragOverTabId(s.id);
+								}}
+								onDragLeave={() => setDragOverTabId(null)}
+								onDrop={(e) => {
+									e.preventDefault();
+									if (dragTabId && dragTabId !== s.id) {
+										reorderSessions(dragTabId, s.id);
+									}
+									setDragTabId(null);
+									setDragOverTabId(null);
+								}}
+								onDragEnd={() => {
+									setDragTabId(null);
+									setDragOverTabId(null);
+								}}
 								title={s.cwd}
 							>
 								{s.loading ? (

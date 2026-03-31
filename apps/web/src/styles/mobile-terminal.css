@@ -19,7 +19,7 @@
 	left: 50%;
 	transform: translate(-50%, -50%);
 	background: rgba(99, 102, 241, 0.92);
-	color: white;
+	color: var(--accent-fg);
 	padding: 14px 28px;
 	border-radius: var(--radius-lg);
 	font-size: 18px;
@@ -104,7 +104,7 @@
 
 .mobile-nav-key.primary {
 	background: var(--accent);
-	color: white;
+	color: var(--accent-fg);
 	border-color: var(--accent);
 }
 
@@ -385,4 +385,3 @@
 .claude-content.mobile-terminal .xterm .xterm-screen {
 	pointer-events: none !important;
 }
-

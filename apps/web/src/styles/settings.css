@@ -399,7 +399,7 @@
 
 .settings-toggle input:checked + .settings-toggle-slider::before {
 	transform: translateX(16px) translateY(-50%);
-	background: #fff;
+	background: var(--accent-fg);
 }
 
 /* ── Language Select ── */
@@ -512,4 +512,30 @@
 .settings-pw-success {
 	font-size: 11px;
 	color: var(--success);
+}
+
+/* ── Reset Button ── */
+
+.settings-reset-btn {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	gap: 6px;
+	width: 100%;
+	padding: 10px 16px;
+	margin-bottom: 16px;
+	background: transparent;
+	border: 1px dashed var(--border-light);
+	border-radius: var(--radius-lg);
+	color: var(--text-muted);
+	font-size: 12px;
+	font-family: inherit;
+	cursor: pointer;
+	transition: all 0.15s;
+}
+
+.settings-reset-btn:hover {
+	border-color: var(--error);
+	color: var(--error);
+	background: var(--error-subtle);
 }

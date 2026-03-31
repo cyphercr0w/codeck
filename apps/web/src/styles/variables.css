@@ -21,6 +21,8 @@
 	--accent-hover: #5558e3;
 	--accent-subtle: rgba(99, 102, 241, 0.1);
 	--accent-fg: #fff;
+	--overlay-scrim: rgba(0, 0, 0, 0.5);
+	--overlay-scrim-heavy: rgba(0, 0, 0, 0.7);
 
 	/* ── Semantic ── */
 	--success: #34d399;

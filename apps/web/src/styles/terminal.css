@@ -476,11 +476,11 @@
 }
 
 .tab-status-dot.waiting {
-	background-color: #eab308;
+	background-color: var(--warning);
 }
 
 .tab-status-dot.exited {
-	background-color: #ef4444;
+	background-color: var(--error);
 }
 
 @keyframes status-pulse {
@@ -510,7 +510,7 @@
 	position: absolute;
 	inset: 0;
 	display: none;
-	background: #0a0a0b;
+	background: var(--bg-primary);
 }
 
 .terminal-instance.active {
@@ -616,7 +616,7 @@
 	font-weight: 700;
 	letter-spacing: 0.05em;
 	color: var(--accent);
-	background: rgba(99, 102, 241, 0.12);
+	background: var(--accent-subtle);
 	padding: 1px 5px;
 	border-radius: 3px;
 }

@@ -15,6 +15,7 @@ import {
 	setAccentColor,
 	setAppLanguage,
 	ensureFontLoaded,
+	resetAllSettings,
 } from "../state/settings";
 import {
 	IconShield,
@@ -1076,6 +1077,18 @@ export function SettingsSection() {
 						<TerminalFontCard />
 					</div>
 				</div>
+
+				{/* Reset */}
+				<button
+					class="settings-reset-btn"
+					onClick={() => {
+						if (confirm("Reset all appearance settings to defaults?")) {
+							resetAllSettings();
+						}
+					}}
+				>
+					Reset to defaults
+				</button>
 
 				{/* Audit & Security — collapsible */}
 				<button

@@ -53,12 +53,29 @@ Write-Host ""
 
 # ─── Check Docker ────────────────────────────────────────────────────
 
-try {
-    $null = docker info 2>$null
-    if ($LASTEXITCODE -ne 0) { throw "not running" }
-} catch {
-    Die "Docker is not installed or not running. Install Docker Desktop from https://docker.com/products/docker-desktop"
+# Check Docker CLI installed
+if (-not (Get-Command docker -ErrorAction SilentlyContinue)) {
+    Write-Host "`nError: Docker is not installed." -ForegroundColor Red
+    Write-Host "Install Docker Desktop: https://docs.docker.com/get-docker/`n" -ForegroundColor Green
+    exit 1
 }
+
+# Check Docker daemon running
+$dockerInfo = docker info 2>&1
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "`nError: Docker is installed but not running." -ForegroundColor Red
+    Write-Host "Open Docker Desktop and wait for it to start, then try again.`n" -ForegroundColor Yellow
+    exit 1
+}
+
+# Check Docker Compose v2
+$composeVersion = docker compose version 2>&1
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "`nError: Docker Compose v2 is required." -ForegroundColor Red
+    Write-Host "Update Docker Desktop or install the compose plugin.`n" -ForegroundColor Yellow
+    exit 1
+}
+
 Log "Docker $(docker --version)"
 
 # ─── Detect existing installation ────────────────────────────────────

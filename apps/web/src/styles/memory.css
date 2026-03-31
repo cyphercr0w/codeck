@@ -234,7 +234,7 @@
 	border: 1px solid var(--danger, #e55);
 	border-radius: var(--radius);
 	margin: 8px 0;
-	background: rgba(238, 85, 85, 0.08);
+	background: var(--error-subtle);
 }
 
 /* Memory search */
@@ -310,7 +310,7 @@
 }
 .memory-type-badge.durable {
 	background: #2563eb20;
-	color: #60a5fa;
+	color: var(--info);
 }
 .memory-type-badge.journal {
 	background: #16a34a20;
@@ -357,4 +357,3 @@
 		max-height: 200px;
 	}
 }
-

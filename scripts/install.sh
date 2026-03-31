@@ -74,6 +74,44 @@ echo -e "${BOLD}  ║         ${CYAN}Codeck Installer${NC}${BOLD}          ║${
 echo -e "${BOLD}  ╚═══════════════════════════════════╝${NC}"
 echo ""
 
+# ── Pre-flight: Docker checks ──────────────────────────────────────────
+
+# 1. Check Docker CLI installed
+if ! command -v docker >/dev/null 2>&1; then
+    echo ""
+    echo -e "${RED}Error: Docker is not installed.${NC}"
+    echo ""
+    echo -e "Install Docker first:"
+    echo -e "  ${GREEN}https://docs.docker.com/get-docker/${NC}"
+    echo ""
+    exit 1
+fi
+
+# 2. Check Docker daemon running
+if ! docker info >/dev/null 2>&1; then
+    echo ""
+    echo -e "${RED}Error: Docker is installed but the daemon is not running.${NC}"
+    echo ""
+    echo -e "Start Docker:"
+    echo -e "  ${YELLOW}macOS/Windows:${NC} Open Docker Desktop and wait for it to start"
+    echo -e "  ${YELLOW}Linux:${NC}         sudo systemctl start docker"
+    echo ""
+    echo -e "Then run this installer again."
+    echo ""
+    exit 1
+fi
+
+# 3. Check Docker Compose v2
+if ! docker compose version >/dev/null 2>&1; then
+    echo ""
+    echo -e "${RED}Error: Docker Compose v2 is required but not found.${NC}"
+    echo ""
+    echo -e "Update Docker Desktop or install the compose plugin:"
+    echo -e "  ${GREEN}https://docs.docker.com/compose/install/${NC}"
+    echo ""
+    exit 1
+fi
+
 # ─── Auto-elevate ────────────────────────────────────────────────────
 
 if [[ "$EUID" -ne 0 ]]; then

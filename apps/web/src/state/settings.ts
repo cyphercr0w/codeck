@@ -155,6 +155,44 @@ export function setAppLanguage(v: string): void {
 	persistToServer("language", v);
 }
 
+export function resetAllSettings(): void {
+	terminalFontSize.value = 14;
+	terminalFontFamily.value = "'JetBrains Mono', monospace";
+	defaultModel.value = "sonnet";
+	sidebarPosition.value = "left";
+	sidebarAutoClose.value = false;
+	accentColor.value = "#6366f1";
+	appLanguage.value = "en";
+
+	const keys = [
+		"font-size",
+		"font-family",
+		"default-model",
+		"sidebar-position",
+		"sidebar-autoclose",
+		"accent-color",
+		"language",
+	];
+	keys.forEach((k) => localStorage.removeItem(`codeck-${k}`));
+
+	apiFetch("/api/system/ui-settings", {
+		method: "POST",
+		body: JSON.stringify({
+			"font-size": 14,
+			"font-family": "'JetBrains Mono', monospace",
+			"default-model": "sonnet",
+			"sidebar-position": "left",
+			"sidebar-autoclose": false,
+			"accent-color": "#6366f1",
+			language: "en",
+		}),
+	}).catch(() => {});
+
+	applyAccentColor("#6366f1");
+	applyTerminalFont();
+	document.querySelector(".app-layout")?.classList.remove("sidebar-right");
+}
+
 // ── Apply accent color to CSS vars ────────────────────────────────────────
 
 export function applyAccentColor(hex: string): void {

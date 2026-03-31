@@ -1,0 +1,106 @@
+/* ── Theme Color Picker ── */
+
+.theme-presets {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	flex-wrap: wrap;
+}
+
+.theme-swatch {
+	width: 28px;
+	height: 28px;
+	border-radius: 50%;
+	border: 2px solid transparent;
+	cursor: pointer;
+	transition: all 0.15s;
+	padding: 0;
+}
+
+.theme-swatch:hover {
+	transform: scale(1.15);
+}
+
+.theme-swatch.active {
+	border-color: var(--text-primary);
+	box-shadow:
+		0 0 0 2px var(--bg-primary),
+		0 0 0 4px currentColor;
+}
+
+.theme-custom {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	cursor: pointer;
+	padding: 4px 10px;
+	border: 1px dashed var(--border-light);
+	border-radius: 16px;
+	font-size: 12px;
+	color: var(--text-muted);
+	transition: border-color 0.15s;
+}
+
+.theme-custom:hover {
+	border-color: var(--text-secondary);
+	color: var(--text-secondary);
+}
+
+.theme-custom input[type="color"] {
+	width: 18px;
+	height: 18px;
+	border: none;
+	border-radius: 50%;
+	padding: 0;
+	cursor: pointer;
+	background: transparent;
+	-webkit-appearance: none;
+}
+
+.theme-custom input[type="color"]::-webkit-color-swatch-wrapper {
+	padding: 0;
+}
+
+.theme-custom input[type="color"]::-webkit-color-swatch {
+	border: 1px solid var(--border-light);
+	border-radius: 50%;
+}
+
+.theme-custom-label {
+	font-size: 11px;
+}
+
+/* ── Audit & Security Toggle ── */
+
+.settings-audit-toggle {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	width: 100%;
+	padding: 12px 16px;
+	background: var(--bg-card);
+	border: 1px solid var(--border);
+	border-radius: var(--radius-lg);
+	color: var(--text-secondary);
+	font-size: 13px;
+	font-weight: 600;
+	font-family: inherit;
+	cursor: pointer;
+	transition: all 0.15s;
+}
+
+.settings-audit-toggle:hover {
+	border-color: var(--border-light);
+	color: var(--text-primary);
+}
+
+.settings-audit-toggle span {
+	flex: 1;
+	text-align: left;
+}
+
+.settings-audit-content {
+	margin-top: 16px;
+	padding-top: 16px;
+	border-top: 1px solid var(--border);
+}

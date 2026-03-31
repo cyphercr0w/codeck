@@ -695,7 +695,92 @@ function LogsCard() {
 
 // ── Main export ────────────────────────────────────────────────────────────
 
+// ── Theme Color Picker ────────────────────────────────────────────────────
+
+const THEME_PRESETS = [
+	{ name: "Indigo", value: "#6366f1" },
+	{ name: "Violet", value: "#8b5cf6" },
+	{ name: "Blue", value: "#3b82f6" },
+	{ name: "Cyan", value: "#06b6d4" },
+	{ name: "Emerald", value: "#10b981" },
+	{ name: "Amber", value: "#f59e0b" },
+	{ name: "Rose", value: "#f43f5e" },
+	{ name: "Pink", value: "#ec4899" },
+];
+
+function hexToRgb(hex: string): { r: number; g: number; b: number } | null {
+	const m = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+	return m
+		? { r: parseInt(m[1], 16), g: parseInt(m[2], 16), b: parseInt(m[3], 16) }
+		: null;
+}
+
+function applyAccentColor(hex: string): void {
+	const root = document.documentElement;
+	root.style.setProperty("--accent", hex);
+	const rgb = hexToRgb(hex);
+	if (rgb) {
+		const darken = (v: number) => Math.max(0, Math.round(v * 0.88));
+		root.style.setProperty(
+			"--accent-hover",
+			`#${[darken(rgb.r), darken(rgb.g), darken(rgb.b)].map((v) => v.toString(16).padStart(2, "0")).join("")}`,
+		);
+		root.style.setProperty(
+			"--accent-subtle",
+			`rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.10)`,
+		);
+	}
+}
+
+function getStoredAccent(): string {
+	return localStorage.getItem("codeck-accent-color") || "#6366f1";
+}
+
+function ThemeColorCard() {
+	const [color, setColor] = useState(getStoredAccent);
+
+	function pickColor(hex: string) {
+		setColor(hex);
+		applyAccentColor(hex);
+		localStorage.setItem("codeck-accent-color", hex);
+	}
+
+	return (
+		<div class="dash-card">
+			<div class="dash-card-title">Theme Color</div>
+			<div class="theme-presets">
+				{THEME_PRESETS.map((p) => (
+					<button
+						key={p.value}
+						class={`theme-swatch${color === p.value ? " active" : ""}`}
+						style={{ background: p.value }}
+						onClick={() => pickColor(p.value)}
+						title={p.name}
+					/>
+				))}
+				<label class="theme-custom" title="Custom color">
+					<input
+						type="color"
+						value={color}
+						onInput={(e) => pickColor((e.target as HTMLInputElement).value)}
+					/>
+					<span class="theme-custom-label">Custom</span>
+				</label>
+			</div>
+		</div>
+	);
+}
+
+// ── Settings Section (exported) ───────────────────────────────────────────
+
 export function SettingsSection() {
+	const [auditOpen, setAuditOpen] = useState(false);
+
+	useEffect(() => {
+		const stored = getStoredAccent();
+		if (stored !== "#6366f1") applyAccentColor(stored);
+	}, []);
+
 	return (
 		<div class="content-section">
 			<div class="home-content">
@@ -706,21 +791,36 @@ export function SettingsSection() {
 					</div>
 				</div>
 
-				{/* Logs — real-time, last 100 entries */}
+				{/* Theme */}
 				<div style="margin-bottom: 24px">
-					<LogsCard />
+					<ThemeColorCard />
 				</div>
 
-				{/* Security */}
-				<div style="margin-bottom: 24px">
-					<h3 class="dash-title" style="margin-bottom: 16px">
-						<IconShield size={14} /> Security
-					</h3>
-					<ActiveSessionsCard />
-					<div style="margin-top: 16px">
-						<AuthLogCard />
+				{/* Audit & Security — collapsible */}
+				<button
+					class="settings-audit-toggle"
+					onClick={() => setAuditOpen(!auditOpen)}
+				>
+					<IconShield size={14} />
+					<span>Audit & Security</span>
+					{auditOpen ? (
+						<IconChevronDown size={14} />
+					) : (
+						<IconChevronRight size={14} />
+					)}
+				</button>
+
+				{auditOpen && (
+					<div class="settings-audit-content">
+						<LogsCard />
+						<div style="margin-top: 16px">
+							<ActiveSessionsCard />
+						</div>
+						<div style="margin-top: 16px">
+							<AuthLogCard />
+						</div>
 					</div>
-				</div>
+				)}
 			</div>
 		</div>
 	);

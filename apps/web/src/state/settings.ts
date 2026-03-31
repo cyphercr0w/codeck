@@ -42,7 +42,22 @@ export function setFontSize(v: number): void {
 	applyTerminalFont();
 }
 
+// Dynamically load Google Fonts for non-bundled font families
+const loadedFonts = new Set<string>();
+export function ensureFontLoaded(family: string): void {
+	// JetBrains Mono is self-hosted, skip
+	if (family.includes("JetBrains")) return;
+	const name = family.replace(/'/g, "").split(",")[0].trim();
+	if (loadedFonts.has(name)) return;
+	loadedFonts.add(name);
+	const link = document.createElement("link");
+	link.rel = "stylesheet";
+	link.href = `https://fonts.googleapis.com/css2?family=${encodeURIComponent(name)}:wght@400;500;600;700&display=swap`;
+	document.head.appendChild(link);
+}
+
 export function setFontFamily(v: string): void {
+	ensureFontLoaded(v);
 	terminalFontFamily.value = v;
 	save("font-family", v);
 	applyTerminalFont();
@@ -112,6 +127,9 @@ export function applyTerminalFont(): void {
 export function applyStoredSettings(): void {
 	const hex = accentColor.value;
 	if (hex !== "#6366f1") applyAccentColor(hex);
+
+	// Load non-bundled font if previously selected
+	ensureFontLoaded(terminalFontFamily.value);
 
 	if (sidebarPosition.value === "right") {
 		document.querySelector(".app-layout")?.classList.add("sidebar-right");

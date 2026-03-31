@@ -16,6 +16,7 @@ import {
 	setSidebarAutoClose,
 	setAccentColor,
 	setAppLanguage,
+	ensureFontLoaded,
 } from "../state/settings";
 import {
 	IconShield,
@@ -177,6 +178,11 @@ const FONT_OPTIONS = [
 
 function FontFamilyCard() {
 	const current = terminalFontFamily.value;
+
+	// Load all preview fonts on mount
+	useEffect(() => {
+		for (const opt of FONT_OPTIONS) ensureFontLoaded(opt.value);
+	}, []);
 
 	return (
 		<div class="dash-card">
@@ -1032,11 +1038,12 @@ export function SettingsSection() {
 					<SidebarCard />
 				</div>
 
-				{/* Language */}
+				{/* Language — commented out until i18n is implemented
 				<h3 class="settings-section-title">Language</h3>
 				<div style="margin-bottom: 24px">
 					<LanguageCard />
 				</div>
+				*/}
 
 				{/* Audit & Security — collapsible */}
 				<button

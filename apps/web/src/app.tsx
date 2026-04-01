@@ -477,6 +477,7 @@ export function App() {
 	function handleCodeckLogout() {
 		if (!confirm("Are you sure you want to log out of Codeck?")) return;
 		clearAuthToken();
+		setAuthMode("login");
 		setView("auth");
 	}
 

@@ -82,7 +82,7 @@ export interface TerminalSession {
 // View state
 export const view = signal<View>("loading");
 export const activeSection = signal<Section>("home");
-export const authMode = signal<AuthMode>("setup");
+export const authMode = signal<AuthMode>("login");
 
 // Claude
 export const claudeAuthenticated = signal(false);

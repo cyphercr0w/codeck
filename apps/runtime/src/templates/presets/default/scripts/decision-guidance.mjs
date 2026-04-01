@@ -13,6 +13,9 @@
  * 3. Retry exhaustion: too many sequential attempts without progress
  */
 
+// Teammates (sub-agents) skip this hook — only the lead needs it
+if (process.env.CLAUDE_CODE_TEAM_NAME) process.exit(0);
+
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'fs';
 import { join } from 'path';
 

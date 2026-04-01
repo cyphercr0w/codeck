@@ -11,6 +11,9 @@
  * The agent cannot ignore additionalContext injected by hooks.
  */
 
+// Teammates (sub-agents) skip this hook — only the lead needs it
+if (process.env.CLAUDE_CODE_TEAM_NAME) process.exit(0);
+
 import { existsSync, readFileSync, writeFileSync, mkdirSync, readdirSync, statSync } from 'fs';
 import { join } from 'path';
 import { createHash } from 'crypto';

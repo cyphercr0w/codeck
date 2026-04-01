@@ -9,6 +9,9 @@
  * Configured in /root/.claude/settings.json under hooks.Stop
  */
 
+// Teammates (sub-agents) skip this hook — only the lead needs it
+if (process.env.CLAUDE_CODE_TEAM_NAME) process.exit(0);
+
 import { readFileSync, existsSync, appendFileSync, mkdirSync } from 'fs';
 import { join } from 'path';
 import { createHash } from 'crypto';

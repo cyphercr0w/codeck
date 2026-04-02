@@ -69,6 +69,18 @@ export async function hydrateFromServer(): Promise<void> {
 			defaultModel.value = data["default-model"];
 			cacheSet("default-model", data["default-model"]);
 		}
+
+		// Sync model from settings.json (source of truth for Claude CLI)
+		try {
+			const modelRes = await apiFetch("/api/system/model");
+			const modelData = await modelRes.json();
+			if (modelData?.model) {
+				defaultModel.value = modelData.model;
+				cacheSet("default-model", modelData.model);
+			}
+		} catch {
+			// settings.json unavailable — use ui-settings value
+		}
 		if (data["sidebar-position"]) {
 			sidebarPosition.value = data["sidebar-position"];
 			cacheSet("sidebar-position", data["sidebar-position"]);

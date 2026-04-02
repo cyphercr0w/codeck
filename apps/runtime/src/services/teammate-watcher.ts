@@ -6,8 +6,11 @@
  * teammate info to the frontend so it can show tabs.
  */
 
-import { execFileSync } from "child_process";
+import { execFile } from "child_process";
+import { promisify } from "util";
 import { broadcast } from "../web/logger.js";
+
+const execFileAsync = promisify(execFile);
 
 interface TeammateInfo {
 	paneId: string;
@@ -30,6 +33,9 @@ const watchers = new Map<
 	}
 >();
 
+// Guard to prevent overlapping async polls
+const pollingGuard = new Set<string>();
+
 const POLL_MS = 3000;
 
 /**
@@ -47,11 +53,11 @@ export function startTeammateWatcher(sessionId: string, pid: number): void {
 	};
 
 	state.interval = setInterval(() => {
-		try {
-			pollPanes(sessionId, state);
-		} catch {
-			// Non-fatal — tmux may not exist yet
-		}
+		if (pollingGuard.has(sessionId)) return;
+		pollingGuard.add(sessionId);
+		pollPanes(sessionId, state)
+			.catch(() => {})
+			.finally(() => pollingGuard.delete(sessionId));
 	}, POLL_MS);
 
 	watchers.set(sessionId, state);
@@ -67,6 +73,7 @@ export function stopTeammateWatcher(sessionId: string): void {
 	const state = watchers.get(sessionId);
 	if (!state) return;
 	clearInterval(state.interval);
+	pollingGuard.delete(sessionId);
 	watchers.delete(sessionId);
 }
 
@@ -79,17 +86,17 @@ export function getTeammates(sessionId: string): TeammateInfo[] {
 	return Array.from(state.knownPanes.values());
 }
 
-function pollPanes(
+async function pollPanes(
 	sessionId: string,
 	state: {
 		tmuxSession: string | null;
 		knownPanes: Map<string, TeammateInfo>;
 		pid: number;
 	},
-): void {
+): Promise<void> {
 	// Step 1: find the tmux session if not yet known
 	if (!state.tmuxSession) {
-		state.tmuxSession = findTmuxSession(state.pid);
+		state.tmuxSession = await findTmuxSession(state.pid);
 		if (!state.tmuxSession) return; // not created yet
 		console.log(
 			`[TeammateWatcher] Found tmux session: ${state.tmuxSession} for PID ${state.pid}`,
@@ -99,7 +106,7 @@ function pollPanes(
 	// Step 2: list panes
 	let output: string;
 	try {
-		output = execFileSync(
+		const result = await execFileAsync(
 			"tmux",
 			[
 				"list-panes",
@@ -109,7 +116,8 @@ function pollPanes(
 				"#{pane_id}||#{pane_index}||#{pane_current_command}||#{pane_title}||#{pane_width}||#{pane_height}||#{pane_active}",
 			],
 			{ encoding: "utf-8", timeout: 3000 },
-		).trim();
+		);
+		output = result.stdout.trim();
 	} catch {
 		return; // session may have died
 	}
@@ -174,28 +182,29 @@ function pollPanes(
  * Find tmux session created by a PID (or its children).
  * Claude Code with Agent Teams enabled creates a tmux session internally.
  */
-function findTmuxSession(pid: number): string | null {
+async function findTmuxSession(pid: number): Promise<string | null> {
 	try {
-		const sessions = execFileSync(
+		const { stdout: sessions } = await execFileAsync(
 			"tmux",
 			["list-sessions", "-F", "#{session_name}"],
 			{ encoding: "utf-8", timeout: 2000 },
-		).trim();
+		);
+		const sessionList = sessions.trim();
 
-		if (!sessions) return null;
+		if (!sessionList) return null;
 
 		// Find session that contains our PID's children
-		for (const session of sessions.split("\n")) {
+		for (const session of sessionList.split("\n")) {
 			try {
-				const panes = execFileSync(
+				const { stdout: panes } = await execFileAsync(
 					"tmux",
 					["list-panes", "-t", session, "-F", "#{pane_pid}"],
 					{ encoding: "utf-8", timeout: 2000 },
-				).trim();
+				);
 
-				for (const panePid of panes.split("\n")) {
+				for (const panePid of panes.trim().split("\n")) {
 					// Check if this pane's PID is a child of our session PID
-					if (isChildOf(parseInt(panePid), pid)) {
+					if (await isChildOf(parseInt(panePid), pid)) {
 						return session;
 					}
 				}
@@ -212,18 +221,25 @@ function findTmuxSession(pid: number): string | null {
 /**
  * Check if childPid is a descendant of parentPid.
  */
-function isChildOf(childPid: number, parentPid: number): boolean {
+async function isChildOf(
+	childPid: number,
+	parentPid: number,
+): Promise<boolean> {
 	if (isNaN(childPid) || isNaN(parentPid)) return false;
 	let current = childPid;
 	for (let depth = 0; depth < 10; depth++) {
 		if (current === parentPid) return true;
 		if (current <= 1) return false;
 		try {
-			const ppid = execFileSync("ps", ["-o", "ppid=", "-p", String(current)], {
-				encoding: "utf-8",
-				timeout: 1000,
-			}).trim();
-			current = parseInt(ppid);
+			const { stdout: ppidStr } = await execFileAsync(
+				"ps",
+				["-o", "ppid=", "-p", String(current)],
+				{
+					encoding: "utf-8",
+					timeout: 1000,
+				},
+			);
+			current = parseInt(ppidStr.trim());
 			if (isNaN(current)) return false;
 		} catch {
 			return false;

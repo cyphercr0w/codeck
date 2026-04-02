@@ -769,7 +769,7 @@ export function ClaudeSection({
 						<div style={{ flex: 1 }} />
 						{!mobile && (
 							<button
-								class={`terminal-tab-new preview-toggle${pMode !== "hidden" ? " active" : ""}`}
+								class={`preview-toggle${pMode !== "hidden" ? " active" : ""}`}
 								onClick={() => {
 									previewMode.value = pMode === "hidden" ? "split" : "hidden";
 								}}

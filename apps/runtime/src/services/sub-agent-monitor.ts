@@ -13,6 +13,7 @@ import { promisify } from "util";
 
 const execFileAsync = promisify(execFile);
 import { broadcast } from "../web/logger.js";
+import { notifyTeamActive, notifyTeamEnded } from "./resource-watchdog.js";
 
 const TMUX_SOCK_DIR = "/tmp/tmux-0";
 const POLL_INTERVAL = 1500; // ms
@@ -224,6 +225,8 @@ async function startPolling(socket: string): Promise<void> {
 	activeSocket = socket;
 	paneStates.clear();
 	console.log(`[SubAgentMonitor] Started monitoring tmux socket: ${socket}`);
+	// Notify watchdog BEFORE async work to prevent race with stopPolling
+	notifyTeamActive();
 
 	const panes = await listPanes(socket);
 	for (const pane of panes) {
@@ -254,6 +257,7 @@ function stopPolling(): void {
 	if (activeSocket) {
 		console.log(`[SubAgentMonitor] Stopped monitoring (session ended)`);
 		broadcast({ type: "subagent:ended" });
+		notifyTeamEnded();
 		activeSocket = null;
 		paneStates.clear();
 	}

@@ -9,6 +9,7 @@ import v8 from "v8";
 import { installLogInterceptor, getLogBuffer, broadcast } from "./logger.js";
 import { setupWebSocket, handleWsUpgrade } from "./websocket.js";
 import { setupInternalPty, handlePtyUpgrade } from "./internal-pty.js";
+import { startWatchdog, stopWatchdog } from "../services/resource-watchdog.js";
 import {
 	isPasswordConfigured,
 	setupPassword,
@@ -691,6 +692,7 @@ export async function startWebServer(): Promise<void> {
 		saveSessionState("shutdown");
 		stopTokenRefreshMonitor();
 		shutdownProactiveAgents();
+		stopWatchdog();
 		stopSubAgentMonitor();
 		shutdownConsolidationCron();
 		shutdownEmbeddings();
@@ -756,6 +758,7 @@ export async function startWebServer(): Promise<void> {
 		startTokenRefreshMonitor(broadcast);
 		initConsolidationCron();
 		startSubAgentMonitor();
+		startWatchdog();
 
 		// Daily session transcript cleanup (remove >30 day old JSONL files)
 		// Run once at startup and then every 24 hours

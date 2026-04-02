@@ -1,6 +1,6 @@
 # Known Issues & Technical Debt — Codeck
 
-Last updated: 2026-03-24.
+Last updated: 2026-04-02.
 
 ---
 
@@ -162,6 +162,22 @@ When using `SendMessage` to a completed/idle agent, the system resumes it in bac
 
 **Severity:** Low (UX confusion, no data loss)
 
+### 24. TeammateWatcher blocks event loop with execFileSync (FIXED)
+
+**File:** `services/teammate-watcher.ts`
+
+`execFileSync` calls for tmux and ps commands ran synchronously every 3 seconds, blocking the Node.js event loop. With multiple active team sessions, this caused WebSocket heartbeat misses, making the terminal appear crashed.
+
+**Fix:** Converted all `execFileSync` calls to async `execFile` with promisify. Added polling guard to prevent overlapping async cycles. Same pattern as `sub-agent-monitor.ts`.
+
+### 25. No resource monitoring during Agent Teams execution (FIXED)
+
+**Files:** `services/resource-watchdog.ts` (new), `services/resources.ts`
+
+When Agent Teams spawned multiple Claude CLI sub-processes, PID exhaustion (Docker limit: 1024), CPU saturation, and memory pressure caused silent crashes with no diagnostic logs.
+
+**Fix:** Added `resource-watchdog.ts` service that monitors PIDs, CPU, and memory every 5 seconds while teams are active. Logs warnings at 78% PID usage, critical alerts at 93% with full process tree dump. Persistent log file at `/workspace/.codeck/logs/watchdog.log`.
+
 ---
 
 ## Performance
@@ -169,6 +185,10 @@ When using `SendMessage` to a completed/idle agent, the system resumes it in bac
 ### PTY to WebSocket backpressure
 
 Backpressure via `pty.pause()`/`resume()` is implemented but has no send queue monitoring. Multiple terminals with high-output commands on slow connections could exhaust memory.
+
+### Resource watchdog overhead
+
+`resource-watchdog.ts` polls cgroup files every 5s while teams are active. Reads `/sys/fs/cgroup/pids.current`, `memory.current`, `cpu.stat` — all kernel virtual files with negligible I/O. No `execFile` unless critical threshold triggers a process tree dump.
 
 ### FTS5 optimize slowdown during reindex
 

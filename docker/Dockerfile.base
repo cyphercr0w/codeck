@@ -87,10 +87,12 @@ RUN mkdir -p /prebuilt && cd /prebuilt && npm init -y && npm install node-pty be
 RUN mkdir -p /app /workspace /workspace/.codeck /root/.claude /root/.ssh /run/dbus
 
 # ─── SSH: writable known_hosts ───
-# /root/.ssh is bind-mounted read-only (protects private keys).
+# /root/.ssh is mounted as a Docker volume (read-write). Private keys are
+# protected by 0600 permissions, not by a read-only mount. The volume is
+# writable so that ssh-keygen can generate keys on demand.
 # SSH needs to write known_hosts on new host connections, so we redirect it
 # to /workspace/.codeck/known_hosts (writable workspace volume) while still reading
-# the existing entries from the ro mount as a fallback.
+# the existing entries from the mount as a fallback.
 RUN mkdir -p /etc/ssh/ssh_config.d && \
     printf 'Host *\n    UserKnownHostsFile /workspace/.codeck/known_hosts /root/.ssh/known_hosts\n' \
     > /etc/ssh/ssh_config.d/known-hosts.conf

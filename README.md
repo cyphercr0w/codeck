@@ -21,9 +21,9 @@
 
 ---
 
-<!-- TODO: Record 15s demo GIF -->
-<!-- Show: open browser -> Claude Code terminal -> memory recall -> multi-terminal -->
-<!-- Host via GitHub CDN (drag into issue, copy URL) — do NOT commit large GIFs to repo -->
+<p align="center">
+  <img src="docs/images/codeck-screenshot.png" alt="Codeck — Agent Teams running in browser" width="720">
+</p>
 
 Codeck gives Claude Code its own always-on machine. Persistent workspace, memory that survives across sessions, full terminal access — accessible from any browser on any device. Self-hosted. You bring your own Anthropic account.
 

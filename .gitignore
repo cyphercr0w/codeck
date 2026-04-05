@@ -83,6 +83,7 @@ docker/compose.override.yml
 ux-audit/
 *.png
 !apps/web/public/*.png
+!docs/images/*.png
 coverage/
 *.log
 RESEARCH-*.md

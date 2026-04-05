@@ -107,18 +107,6 @@ Full technical reference in [`docs/`](docs/README.md):
 | [Deployment](docs/DEPLOYMENT.md) | systemd install, VPS setup, troubleshooting |
 | [Known Issues](docs/KNOWN-ISSUES.md) | Bugs, tech debt, planned improvements |
 
-## Contributing
-
-Contributions are welcome. To develop Codeck from inside a running instance:
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/cyphercr0w/codeck/main/scripts/dev-setup.sh | sudo bash
-```
-
-After changes: `npm run build && sudo systemctl restart codeck`
-
-See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) for the full development workflow.
-
 ## License
 
 [AGPL-3.0](LICENSE)

@@ -36,7 +36,6 @@ import { startTeammateWatcher } from "./teammate-watcher.js";
 import {
 	getValidAgentBinary,
 	resolveAgentBinary,
-	getOAuthEnv,
 	ensureOnboardingComplete,
 	buildCleanEnv,
 	getAgentBinaryPath,
@@ -373,8 +372,6 @@ function _createConsoleSessionInner(
 	ensureOnboardingComplete();
 	syncToClaudeSettings();
 
-	const oauthEnv = getOAuthEnv();
-
 	// Load user env vars (API keys, tokens saved by the agent)
 	// Priority: encrypted .env.encrypted > plaintext .env (legacy)
 	const userEnv: Record<string, string> = {};
@@ -451,7 +448,10 @@ function _createConsoleSessionInner(
 	const finalEnv: Record<string, string> = {
 		...buildCleanEnv(),
 		...userEnv,
-		...oauthEnv,
+		// OAuth token NOT injected as env var — Claude CLI reads .credentials.json
+		// natively and handles its own token refresh via refreshToken.
+		// Injecting a static CLAUDE_CODE_OAUTH_TOKEN causes 401s when the token
+		// expires because the env var is immutable for the PTY process lifetime.
 		...(opts.extraEnv || {}),
 		TERM: "xterm-256color",
 		CLAUDE_AUTOCOMPACT_PCT_OVERRIDE:
@@ -462,7 +462,7 @@ function _createConsoleSessionInner(
 			userEnv.MAX_THINKING_TOKENS || String(tokenSettings.thinkingTokens),
 		CLAUDE_CODE_EFFORT_LEVEL:
 			userEnv.CLAUDE_CODE_EFFORT_LEVEL || tokenSettings.effortLevel,
-		CODECK_SESSION_ID: id, // Must be LAST — prevents oauthEnv from overwriting
+		CODECK_SESSION_ID: id,
 	};
 
 	// Build CLI args from launch options.
@@ -569,7 +569,7 @@ function _createConsoleSessionInner(
 
 	const binary = getValidAgentBinary();
 	console.log(
-		`[Console] Spawning claude PTY: binary=${binary}, cwd=${workDir}, args=[${args.join(", ")}], sessions=${sessions.size}, OAUTH_TOKEN=${oauthEnv.CLAUDE_CODE_OAUTH_TOKEN ? "set" : "NOT SET"}`,
+		`[Console] Spawning claude PTY: binary=${binary}, cwd=${workDir}, args=[${args.join(", ")}], sessions=${sessions.size}, CREDENTIALS_FILE=.credentials.json (native refresh)`,
 	);
 
 	let pty: IPty;

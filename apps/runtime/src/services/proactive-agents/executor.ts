@@ -1,3 +1,4 @@
+import os from "os";
 import { spawn, type ChildProcess } from "child_process";
 import { existsSync, mkdirSync, appendFile, readFileSync } from "fs";
 import { writeFile as writeFileAsync, chmod as chmodAsync } from "fs/promises";
@@ -135,7 +136,7 @@ export function executeAgent(agentId: string, deps: ExecutorDeps): void {
 		spawnArgs.unshift("--model", runtime.config.model);
 	}
 	console.log(
-		`[ProactiveAgents] Spawning: ${binary} ${spawnArgs.map((a) => (a.length > 80 ? a.slice(0, 77) + "..." : a)).join(" ")} (cwd: ${cwd})`,
+		`[ProactiveAgents] Spawning: ${binary} (nice 10) ${spawnArgs.map((a) => (a.length > 80 ? a.slice(0, 77) + "..." : a)).join(" ")} (cwd: ${cwd})`,
 	);
 
 	runtime.outputBuffer = "";
@@ -145,6 +146,14 @@ export function executeAgent(agentId: string, deps: ExecutorDeps): void {
 		env: finalEnv,
 		stdio: ["ignore", "pipe", "pipe"],
 	});
+	// Lower CPU priority so the web UI stays responsive
+	if (child.pid) {
+		try {
+			os.setPriority(child.pid, 10);
+		} catch {
+			/* non-fatal */
+		}
+	}
 
 	runtime.currentExecution = child;
 	console.log(`[ProactiveAgents] Agent ${agentId} PID: ${child.pid}`);

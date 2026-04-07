@@ -19,7 +19,7 @@ interface NewProjectModalProps {
 	onCancel: () => void;
 	onConfirm: (
 		dir: string,
-		options: { command: string; enableTeams: boolean },
+		options: { command: string; enableTeams: boolean; maxTeammates: number },
 	) => void;
 }
 
@@ -74,17 +74,23 @@ function loadLaunchPrefs(dir: string): {
 	resume: boolean;
 	continue_: boolean;
 	teams: boolean;
+	maxTeammates: number;
 } {
 	try {
 		const raw = localStorage.getItem(PREFS_KEY_PREFIX + dir);
 		if (raw) return JSON.parse(raw);
 	} catch {}
-	return { resume: false, continue_: false, teams: false };
+	return { resume: false, continue_: false, teams: false, maxTeammates: 3 };
 }
 
 function saveLaunchPrefs(
 	dir: string,
-	prefs: { resume: boolean; continue_: boolean; teams: boolean },
+	prefs: {
+		resume: boolean;
+		continue_: boolean;
+		teams: boolean;
+		maxTeammates: number;
+	},
 ): void {
 	try {
 		localStorage.setItem(PREFS_KEY_PREFIX + dir, JSON.stringify(prefs));
@@ -143,6 +149,7 @@ export function NewProjectModal({
 	const commandRef = useRef<HTMLInputElement>(null);
 	const [commandEditable, setCommandEditable] = useState(false);
 	const [teamsEnabled, setTeamsEnabled] = useState(false);
+	const [maxTeammates, setMaxTeammates] = useState(3);
 
 	// The resolved directory path for step 2
 	const [resolvedDir, setResolvedDir] = useState("");
@@ -269,6 +276,7 @@ export function NewProjectModal({
 		if (prefs.resume) initialParams += " --resume";
 		if (prefs.continue_) initialParams += " --continue";
 		setTeamsEnabled(prefs.teams ?? false);
+		setMaxTeammates(prefs.maxTeammates ?? 3);
 		setParams(initialParams.trim());
 		setParamError("");
 		setCanResume(false);
@@ -348,9 +356,14 @@ export function NewProjectModal({
 			resume: currentFlags.resume,
 			continue_: currentFlags.continueFlag,
 			teams: teamsEnabled,
+			maxTeammates,
 		});
 		const fullCommand = params.trim() ? `claude ${params.trim()}` : "claude";
-		onConfirm(resolvedDir, { command: fullCommand, enableTeams: teamsEnabled });
+		onConfirm(resolvedDir, {
+			command: fullCommand,
+			enableTeams: teamsEnabled,
+			maxTeammates,
+		});
 	}
 
 	function handleBack() {
@@ -712,6 +725,44 @@ export function NewProjectModal({
 									leader + sub-agents
 								</span>
 							</label>
+							{teamsEnabled && (
+								<div
+									style={{
+										marginTop: "6px",
+										marginLeft: "24px",
+										display: "flex",
+										alignItems: "center",
+										gap: "8px",
+									}}
+								>
+									<span style={{ fontSize: "12px", opacity: 0.6 }}>
+										Max teammates:
+									</span>
+									<input
+										type="number"
+										min={1}
+										max={10}
+										value={maxTeammates}
+										onInput={(e) =>
+											setMaxTeammates(
+												Math.max(
+													1,
+													Math.min(
+														10,
+														parseInt((e.target as HTMLInputElement).value) || 3,
+													),
+												),
+											)
+										}
+										class="input"
+										style={{
+											width: "52px",
+											padding: "4px 6px",
+											fontSize: "12px",
+										}}
+									/>
+								</div>
+							)}
 						</div>
 
 						{/* Command input with locked "claude" prefix */}

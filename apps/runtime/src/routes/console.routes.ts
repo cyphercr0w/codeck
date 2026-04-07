@@ -55,9 +55,15 @@ router.post(
 			cwd,
 			resume,
 			enableTeams,
+			maxTeammates,
 			useContinue,
 			extraArgs: clientExtraArgs,
 		} = req.body || {};
+
+		const safeMaxTeammates =
+			typeof maxTeammates === "number"
+				? Math.max(1, Math.min(10, Math.floor(maxTeammates)))
+				: 3;
 
 		// Validate cwd stays within /workspace to prevent path traversal
 		if (cwd && typeof cwd === "string") {
@@ -74,6 +80,7 @@ router.post(
 		const extraEnv: Record<string, string> = {};
 		if (enableTeams) {
 			extraEnv.CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS = "1";
+			extraEnv.CLAUDE_MAX_TEAMMATES = String(safeMaxTeammates);
 		}
 		// Append user-provided extra args with blocklist for dangerous flags
 		const BLOCKED_FLAGS = new Set([

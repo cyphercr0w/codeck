@@ -515,3 +515,42 @@ Native addons execute install scripts during `npm install`. To audit:
 npm install --ignore-scripts  # Skip install scripts
 npm rebuild                   # Manually rebuild after inspection
 ```
+
+---
+
+## Resource Tuning for Agent Teams
+
+When Claude Code launches Agent Teams (leader + sub-agents), CPU usage spikes because multiple processes run concurrently inside the container.
+
+### Recommended Resources
+
+| Scenario | CPUs | Memory |
+|----------|------|--------|
+| Solo agent (default) | 1-2 | 2G |
+| Agent Teams (2-3 teammates) | 4 | 4G |
+| Agent Teams (4-5 teammates) | 6+ | 6G+ |
+
+### CPU Limits
+
+Set `CODECK_CPUS` to cap how many host CPUs the container may use:
+
+```bash
+# Via installer:
+CODECK_CPUS=4 curl -fsSL https://codeck.xyz/install | bash
+
+# Via docker run:
+docker run --cpus=4 ...
+
+# Via compose (.env file):
+CODECK_CPUS=4
+```
+
+### Process Priority (nice)
+
+All `claude` processes run at `nice` level 10 by default. This ensures the web UI stays responsive even under heavy agent load. Teammates inherit the leader's nice level automatically.
+
+### Max Teammates
+
+When launching a session with Agent Teams, you can configure **Max Teammates** (1-10, default 3) in the New Session dialog. This limits how many sub-agents the leader can spawn simultaneously, preventing CPU exhaustion on resource-constrained machines.
+
+The limit is set via `CLAUDE_MAX_TEAMMATES` environment variable inside the container.

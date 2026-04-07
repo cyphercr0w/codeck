@@ -40,6 +40,7 @@ services:
     deploy:
       resources:
         limits:
+          cpus: "${CODECK_CPUS:-0}"
           memory: ${CODECK_MEMORY_LIMIT:-0}
           pids: 1024
         reservations:

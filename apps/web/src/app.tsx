@@ -615,7 +615,7 @@ export function App() {
 
 	async function handleProjectConfirm(
 		dir: string,
-		options: { command: string; enableTeams: boolean },
+		options: { command: string; enableTeams: boolean; maxTeammates: number },
 	) {
 		setNewProjectOpen(false);
 		if (sessions.value.length >= SESSION_LIMIT) {
@@ -663,6 +663,7 @@ export function App() {
 					resume: hasResume || hasContinue,
 					useContinue: hasContinue,
 					enableTeams: options.enableTeams,
+					maxTeammates: options.maxTeammates,
 					extraArgs: extraArgs.length > 0 ? extraArgs : undefined,
 				}),
 			});

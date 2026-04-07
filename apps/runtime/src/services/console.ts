@@ -1,3 +1,4 @@
+import os from "os";
 import { spawn as ptySpawn, type IPty } from "node-pty";
 import {
 	readFileSync,
@@ -503,6 +504,8 @@ function _createConsoleSessionInner(
 
 	// Inject Agent Teams instructions when enabled for this session
 	if (finalEnv.CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS === "1") {
+		const maxTeammates =
+			parseInt(finalEnv.CLAUDE_MAX_TEAMMATES || "3", 10) || 3;
 		const teamsLines = [
 			"## You are the LEADER of an Agent Team system.",
 			"",
@@ -540,6 +543,7 @@ function _createConsoleSessionInner(
 			"- After spawning teammates, tell the user what each one is doing",
 			"- When teammates report back, summarize findings to the user",
 			"- Never go silent — the user needs to know what's happening",
+			`- **HARD LIMIT**: You MUST NOT have more than ${maxTeammates} teammates running simultaneously. This is a resource constraint enforced by the system. If you need more workers, wait for existing ones to finish.`,
 		];
 
 		// Load pre-configured sub-agent definitions so the leader knows what's available
@@ -569,7 +573,7 @@ function _createConsoleSessionInner(
 
 	const binary = getValidAgentBinary();
 	console.log(
-		`[Console] Spawning claude PTY: binary=${binary}, cwd=${workDir}, args=[${args.join(", ")}], sessions=${sessions.size}, CREDENTIALS_FILE=.credentials.json (native refresh)`,
+		`[Console] Spawning claude PTY: ${binary} (nice 10), cwd=${workDir}, args=[${args.join(", ")}], sessions=${sessions.size}`,
 	);
 
 	let pty: IPty;
@@ -581,6 +585,14 @@ function _createConsoleSessionInner(
 			cwd: workDir,
 			env: finalEnv,
 		});
+		// Lower CPU priority so the web UI event loop stays responsive under agent load.
+		// os.setPriority targets the actual claude PID (not a wrapper), keeping pty.pid correct
+		// for teammate watcher and kill signals. Teammates inherit this priority.
+		try {
+			os.setPriority(pty.pid, 10);
+		} catch {
+			/* non-fatal — setPriority may fail in unprivileged containers */
+		}
 	} catch (e) {
 		const msg = e instanceof Error ? e.message : String(e);
 		console.error(

@@ -3,12 +3,15 @@ import { readdir, stat, readFile } from "fs/promises";
 import { join } from "path";
 import { stripVTControlCharacters } from "util";
 import type { WriteStream } from "fs";
+import { Worker } from "worker_threads";
+import { fileURLToPath } from "url";
+import { dirname, join as pathJoin } from "path";
 import { PATHS } from "./memory.js";
 
 const MAX_TRANSCRIPT_SIZE = 50 * 1024 * 1024; // 50MB per session transcript
 
 interface ActiveCapture {
-	stream: WriteStream;
+	stream: WriteStream | null; // null when worker thread owns the stream
 	path: string;
 	inputBuffer: string;
 	outputBuffer: string;
@@ -20,6 +23,78 @@ interface ActiveCapture {
 }
 
 const captures = new Map<string, ActiveCapture>();
+
+let outputWorker: Worker | null = null;
+let workerFailCount = 0;
+const MAX_WORKER_RETRIES = 3;
+
+function getWorker(): Worker | null {
+	if (workerFailCount >= MAX_WORKER_RETRIES) return null;
+	if (!outputWorker) {
+		try {
+			const workerPath = pathJoin(
+				dirname(fileURLToPath(import.meta.url)),
+				"output-worker.js",
+			);
+			outputWorker = new Worker(workerPath);
+			outputWorker.on("message", handleWorkerMessage);
+			outputWorker.on("error", (err) => {
+				console.error("[SessionWriter] output-worker error:", err.message);
+				workerFailCount++;
+				outputWorker = null;
+				if (workerFailCount >= MAX_WORKER_RETRIES) {
+					console.warn(
+						`[SessionWriter] Worker failed ${MAX_WORKER_RETRIES} times, falling back to sync I/O permanently`,
+					);
+				}
+			});
+			outputWorker.on("exit", (code) => {
+				if (code !== 0) {
+					console.error("[SessionWriter] output-worker exited with code", code);
+					workerFailCount++;
+					if (workerFailCount >= MAX_WORKER_RETRIES) {
+						console.warn(
+							`[SessionWriter] Worker failed ${MAX_WORKER_RETRIES} times, falling back to sync I/O permanently`,
+						);
+					}
+				}
+				outputWorker = null;
+			});
+		} catch (e) {
+			console.error(
+				"[SessionWriter] Failed to start output-worker:",
+				(e as Error).message,
+			);
+			workerFailCount++;
+		}
+	}
+	return outputWorker;
+}
+
+function handleWorkerMessage(msg: { type: string; sessionId: string }): void {
+	if (msg.type === "sizeLimitReached") {
+		const capture = captures.get(msg.sessionId);
+		if (capture) {
+			capture.sizeLimitReached = true;
+			console.warn(
+				`[SessionWriter] Worker reports size limit reached for ${msg.sessionId}`,
+			);
+		}
+	} else if (msg.type === "streamError") {
+		const capture = captures.get(msg.sessionId);
+		if (capture) {
+			console.error(`[SessionWriter] Worker stream error for ${msg.sessionId}`);
+			captures.delete(msg.sessionId);
+		}
+	}
+}
+
+function findCaptureId(capture: ActiveCapture): string | undefined {
+	for (const [id, c] of captures) {
+		if (c === capture) return id;
+	}
+	return undefined;
+}
 
 // Strip ANSI escape sequences using Node.js built-in (covers CSI, OSC, and 8-bit sequences)
 function stripAnsi(str: string): string {
@@ -87,7 +162,7 @@ export function sanitizeSecrets(str: string): string {
 }
 
 function writeLine(capture: ActiveCapture, obj: Record<string, unknown>): void {
-	if (capture.sizeLimitReached) return;
+	if (capture.sizeLimitReached || !capture.stream) return;
 
 	// Check file size every 100 lines
 	if (capture.lineCount > 0 && capture.lineCount % 100 === 0) {
@@ -126,50 +201,65 @@ function writeLine(capture: ActiveCapture, obj: Record<string, unknown>): void {
 }
 
 export function startSessionCapture(id: string, cwd: string): void {
-	if (!existsSync(PATHS.SESSIONS_DIR)) {
-		mkdirSync(PATHS.SESSIONS_DIR, { recursive: true });
-	}
-
+	const sessionsDir = PATHS.SESSIONS_DIR;
 	const filename = `${id}.jsonl`;
-	const filepath = join(PATHS.SESSIONS_DIR, filename);
-	const stream = createWriteStream(filepath, { flags: "a" });
+	const filepath = join(sessionsDir, filename);
 
-	stream.on("error", (err) => {
-		console.error(
-			`[SessionWriter] Write error for ${id}: ${err.message} — stopping capture`,
-		);
-		captures.delete(id);
-		if (!stream.destroyed) {
-			try {
-				stream.close();
-			} catch {
-				/* already closing */
-			}
+	const worker = getWorker();
+	if (worker) {
+		const capture: ActiveCapture = {
+			stream: null,
+			path: filepath,
+			inputBuffer: "",
+			outputBuffer: "",
+			outputTimer: null,
+			inputTimer: null,
+			lineCount: 0,
+			paused: false,
+			sizeLimitReached: false,
+		};
+		captures.set(id, capture);
+		worker.postMessage({
+			type: "open",
+			sessionId: id,
+			path: filepath,
+			cwd,
+			sessionsDir,
+		});
+		console.log(`[SessionWriter] Started capture for ${id} (worker thread)`);
+	} else {
+		if (!existsSync(sessionsDir)) {
+			mkdirSync(sessionsDir, { recursive: true });
 		}
-	});
-
-	const capture: ActiveCapture = {
-		stream,
-		path: filepath,
-		inputBuffer: "",
-		outputBuffer: "",
-		outputTimer: null,
-		inputTimer: null,
-		lineCount: 0,
-		paused: false,
-		sizeLimitReached: false,
-	};
-
-	captures.set(id, capture);
-
-	writeLine(capture, {
-		ts: Date.now(),
-		role: "system",
-		event: "start",
-		cwd,
-	});
-
-	console.log(`[SessionWriter] Started capture for ${id}`);
+		const stream = createWriteStream(filepath, { flags: "a" });
+		stream.on("error", (err) => {
+			console.error(
+				`[SessionWriter] Write error for ${id}: ${err.message} — stopping capture`,
+			);
+			captures.delete(id);
+			if (!stream.destroyed) {
+				try {
+					stream.close();
+				} catch {
+					/* already closing */
+				}
+			}
+		});
+		const capture: ActiveCapture = {
+			stream,
+			path: filepath,
+			inputBuffer: "",
+			outputBuffer: "",
+			outputTimer: null,
+			inputTimer: null,
+			lineCount: 0,
+			paused: false,
+			sizeLimitReached: false,
+		};
+		captures.set(id, capture);
+		writeLine(capture, { ts: Date.now(), role: "system", event: "start", cwd });
+		console.log(`[SessionWriter] Started capture for ${id} (sync fallback)`);
+	}
 }
 
 export function captureInput(id: string, data: string): void {
@@ -183,29 +273,37 @@ export function captureInput(id: string, data: string): void {
 		capture.inputBuffer.includes("\n") ||
 		capture.inputBuffer.includes("\r")
 	) {
-		flushInput(capture);
+		flushInput(capture, id);
 		return;
 	}
 
 	// Debounce: flush after 2s of no input
 	if (capture.inputTimer) clearTimeout(capture.inputTimer);
-	capture.inputTimer = setTimeout(() => flushInput(capture), 2000);
+	capture.inputTimer = setTimeout(() => flushInput(capture, id), 2000);
 }
 
-function flushInput(capture: ActiveCapture): void {
+function flushInput(capture: ActiveCapture, id?: string): void {
 	if (capture.inputTimer) {
 		clearTimeout(capture.inputTimer);
 		capture.inputTimer = null;
 	}
 	if (!capture.inputBuffer) return;
 
-	const clean = sanitizeSecrets(stripAnsi(capture.inputBuffer).trim());
-	if (clean) {
-		writeLine(capture, {
-			ts: Date.now(),
+	const sessionId = id ?? findCaptureId(capture);
+	const worker = getWorker();
+	if (worker && sessionId) {
+		worker.postMessage({
+			type: "flush",
+			sessionId,
 			role: "input",
-			data: clean,
+			buffer: capture.inputBuffer,
+			ts: Date.now(),
 		});
+	} else {
+		const clean = sanitizeSecrets(stripAnsi(capture.inputBuffer).trim());
+		if (clean) {
+			writeLine(capture, { ts: Date.now(), role: "input", data: clean });
+		}
 	}
 	capture.inputBuffer = "";
 }
@@ -237,28 +335,36 @@ export function captureOutput(id: string, data: string): void {
 
 	// Flush every 500ms or 2KB
 	if (capture.outputBuffer.length >= 2048) {
-		flushOutput(capture);
+		flushOutput(capture, id);
 		return;
 	}
 
 	if (capture.outputTimer) clearTimeout(capture.outputTimer);
-	capture.outputTimer = setTimeout(() => flushOutput(capture), 500);
+	capture.outputTimer = setTimeout(() => flushOutput(capture, id), 500);
 }
 
-function flushOutput(capture: ActiveCapture): void {
+function flushOutput(capture: ActiveCapture, id?: string): void {
 	if (capture.outputTimer) {
 		clearTimeout(capture.outputTimer);
 		capture.outputTimer = null;
 	}
 	if (!capture.outputBuffer) return;
 
-	const clean = sanitizeSecrets(stripAnsi(capture.outputBuffer));
-	if (clean.trim()) {
-		writeLine(capture, {
-			ts: Date.now(),
+	const sessionId = id ?? findCaptureId(capture);
+	const worker = getWorker();
+	if (worker && sessionId) {
+		worker.postMessage({
+			type: "flush",
+			sessionId,
 			role: "output",
-			data: clean,
+			buffer: capture.outputBuffer,
+			ts: Date.now(),
 		});
+	} else {
+		const clean = sanitizeSecrets(stripAnsi(capture.outputBuffer));
+		if (clean.trim()) {
+			writeLine(capture, { ts: Date.now(), role: "output", data: clean });
+		}
 	}
 	capture.outputBuffer = "";
 }
@@ -267,23 +373,29 @@ export function endSessionCapture(id: string): void {
 	const capture = captures.get(id);
 	if (!capture) return;
 
-	// Flush remaining buffers
-	flushInput(capture);
-	flushOutput(capture);
+	if (capture.outputTimer) clearTimeout(capture.outputTimer);
+	if (capture.inputTimer) clearTimeout(capture.inputTimer);
 
-	writeLine(capture, {
+	// Flush remaining buffers
+	if (capture.outputBuffer) flushOutput(capture, id);
+	if (capture.inputBuffer) flushInput(capture, id);
+
+	const endObj = {
 		ts: Date.now(),
 		role: "system",
 		event: "end",
 		lines: capture.lineCount,
-	});
-
-	capture.stream.end();
+	};
+	const worker = getWorker();
+	if (worker) {
+		worker.postMessage({ type: "close", sessionId: id, endObj });
+	} else {
+		writeLine(capture, endObj);
+		capture.stream?.end();
+	}
 	captures.delete(id);
 
-	console.log(
-		`[SessionWriter] Ended capture for ${id} (${capture.lineCount} lines)`,
-	);
+	console.log(`[SessionWriter] Ended capture for ${id}`);
 }
 
 // ── Session listing/reading for API ──

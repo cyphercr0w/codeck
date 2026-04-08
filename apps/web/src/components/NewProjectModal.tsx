@@ -24,12 +24,7 @@ interface NewProjectModalProps {
 }
 
 /** Known safe flags that users can type in the params input */
-const ALLOWED_FLAGS = new Set([
-	"--resume",
-	"--continue",
-	"--verbose",
-	"--debug",
-]);
+const ALLOWED_FLAGS = new Set(["--resume", "--verbose", "--debug"]);
 
 /** Flags blocked by the backend — shown as error if user types them */
 const BLOCKED_FLAGS = new Set([
@@ -48,12 +43,10 @@ const BLOCKED_FLAGS = new Set([
 /** Parse params string (without "claude" prefix) and return which flags are active. */
 function parseCommandFlags(params: string): {
 	resume: boolean;
-	continueFlag: boolean;
 } {
 	const tokens = params.trim().split(/\s+/).filter(Boolean);
 	return {
 		resume: tokens.includes("--resume"),
-		continueFlag: tokens.includes("--continue"),
 	};
 }
 
@@ -72,7 +65,6 @@ const PREFS_KEY_PREFIX = "codeck_launch_prefs_";
 
 function loadLaunchPrefs(dir: string): {
 	resume: boolean;
-	continue_: boolean;
 	teams: boolean;
 	maxTeammates: number;
 } {
@@ -80,14 +72,13 @@ function loadLaunchPrefs(dir: string): {
 		const raw = localStorage.getItem(PREFS_KEY_PREFIX + dir);
 		if (raw) return JSON.parse(raw);
 	} catch {}
-	return { resume: false, continue_: false, teams: false, maxTeammates: 3 };
+	return { resume: false, teams: false, maxTeammates: 3 };
 }
 
 function saveLaunchPrefs(
 	dir: string,
 	prefs: {
 		resume: boolean;
-		continue_: boolean;
 		teams: boolean;
 		maxTeammates: number;
 	},
@@ -277,7 +268,6 @@ export function NewProjectModal({
 		const prefs = loadLaunchPrefs(dir);
 		let initialParams = "";
 		if (prefs.resume) initialParams += " --resume";
-		if (prefs.continue_) initialParams += " --continue";
 		setTeamsEnabled(prefs.teams ?? false);
 		setMaxTeammates(prefs.maxTeammates ?? 3);
 		setParams(initialParams.trim());
@@ -357,7 +347,6 @@ export function NewProjectModal({
 		const currentFlags = parseCommandFlags(params);
 		saveLaunchPrefs(resolvedDir, {
 			resume: currentFlags.resume,
-			continue_: currentFlags.continueFlag,
 			teams: teamsEnabled,
 			maxTeammates,
 		});
@@ -388,11 +377,7 @@ export function NewProjectModal({
 	const flags = parseCommandFlags(params);
 
 	function handleResumeToggle(checked: boolean) {
-		setParams(toggleFlag(params, "--resume", checked, ["--continue"]));
-	}
-
-	function handleContinueToggle(checked: boolean) {
-		setParams(toggleFlag(params, "--continue", checked, ["--resume"]));
+		setParams(toggleFlag(params, "--resume", checked));
 	}
 
 	function handleParamsInput(value: string) {
@@ -712,19 +697,6 @@ export function NewProjectModal({
 											/>
 											<span>Resume previous conversation</span>
 											<span class="npm-flag">--resume</span>
-										</label>
-										<label class="npm-checkbox">
-											<input
-												type="checkbox"
-												checked={flags.continueFlag}
-												onChange={(e) =>
-													handleContinueToggle(
-														(e.target as HTMLInputElement).checked,
-													)
-												}
-											/>
-											<span>Continue most recent conversation</span>
-											<span class="npm-flag">--continue</span>
 										</label>
 									</div>
 								</>

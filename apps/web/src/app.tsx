@@ -629,10 +629,9 @@ export function App() {
 		// Parse flags from the command string
 		const tokens = options.command.trim().split(/\s+/);
 		const hasResume = tokens.includes("--resume");
-		const hasContinue = tokens.includes("--continue");
 
 		// Collect extra args (anything beyond "claude" and known flags)
-		const knownFlags = new Set(["claude", "--resume", "--continue"]);
+		const knownFlags = new Set(["claude", "--resume"]);
 		const extraArgs: string[] = [];
 		for (let i = 0; i < tokens.length; i++) {
 			const t = tokens[i];
@@ -660,8 +659,7 @@ export function App() {
 				method: "POST",
 				body: JSON.stringify({
 					cwd: dir,
-					resume: hasResume || hasContinue,
-					useContinue: hasContinue,
+					resume: hasResume,
 					enableTeams: options.enableTeams,
 					maxTeammates: options.maxTeammates,
 					extraArgs: extraArgs.length > 0 ? extraArgs : undefined,

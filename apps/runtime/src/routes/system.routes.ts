@@ -270,7 +270,7 @@ router.post("/token-settings", (req, res) => {
 				10,
 				Math.min(90, Number(body.compactionPct) || 50),
 			),
-			effortLevel: ["low", "medium", "high"].includes(body.effortLevel)
+			effortLevel: ["low", "medium", "high", "max"].includes(body.effortLevel)
 				? body.effortLevel
 				: "medium",
 			mcpDeferThreshold: Math.max(

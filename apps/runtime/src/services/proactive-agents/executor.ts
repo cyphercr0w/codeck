@@ -7,6 +7,7 @@ import { randomUUID } from "crypto";
 import { stripVTControlCharacters } from "util";
 import {
 	getValidAgentBinary,
+	getOAuthEnv,
 	ensureOnboardingComplete,
 	buildCleanEnv,
 } from "../claude-env.js";
@@ -78,6 +79,7 @@ export function executeAgent(agentId: string, deps: ExecutorDeps): void {
 	syncToClaudeSettings();
 
 	const binary = getValidAgentBinary();
+	const oauthEnv = getOAuthEnv();
 	const cleanEnv = buildCleanEnv();
 
 	// Load user env vars (API keys, tokens saved via Integrations UI)
@@ -117,9 +119,7 @@ export function executeAgent(agentId: string, deps: ExecutorDeps): void {
 		}
 	}
 
-	// OAuth token NOT injected — Claude CLI reads .credentials.json natively
-	// and handles its own token refresh via refreshToken.
-	const finalEnv = { ...cleanEnv, ...agentUserEnv, TERM: "dumb" };
+	const finalEnv = { ...cleanEnv, ...agentUserEnv, ...oauthEnv, TERM: "dumb" };
 
 	const prompt = runtime.config.objective;
 	const cwd = deps.resolveAgentCwd(runtime.config.cwd);

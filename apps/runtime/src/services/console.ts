@@ -37,6 +37,7 @@ import { startTeammateWatcher } from "./teammate-watcher.js";
 import {
 	getValidAgentBinary,
 	resolveAgentBinary,
+	getOAuthEnv,
 	ensureOnboardingComplete,
 	buildCleanEnv,
 	getAgentBinaryPath,
@@ -373,6 +374,8 @@ function _createConsoleSessionInner(
 	ensureOnboardingComplete();
 	syncToClaudeSettings();
 
+	const oauthEnv = getOAuthEnv();
+
 	// Load user env vars (API keys, tokens saved by the agent)
 	// Priority: encrypted .env.encrypted > plaintext .env (legacy)
 	const userEnv: Record<string, string> = {};
@@ -449,10 +452,7 @@ function _createConsoleSessionInner(
 	const finalEnv: Record<string, string> = {
 		...buildCleanEnv(),
 		...userEnv,
-		// OAuth token NOT injected as env var — Claude CLI reads .credentials.json
-		// natively and handles its own token refresh via refreshToken.
-		// Injecting a static CLAUDE_CODE_OAUTH_TOKEN causes 401s when the token
-		// expires because the env var is immutable for the PTY process lifetime.
+		...oauthEnv,
 		...(opts.extraEnv || {}),
 		TERM: "xterm-256color",
 		CLAUDE_AUTOCOMPACT_PCT_OVERRIDE:

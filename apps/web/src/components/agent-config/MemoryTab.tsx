@@ -63,7 +63,7 @@ interface MemoryTabProps {
 
 interface TokenSettings {
 	compactionPct: number;
-	effortLevel: "low" | "medium" | "high";
+	effortLevel: "low" | "medium" | "high" | "max";
 	mcpDeferThreshold: number;
 	thinkingTokens: number;
 }
@@ -175,7 +175,12 @@ function TokenOptimizationCard() {
 		marginTop: "2px",
 		lineHeight: "1.4",
 	};
-	const levels: Array<"low" | "medium" | "high"> = ["low", "medium", "high"];
+	const levels: Array<"low" | "medium" | "high" | "max"> = [
+		"low",
+		"medium",
+		"high",
+		"max",
+	];
 
 	return (
 		<div class="dash-card">
@@ -220,7 +225,8 @@ function TokenOptimizationCard() {
 						Default effort level
 					</div>
 					<div style={desc}>
-						Low = fast & cheap. Medium = balanced. High = thorough.
+						Low = fast & cheap. Medium = balanced. High = thorough. Max =
+						deepest reasoning.
 					</div>
 				</div>
 				<div style={ctrlCol}>
@@ -235,7 +241,11 @@ function TokenOptimizationCard() {
 									border: "1px solid var(--border)",
 									borderLeft: i === 0 ? "1px solid var(--border)" : "none",
 									borderRadius:
-										i === 0 ? "4px 0 0 4px" : i === 2 ? "0 4px 4px 0" : "0",
+										i === 0
+											? "4px 0 0 4px"
+											: i === levels.length - 1
+												? "0 4px 4px 0"
+												: "0",
 									background:
 										settings.effortLevel === l
 											? "var(--accent)"

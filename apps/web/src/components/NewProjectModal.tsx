@@ -150,6 +150,7 @@ export function NewProjectModal({
 	const [commandEditable, setCommandEditable] = useState(false);
 	const [teamsEnabled, setTeamsEnabled] = useState(false);
 	const [maxTeammates, setMaxTeammates] = useState(3);
+	const [dirFilter, setDirFilter] = useState("");
 
 	// The resolved directory path for step 2
 	const [resolvedDir, setResolvedDir] = useState("");
@@ -173,6 +174,7 @@ export function NewProjectModal({
 			setParams("");
 			setParamError("");
 			setCommandEditable(false);
+			setDirFilter("");
 			loadDirs();
 			checkSshStatus();
 
@@ -216,6 +218,7 @@ export function NewProjectModal({
 	useEffect(() => {
 		if (tab === "create") nameRef.current?.focus();
 		if (tab === "clone") urlRef.current?.focus();
+		setDirFilter("");
 	}, [tab]);
 
 	async function loadDirs() {
@@ -398,6 +401,13 @@ export function NewProjectModal({
 	}
 
 	const dirShortName = resolvedDir.split("/").pop() || resolvedDir;
+	const filteredDirs = dirFilter
+		? dirs.filter((d) =>
+				(d.split("/").pop() || "")
+					.toLowerCase()
+					.includes(dirFilter.toLowerCase()),
+			)
+		: dirs;
 
 	if (!visible) return null;
 
@@ -503,7 +513,20 @@ export function NewProjectModal({
 												<IconFolder size={14} />
 												<span>{ws} (default)</span>
 											</div>
-											{dirs.map((d) => (
+											{dirs.length > 3 && (
+												<div class="dir-search">
+													<input
+														type="text"
+														class="dir-search-input"
+														placeholder="Search folders..."
+														value={dirFilter}
+														onInput={(e) =>
+															setDirFilter((e.target as HTMLInputElement).value)
+														}
+													/>
+												</div>
+											)}
+											{filteredDirs.map((d) => (
 												<div
 													key={d}
 													class={`dir-item${selected === d ? " selected" : ""}`}
@@ -522,8 +545,12 @@ export function NewProjectModal({
 													<span>{d.split("/").pop()}</span>
 												</div>
 											))}
-											{dirs.length === 0 && (
-												<div class="npm-dirs-empty">No subfolders found</div>
+											{filteredDirs.length === 0 && (
+												<div class="npm-dirs-empty">
+													{dirFilter
+														? "No matching folders"
+														: "No subfolders found"}
+												</div>
 											)}
 										</>
 									)}

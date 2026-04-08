@@ -107,6 +107,7 @@ import {
 } from "../services/embeddings.js";
 import { cleanupOldSessions } from "../services/session-summarizer.js";
 import { asyncHandler } from "../utils/async-handler.js";
+import { ensurePlaywrightChrome } from "../services/playwright-screencast.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PORT = parseInt(process.env.CODECK_PORT || "80", 10);
@@ -754,6 +755,16 @@ export async function startWebServer(): Promise<void> {
 		);
 		startPortScanner();
 		startMdns();
+		ensurePlaywrightChrome()
+			.then(() => {
+				console.log("[Playwright] Shared Chrome ready on port 9222");
+			})
+			.catch((err: Error) => {
+				console.error(
+					"[Playwright] Failed to start shared Chrome:",
+					err.message,
+				);
+			});
 		initProactiveAgents(broadcast);
 		startTokenRefreshMonitor(broadcast);
 		initConsolidationCron();

@@ -25,6 +25,8 @@ import {
 	isMobile,
 	showToast,
 	addCloneProgress,
+	playwrightActive,
+	playwrightUrl,
 } from "./state/store";
 import { appendToAssistant, completeAssistant } from "./state/chat-store";
 import { apiFetch, getAuthToken } from "./api";
@@ -54,6 +56,9 @@ const KNOWN_MSG_TYPES = new Set([
 	"preview:navigate",
 	"preview:frame",
 	"preview:error",
+	"playwright:frame",
+	"playwright:navigate",
+	"playwright:stopped",
 	"session:conversationId",
 	"chat:response:chunk",
 	"chat:response:complete",
@@ -163,6 +168,18 @@ export function setPreviewFrameHandler(
 	handler: PreviewFrameHandler | null,
 ): void {
 	onPreviewFrame = handler;
+}
+
+// Playwright frame callback (CDP screencast from agent browser)
+type PlaywrightFrameHandler = (
+	data: string,
+	metadata: Record<string, unknown>,
+) => void;
+let onPlaywrightFrame: PlaywrightFrameHandler | null = null;
+export function setPlaywrightFrameHandler(
+	handler: PlaywrightFrameHandler | null,
+): void {
+	onPlaywrightFrame = handler;
 }
 
 type PreviewErrorHandler = (error: string, url: string) => void;
@@ -442,6 +459,24 @@ function openWs(wsUrl: string, protocols?: string[]): void {
 					((raw as any).error as string) || "Unknown error",
 					((raw as any).url as string) || "",
 				);
+			} else if (msg.type === "playwright:frame" && msg.data) {
+				onPlaywrightFrame?.(
+					msg.data as string,
+					((raw as any).metadata as Record<string, unknown>) || {},
+				);
+			} else if (msg.type === "playwright:navigate") {
+				playwrightActive.value = true;
+				playwrightUrl.value = ((raw as any).url as string) || "";
+				// Auto-open preview panel if not already showing
+				if (!isMobile.value && previewMode.value === "hidden") {
+					previewMode.value = "split";
+				}
+			} else if (msg.type === "playwright:stopped") {
+				playwrightActive.value = false;
+				// Auto-hide panel if no dev-server preview is active
+				if (!previewPort.value && previewMode.value === "split") {
+					previewMode.value = "hidden";
+				}
 			} else if (msg.type === "session:conversationId") {
 				const sid = msg.sessionId as string;
 				const convId = (raw as any).conversationId as string;

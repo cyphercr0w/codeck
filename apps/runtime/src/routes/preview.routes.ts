@@ -15,6 +15,11 @@ import {
 	injectKeyPress,
 	takeScreenshot,
 } from "../services/browser-preview.js";
+import {
+	startPlaywrightScreencast,
+	stopPlaywrightScreencast,
+	getPlaywrightScreencastState,
+} from "../services/playwright-screencast.js";
 import { DENIED_PORTS } from "./preview-proxy.js";
 import { asyncHandler } from "../utils/async-handler.js";
 
@@ -183,6 +188,27 @@ router.post("/navigate-to", (req, res) => {
 	});
 	res.json({ success: true });
 });
+
+// ── Playwright browser screencast ──────────────────────────────────
+router.get("/playwright/status", (_req, res) => {
+	res.json(getPlaywrightScreencastState());
+});
+
+router.post(
+	"/playwright/start",
+	asyncHandler(async (_req, res) => {
+		await startPlaywrightScreencast();
+		res.json({ success: true });
+	}),
+);
+
+router.post(
+	"/playwright/stop",
+	asyncHandler(async (_req, res) => {
+		await stopPlaywrightScreencast();
+		res.json({ success: true });
+	}),
+);
 
 // Screenshot (for agent use)
 router.get(

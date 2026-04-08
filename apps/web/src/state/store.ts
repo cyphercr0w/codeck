@@ -512,6 +512,10 @@ export interface SubagentInfo {
 
 export const activeSubagents = signal<SubagentInfo[]>([]);
 
+// Playwright agent browser preview (separate from dev-server preview)
+export const playwrightActive = signal<boolean>(false);
+export const playwrightUrl = signal<string>("");
+
 // ── Preview state — persisted in sessionStorage across F5 ──
 export type PreviewMode = "hidden" | "split" | "full-preview" | "full-terminal";
 

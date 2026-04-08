@@ -28,8 +28,10 @@ import {
 	previewMode,
 	previewPort,
 	mobilePreviewOpen,
+	playwrightActive,
 } from "../state/store";
 import { PreviewPanel } from "./PreviewPanel";
+import { PlaywrightPreview } from "./PlaywrightPreview";
 import { MobilePreviewSheet } from "./MobilePreviewSheet";
 import { apiFetch } from "../api";
 import {
@@ -615,6 +617,7 @@ export function ClaudeSection({
 	const pMode = previewMode.value;
 	const showPreviewSplit =
 		!mobile && pMode !== "hidden" && pMode !== "full-terminal";
+	const [previewTab, setPreviewTab] = useState<"site" | "agent">("site");
 
 	return (
 		<div class="content-section terminal-preview-layout">
@@ -990,7 +993,29 @@ export function ClaudeSection({
 							<IconX size={13} />
 						</button>
 					</div>
-					<PreviewPanel />
+					{playwrightActive.value && !previewPort.value ? (
+						<PlaywrightPreview />
+					) : !playwrightActive.value ? (
+						<PreviewPanel />
+					) : (
+						<>
+							<div class="preview-tabs">
+								<button
+									class={`preview-tab${previewTab === "site" ? " active" : ""}`}
+									onClick={() => setPreviewTab("site")}
+								>
+									Site Preview
+								</button>
+								<button
+									class={`preview-tab${previewTab === "agent" ? " active" : ""}`}
+									onClick={() => setPreviewTab("agent")}
+								>
+									Agent Browser
+								</button>
+							</div>
+							{previewTab === "site" ? <PreviewPanel /> : <PlaywrightPreview />}
+						</>
+					)}
 				</div>
 			)}
 			{mobile && <MobilePreviewSheet />}

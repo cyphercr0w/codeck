@@ -15,7 +15,12 @@
 		},
 		"playwright": {
 			"command": "npx",
-			"args": ["-y", "@playwright/mcp@latest", "--headless", "--no-sandbox"]
+			"args": [
+				"-y",
+				"@playwright/mcp@latest",
+				"--cdp-endpoint",
+				"http://localhost:9222"
+			]
 		},
 		"memory": {
 			"command": "npx",

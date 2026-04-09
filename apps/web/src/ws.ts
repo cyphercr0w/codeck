@@ -288,6 +288,20 @@ function openWs(wsUrl: string, protocols?: string[]): void {
 		pendingAttaches.clear();
 		// pendingInputs are flushed per-session inside attachSession()
 
+		// Restore playwright preview state after reconnect/refresh
+		apiFetch("/api/preview/playwright/status")
+			.then((r) => r.json())
+			.then((state: { active: boolean; url: string; streaming: boolean }) => {
+				if (state.active && state.url && state.url !== "about:blank") {
+					playwrightActive.value = true;
+					playwrightUrl.value = state.url;
+					if (!isMobile.value && previewMode.value === "hidden") {
+						previewMode.value = "split";
+					}
+				}
+			})
+			.catch(() => {});
+
 		// Stale connection detector
 		if (staleCheckTimer) clearInterval(staleCheckTimer);
 		staleCheckTimer = setInterval(() => {

@@ -79,22 +79,6 @@
 	"includeGitInstructions": false,
 	"enableAllProjectMcpServers": true,
 	"effortLevel": "high",
-	"sandbox": {
-		"enabled": true,
-		"enableWeakerNestedSandbox": true,
-		"allowUnsandboxedCommands": false,
-		"filesystem": {
-			"allowWrite": [
-				"/workspace/.codeck",
-				"/root/.claude",
-				"/tmp",
-				"/root/.npm",
-				"/root/.cache",
-				"/root/.local",
-				"/root/.config"
-			]
-		}
-	},
 	"attribution": {
 		"commit": "",
 		"pr": ""

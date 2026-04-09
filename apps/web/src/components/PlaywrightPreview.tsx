@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "preact/hooks";
 import { playwrightUrl, playwrightActive } from "../state/store";
 import { setPlaywrightFrameHandler } from "../ws";
+import { apiFetch } from "../api";
 import { IconX } from "./Icons";
 
 export function PlaywrightPreview() {
@@ -12,9 +13,21 @@ export function PlaywrightPreview() {
 		setPlaywrightFrameHandler((data) => {
 			if (imgRef.current) {
 				imgRef.current.src = "data:image/jpeg;base64," + data;
-				setHasFrame(true); // no-op after first call (React/Preact skips same-value setState)
+				setHasFrame(true);
 			}
 		});
+
+		// Fetch cached frame for late-joining clients (static pages don't emit new frames)
+		apiFetch("/api/preview/playwright/frame")
+			.then((r) => r.json())
+			.then((res: { data: string | null }) => {
+				if (res.data && imgRef.current) {
+					imgRef.current.src = "data:image/jpeg;base64," + res.data;
+					setHasFrame(true);
+				}
+			})
+			.catch(() => {});
+
 		return () => setPlaywrightFrameHandler(null);
 	}, []);
 

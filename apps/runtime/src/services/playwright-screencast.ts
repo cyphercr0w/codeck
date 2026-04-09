@@ -16,6 +16,7 @@ let cdpWs: WebSocket | null = null;
 let currentUrl = "";
 let streaming = false;
 let msgId = 1;
+let lastFrame: string | null = null; // Cache last JPEG base64 frame for late-joining clients
 interface PendingEntry {
 	resolve: (v: unknown) => void;
 	reject: (e: Error) => void;
@@ -123,6 +124,7 @@ async function connectCDP(): Promise<void> {
 				// Screencast frame event
 				if (msg.method === "Page.screencastFrame" && streaming) {
 					const { data: frameData, sessionId, metadata } = msg.params;
+					lastFrame = frameData;
 					broadcast({
 						type: "playwright:frame",
 						data: frameData,
@@ -240,6 +242,7 @@ export async function startPlaywrightScreencast(): Promise<void> {
 
 export async function stopPlaywrightScreencast(): Promise<void> {
 	streaming = false;
+	lastFrame = null;
 	try {
 		await cdpSend("Page.stopScreencast");
 	} catch {
@@ -259,9 +262,15 @@ export function getPlaywrightScreencastState(): {
 	};
 }
 
+/** Return the most recent cached frame (base64 JPEG) for late-joining clients. */
+export function getLastPlaywrightFrame(): string | null {
+	return lastFrame;
+}
+
 export async function closePlaywrightBrowser(): Promise<void> {
 	streaming = false;
 	currentUrl = "";
+	lastFrame = null;
 	if (cdpWs) {
 		try {
 			await cdpSend("Browser.close").catch(() => {});

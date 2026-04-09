@@ -19,6 +19,7 @@ import {
 	startPlaywrightScreencast,
 	stopPlaywrightScreencast,
 	getPlaywrightScreencastState,
+	getLastPlaywrightFrame,
 } from "../services/playwright-screencast.js";
 import { DENIED_PORTS } from "./preview-proxy.js";
 import { asyncHandler } from "../utils/async-handler.js";
@@ -209,6 +210,16 @@ router.post(
 		res.json({ success: true });
 	}),
 );
+
+// Last cached frame (for late-joining clients)
+router.get("/playwright/frame", (_req, res) => {
+	const frame = getLastPlaywrightFrame();
+	if (frame) {
+		res.json({ data: frame });
+	} else {
+		res.json({ data: null });
+	}
+});
 
 // Screenshot (for agent use)
 router.get(

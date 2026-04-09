@@ -1,29 +1,24 @@
-import { useEffect, useRef, useState } from "preact/hooks";
+import { useEffect, useState } from "preact/hooks";
 import { playwrightUrl, playwrightActive } from "../state/store";
 import { setPlaywrightFrameHandler } from "../ws";
 import { apiFetch } from "../api";
 import { IconX } from "./Icons";
 
 export function PlaywrightPreview() {
-	const imgRef = useRef<HTMLImageElement>(null);
-	const [hasFrame, setHasFrame] = useState(false);
+	const [frameSrc, setFrameSrc] = useState<string | null>(null);
 	const url = playwrightUrl.value;
 
 	useEffect(() => {
 		setPlaywrightFrameHandler((data) => {
-			if (imgRef.current) {
-				imgRef.current.src = "data:image/jpeg;base64," + data;
-				setHasFrame(true);
-			}
+			setFrameSrc("data:image/jpeg;base64," + data);
 		});
 
-		// Fetch cached frame for late-joining clients (static pages don't emit new frames)
+		// Fetch fresh screenshot for late-joining clients
 		apiFetch("/api/preview/playwright/frame")
 			.then((r) => r.json())
 			.then((res: { data: string | null }) => {
-				if (res.data && imgRef.current) {
-					imgRef.current.src = "data:image/jpeg;base64," + res.data;
-					setHasFrame(true);
+				if (res.data) {
+					setFrameSrc("data:image/jpeg;base64," + res.data);
 				}
 			})
 			.catch(() => {});
@@ -50,9 +45,13 @@ export function PlaywrightPreview() {
 					<IconX size={13} />
 				</button>
 			</div>
-			{hasFrame ? (
+			{frameSrc ? (
 				<div class="preview-viewport">
-					<img ref={imgRef} class="playwright-frame" alt="Agent browser view" />
+					<img
+						src={frameSrc}
+						class="playwright-frame"
+						alt="Agent browser view"
+					/>
 				</div>
 			) : (
 				<div class="playwright-placeholder">

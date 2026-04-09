@@ -27,6 +27,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     dnsutils \
     expect \
     tmux \
+    bubblewrap \
+    socat \
     dbus \
     dbus-x11 \
     gnome-keyring \

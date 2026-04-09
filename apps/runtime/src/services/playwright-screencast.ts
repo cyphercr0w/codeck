@@ -262,9 +262,70 @@ export function getPlaywrightScreencastState(): {
 	};
 }
 
-/** Return the most recent cached frame (base64 JPEG) for late-joining clients. */
-export function getLastPlaywrightFrame(): string | null {
-	return lastFrame;
+/**
+ * Take a fresh screenshot from the current CDP page target.
+ * Connects to the latest page target each time — immune to stale connections
+ * caused by Playwright MCP creating new contexts/pages.
+ */
+export async function capturePlaywrightFrame(): Promise<string | null> {
+	try {
+		const listRes = await fetch(`http://127.0.0.1:${CDP_PORT}/json/list`);
+		const targets = (await listRes.json()) as Array<{
+			type: string;
+			url: string;
+			webSocketDebuggerUrl: string;
+		}>;
+		const pageTarget = targets.find(
+			(t) => t.type === "page" && t.url !== "about:blank",
+		);
+		if (!pageTarget) return lastFrame;
+
+		// Update URL if it changed (Playwright navigated in a new context)
+		if (pageTarget.url !== currentUrl) {
+			currentUrl = pageTarget.url;
+			broadcast({ type: "playwright:navigate", url: currentUrl });
+		}
+
+		const wsUrl = pageTarget.webSocketDebuggerUrl;
+		const frame = await new Promise<string | null>((resolve) => {
+			const ws = new WebSocket(wsUrl);
+			let id = 1;
+			const timeout = setTimeout(() => {
+				ws.close();
+				resolve(lastFrame);
+			}, 5000);
+
+			ws.on("open", () => {
+				ws.send(
+					JSON.stringify({
+						id: id++,
+						method: "Page.captureScreenshot",
+						params: { format: "jpeg", quality: 70 },
+					}),
+				);
+			});
+			ws.on("message", (raw: Buffer) => {
+				try {
+					const msg = JSON.parse(raw.toString());
+					if (msg.result?.data) {
+						clearTimeout(timeout);
+						lastFrame = msg.result.data;
+						ws.close();
+						resolve(msg.result.data);
+					}
+				} catch {
+					/* */
+				}
+			});
+			ws.on("error", () => {
+				clearTimeout(timeout);
+				resolve(lastFrame);
+			});
+		});
+		return frame;
+	} catch {
+		return lastFrame;
+	}
 }
 
 export async function closePlaywrightBrowser(): Promise<void> {

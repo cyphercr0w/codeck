@@ -19,7 +19,7 @@ import {
 	startPlaywrightScreencast,
 	stopPlaywrightScreencast,
 	getPlaywrightScreencastState,
-	getLastPlaywrightFrame,
+	capturePlaywrightFrame,
 } from "../services/playwright-screencast.js";
 import { DENIED_PORTS } from "./preview-proxy.js";
 import { asyncHandler } from "../utils/async-handler.js";
@@ -211,15 +211,14 @@ router.post(
 	}),
 );
 
-// Last cached frame (for late-joining clients)
-router.get("/playwright/frame", (_req, res) => {
-	const frame = getLastPlaywrightFrame();
-	if (frame) {
+// Fresh screenshot from current page target (immune to stale CDP connections)
+router.get(
+	"/playwright/frame",
+	asyncHandler(async (_req, res) => {
+		const frame = await capturePlaywrightFrame();
 		res.json({ data: frame });
-	} else {
-		res.json({ data: null });
-	}
-});
+	}),
+);
 
 // Screenshot (for agent use)
 router.get(

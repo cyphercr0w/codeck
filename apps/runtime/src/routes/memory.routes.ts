@@ -181,17 +181,26 @@ router.get("/projects/:name", (req, res) => {
 
 // ── Status ──
 
-router.get("/status", asyncHandler(async (_req, res) => {
-	res.json(await getMemoryStatus());
-}));
+router.get(
+	"/status",
+	asyncHandler(async (_req, res) => {
+		res.json(await getMemoryStatus());
+	}),
+);
 
-router.get("/stats", asyncHandler(async (_req, res) => {
-	res.json(await getMemoryStats());
-}));
+router.get(
+	"/stats",
+	asyncHandler(async (_req, res) => {
+		res.json(await getMemoryStats());
+	}),
+);
 
-router.get("/files", asyncHandler(async (_req, res) => {
-	res.json({ files: await listMemoryFiles() });
-}));
+router.get(
+	"/files",
+	asyncHandler(async (_req, res) => {
+		res.json({ files: await listMemoryFiles() });
+	}),
+);
 
 // ── Durable Memory (MEMORY.md) ──
 
@@ -476,11 +485,9 @@ router.post(
 		if (rawScope && rawScope !== "global") {
 			const cleaned = sanitizePathId(rawScope);
 			if (!cleaned) {
-				res
-					.status(400)
-					.json({
-						error: 'Invalid scope: must be "global" or 12-char hex pathId',
-					});
+				res.status(400).json({
+					error: 'Invalid scope: must be "global" or 12-char hex pathId',
+				});
 				return;
 			}
 			scope = cleaned;
@@ -506,29 +513,38 @@ router.get("/flush/state", (_req, res) => {
 
 // ── Sessions ──
 
-router.get("/sessions", asyncHandler(async (_req, res) => {
-	res.json({ sessions: await listSessionFiles() });
-}));
+router.get(
+	"/sessions",
+	asyncHandler(async (_req, res) => {
+		res.json({ sessions: await listSessionFiles() });
+	}),
+);
 
-router.get("/sessions/:id", asyncHandler(async (req, res) => {
-	const id = req.params.id.replace(/[^a-zA-Z0-9_\-]/g, "");
-	const result = await readSessionTranscript(id);
-	if (!result.exists) {
-		res.status(404).json({ error: "Session not found" });
-		return;
-	}
-	res.json(result);
-}));
+router.get(
+	"/sessions/:id",
+	asyncHandler(async (req, res) => {
+		const id = req.params.id.replace(/[^a-zA-Z0-9_\-]/g, "");
+		const result = await readSessionTranscript(id);
+		if (!result.exists) {
+			res.status(404).json({ error: "Session not found" });
+			return;
+		}
+		res.json(result);
+	}),
+);
 
-router.get("/sessions/:id/summary", asyncHandler(async (req, res) => {
-	const id = req.params.id.replace(/[^a-zA-Z0-9_\-]/g, "");
-	const result = await getSessionSummary(id);
-	if (!result.exists) {
-		res.status(404).json({ error: "Session not found" });
-		return;
-	}
-	res.json(result.summary);
-}));
+router.get(
+	"/sessions/:id/summary",
+	asyncHandler(async (req, res) => {
+		const id = req.params.id.replace(/[^a-zA-Z0-9_\-]/g, "");
+		const result = await getSessionSummary(id);
+		if (!result.exists) {
+			res.status(404).json({ error: "Session not found" });
+			return;
+		}
+		res.json(result.summary);
+	}),
+);
 
 // ── Search ──
 
@@ -587,6 +603,42 @@ router.get("/search", (req, res) => {
 
 	const results = search(searchOpts);
 	res.json({ results, available: true, mode: "bm25" });
+});
+
+// GET /api/memory/search/compact — progressive disclosure: compact index format
+router.get("/search/compact", (req, res) => {
+	if (!isSearchAvailable()) {
+		res.json({ results: [], available: false, total: 0 });
+		return;
+	}
+	const q = req.query.q as string;
+	if (!q || q.length > 1000) {
+		res.status(400).json({ error: "Query required (max 1000 chars)" });
+		return;
+	}
+	const limit = Math.min(
+		Math.max(parseInt(req.query.limit as string, 10) || 20, 1),
+		100,
+	);
+	const scope = req.query.scope
+		? (req.query.scope as string).split(",")
+		: undefined;
+	const project = req.query.project as string | undefined;
+	const pathId = validPathId(req.query.pathId as string | undefined, res);
+	if (pathId === null) return;
+
+	const results = search({ query: q, scope, project, pathId, limit });
+
+	// Transform to compact format: id, snippet title, type, token estimate
+	const compact = results.map((r) => ({
+		chunk_id: r.rank ?? 0,
+		type: r.fileType,
+		title: r.snippet.slice(0, 120),
+		file: r.filePath,
+		token_estimate: Math.ceil(r.content.length / 4),
+	}));
+
+	res.json({ results: compact, total: compact.length, query: q });
 });
 
 router.get("/search/stats", (_req, res) => {
@@ -650,5 +702,9 @@ router.get("/context", (req, res) => {
 	const project = req.query.project as string | undefined;
 	res.json({ context: assembleContext(pathId || project) });
 });
+
+// ── Connectors sub-router ──
+import connectorsRouter from "./connectors.routes.js";
+router.use("/connectors", connectorsRouter);
 
 export default router;

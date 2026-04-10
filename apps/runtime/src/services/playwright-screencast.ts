@@ -17,6 +17,8 @@ let currentUrl = "";
 let streaming = false;
 let msgId = 1;
 let lastFrame: string | null = null; // Cache last JPEG base64 frame for late-joining clients
+let connectedTargetWsUrl: string | null = null;
+let targetPollInterval: ReturnType<typeof setInterval> | null = null;
 interface PendingEntry {
 	resolve: (v: unknown) => void;
 	reject: (e: Error) => void;
@@ -58,25 +60,20 @@ function cdpSend(
 	});
 }
 
-async function connectCDP(): Promise<void> {
-	const listRes = await fetch(`http://127.0.0.1:${CDP_PORT}/json/list`);
-	const targets = (await listRes.json()) as Array<{
-		type: string;
-		webSocketDebuggerUrl: string;
-	}>;
-	const pageTarget = targets.find((t) => t.type === "page");
-	if (!pageTarget) throw new Error("No page target found in Chrome");
-	const wsUrl = pageTarget.webSocketDebuggerUrl;
-
+function connectToWsUrl(wsUrl: string): Promise<void> {
 	return new Promise((resolve, reject) => {
-		cdpWs = new WebSocket(wsUrl);
-		cdpWs.on("open", () => resolve());
-		cdpWs.on("error", (err) => reject(err));
-		cdpWs.on("close", () => {
-			cdpWs = null;
-			streaming = false;
+		const ws = new WebSocket(wsUrl);
+		cdpWs = ws;
+		ws.on("open", () => resolve());
+		ws.on("error", (err) => reject(err));
+		ws.on("close", () => {
+			if (cdpWs === ws) {
+				cdpWs = null;
+				streaming = false;
+				connectedTargetWsUrl = null;
+			}
 		});
-		cdpWs.on("message", (raw: Buffer) => {
+		ws.on("message", (raw: Buffer) => {
 			try {
 				const msg = JSON.parse(raw.toString());
 
@@ -140,6 +137,86 @@ async function connectCDP(): Promise<void> {
 	});
 }
 
+async function connectCDP(): Promise<void> {
+	const listRes = await fetch(`http://127.0.0.1:${CDP_PORT}/json/list`);
+	const targets = (await listRes.json()) as Array<{
+		type: string;
+		webSocketDebuggerUrl: string;
+	}>;
+	const pageTarget = targets.find((t) => t.type === "page");
+	if (!pageTarget) throw new Error("No page target found in Chrome");
+	const wsUrl = pageTarget.webSocketDebuggerUrl;
+	connectedTargetWsUrl = wsUrl;
+	await connectToWsUrl(wsUrl);
+}
+
+let reconnecting = false;
+
+function startTargetPolling(): void {
+	if (targetPollInterval) return;
+	targetPollInterval = setInterval(async () => {
+		if (reconnecting) return;
+		try {
+			const listRes = await fetch(`http://127.0.0.1:${CDP_PORT}/json/list`);
+			const targets = (await listRes.json()) as Array<{
+				type: string;
+				url: string;
+				webSocketDebuggerUrl: string;
+			}>;
+			const activeTarget = targets.find(
+				(t) => t.type === "page" && t.url !== "about:blank",
+			);
+			if (
+				activeTarget &&
+				activeTarget.webSocketDebuggerUrl !== connectedTargetWsUrl
+			) {
+				reconnecting = true;
+				try {
+					// Close existing connection
+					if (cdpWs) {
+						streaming = false;
+						try {
+							cdpWs.close();
+						} catch {
+							/* */
+						}
+						cdpWs = null;
+					}
+					drainPending("Reconnecting to new target");
+
+					// Connect to new target
+					connectedTargetWsUrl = activeTarget.webSocketDebuggerUrl;
+					await connectToWsUrl(activeTarget.webSocketDebuggerUrl);
+					await cdpSend("Page.enable");
+
+					// Broadcast navigation and start screencast
+					currentUrl = activeTarget.url;
+					broadcast({ type: "playwright:navigate", url: currentUrl });
+					await cdpSend("Page.startScreencast", {
+						format: "jpeg",
+						quality: 60,
+						maxWidth: 1280,
+						maxHeight: 720,
+						everyNthFrame: 2,
+					});
+					streaming = true;
+				} finally {
+					reconnecting = false;
+				}
+			}
+		} catch {
+			/* Chrome not ready or transient failure */
+		}
+	}, 1500);
+}
+
+function stopTargetPolling(): void {
+	if (targetPollInterval) {
+		clearInterval(targetPollInterval);
+		targetPollInterval = null;
+	}
+}
+
 // ── Chrome lifecycle ──
 
 let ensureInProgress: Promise<void> | null = null;
@@ -170,6 +247,7 @@ async function _ensurePlaywrightChrome(): Promise<void> {
 	);
 
 	chromeProc.on("exit", () => {
+		stopTargetPolling();
 		chromeProc = null;
 		cdpWs = null;
 		streaming = false;
@@ -201,6 +279,7 @@ async function _ensurePlaywrightChrome(): Promise<void> {
 	// Enable page and network events for auto-detection
 	await cdpSend("Page.enable");
 	await cdpSend("Network.enable");
+	startTargetPolling();
 }
 
 // Cleanup on process exit — prevent orphaned Chrome
@@ -329,6 +408,7 @@ export async function capturePlaywrightFrame(): Promise<string | null> {
 }
 
 export async function closePlaywrightBrowser(): Promise<void> {
+	stopTargetPolling();
 	streaming = false;
 	currentUrl = "";
 	lastFrame = null;

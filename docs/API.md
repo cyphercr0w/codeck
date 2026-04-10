@@ -280,8 +280,34 @@ Full CRUD memory system with durable memory, daily journals, ADRs, path-scoped m
 | Method | Endpoint | Query | Response | Description |
 |--------|----------|-------|----------|-------------|
 | `GET` | `/api/memory/search` | `?q=&scope=&limit=&pathId=&mode=` | `{ results, available, mode }` | FTS5/hybrid search. Accessible from localhost without auth. |
+| `GET` | `/api/memory/search/compact` | `?q=&limit=&scope=&pathId=` | `{ results, total, query }` | Token-efficient compact index (~50 tokens/result). Use for progressive disclosure step 1. |
 | `GET` | `/api/memory/search/stats` | — | `{ available, fileCount, chunkCount, ... }` | Index statistics |
 | `POST` | `/api/memory/search/reindex` | — | `{ success, stats }` | Trigger full re-index (409 if in progress) |
+
+### Observations (Granular Tool Tracking)
+
+Per-tool-use observation capture inspired by claude-mem. Privacy: `<private>` tags stripped before storage.
+
+| Method | Endpoint | Body/Query | Response | Description |
+|--------|----------|------------|----------|-------------|
+| `POST` | `/api/observations/capture` | `{ session_id, tool, type?, title?, files?, concepts?, narrative? }` | `{ id }` | Capture observation (from PostToolUse hook) |
+| `GET` | `/api/observations/search` | `?query=&type=&limit=&offset=` | `{ results, total, query }` | Compact FTS5 search (~50 tokens/result) |
+| `GET` | `/api/observations/:id` | — | `Observation` | Full observation detail |
+| `POST` | `/api/observations/batch` | `{ ids: number[] }` | `{ observations }` | Batch fetch by IDs (max 100) |
+| `GET` | `/api/observations/stats` | — | `{ total, byType, available }` | Counts by type |
+| `GET` | `/api/observations` | `?type=&limit=&offset=&since=` | `{ observations }` | List recent (compact) |
+
+Types: `feature`, `bugfix`, `discovery`, `decision`, `change`
+
+### Memory Connectors
+
+Sync between memory stores (markdown files, daily logs, SQLite index).
+
+| Method | Endpoint | Response | Description |
+|--------|----------|----------|-------------|
+| `GET` | `/api/memory/connectors` | `{ connectors: ConnectorConfig[] }` | List connector status |
+| `POST` | `/api/memory/connectors/sync` | `{ results: SyncResult[] }` | Sync all enabled connectors |
+| `POST` | `/api/memory/connectors/:name/sync` | `SyncResult` | Sync specific connector |
 
 ### Context & Flush
 

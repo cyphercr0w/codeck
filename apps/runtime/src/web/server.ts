@@ -74,9 +74,18 @@ import {
 	shutdownIndexer,
 } from "../services/memory-indexer.js";
 import { initializeSearch, shutdownSearch } from "../services/memory-search.js";
+import {
+	initializeObservations,
+	shutdownObservations,
+} from "../services/observations.js";
+import {
+	initializeConnectors,
+	shutdownConnectors,
+} from "../services/memory-connectors.js";
 import consoleRoutes from "../routes/console.routes.js";
 import presetRoutes from "../routes/preset.routes.js";
 import memoryRoutes from "../routes/memory.routes.js";
+import observationsRoutes from "../routes/observations.routes.js";
 import projectRoutes from "../routes/project.routes.js";
 import workspaceRoutes from "../routes/workspace.routes.js";
 import dashboardRoutes from "../routes/dashboard.routes.js";
@@ -607,6 +616,7 @@ export async function startWebServer(): Promise<void> {
 	app.use("/api/console", consoleRoutes);
 	app.use("/api/presets", presetRoutes);
 	app.use("/api/memory", memoryRoutes);
+	app.use("/api/observations", observationsRoutes);
 	app.use("/api/projects", projectRoutes);
 	app.use("/api/workspace", workspaceRoutes);
 	app.use("/api/dashboard", dashboardRoutes);
@@ -698,6 +708,8 @@ export async function startWebServer(): Promise<void> {
 		shutdownConsolidationCron();
 		shutdownEmbeddings();
 		shutdownSearch();
+		shutdownObservations();
+		shutdownConnectors();
 		shutdownIndexer();
 		stopMdns();
 		stopPortScanner();
@@ -751,7 +763,11 @@ export async function startWebServer(): Promise<void> {
 				);
 			});
 		initializeEmbeddings().then(() =>
-			initializeIndexer().then(() => initializeSearch()),
+			initializeIndexer().then(() => {
+				initializeSearch();
+				initializeObservations();
+				initializeConnectors();
+			}),
 		);
 		startPortScanner();
 		startMdns();

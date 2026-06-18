@@ -61,7 +61,8 @@ Manages Claude CLI authentication via manual OAuth PKCE flow.
 | `getLoginState` | `(): LoginState` | Returns current login state, cleans stale logins (>5min) |
 | `startClaudeLogin` | `(callbacks): Promise<LoginResult>` | Generates PKCE values, builds OAuth URL |
 | `cancelLogin` | `(): void` | Resets login state |
-| `sendLoginCode` | `(code): Promise<SendCodeResult>` | Exchanges auth code for token, handles multiple code formats |
+| `sendLoginCode` | `(code): Promise<SendCodeResult>` | Exchanges auth code for token (default account), handles multiple code formats |
+| `exchangeLoginCodeForAccount` | `(code): Promise<AccountExchangeResult>` | Exchanges the code but returns `{ token, refreshToken, accountInfo, expiresIn }` WITHOUT saving — used by the multi-account add flow |
 | `getAccountInfo` | `(): AccountInfo \| null` | Reads account info from .credentials.json |
 | `getClaudeStatus` | `(): ClaudeStatus` | Composite: installed, authenticated, loginState, accountInfo |
 | `startTokenRefreshMonitor` | `(): void` | Background interval checking token expiry |
@@ -80,6 +81,44 @@ Manages Claude CLI authentication via manual OAuth PKCE flow.
 - Direct token: `sk-ant-oat01-...` (saved directly, no exchange)
 - Code with state: `abc123#state456` (extracts before `#`)
 - Full URL: `https://...?code=abc123&state=...` (extracts `code` param)
+
+---
+
+## `services/accounts.ts` — Multi-account registry
+
+Registry + per-account session wiring for connecting more than one Claude
+account. The default/first account keeps the legacy `~/.claude` layout (no
+`CLAUDE_CONFIG_DIR`); additional accounts get isolated config dirs under
+`/workspace/.codeck/accounts/<uuid>/`. The registry (`/workspace/.codeck/accounts.json`,
+mode 0600) holds metadata only — credentials live inside each account's config
+dir (see `auth-anthropic/account-store.ts`).
+
+### Exports
+
+| Function | Signature | Description |
+|----------|-----------|-------------|
+| `listAccounts` | `(): AccountMeta[]` | All accounts (surfaces the legacy account if the registry is empty but one is connected) |
+| `listPublicAccounts` | `(): PublicAccount[]` | Token-free view for API/WS payloads (adds `hasToken`) |
+| `getAccount` / `getDefaultAccount` | `(uuid?)` | Lookup helpers |
+| `getDefaultAccountUuid` | `(): string \| null` | Default account uuid |
+| `resolveAccountForSession` | `(uuid?): AccountMeta` | Resolve which account a session runs under (falls back to default) |
+| `getAccountPaths` | `(account): AccountPaths` | Derived credential/projects/settings paths; `setConfigDirEnv` is false for the default account |
+| `getAccountSessionEnv` | `(account): Record<string,string>` | OAuth env for a session: default → `getOAuthEnv()`; additional → `CLAUDE_CONFIG_DIR` (+ token) |
+| `prepareAccountConfigDir` | `(account): void` | Ensures dir + onboarding (`ensureOnboardingComplete`) + permissions (`syncToClaudeSettings`) target the account's config dir |
+| `hasValidToken` | `(account): boolean` | Whether the account has a valid/refreshable token |
+| `completeAccountLogin` | `(token, refreshToken, accountInfo, expiresIn?): AccountMeta` | Persist a freshly-exchanged login (default re-login → `~/.claude`; else isolated dir) |
+| `renameAccount` / `setDefaultAccount` / `removeAccount` | `(uuid, ...)` | Registry mutations |
+| `migrateExistingAccountIfNeeded` | `(): void` | One-time: seeds the registry from a pre-existing `~/.claude` account |
+| `startAccountsRefreshMonitor` | `(): void` | 5-min interval refreshing additional accounts' tokens (default handled by token-manager) |
+
+## `services/auth-anthropic/account-store.ts` — Per-config-dir credentials
+
+Reads/writes/refreshes the CLI-compatible plaintext `.credentials.json`
+(+ encrypted backup) for an arbitrary `CLAUDE_CONFIG_DIR`, reusing the shared
+AES-256-GCM helpers. Keeps the single-account `token-manager.ts` flow untouched.
+Key exports: `readAccountCredentials`, `writeAccountCredentials`,
+`getAccountToken`, `accountHasUsableToken`, `refreshAccountToken`,
+`accountTokenTimeUntilExpiry`, `readAccountInfo`.
 
 ---
 
@@ -118,7 +157,7 @@ Manages which Claude CLI tool permissions are pre-allowed and MCP server permiss
 | `getMcpPermissions` | `(): McpPermissions` | Read MCP server allowed/denied state |
 | `setMcpPermission` | `(name, allowed): McpPermissions` | Set MCP server permission |
 | `getDenyRules` | `(): DenyRule[]` | Read deny rules |
-| `syncToClaudeSettings` | `(): void` | Write all permissions to `~/.claude/settings.json` |
+| `syncToClaudeSettings` | `(settingsFile?): void` | Write all permissions to the given settings file (defaults to `~/.claude/settings.json`; per-account dir for additional accounts) |
 
 ### Permission names
 
@@ -151,7 +190,8 @@ Manages Claude CLI interactive pseudo-terminal sessions via node-pty.
 | `markSessionAttached` | `(id): string[]` | Mark attached, return buffered output |
 | `renameSession` | `(id, name): boolean` | Rename session |
 | `listSessions` | `(): SessionInfo[]` | List all sessions |
-| `hasResumableConversations` | `(cwd): boolean` | Check for resumable sessions |
+| `hasResumableConversations` | `(cwd, accountUuid?): boolean` | Check for resumable sessions in the account's projects dir |
+| `countSessionsForAccount` | `(accountUuid): number` | Live sessions running under an account (blocks account removal) |
 | `saveSessionState` | `(reason, prompt?): SessionsState` | Save sessions for auto-restore |
 | `hasSavedSessions` | `(): boolean` | Check saved sessions exist |
 | `restoreSavedSessions` | `(): SessionInfo[]` | Restore from disk |
@@ -161,12 +201,12 @@ Manages Claude CLI interactive pseudo-terminal sessions via node-pty.
 
 ### Session creation flow
 
-1. `getOAuthEnv()` — reads token from `.credentials.json`
-2. `ensureOnboardingComplete()` — writes onboarding flags to `/root/.claude.json`
-3. `setupLanguageRules(cwd)` — detects project language from indicator files and symlinks the matching ruleset from `/workspace/.codeck/rules-library/` into `~/.claude/rules/`
-4. `syncToClaudeSettings()` — writes enabled permissions to `settings.json`
-4. Build clean env: strip `NODE_ENV`, `PORT`, etc.; inject OAuth token + `TERM=xterm-256color`
-5. `pty.spawn('claude', [--resume?], { name: 'xterm-256color', cols: 120, rows: 30, cwd, env })`
+1. `resolveAccountForSession(opts.accountUuid)` — pick the account (default if unset)
+2. `prepareAccountConfigDir(account)` — onboarding + permission sync targeting that account's config dir
+3. `getAccountSessionEnv(account)` — OAuth token (+ `CLAUDE_CONFIG_DIR` for non-default accounts)
+4. `setupLanguageRules(cwd)` — detects project language from indicator files and symlinks the matching ruleset from `/workspace/.codeck/rules-library/` into `~/.claude/rules/`
+5. Build clean env: strip `NODE_ENV`, `PORT`, etc.; inject OAuth env + `TERM=xterm-256color`
+6. `pty.spawn('claude', [--resume?], { name: 'xterm-256color', cols: 120, rows: 30, cwd, env })`
 6. Output buffered in `session.outputBuffer[]` (1MB cap, FIFO) until WS client attaches
 7. Transcript capture starts via `session-writer.ts`
 
@@ -183,8 +223,12 @@ Manages Claude CLI interactive pseudo-terminal sessions via node-pty.
   outputBuffer: string[];  // Buffered output before attach
   outputBufferSize: number;
   attached: boolean;       // WebSocket client connected?
+  accountUuid?: string;    // Which Claude account this session runs under
+  accountEmail?: string | null;
 }
 ```
+
+`CreateSessionOptions` accepts `accountUuid?` to select the account.
 
 ---
 
@@ -230,7 +274,7 @@ Extracted from `console.ts` for reuse by `proactive-agents.ts`.
 | `getAgentBinaryPath` | `(): string` | Get cached binary path |
 | `setAgentBinaryPath` | `(path): void` | Update cached path |
 | `getOAuthEnv` | `(): Record<string, string>` | Read OAuth token from credentials |
-| `ensureOnboardingComplete` | `(): void` | Write onboarding flags to `.claude.json` |
+| `ensureOnboardingComplete` | `(configFile?): void` | Write onboarding flags to the given `.claude.json` (defaults to `~/.claude.json`; per-account dir for additional accounts) |
 | `buildCleanEnv` | `(): Record<string, string>` | Build env without Codeck-specific vars |
 
 ---

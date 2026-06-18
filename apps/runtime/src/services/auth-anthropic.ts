@@ -626,6 +626,127 @@ export async function sendLoginCode(code: string): Promise<SendCodeResult> {
 	}
 }
 
+// ============ Add-Account Exchange ============
+
+export interface AccountExchangeResult {
+	success: boolean;
+	error?: string;
+	token?: string;
+	refreshToken?: string;
+	accountInfo?: AccountInfo;
+	expiresIn?: number;
+}
+
+/**
+ * Exchange an authorization code for a token WITHOUT persisting it to the
+ * default ~/.claude credentials. Used by the multi-account "add account" flow,
+ * which routes the result into the correct (possibly isolated) config dir.
+ * Reuses the in-flight PKCE state started by startClaudeLogin().
+ */
+export async function exchangeLoginCodeForAccount(
+	code: string,
+): Promise<AccountExchangeResult> {
+	let cleanCode = code.trim();
+
+	if (cleanCode.includes("#")) {
+		const [codeOnly, returnedState] = cleanCode.split("#");
+		if (currentState && returnedState && returnedState !== currentState) {
+			return { success: false, error: "State mismatch — possible CSRF. Login again." };
+		}
+		cleanCode = codeOnly;
+	}
+	if (cleanCode.includes("&")) cleanCode = cleanCode.split("&")[0];
+	if (cleanCode.startsWith("http")) {
+		try {
+			const codeParam = new URL(cleanCode).searchParams.get("code");
+			if (codeParam) cleanCode = codeParam;
+		} catch {
+			/* not a URL */
+		}
+	}
+
+	// Direct OAuth token — no account metadata available
+	if (cleanCode.startsWith("sk-ant-oat01-")) {
+		cleanupLogin();
+		return {
+			success: true,
+			token: cleanCode,
+			refreshToken: "",
+			accountInfo: {
+				email: null,
+				accountUuid: null,
+				organizationName: null,
+				organizationUuid: null,
+			},
+		};
+	}
+
+	if (!currentCodeVerifier) {
+		return { success: false, error: 'Login session expired. Click "Add account" again.' };
+	}
+
+	try {
+		const response = await fetch(OAUTH_TOKEN_URL, {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({
+				grant_type: "authorization_code",
+				code: cleanCode,
+				redirect_uri: OAUTH_REDIRECT_URI,
+				client_id: OAUTH_CLIENT_ID,
+				code_verifier: currentCodeVerifier,
+				state: currentState,
+			}),
+		});
+
+		const responseText = await response.text();
+		if (!response.ok) {
+			cleanupLogin();
+			return {
+				success: false,
+				error: `Error exchanging code (${response.status}). Add account again to get a new code.`,
+			};
+		}
+
+		let tokenData: {
+			access_token?: string;
+			refresh_token?: string;
+			expires_in?: number;
+			error?: string;
+			account?: { email_address?: string; uuid?: string };
+			organization?: { name?: string; uuid?: string };
+		};
+		try {
+			tokenData = JSON.parse(responseText);
+		} catch {
+			return { success: false, error: "Invalid response from OAuth server." };
+		}
+
+		if (tokenData.error || !tokenData.access_token) {
+			cleanupLogin();
+			return { success: false, error: `OAuth error: ${tokenData.error || "no token"}. Add account again.` };
+		}
+
+		const accountInfo: AccountInfo = {
+			email: tokenData.account?.email_address || null,
+			accountUuid: tokenData.account?.uuid || null,
+			organizationName: tokenData.organization?.name || null,
+			organizationUuid: tokenData.organization?.uuid || null,
+		};
+		cleanupLogin();
+		return {
+			success: true,
+			token: tokenData.access_token,
+			refreshToken: tokenData.refresh_token || "",
+			accountInfo,
+			expiresIn: tokenData.expires_in,
+		};
+	} catch (e) {
+		cleanupLogin();
+		return { success: false, error: `Network error: ${(e as Error).message}. Add account again.` };
+	}
+}
+
 // ============ Logout ============
 
 /** Full Claude logout: clear all auth state (tokens, caches, monitors) but keep workspace data. */

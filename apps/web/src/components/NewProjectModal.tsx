@@ -6,6 +6,8 @@ import {
 	setActiveSection,
 	cloneProgress,
 	clearCloneProgress,
+	accounts,
+	defaultAccountUuid,
 } from "../state/store";
 import { IconFolder, IconPlus, IconGithub, IconChevronLeft } from "./Icons";
 
@@ -19,7 +21,12 @@ interface NewProjectModalProps {
 	onCancel: () => void;
 	onConfirm: (
 		dir: string,
-		options: { command: string; enableTeams: boolean; maxTeammates: number },
+		options: {
+			command: string;
+			enableTeams: boolean;
+			maxTeammates: number;
+			accountUuid?: string;
+		},
 	) => void;
 }
 
@@ -67,6 +74,7 @@ function loadLaunchPrefs(dir: string): {
 	resume: boolean;
 	teams: boolean;
 	maxTeammates: number;
+	accountUuid?: string;
 } {
 	try {
 		const raw = localStorage.getItem(PREFS_KEY_PREFIX + dir);
@@ -81,6 +89,7 @@ function saveLaunchPrefs(
 		resume: boolean;
 		teams: boolean;
 		maxTeammates: number;
+		accountUuid?: string;
 	},
 ): void {
 	try {
@@ -142,6 +151,21 @@ export function NewProjectModal({
 	const [teamsEnabled, setTeamsEnabled] = useState(false);
 	const [maxTeammates, setMaxTeammates] = useState(3);
 	const [dirFilter, setDirFilter] = useState("");
+	const [selectedAccount, setSelectedAccount] = useState("");
+	const accountList = accounts.value;
+
+	/** Pick the account to preselect for a folder: last used → global default → first. */
+	function resolveInitialAccount(dir: string): string {
+		const prefs = loadLaunchPrefs(dir);
+		const all = accounts.value;
+		if (prefs.accountUuid && all.some((a) => a.uuid === prefs.accountUuid)) {
+			return prefs.accountUuid;
+		}
+		if (defaultAccountUuid.value && all.some((a) => a.uuid === defaultAccountUuid.value)) {
+			return defaultAccountUuid.value;
+		}
+		return all[0]?.uuid || "";
+	}
 
 	// The resolved directory path for step 2
 	const [resolvedDir, setResolvedDir] = useState("");
@@ -172,8 +196,10 @@ export function NewProjectModal({
 			// If initialDir provided, skip to step 2 directly
 			if (initialDir) {
 				setResolvedDir(initialDir);
+				const acct = resolveInitialAccount(initialDir);
+				setSelectedAccount(acct);
 				setStep(2);
-				checkConversations(initialDir);
+				checkConversations(initialDir, acct);
 			} else {
 				setResolvedDir("");
 				setStep(1);
@@ -231,16 +257,25 @@ export function NewProjectModal({
 		}
 	}
 
-	async function checkConversations(cwd: string) {
+	async function checkConversations(cwd: string, accountUuid?: string) {
 		try {
+			const acctParam = accountUuid
+				? `&accountUuid=${encodeURIComponent(accountUuid)}`
+				: "";
 			const res = await apiFetch(
-				`/api/console/has-conversations?cwd=${encodeURIComponent(cwd)}`,
+				`/api/console/has-conversations?cwd=${encodeURIComponent(cwd)}${acctParam}`,
 			);
 			const data = await res.json();
 			setCanResume(!!data.hasConversations);
 		} catch {
 			setCanResume(false);
 		}
+	}
+
+	/** Switch account in step 2 and re-check resumable conversations for it. */
+	function handleAccountChange(uuid: string) {
+		setSelectedAccount(uuid);
+		if (resolvedDir) checkConversations(resolvedDir, uuid);
 	}
 
 	function selectDir(dir: string) {
@@ -273,7 +308,9 @@ export function NewProjectModal({
 		setParams(initialParams.trim());
 		setParamError("");
 		setCanResume(false);
-		await checkConversations(dir);
+		const acct = resolveInitialAccount(dir);
+		setSelectedAccount(acct);
+		await checkConversations(dir, acct);
 		setStep(2);
 	}
 
@@ -349,12 +386,14 @@ export function NewProjectModal({
 			resume: currentFlags.resume,
 			teams: teamsEnabled,
 			maxTeammates,
+			accountUuid: selectedAccount || undefined,
 		});
 		const fullCommand = params.trim() ? `claude ${params.trim()}` : "claude";
 		onConfirm(resolvedDir, {
 			command: fullCommand,
 			enableTeams: teamsEnabled,
 			maxTeammates,
+			accountUuid: selectedAccount || undefined,
 		});
 	}
 
@@ -680,6 +719,35 @@ export function NewProjectModal({
 						{/* Launch options */}
 						<div class="npm-launch-options">
 							<div class="npm-launch-title">Launch options</div>
+
+							{accountList.length > 1 && (
+								<>
+									<div class="npm-launch-subtitle">Account</div>
+									<select
+										class="input"
+										value={selectedAccount}
+										onChange={(e) =>
+											handleAccountChange(
+												(e.target as HTMLSelectElement).value,
+											)
+										}
+										style={{ marginBottom: "8px" }}
+										aria-label="Claude account"
+									>
+										{accountList.map((a) => (
+											<option
+												key={a.uuid}
+												value={a.uuid}
+												disabled={!a.hasToken}
+											>
+												{a.label}
+												{a.isDefault ? " (default)" : ""}
+												{a.hasToken ? "" : " — needs re-login"}
+											</option>
+										))}
+									</select>
+								</>
+							)}
 
 							{canResume && (
 								<>

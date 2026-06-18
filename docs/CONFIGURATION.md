@@ -72,7 +72,9 @@ Credential storage uses restrictive permissions:
 **Files:** 0600 (owner read/write only)
 - `/workspace/.codeck/auth.json` — Scrypt password hash and salt
 - `/workspace/.codeck/sessions.json` — Session tokens
-- `/root/.claude/.credentials.json` — Encrypted OAuth tokens
+- `/workspace/.codeck/accounts.json` — Multi-account registry (metadata only, no tokens)
+- `/workspace/.codeck/accounts/<uuid>/` — Isolated `CLAUDE_CONFIG_DIR` per additional account (credentials, projects, settings)
+- `/root/.claude/.credentials.json` — Encrypted OAuth tokens (default account)
 - `/root/.claude/.pkce-state.json` — PKCE flow state (ephemeral)
 - `/root/.ssh/id_ed25519` — SSH private key
 

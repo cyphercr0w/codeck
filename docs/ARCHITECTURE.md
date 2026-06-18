@@ -157,6 +157,7 @@ Each service is an ES module with pure functions (no classes). Mutable state is 
 |---------|------|-----------------|------------------|
 | `auth` | `services/auth.ts` | `activeSessions: Map<token, {createdAt}>` | `/workspace/.codeck/auth.json` (hash+salt+algo, mode 0600) |
 | `auth-anthropic` | `services/auth-anthropic.ts` | `loginState`, `authCache`, `currentCodeVerifier/State` | `/root/.claude/.credentials.json` (OAuth token, AES-256-GCM encrypted, mode 0600) |
+| `accounts` | `services/accounts.ts` | `migrated` flag, refresh interval | `/workspace/.codeck/accounts.json` (registry, mode 0600) + per-account dirs under `/workspace/.codeck/accounts/<uuid>/` |
 | `agent-usage` | `services/agent-usage.ts` | `cachedUsage` (60s TTL) | None (fetches from Anthropic API) |
 | `git` | `services/git.ts` | `gitHubConfig`, `sshTestCache`, CLI check caches | `/root/.ssh/*`, `/workspace/CLAUDE.md` (from template) |
 | `console` | `services/console.ts` | `sessions: Map<id, ConsoleSession>` | `/root/.claude.json` (onboarding flag) |
@@ -473,6 +474,37 @@ POST /api/cli-auth/:service/login
     → Polls /api/cli-auth/:service/status for completion
     → Service-specific success pattern detection
 ```
+
+### 5. Multi-account
+
+Codeck can connect more than one Claude account and run concurrent sessions
+under different accounts. Isolation is achieved with `CLAUDE_CONFIG_DIR`:
+
+- **Default / first account** keeps the legacy layout at `~/.claude` and never
+  sets `CLAUDE_CONFIG_DIR` (so `.claude.json` stays at `~/.claude.json`). Managed
+  by `auth-anthropic/token-manager.ts` exactly as before — zero behaviour change.
+- **Additional accounts** live in isolated dirs at
+  `/workspace/.codeck/accounts/<uuid>/`. Their sessions run with
+  `CLAUDE_CONFIG_DIR=<that dir>`, so credentials, `projects/` history,
+  `settings.json` and token refresh never collide between accounts.
+
+```
+accounts.json (registry, metadata only)
+    ├─ default  → configDir ~/.claude              (legacy, no CLAUDE_CONFIG_DIR)
+    └─ <uuid>   → configDir /workspace/.codeck/accounts/<uuid>  (CLAUDE_CONFIG_DIR set)
+
+POST /api/console/create { cwd, accountUuid? }
+    → resolveAccountForSession(accountUuid)
+    → prepareAccountConfigDir(account)   (onboarding + permissions in that dir)
+    → getAccountSessionEnv(account)      (token [+ CLAUDE_CONFIG_DIR])
+    → spawn claude PTY with that env
+```
+
+On startup, `migrateExistingAccountIfNeeded()` seeds the registry from any
+pre-existing `~/.claude` account, and `startAccountsRefreshMonitor()` keeps
+additional accounts' tokens fresh (the default account uses the legacy monitor).
+The account is chosen per session in the launch popup, and accounts are managed
+in **Settings → Accounts**. See `services/accounts.ts` in SERVICES.md.
 
 ---
 

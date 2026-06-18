@@ -19,7 +19,12 @@ import { promisify } from "util";
 
 const execFile = promisify(execFileCb);
 import { ACTIVE_AGENT } from "./agent.js";
-import { syncToClaudeSettings } from "./permissions.js";
+import {
+	resolveAccountForSession,
+	getAccountSessionEnv,
+	prepareAccountConfigDir,
+	getAccountPaths,
+} from "./accounts.js";
 import {
 	startSessionCapture,
 	captureInput,
@@ -37,8 +42,6 @@ import { startTeammateWatcher } from "./teammate-watcher.js";
 import {
 	getValidAgentBinary,
 	resolveAgentBinary,
-	getOAuthEnv,
-	ensureOnboardingComplete,
 	buildCleanEnv,
 	getAgentBinaryPath,
 	setAgentBinaryPath,
@@ -58,6 +61,8 @@ interface ConsoleSession {
 	outputBufferSize: number;
 	attached: boolean;
 	conversationId?: string;
+	accountUuid?: string;
+	accountEmail?: string | null;
 	dataDisposable?: { dispose: () => void };
 }
 
@@ -90,6 +95,8 @@ interface CreateSessionOptions {
 	extraArgs?: string[];
 	extraEnv?: Record<string, string>;
 	sessionType?: "agent" | "shell";
+	// Multi-account: which Claude account this session runs under (default if unset)
+	accountUuid?: string;
 }
 
 /**
@@ -108,13 +115,14 @@ interface CreateSessionOptions {
 function detectConversationId(
 	session: ConsoleSession,
 	watchExisting = false,
+	accountProjectsDir: string = ACTIVE_AGENT.projectsDir,
 ): void {
 	const encoded = encodeProjectPath(session.cwd);
-	const projectDir = resolve(`${ACTIVE_AGENT.projectsDir}/${encoded}`);
+	const projectDir = resolve(`${accountProjectsDir}/${encoded}`);
 
 	// Validate the resolved path stays within projectsDir to prevent path injection
-	if (!ACTIVE_AGENT.projectsDir) return;
-	const resolvedBase = resolve(ACTIVE_AGENT.projectsDir);
+	if (!accountProjectsDir) return;
+	const resolvedBase = resolve(accountProjectsDir);
 	if (
 		!projectDir.startsWith(resolvedBase + "/") &&
 		projectDir !== resolvedBase
@@ -371,10 +379,13 @@ function _createConsoleSessionInner(
 		}
 	}
 
-	ensureOnboardingComplete();
-	syncToClaudeSettings();
+	// Resolve which Claude account this session runs under (default if unset).
+	const account = resolveAccountForSession(opts.accountUuid);
+	const accountPaths = getAccountPaths(account);
+	prepareAccountConfigDir(account);
 
-	const oauthEnv = getOAuthEnv();
+	// OAuth env for this account: token (+ CLAUDE_CONFIG_DIR for non-default accounts).
+	const oauthEnv = getAccountSessionEnv(account);
 
 	// Load user env vars (API keys, tokens saved by the agent)
 	// Priority: encrypted .env.encrypted > plaintext .env (legacy)
@@ -612,6 +623,8 @@ function _createConsoleSessionInner(
 		outputBuffer: [],
 		outputBufferSize: 0,
 		attached: false,
+		accountUuid: account.uuid,
+		accountEmail: account.email,
 	};
 
 	// Start teammate pane watcher only for teams-enabled sessions
@@ -625,10 +638,10 @@ function _createConsoleSessionInner(
 		session.conversationId = opts.conversationId;
 	} else if (opts.useContinue || (opts.resume && !opts.conversationId)) {
 		// --continue or interactive --resume: detect which existing conversation was touched
-		detectConversationId(session, true);
+		detectConversationId(session, true, accountPaths.projectsDir);
 	} else if (!opts.resume) {
 		// Fresh session: detect the new .jsonl file that Claude creates
-		detectConversationId(session, false);
+		detectConversationId(session, false, accountPaths.projectsDir);
 	}
 
 	// Start session capture for transcript logging
@@ -823,6 +836,15 @@ export function getSessionCount(): number {
 	return sessions.size;
 }
 
+/** Count live sessions running under a given Claude account. */
+export function countSessionsForAccount(accountUuid: string): number {
+	let n = 0;
+	for (const s of sessions.values()) {
+		if (s.accountUuid === accountUuid) n++;
+	}
+	return n;
+}
+
 export function resizeSession(id: string, cols: number, rows: number): void {
 	sessions.get(id)?.pty.resize(cols, rows);
 }
@@ -924,6 +946,8 @@ export function listSessions(): Array<{
 	name: string;
 	createdAt: number;
 	conversationId?: string;
+	accountUuid?: string;
+	accountEmail?: string | null;
 }> {
 	return Array.from(sessions.values()).map((s) => ({
 		id: s.id,
@@ -932,6 +956,8 @@ export function listSessions(): Array<{
 		name: s.name,
 		createdAt: s.createdAt,
 		conversationId: s.conversationId,
+		accountUuid: s.accountUuid,
+		accountEmail: s.accountEmail,
 	}));
 }
 
@@ -992,9 +1018,10 @@ async function hasRealMessagesAsync(filePath: string): Promise<boolean> {
  */
 async function findMostRecentConversationAsync(
 	cwd: string,
+	projectsDir: string = ACTIVE_AGENT.projectsDir,
 ): Promise<string | undefined> {
 	const encoded = encodeProjectPath(cwd);
-	const projectDir = `${ACTIVE_AGENT.projectsDir}/${encoded}`;
+	const projectDir = `${projectsDir}/${encoded}`;
 	try {
 		const entries = await readdirAsync(projectDir).catch(() => [] as string[]);
 		const jsonlFiles = entries.filter((f) => f.endsWith(".jsonl"));
@@ -1028,9 +1055,15 @@ async function findMostRecentConversationAsync(
 /**
  * Check if a directory has previous Claude Code conversations that can be resumed.
  */
-export async function hasResumableConversations(cwd: string): Promise<boolean> {
+export async function hasResumableConversations(
+	cwd: string,
+	accountUuid?: string,
+): Promise<boolean> {
+	const projectsDir = getAccountPaths(
+		resolveAccountForSession(accountUuid),
+	).projectsDir;
 	const encoded = encodeProjectPath(cwd);
-	const projectDir = `${ACTIVE_AGENT.projectsDir}/${encoded}`;
+	const projectDir = `${projectsDir}/${encoded}`;
 	try {
 		const files = await readdirAsync(projectDir).catch(() => [] as string[]);
 		return files.some((f) => f.endsWith(".jsonl"));

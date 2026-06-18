@@ -139,8 +139,10 @@ export function getOAuthEnv(): Record<string, string> {
 	return env;
 }
 
-export function ensureOnboardingComplete(): void {
-	const configPath = ACTIVE_AGENT.configFile;
+export function ensureOnboardingComplete(
+	configFile: string = ACTIVE_AGENT.configFile,
+): void {
+	const configPath = configFile;
 	try {
 		let config: Record<string, unknown> = {};
 		if (existsSync(configPath)) {

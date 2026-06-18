@@ -43,6 +43,34 @@ vi.mock("../../apps/runtime/src/services/permissions.js", () => ({
 	syncToClaudeSettings: vi.fn(),
 }));
 
+vi.mock("../../apps/runtime/src/services/accounts.js", () => {
+	const account = {
+		uuid: "default",
+		email: null,
+		organizationName: null,
+		organizationUuid: null,
+		label: "Default account",
+		configDir: "/root/.claude",
+		isDefault: true,
+		addedAt: 0,
+	};
+	return {
+		resolveAccountForSession: vi.fn(() => account),
+		getAccountSessionEnv: vi.fn(() => ({
+			CLAUDE_CODE_OAUTH_TOKEN: "mock-token-12345",
+		})),
+		prepareAccountConfigDir: vi.fn(),
+		getAccountPaths: vi.fn(() => ({
+			configDir: "/root/.claude",
+			credentialsFile: "/root/.claude/.credentials.json",
+			configFile: "/root/.claude.json",
+			settingsFile: "/root/.claude/settings.json",
+			projectsDir: "/root/.claude/projects",
+			setConfigDirEnv: false,
+		})),
+	};
+});
+
 vi.mock("../../apps/runtime/src/services/session-writer.js", () => ({
 	startSessionCapture: vi.fn(),
 	captureInput: vi.fn(),
@@ -163,32 +191,19 @@ describe("services/console.ts - Session Management", () => {
 			expect(getSession(session.id)).toBe(session);
 		});
 
-		it("should ensure onboarding is complete before spawning PTY", async () => {
-			// Import the mock to verify it was called
-			const { ensureOnboardingComplete } = await import(
-				"../../apps/runtime/src/services/claude-env.js"
+		it("should prepare the account config dir (onboarding + settings) before spawning PTY", async () => {
+			// Onboarding + permission sync now happen inside prepareAccountConfigDir,
+			// which is account-aware (writes into the session's CLAUDE_CONFIG_DIR).
+			const { prepareAccountConfigDir, resolveAccountForSession } = await import(
+				"../../apps/runtime/src/services/accounts.js"
 			);
 
 			// Act: Create a console session
 			createConsoleSession({ cwd: TEST_WORKSPACE });
 
-			// Assert: ensureOnboardingComplete was called before PTY spawn
-			expect(ensureOnboardingComplete).toHaveBeenCalledTimes(1);
-			expect(ensureOnboardingComplete).toHaveBeenCalledWith();
-		});
-
-		it("should sync permissions to settings.json before spawning PTY", async () => {
-			// Import the mock to verify it was called
-			const { syncToClaudeSettings } = await import(
-				"../../apps/runtime/src/services/permissions.js"
-			);
-
-			// Act: Create a console session
-			createConsoleSession({ cwd: TEST_WORKSPACE });
-
-			// Assert: syncToClaudeSettings was called before PTY spawn (line 57)
-			expect(syncToClaudeSettings).toHaveBeenCalledTimes(1);
-			expect(syncToClaudeSettings).toHaveBeenCalledWith();
+			// Assert: the account was resolved and its config dir prepared before spawn
+			expect(resolveAccountForSession).toHaveBeenCalledTimes(1);
+			expect(prepareAccountConfigDir).toHaveBeenCalledTimes(1);
 		});
 
 		it("should strip sensitive env vars (NODE_ENV, PORT, ANTHROPIC_API_KEY)", async () => {

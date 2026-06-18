@@ -43,15 +43,29 @@ All endpoints are served by a single Express server on port 80 inside the contai
 | `POST` | `/api/claude/login-code` | `{ code }` | `{ success }` or `{ error }` | Submit OAuth authorization code |
 | `POST` | `/api/claude/login-cancel` | — | `{ success }` | Cancel active login flow |
 
+### Multi-account management
+
+Codeck supports connecting more than one Claude account and running concurrent
+sessions under different accounts (see ARCHITECTURE.md → Multi-account). The
+default/first account stays at `~/.claude`; additional accounts live in isolated
+`CLAUDE_CONFIG_DIR`s under `/workspace/.codeck/accounts/<uuid>/`.
+
+| Method | Endpoint | Body | Response | Description |
+|--------|----------|------|----------|-------------|
+| `GET` | `/api/claude/accounts` | — | `{ accounts: PublicAccount[], defaultAccountUuid }` | List connected accounts (metadata only, no tokens). Each `PublicAccount` = `{ uuid, email, organizationName, label, isDefault, hasToken }` |
+| `POST` | `/api/claude/accounts/login-code` | `{ code }` | `{ success, account }` or `{ error }` | Complete an "add account" login. Reuses the PKCE flow started by `POST /api/claude/login`. Re-login of the default account writes to `~/.claude`; a new account gets an isolated config dir |
+| `PATCH` | `/api/claude/accounts/:uuid` | `{ label?, isDefault? }` | `{ success, defaultAccountUuid }` or 404 | Rename label and/or set as default |
+| `DELETE` | `/api/claude/accounts/:uuid` | — | `{ success }`, 409 (live sessions) or 404 | Remove account (additional → deletes its config dir; default → full logout). Blocked while it has live sessions |
+
 ---
 
 ## Console (PTY Sessions)
 
 | Method | Endpoint | Body | Response | Description |
 |--------|----------|------|----------|-------------|
-| `POST` | `/api/console/create` | `{ cwd?, resume? }` | `{ sessionId, cwd, name }` | Create new Claude CLI PTY session (max 5) |
-| `GET` | `/api/console/sessions` | — | `{ sessions: [...] }` | List active sessions |
-| `GET` | `/api/console/has-conversations` | `?cwd=<path>` | `{ hasConversations }` | Check if dir has resumable conversations |
+| `POST` | `/api/console/create` | `{ cwd?, resume?, accountUuid? }` | `{ sessionId, cwd, name }` | Create new Claude CLI PTY session (max 5). `accountUuid` selects which account to run under (default if unset) |
+| `GET` | `/api/console/sessions` | — | `{ sessions: [...] }` | List active sessions (each includes `accountUuid`, `accountEmail`) |
+| `GET` | `/api/console/has-conversations` | `?cwd=<path>&accountUuid=<uuid>` | `{ hasConversations }` | Check if dir has resumable conversations for the given account |
 | `POST` | `/api/console/rename` | `{ sessionId, name }` | `{ success }` or 404 | Rename a session |
 | `POST` | `/api/console/resize` | `{ sessionId, cols, rows }` | `{ success }` | Resize PTY terminal |
 | `POST` | `/api/console/destroy` | `{ sessionId }` | `{ success }` | Kill and remove session |

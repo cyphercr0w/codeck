@@ -7,6 +7,10 @@ import {
 	markTokenExpired,
 } from "../services/auth-anthropic.js";
 import { ACTIVE_AGENT } from "../services/agent.js";
+import {
+	listPublicAccounts,
+	getDefaultAccountUuid,
+} from "../services/accounts.js";
 import { getGitStatus, getWorkspacePath } from "../services/git.js";
 import {
 	getSession,
@@ -284,6 +288,8 @@ export function setupWebSocket(): void {
 					git: getGitStatus(),
 					workspace: getWorkspacePath(),
 					agent: { name: ACTIVE_AGENT.name, id: ACTIVE_AGENT.id },
+					accounts: listPublicAccounts(),
+					defaultAccountUuid: getDefaultAccountUuid(),
 					sessions: listSessions(),
 					pendingRestore: isPendingRestore(),
 					savedSessions: isPendingRestore() ? readSavedSessions() : undefined,
@@ -658,6 +664,8 @@ export function broadcastStatus(): void {
 			claude: getClaudeStatus(),
 			git: getGitStatus(),
 			agent: { name: ACTIVE_AGENT.name, id: ACTIVE_AGENT.id },
+			accounts: listPublicAccounts(),
+			defaultAccountUuid: getDefaultAccountUuid(),
 			sessions: listSessions(),
 			dockerExperimental: detectDockerSocketMount(),
 		},

@@ -32,6 +32,12 @@ import {
 	startTokenRefreshMonitor,
 	stopTokenRefreshMonitor,
 } from "../services/auth-anthropic.js";
+import {
+	listPublicAccounts,
+	getDefaultAccountUuid,
+	migrateExistingAccountIfNeeded,
+	startAccountsRefreshMonitor,
+} from "../services/accounts.js";
 import { ACTIVE_AGENT } from "../services/agent.js";
 import { getGitStatus, updateClaudeMd, initGitHub } from "../services/git.js";
 import {
@@ -594,6 +600,8 @@ export async function startWebServer(): Promise<void> {
 			git: getGitStatus(),
 			preset: getPresetStatus(),
 			agent: { name: ACTIVE_AGENT.name, id: ACTIVE_AGENT.id },
+			accounts: listPublicAccounts(),
+			defaultAccountUuid: getDefaultAccountUuid(),
 			// Bundled data — frontend uses these instead of separate requests
 			account: account || undefined,
 			sessions: sessionList.length > 0 ? sessionList : undefined,
@@ -783,6 +791,8 @@ export async function startWebServer(): Promise<void> {
 			});
 		initProactiveAgents(broadcast);
 		startTokenRefreshMonitor(broadcast);
+		migrateExistingAccountIfNeeded();
+		startAccountsRefreshMonitor();
 		initConsolidationCron();
 		startSubAgentMonitor();
 		startWatchdog();

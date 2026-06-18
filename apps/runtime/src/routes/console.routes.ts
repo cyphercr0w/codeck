@@ -14,6 +14,10 @@ import {
 	hasResumableConversations,
 	restoreSessionsNow,
 } from "../services/console.js";
+import {
+	resolveAccountForSession,
+	getAccountPaths,
+} from "../services/accounts.js";
 import { broadcastStatus } from "../web/websocket.js";
 import { broadcast } from "../web/logger.js";
 import { asyncHandler } from "../utils/async-handler.js";
@@ -57,6 +61,7 @@ router.post(
 			enableTeams,
 			maxTeammates,
 			useContinue,
+			accountUuid,
 			extraArgs: clientExtraArgs,
 		} = req.body || {};
 
@@ -116,6 +121,8 @@ router.post(
 				cwd: cwd || undefined,
 				resume,
 				useContinue: !!useContinue,
+				accountUuid:
+					typeof accountUuid === "string" ? accountUuid : undefined,
 				extraArgs: extraArgs.length > 0 ? extraArgs : undefined,
 				extraEnv: Object.keys(extraEnv).length > 0 ? extraEnv : undefined,
 			});
@@ -209,7 +216,13 @@ router.get(
 			res.status(403).json({ error: "Access denied: cwd outside workspace" });
 			return;
 		}
-		res.json({ hasConversations: await hasResumableConversations(cwd) });
+		const accountUuid =
+			typeof req.query.accountUuid === "string"
+				? req.query.accountUuid
+				: undefined;
+		res.json({
+			hasConversations: await hasResumableConversations(cwd, accountUuid),
+		});
 	}),
 );
 
@@ -265,10 +278,15 @@ function decodeProjectPath(encoded: string, _workspace: string): string | null {
 // Frontend uses POST /continue with the folder's cwd to resume.
 const RECENT_FOLDERS_LIMIT = 8;
 
-router.get("/recent-conversations", (_req, res) => {
+router.get("/recent-conversations", (req, res) => {
 	try {
-		const home = process.env.HOME || "/root";
-		const projectsDir = `${home}/.claude/projects`;
+		const accountUuid =
+			typeof req.query.accountUuid === "string"
+				? req.query.accountUuid
+				: undefined;
+		const projectsDir = getAccountPaths(
+			resolveAccountForSession(accountUuid),
+		).projectsDir;
 		if (!existsSync(projectsDir)) {
 			res.json({ folders: [] });
 			return;

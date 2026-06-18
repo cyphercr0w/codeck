@@ -154,8 +154,10 @@ All state in `state/store.ts` as Preact signals.
 | `activeSection` | `Section` | `'home'` | Active section (home\|chat\|filesystem\|claude\|teams\|agents\|integrations\|config\|settings) |
 | `authMode` | `AuthMode` | `'login'` | Auth view mode |
 | `claudeAuthenticated` | `boolean` | `false` | Claude account connected |
-| `accountEmail` | `string \| null` | `null` | User email |
-| `sessions` | `TerminalSession[]` | `[]` | Active PTY sessions |
+| `accountEmail` | `string \| null` | `null` | Primary account email |
+| `accounts` | `Account[]` | `[]` | All connected Claude accounts (`{ uuid, email, organizationName, label, isDefault, hasToken }`) |
+| `defaultAccountUuid` | `string \| null` | `null` | Default account uuid |
+| `sessions` | `TerminalSession[]` | `[]` | Active PTY sessions (each carries `accountUuid`/`accountEmail`) |
 | `activeSessionId` | `string \| null` | `null` | Focused session |
 | `sessionStatus` | `Record<string, SessionStatus>` | `{}` | Per-session status (active/idle/waiting/exited) |
 | `wsConnected` | `boolean` | `false` | WebSocket connected |
@@ -210,7 +212,13 @@ Grid of preset cards from `/api/presets` with icon, name, description, recommend
 
 ### `LoginModal.tsx` — OAuth PKCE Flow
 
-Step-by-step: calls login → polls status every 1.5s → user copies code → submits code. `cleanAuthCode()` strips accidental extra text.
+Step-by-step: calls login → polls status every 1.5s → user copies code → submits code. `cleanAuthCode()` strips accidental extra text. The optional `addAccount` prop switches it to multi-account mode: submits to `/api/claude/accounts/login-code` and refreshes the account list instead of flipping global auth.
+
+### Multi-account UI
+
+- **Settings → Accounts** (`AccountsCard` in `SettingsSection.tsx`): lists connected accounts (label, email, default badge, "needs re-login" state) with Add account (reuses `LoginModal` in `addAccount` mode), rename, set default, and remove.
+- **`NewProjectModal.tsx`** step 2 shows an **Account** selector when 2+ accounts exist. The preselected account is the last one used for that folder (localStorage), else the global default. Changing it re-runs the resume check against that account's history, and the chosen `accountUuid` is sent to `/api/console/create`.
+- **`ClaudeSection.tsx`** terminal tabs show a small account badge when a session runs under a non-default account.
 
 ### `Sidebar.tsx` — Navigation
 

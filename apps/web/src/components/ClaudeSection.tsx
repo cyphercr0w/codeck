@@ -29,6 +29,7 @@ import {
 	previewPort,
 	mobilePreviewOpen,
 	playwrightActive,
+	defaultAccountUuid,
 } from "../state/store";
 import { PreviewPanel } from "./PreviewPanel";
 import { PlaywrightPreview } from "./PlaywrightPreview";
@@ -700,6 +701,16 @@ export function ClaudeSection({
 											</span>
 										)}
 										{s.name}
+										{s.accountUuid &&
+											defaultAccountUuid.value &&
+											s.accountUuid !== defaultAccountUuid.value && (
+												<span
+													class="tab-account-badge"
+													title={s.accountEmail || s.accountUuid}
+												>
+													{(s.accountEmail || s.accountUuid).split("@")[0]}
+												</span>
+											)}
 									</span>
 								)}
 								{!s.loading && (

@@ -1,6 +1,16 @@
 import { useState, useEffect, useRef } from "preact/hooks";
 import { apiFetch, setAuthToken } from "../api";
-import { showToast, logs, clearLogs, type LogEntry } from "../state/store";
+import {
+	showToast,
+	logs,
+	clearLogs,
+	accounts,
+	defaultAccountUuid,
+	setAccounts,
+	type LogEntry,
+	type Account,
+} from "../state/store";
+import { LoginModal } from "./LoginModal";
 import {
 	terminalFontSize,
 	terminalFontFamily,
@@ -1053,6 +1063,170 @@ function LogsCard() {
 
 // ── Settings Section (exported) ───────────────────────────────────────────
 
+// ── Claude Accounts Card ─────────────────────────────────────────────────────
+
+async function refreshAccounts() {
+	try {
+		const res = await apiFetch("/api/claude/accounts");
+		const data = await res.json();
+		if (Array.isArray(data.accounts)) setAccounts(data.accounts as Account[]);
+		if ("defaultAccountUuid" in data)
+			defaultAccountUuid.value = data.defaultAccountUuid;
+	} catch {
+		/* WS status will refresh it anyway */
+	}
+}
+
+function AccountsCard() {
+	const [showAdd, setShowAdd] = useState(false);
+	const [busy, setBusy] = useState<string | null>(null);
+	const list = accounts.value;
+
+	useEffect(() => {
+		refreshAccounts();
+	}, []);
+
+	async function setDefault(uuid: string) {
+		setBusy(uuid);
+		try {
+			await apiFetch(`/api/claude/accounts/${uuid}`, {
+				method: "PATCH",
+				body: JSON.stringify({ isDefault: true }),
+			});
+			await refreshAccounts();
+			showToast("Default account updated", "success");
+		} catch {
+			showToast("Could not update default", "error");
+		} finally {
+			setBusy(null);
+		}
+	}
+
+	async function rename(uuid: string, current: string) {
+		const label = prompt("Account label", current);
+		if (!label || !label.trim()) return;
+		setBusy(uuid);
+		try {
+			await apiFetch(`/api/claude/accounts/${uuid}`, {
+				method: "PATCH",
+				body: JSON.stringify({ label: label.trim() }),
+			});
+			await refreshAccounts();
+		} catch {
+			showToast("Could not rename account", "error");
+		} finally {
+			setBusy(null);
+		}
+	}
+
+	async function remove(uuid: string, label: string) {
+		if (!confirm(`Remove account "${label}"? Its sessions must be closed first.`))
+			return;
+		setBusy(uuid);
+		try {
+			const res = await apiFetch(`/api/claude/accounts/${uuid}`, {
+				method: "DELETE",
+			});
+			if (!res.ok) {
+				const data = await res.json().catch(() => ({}));
+				showToast(data.error || "Could not remove account", "error");
+			} else {
+				await refreshAccounts();
+				showToast("Account removed", "success");
+			}
+		} catch {
+			showToast("Could not remove account", "error");
+		} finally {
+			setBusy(null);
+		}
+	}
+
+	return (
+		<div class="dash-card">
+			<div class="dash-card-title">
+				<IconKey size={14} />
+				<span>Claude Accounts</span>
+			</div>
+
+			{list.length === 0 ? (
+				<div class="dash-meta">No accounts connected yet.</div>
+			) : (
+				<div class="accounts-list">
+					{list.map((a) => (
+						<div key={a.uuid} class="account-row">
+							<div class="account-info">
+								<div class="account-label">
+									{a.label}
+									{a.isDefault && (
+										<span class="badge badge-success account-default-badge">
+											Default
+										</span>
+									)}
+									{!a.hasToken && (
+										<span class="badge badge-warning account-reauth-badge">
+											Needs re-login
+										</span>
+									)}
+								</div>
+								<div class="account-sub text-muted">
+									{a.email || a.organizationName || a.uuid.slice(0, 12)}
+								</div>
+							</div>
+							<div class="account-actions">
+								{!a.isDefault && (
+									<button
+										class="btn btn-xs"
+										disabled={busy === a.uuid}
+										onClick={() => setDefault(a.uuid)}
+										title="Make default"
+									>
+										Set default
+									</button>
+								)}
+								<button
+									class="btn btn-xs"
+									disabled={busy === a.uuid}
+									onClick={() => rename(a.uuid, a.label)}
+									title="Rename"
+								>
+									Rename
+								</button>
+								<button
+									class="btn btn-xs btn-danger"
+									disabled={busy === a.uuid}
+									onClick={() => remove(a.uuid, a.label)}
+									title="Remove"
+								>
+									<IconX size={12} />
+								</button>
+							</div>
+						</div>
+					))}
+				</div>
+			)}
+
+			<button
+				class="btn btn-secondary btn-sm account-add-btn"
+				style={{ marginTop: "12px" }}
+				onClick={() => setShowAdd(true)}
+			>
+				<IconPlus size={14} /> Add account
+			</button>
+
+			<LoginModal
+				visible={showAdd}
+				addAccount
+				onClose={() => setShowAdd(false)}
+				onSuccess={() => {
+					setShowAdd(false);
+					refreshAccounts();
+					showToast("Account added", "success");
+				}}
+			/>
+		</div>
+	);
+}
+
 export function SettingsSection() {
 	const [auditOpen, setAuditOpen] = useState(false);
 
@@ -1065,6 +1239,9 @@ export function SettingsSection() {
 						<span>Settings</span>
 					</div>
 				</div>
+
+				{/* Claude accounts */}
+				<AccountsCard />
 
 				{/* Settings — two-column layout */}
 				<div class="settings-appearance">

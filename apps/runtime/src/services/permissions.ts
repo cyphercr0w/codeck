@@ -110,8 +110,10 @@ export function getDenyRules(): DenyRule[] {
 
 // ── Sync to Claude Settings ──
 
-export function syncToClaudeSettings(): void {
-  const settingsPath = ACTIVE_AGENT.settingsFile;
+export function syncToClaudeSettings(
+  settingsFile: string = ACTIVE_AGENT.settingsFile,
+): void {
+  const settingsPath = settingsFile;
   const perms = getPermissions();
   const enabled = ALL_PERMISSIONS.filter(p => perms[p]);
   const mcpPerms = getMcpPermissions();

@@ -500,6 +500,22 @@
 	opacity: 0.5;
 }
 
+.tab-account-badge {
+	display: inline-block;
+	margin-left: 6px;
+	padding: 0 5px;
+	border-radius: 8px;
+	font-size: 10px;
+	line-height: 15px;
+	background: var(--accent-subtle, rgba(120, 120, 200, 0.18));
+	color: var(--accent, #9aa6ff);
+	max-width: 90px;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	vertical-align: middle;
+}
+
 .terminal-instances {
 	flex: 1;
 	min-height: 0;

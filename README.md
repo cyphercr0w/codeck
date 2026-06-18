@@ -50,6 +50,7 @@ Codeck fixes that:
 
 - Browser UI from any device (phones, tablets, laptops)
 - Claude OAuth PKCE — automatic token refresh, zero manual re-auth
+- Multiple Claude accounts — connect more than one and run workspaces under different accounts at the same time; pick the account per session in the launch popup
 - Password authentication — scrypt-hashed, 7-day sessions
 - File browser with inline editor
 - GitHub integration — SSH keys + CLI device flow
@@ -82,6 +83,8 @@ Open `http://localhost` in your browser. Sign in with your Anthropic account. Do
 ## How It Works
 
 Codeck runs inside a Docker container with full tool access. The web app serves a browser-based terminal connected to real PTY sessions running Claude Code. OAuth PKCE handles authentication — your Anthropic credentials never touch our servers.
+
+Multiple Claude accounts are supported: the first account uses the standard `~/.claude` config, and any additional account gets its own isolated `CLAUDE_CONFIG_DIR` under `/workspace/.codeck/accounts/<uuid>/`, so sessions running under different accounts never share credentials or history. Manage accounts in **Settings → Accounts**.
 
 The memory system (SQLite FTS5) indexes per-project context, daily journals, and durable global memory. Claude reads this automatically at session start — no manual context-loading required.
 

@@ -77,6 +77,8 @@ export interface TerminalSession {
 	createdAt: number;
 	loading?: boolean;
 	conversationId?: string;
+	accountUuid?: string;
+	accountEmail?: string | null;
 }
 
 // View state
@@ -87,10 +89,26 @@ export const authMode = signal<AuthMode>("login");
 // Claude
 export const claudeAuthenticated = signal(false);
 
-// Account
+// Account (the currently-primary connected account)
 export const accountEmail = signal<string | null>(null);
 export const accountOrg = signal<string | null>(null);
 export const accountUuid = signal<string | null>(null);
+
+// Multi-account: all connected Claude accounts
+export interface Account {
+	uuid: string;
+	email: string | null;
+	organizationName: string | null;
+	label: string;
+	isDefault: boolean;
+	hasToken: boolean;
+}
+export const accounts = signal<Account[]>([]);
+export const defaultAccountUuid = signal<string | null>(null);
+
+export function setAccounts(list: Account[]): void {
+	accounts.value = list;
+}
 
 // Sessions
 export const sessions = signal<TerminalSession[]>([]);
@@ -221,6 +239,12 @@ export function updateStateFromServer(data: Record<string, any>): void {
 			);
 		}
 	}
+	if (Array.isArray(data.accounts)) {
+		setAccounts(data.accounts as Account[]);
+	}
+	if (typeof data.defaultAccountUuid === "string" || data.defaultAccountUuid === null) {
+		defaultAccountUuid.value = data.defaultAccountUuid;
+	}
 	if (data.preset) {
 		setPresetConfigured(data.preset.configured);
 	}
@@ -270,6 +294,8 @@ export function updateStateFromServer(data: Record<string, any>): void {
 				name: s.name,
 				createdAt: s.createdAt || Date.now(),
 				conversationId: s.conversationId,
+				accountUuid: s.accountUuid,
+				accountEmail: s.accountEmail,
 			})),
 		);
 	}

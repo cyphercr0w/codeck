@@ -7,6 +7,8 @@ interface LoginModalProps {
   visible: boolean;
   onClose: () => void;
   onSuccess: () => void;
+  /** When true, connect an ADDITIONAL account instead of the primary one. */
+  addAccount?: boolean;
 }
 
 function cleanAuthCode(code: string): string {
@@ -33,7 +35,7 @@ function cleanAuthCode(code: string): string {
   return match ? match[0] : cleaned;
 }
 
-export function LoginModal({ visible, onClose, onSuccess }: LoginModalProps) {
+export function LoginModal({ visible, onClose, onSuccess, addAccount = false }: LoginModalProps) {
   const modalRef = useRef<HTMLDivElement>(null);
   const codeRef = useRef<HTMLInputElement>(null);
   const [loginUrl, setLoginUrl] = useState<string | null>(null);
@@ -141,7 +143,7 @@ export function LoginModal({ visible, onClose, onSuccess }: LoginModalProps) {
           addLocalLog('info', 'Login URL ready');
         }
 
-        if (data.authenticated && !done) {
+        if (data.authenticated && !done && !addAccount) {
           if (pollRef.current) clearInterval(pollRef.current);
           pollRef.current = null;
           pollingRef.current = false;
@@ -187,14 +189,17 @@ export function LoginModal({ visible, onClose, onSuccess }: LoginModalProps) {
     setIsError(false);
 
     try {
-      const res = await apiFetch('/api/claude/login-code', {
+      const endpoint = addAccount
+        ? '/api/claude/accounts/login-code'
+        : '/api/claude/login-code';
+      const res = await apiFetch(endpoint, {
         method: 'POST',
         body: JSON.stringify({ code }),
       });
       const data = await res.json();
 
       if (data.success) {
-        claudeAuthenticated.value = true;
+        if (!addAccount) claudeAuthenticated.value = true;
         setDone(true);
         setStatus('Authentication successful!');
         setIsError(false);
@@ -244,7 +249,7 @@ export function LoginModal({ visible, onClose, onSuccess }: LoginModalProps) {
       >
         <h2 id="login-modal-title" class="modal-title">
           <IconLock size={20} />
-          <span>{agentName.value} Login</span>
+          <span>{addAccount ? `Add ${agentName.value} account` : `${agentName.value} Login`}</span>
         </h2>
 
         {!urlReady && !isError && (

@@ -600,7 +600,7 @@ Agent Teams enable parallel multi-agent collaboration via Claude Code's built-in
 ### Activation flow
 
 ```
-1. User checks "Agent Teams" in the launch modal
+1. Agent Teams is opt-in-advanced (the launch checkbox was removed — the default is subagents-only, per the read-parallel/write-serial posture). When enabled programmatically (`enableTeams: true`):
 2. Frontend sends enableTeams: true → POST /api/console/create
 3. console.routes.ts sets CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1 in session env
 4. console.ts detects the env var and appends team leader system prompt

@@ -19,6 +19,8 @@ The **Autonomous Operator Protocol** is now the default behavior of the `recomme
 - ✅ `ENABLE_TOOL_SEARCH` env + stronger credential deny rules.
 - ✅ Lexical-weighted RRF (0.6 BM25 / 0.4 vector) for the code corpus.
 - ✅ Model-routing **guidance** (haiku/sonnet/opus by task) in the protocol; CDP screencast already capped at 1280px/q60.
+- ✅ **Complete harness**: adaptive task classifier + per-type playbooks (`rules/base/playbooks.md`); long-running `/harness` mode (`autonomous-harness` skill) with resumable on-disk state (`.codeck/harness/`, survives compaction/restart/rebuild via `harness-resume-hook`) and git-anchored increments; **hard budget/iteration kill switch** (`budget-guard.mjs`, PreToolUse deny at cap).
+- ✅ **Agent Teams launch checkbox removed** — subagents-only default (read-parallel/write-serial); teams kept as opt-in-advanced (plumbing intact, not surfaced).
 
 **Scaffolded / deferred (need runtime validation or larger build — not yet implemented):**
 - ◻ Per-agent `model:` frontmatter across all 69 agents (mechanical pass; routing works via protocol guidance meanwhile).

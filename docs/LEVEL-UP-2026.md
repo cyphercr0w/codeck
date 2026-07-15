@@ -4,6 +4,32 @@
 
 Synthesized from 3 deep web-research passes (context engineering & memory, evals/observability/reliability/guardrails, elite Claude Code setups), cross-verified against primary sources. This is *beyond* catch-up — it's the frontier.
 
+## Implementation status (2026-07-15 · branch `feat/modernization-2026`)
+
+The **Autonomous Operator Protocol** is now the default behavior of the `recommended` preset — the agent clarifies to zero ambiguity, plans surgically (one approval gate), implements with subagents + memory, reviews, audits, and delivers only on evidence, iterating until done — **without being told each time**.
+
+**Done (baked into the preset):**
+- ✅ Protocol as default — `rules/base/workflow.md` + `autonomous-protocol-hook.mjs` (UserPromptSubmit, cache-safe injection each task).
+- ✅ Clarify-to-zero-ambiguity gate (AskUserQuestion, one batched round) — calibrated: full protocol on non-trivial tasks, direct on trivial.
+- ✅ One plan-approval checkpoint before implementation.
+- ✅ Review **and** Audit gate enforced — `workflow-checkpoint.mjs` blocks Stop until both markers exist; criteria "start false".
+- ✅ Independent `grader` agent (no Write/Edit) + `visual-verifier` agent (browser e2e via CDP).
+- ✅ No-progress/loop guard (`no-progress-guard.mjs`).
+- ✅ Prompt-injection defense — spotlighting of WebFetch/WebSearch as untrusted data (`tool-result-compressor.mjs`).
+- ✅ `ENABLE_TOOL_SEARCH` env + stronger credential deny rules.
+- ✅ Lexical-weighted RRF (0.6 BM25 / 0.4 vector) for the code corpus.
+- ✅ Model-routing **guidance** (haiku/sonnet/opus by task) in the protocol; CDP screencast already capped at 1280px/q60.
+
+**Scaffolded / deferred (need runtime validation or larger build — not yet implemented):**
+- ◻ Per-agent `model:` frontmatter across all 69 agents (mechanical pass; routing works via protocol guidance meanwhile).
+- ◻ Cross-encoder reranker stage + trigram FTS5 identifier column (native-dep / schema-migration; RRF re-tune shipped as the safe first step).
+- ◻ Self-hosted OTel `gen_ai.*` tracing + pass^k eval harness + failure→regression loop.
+- ◻ Native `/memories` backend + empirically-gated agent-authored skills.
+- ◻ PreCompact high-recall compaction contract; contradiction-resolution in consolidation.
+- ◻ Native sandbox egress allowlist — intentionally NOT added (codeck reverted bubblewrap/env-scrub; Docker is the boundary, credentials covered by `permissions.deny`).
+
+---
+
 ---
 
 ## The governing principle: read-parallel, write-serial

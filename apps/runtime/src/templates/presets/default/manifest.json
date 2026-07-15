@@ -21,6 +21,10 @@
 			"src": "rules/workflow.md",
 			"dest": "/workspace/.codeck/rules/base/workflow.md"
 		},
+			{
+				"src": "rules/playbooks.md",
+				"dest": "/workspace/.codeck/rules/base/playbooks.md"
+			},
 		{
 			"src": "rules/communication.md",
 			"dest": "/workspace/.codeck/rules/user/communication.md",
@@ -133,6 +137,18 @@
 			{
 				"src": "scripts/no-progress-guard.mjs",
 				"dest": "/workspace/.codeck/scripts/no-progress-guard.mjs"
+			},
+			{
+				"src": "scripts/task-classifier-hook.mjs",
+				"dest": "/workspace/.codeck/scripts/task-classifier-hook.mjs"
+			},
+			{
+				"src": "scripts/budget-guard.mjs",
+				"dest": "/workspace/.codeck/scripts/budget-guard.mjs"
+			},
+			{
+				"src": "scripts/harness-resume-hook.mjs",
+				"dest": "/workspace/.codeck/scripts/harness-resume-hook.mjs"
 			},
 			{
 			"src": "scripts/context-injector.mjs",
@@ -250,6 +266,7 @@
 		"/workspace/.codeck/sessions",
 		"/workspace/.codeck/index",
 		"/workspace/.codeck/state",
+		"/workspace/.codeck/harness",
 		"/workspace/.codeck/rules/base",
 		"/workspace/.codeck/rules/user",
 		"/workspace/.codeck/skills",

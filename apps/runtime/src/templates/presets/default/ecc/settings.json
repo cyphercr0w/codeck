@@ -93,6 +93,16 @@
 	"hooks": {
 		"PreToolUse": [
 			{
+				"matcher": "Bash|Edit|Write|MultiEdit|Agent",
+				"hooks": [
+					{
+						"type": "command",
+						"command": "node /workspace/.codeck/scripts/budget-guard.mjs"
+					}
+				],
+				"description": "Hard budget/iteration kill switch while an autonomous-harness task is active"
+			},
+			{
 				"matcher": "Agent",
 				"hooks": [
 					{
@@ -231,6 +241,17 @@
 						"command": "node /workspace/.codeck/scripts/post-compact-hook.mjs"
 					}
 				]
+			},
+			{
+				"matcher": "",
+				"hooks": [
+					{
+						"type": "command",
+						"command": "node /workspace/.codeck/scripts/harness-resume-hook.mjs",
+						"timeout": 3
+					}
+				],
+				"description": "Re-inject active harness state after compaction so the task resumes exactly"
 			}
 		],
 		"UserPromptSubmit": [
@@ -244,6 +265,17 @@
 					}
 				],
 				"description": "Inject the Autonomous Operator Protocol each task (message layer \u2014 keeps the cached prefix stable)"
+			},
+			{
+				"matcher": "",
+				"hooks": [
+					{
+						"type": "command",
+						"command": "node /workspace/.codeck/scripts/task-classifier-hook.mjs",
+						"timeout": 3
+					}
+				],
+				"description": "Classify the task type and point at the matching playbook (adaptive protocol)"
 			},
 			{
 				"matcher": "",
@@ -394,6 +426,17 @@
 			}
 		],
 		"SessionStart": [
+			{
+				"matcher": "*",
+				"hooks": [
+					{
+						"type": "command",
+						"command": "node /workspace/.codeck/scripts/harness-resume-hook.mjs",
+						"timeout": 3
+					}
+				],
+				"description": "Resume an active autonomous-harness task after restart/rebuild"
+			},
 			{
 				"matcher": "*",
 				"hooks": [

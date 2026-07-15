@@ -127,6 +127,14 @@
 			"dest": "/workspace/.codeck/scripts/workflow-checkpoint.mjs"
 		},
 		{
+				"src": "scripts/autonomous-protocol-hook.mjs",
+				"dest": "/workspace/.codeck/scripts/autonomous-protocol-hook.mjs"
+			},
+			{
+				"src": "scripts/no-progress-guard.mjs",
+				"dest": "/workspace/.codeck/scripts/no-progress-guard.mjs"
+			},
+			{
 			"src": "scripts/context-injector.mjs",
 			"dest": "/workspace/.codeck/scripts/context-injector.mjs"
 		},

@@ -26,6 +26,7 @@ import { join } from 'path';
 const STATE_DIR = '/workspace/.codeck/state';
 const EDIT_TRACKER = join(STATE_DIR, 'edit-tracker.json');
 const REVIEW_MARKER = join(STATE_DIR, 'review-marker.json');
+const AUDIT_MARKER = join(STATE_DIR, 'audit-marker.json');
 
 // Read stdin (Stop hook payload)
 let input = '';
@@ -81,21 +82,41 @@ try {
   }
 } catch { /* no valid marker */ }
 
-if (reviewRecent) {
-  // Review was done — approve and clear tracker
-  writeFileSync(EDIT_TRACKER, JSON.stringify({ files: [], count: 0, since: 0 }));
-  console.log(JSON.stringify({ result: 'approve' }));
-  process.exit(0);
-}
+// Audit gate: after review, an audit (security-reviewer + completeness vs
+// definition-of-done, e.g. the `grader` agent) must also run before delivery.
+let auditRecent = false;
+try {
+  if (existsSync(AUDIT_MARKER)) {
+    const marker = JSON.parse(readFileSync(AUDIT_MARKER, 'utf-8'));
+    if (marker.timestamp && marker.timestamp > edits.since) auditRecent = true;
+  }
+} catch { /* no valid marker */ }
 
-// Significant edits WITHOUT review → block
 const fileList = edits.files.slice(0, 8).join(', ');
 const msg = edits.count > 8
   ? `${fileList}, and ${edits.count - 8} more`
   : fileList;
 
+if (reviewRecent && auditRecent) {
+  // Review AND audit done — approve and clear tracker
+  writeFileSync(EDIT_TRACKER, JSON.stringify({ files: [], count: 0, since: 0 }));
+  console.log(JSON.stringify({ result: 'approve' }));
+  process.exit(0);
+}
+
+if (!reviewRecent) {
+  // Phase 4a missing → block for review
+  console.log(JSON.stringify({
+    result: 'block',
+    reason: `You modified ${edits.count} files (${msg}) but haven't run code-reviewer yet.`,
+    message: `Workflow gate (review):\nYou modified ${edits.count} files (${msg}) but haven't run code-reviewer.\nSpawn a code-reviewer sub-agent, fix what it finds, then write the marker:\n  echo '{"timestamp":'$(date +%s%3N)',"agent":"code-reviewer"}' > /workspace/.codeck/state/review-marker.json`,
+  }));
+  process.exit(0);
+}
+
+// Review done but audit missing → block for audit (Phase 4b)
 console.log(JSON.stringify({
   result: 'block',
-  reason: `You modified ${edits.count} files (${msg}) but haven't run code-reviewer yet.`,
-  message: `Stop hook feedback:\nYou modified ${edits.count} files (${msg}) but haven't run code-reviewer yet.\nSpawn a code-reviewer sub-agent before presenting results. After review, write marker: echo '{"timestamp":'$(date +%s%3N)',"agent":"code-reviewer"}' > /workspace/.codeck/state/review-marker.json`,
+  reason: `Review is done but the audit gate hasn't run for ${edits.count} changed files.`,
+  message: `Workflow gate (audit):\nCode review passed, but before delivery you must AUDIT: spawn security-reviewer AND grade completeness against the definition of done (the \`grader\` agent). Every acceptance criterion needs linked evidence (criteria start false). Fix anything found, then write the marker:\n  echo '{"timestamp":'$(date +%s%3N)',"agent":"grader"}' > /workspace/.codeck/state/audit-marker.json`,
 }));

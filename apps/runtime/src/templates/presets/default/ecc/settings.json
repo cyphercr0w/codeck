@@ -70,13 +70,18 @@
 		"deny": [
 			"Read(.env*)",
 			"Read(**/credentials*)",
+			"Read(**/.credentials*)",
 			"Read(**/.ssh/*)",
+			"Read(**/*.pem)",
 			"Read(**/secrets/**)"
 		]
 	},
 	"includeGitInstructions": false,
 	"enableAllProjectMcpServers": true,
 	"fallbackModel": "sonnet",
+	"env": {
+		"ENABLE_TOOL_SEARCH": "1"
+	},
 	"attribution": {
 		"commit": "",
 		"pr": ""
@@ -134,6 +139,16 @@
 			}
 		],
 		"PostToolUse": [
+			{
+				"matcher": "Bash|Edit|Write|Read|Grep|Glob|WebFetch|WebSearch",
+				"hooks": [
+					{
+						"type": "command",
+						"command": "node /workspace/.codeck/scripts/no-progress-guard.mjs"
+					}
+				],
+				"description": "Detect stuck loops (identical tool call repeated) and nudge a re-plan"
+			},
 			{
 				"matcher": "Edit|Write",
 				"if": "Edit OR Write",
@@ -219,6 +234,17 @@
 			}
 		],
 		"UserPromptSubmit": [
+			{
+				"matcher": "",
+				"hooks": [
+					{
+						"type": "command",
+						"command": "node /workspace/.codeck/scripts/autonomous-protocol-hook.mjs",
+						"timeout": 3
+					}
+				],
+				"description": "Inject the Autonomous Operator Protocol each task (message layer \u2014 keeps the cached prefix stable)"
+			},
 			{
 				"matcher": "",
 				"hooks": [

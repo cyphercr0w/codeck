@@ -339,7 +339,9 @@ Language-specific rules (rust, java, kotlin, csharp, php, perl, swift, cpp, pyth
 
 MCP (Model Context Protocol) servers are configured in `/root/.claude/mcp.json` and registered in `/root/.claude.json` at startup.
 
-The default preset installs 9 MCP servers that provide additional tools to Claude Code (Playwright browser automation, ESLint linting, etc.).
+The default preset enables 5 MCP servers by default (context7, eslint, playwright, memory, magic) plus a catalogue of opt-in servers under `_disabledMcpServers`.
+
+> **2026-07 hygiene note:** `sequential-thinking` was moved to `_disabledMcpServers` — Claude's native extended thinking covers the same use case, and keeping the server loaded costs tool-schema tokens on every session start. Re-enable it by moving its block back into `mcpServers`. `context7` is intentionally left unpinned (`npx -y @upstash/context7-mcp`) so it always resolves the patched latest (the Feb-2026 "ContextCrush" fix). `playwright` stays enabled — it powers the live browser preview via the CDP endpoint.
 
 ### Configuration file
 

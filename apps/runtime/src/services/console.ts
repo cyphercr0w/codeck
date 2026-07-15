@@ -536,6 +536,7 @@ function _createConsoleSessionInner(
 			"",
 			"### Rules",
 			"- Teammates use model: 'sonnet' by default (Sonnet 5 — near-Opus quality, cheaper/faster than Opus).",
+			"- For teammates that edit files IN PARALLEL, pass `isolation: 'worktree'` so each works on an isolated git worktree and they don't clobber each other. The worktree is auto-removed if unchanged.",
 			"- ALWAYS spawn a reviewer after implementation work",
 			"- After spawning teammates, tell the user what each one is doing",
 			"- When teammates report back, summarize findings to the user",

@@ -1,6 +1,6 @@
 # Known Issues & Technical Debt — Codeck
 
-Last updated: 2026-04-02.
+Last updated: 2026-07-15 (Q3 2026 modernization — see `MODERNIZATION-2026.md`).
 
 ---
 
@@ -80,21 +80,21 @@ PTY sessions keep running when WS client disconnects. No auto-cleanup timeout fo
 
 Workspace export (`GET /api/workspace/export`) creates `.tar.gz` but has no checksum, no restore testing, no schema migration.
 
-### 14. Command injection risk in auth-anthropic version check
+### 14. Command injection risk in auth-anthropic version check (FIXED)
 
 **File:** `services/auth-anthropic.ts`
 
-String interpolation used for agent binary and version flag. Should use `execFileSync(binary, [flag])` with array arguments instead to prevent shell injection.
+Previously used string interpolation for the agent binary and version flag. Now uses `execFileSync(ACTIVE_AGENT.command, [ACTIVE_AGENT.flags.version], …)` with array arguments (line ~117) — no shell, no interpolation. Verified 2026-07-15.
 
-**Severity:** Critical (RCE if agent config contaminated)
+**Severity:** Critical (RCE if agent config contaminated) — resolved.
 
-### 15. SQL injection in memory-indexer embedding dimension
+### 15. SQL injection in memory-indexer embedding dimension (FIXED)
 
 **File:** `services/memory-indexer.ts`
 
-Template literal with `${dim}` for `CREATE VIRTUAL TABLE`. Validate `getEmbeddingDim()` is numeric and bounded.
+`${dim}` is interpolated into `CREATE VIRTUAL TABLE`, but `getEmbeddingDim()` is now validated first: `if (!Number.isInteger(dim) || dim < 1 || dim > 10000) throw` (lines ~101-104) before use. Verified 2026-07-15.
 
-**Severity:** Critical (if dim is attacker-controlled)
+**Severity:** Critical (if dim is attacker-controlled) — resolved.
 
 ### 16. CWD not validated in console create
 

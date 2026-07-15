@@ -17,6 +17,12 @@ const CURRENT = join(HARNESS, 'current.json');
 let input = '';
 for await (const chunk of process.stdin) input += chunk;
 
+// The same hook runs on SessionStart and PostCompact; echo back the actual
+// event name so the runtime routes the injected context correctly.
+let payload = {};
+try { payload = JSON.parse(input); } catch { /* empty payload is fine */ }
+const eventName = payload.hook_event_name || 'SessionStart';
+
 if (!existsSync(CURRENT)) process.exit(0);
 
 let cur;
@@ -35,6 +41,7 @@ try {
 
 console.log(JSON.stringify({
   hookSpecificOutput: {
+    hookEventName: eventName,
     additionalContext: `RESUMING HARNESS TASK "${cur.taskId}".${summary} Load the autonomous-harness skill, read .codeck/harness/${cur.taskId}/plan.md + progress.json, and CONTINUE from the first not-done criterion — do not restart or re-plan.`,
   },
 }));

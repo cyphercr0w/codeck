@@ -13,8 +13,9 @@ const SCHEDULE_PRESETS = [
 
 const MODEL_OPTIONS = [
   { label: 'Default (Sonnet)', value: '' },
-  { label: 'Opus 4.6', value: 'opus' },
-  { label: 'Sonnet 4.6', value: 'sonnet' },
+  { label: 'Opus 4.8', value: 'opus' },
+  { label: 'Sonnet 5', value: 'sonnet' },
+  { label: 'Fable 5', value: 'fable' },
   { label: 'Haiku 4.5', value: 'haiku' },
 ];
 

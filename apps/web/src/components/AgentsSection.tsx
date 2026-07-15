@@ -15,7 +15,7 @@ import { DirSelector } from './agents/DirSelector';
 import { AgentForm } from './agents/AgentForm';
 
 const MODEL_LABELS: Record<string, string> = {
-  '': 'Default (system)', opus: 'Opus 4.6', sonnet: 'Sonnet 4.5', haiku: 'Haiku 4.5',
+  '': 'Default (system)', opus: 'Opus 4.8', sonnet: 'Sonnet 5', fable: 'Fable 5', haiku: 'Haiku 4.5',
 };
 
 // ── Helpers ──

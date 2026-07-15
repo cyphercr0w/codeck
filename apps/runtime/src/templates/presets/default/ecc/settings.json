@@ -76,6 +76,7 @@
 	},
 	"includeGitInstructions": false,
 	"enableAllProjectMcpServers": true,
+	"fallbackModel": "sonnet",
 	"attribution": {
 		"commit": "",
 		"pr": ""

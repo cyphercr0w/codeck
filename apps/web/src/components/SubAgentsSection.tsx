@@ -19,12 +19,14 @@ interface AgentDef {
 const MODEL_LABELS: Record<string, string> = {
 	sonnet: "Sonnet",
 	opus: "Opus",
+	fable: "Fable",
 	haiku: "Haiku",
 };
 
 const MODEL_BADGE_CLASS: Record<string, string> = {
 	sonnet: "badge badge-model-sonnet",
 	opus: "badge badge-model-opus",
+	fable: "badge badge-model-fable",
 	haiku: "badge badge-model-haiku",
 };
 
@@ -304,7 +306,7 @@ function AgentDefEditor({
 					<div class="form-group">
 						<label class="form-label">Model</label>
 						<div class="yt-model-pills">
-							{(["sonnet", "opus", "haiku"] as const).map((m) => (
+							{(["sonnet", "opus", "fable", "haiku"] as const).map((m) => (
 								<button
 									key={m}
 									type="button"

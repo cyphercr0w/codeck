@@ -12,8 +12,12 @@
  *   .codeck/harness/current.json         { active, taskId }
  *   .codeck/harness/<taskId>/budget.json { iterCap, costCapUsd, iterations, spentUsd }
  *
- * PreToolUse can hard-deny (permissionDecision:"deny") even under bypass mode, so
- * this is a real ceiling, not a suggestion.
+ * The ITERATION cap is the deterministic hard ceiling — this hook increments
+ * `iterations` itself, so it always fires. The COST cap is best-effort: it only
+ * engages if the harness loop keeps `spentUsd` current (the skill updates it each
+ * iteration); if it doesn't, only the iteration cap protects you. PreToolUse can
+ * hard-deny (permissionDecision:"deny") even under bypass mode, so the ceiling is
+ * real, not a suggestion.
  */
 
 import { existsSync, readFileSync, writeFileSync } from 'fs';

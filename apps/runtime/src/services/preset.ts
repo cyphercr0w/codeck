@@ -742,12 +742,12 @@ export function checkPresetUpdate(): void {
 		}
 	}
 
-	// Copy all recursive dirs with skipIfExists=false — skipIfExists protects user dirs
-	// Note: rules-library is preset-managed (overwritten on update). Users customize
-	// rules in ~/.claude/rules/ or /workspace/.codeck/rules/user/, not the library.
+	// Copy all recursive dirs. Non-skip dirs (e.g. rules-library) are preset-managed
+	// and fully overwritten. skipIfExists dirs (agents/skills/commands/rules) are
+	// user-customizable: we deploy NEW files (so updates ship new agents/skills/
+	// commands) but never overwrite files the user may have tweaked.
 	if (manifest.recursive_dirs) {
 		for (const rd of manifest.recursive_dirs) {
-			if (rd.skipIfExists) continue; // only auto-update non-user dirs
 			const destDir = rewritePath(rd.dest);
 			if (!isAllowedDestPath(destDir)) continue;
 
@@ -760,7 +760,7 @@ export function checkPresetUpdate(): void {
 				continue;
 			if (!existsSync(srcDir)) continue;
 
-			copied += copyScriptDirRecursive(srcDir, destDir);
+			copied += copyScriptDirRecursive(srcDir, destDir, rd.skipIfExists === true);
 		}
 	}
 
@@ -803,7 +803,11 @@ export function checkPresetUpdate(): void {
 }
 
 /** Copy script files from srcDir to destDir recursively. Returns count of files copied. */
-function copyScriptDirRecursive(srcDir: string, destDir: string): number {
+function copyScriptDirRecursive(
+	srcDir: string,
+	destDir: string,
+	skipExisting = false,
+): number {
 	if (!existsSync(destDir)) mkdirSync(destDir, { recursive: true });
 	let count = 0;
 	for (const entry of readdirSync(srcDir)) {
@@ -811,8 +815,12 @@ function copyScriptDirRecursive(srcDir: string, destDir: string): number {
 		const destEntry = join(destDir, entry);
 		const stat = statSync(srcEntry);
 		if (stat.isDirectory()) {
-			count += copyScriptDirRecursive(srcEntry, destEntry);
+			count += copyScriptDirRecursive(srcEntry, destEntry, skipExisting);
 		} else {
+			// skipExisting: deploy NEW files only, never overwrite a user-customized
+			// existing file. Lets updates add new agents/skills/commands into
+			// skipIfExists dirs without clobbering the user's tweaks.
+			if (skipExisting && existsSync(destEntry)) continue;
 			const destEntryDir = dirname(destEntry);
 			if (!existsSync(destEntryDir))
 				mkdirSync(destEntryDir, { recursive: true });

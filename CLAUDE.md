@@ -24,7 +24,7 @@ The docs explain architecture, data flows, APIs, and conventions that you won't 
 - System config (auth.json, config.json) and agent data (memory, rules, skills, preferences) share this location
 - Preset manifests use absolute paths to drive file placement
 - Three CLAUDE.md layers: global (`/root/.claude/`), workspace (`/workspace/`), project (`/workspace/<project>/`)
-- Agent Teams: multi-agent orchestration via Claude Code's native TeamCreate/Agent/SendMessage tools. Enabled by checkbox at launch, system prompt injected via `--append-system-prompt`. Templates at `/workspace/.codeck/teams/templates/`, API at `/api/teams`.
+- Agent Teams: multi-agent orchestration via Claude Code's native `Agent`/`SendMessage`/`TaskCreate` tools (implicit teams since Claude Code 2.1.178 — `TeamCreate`/`TeamDelete` removed; teammates spawned via the `Agent` `name` param). Enabled by checkbox at launch, system prompt injected via `--append-system-prompt`. Templates at `/workspace/.codeck/teams/templates/`, API at `/api/teams`.
 
 ## Quick Start (Self-Hosted)
 

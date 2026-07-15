@@ -593,7 +593,9 @@ Sessions are saved to disk and auto-restored on container restart via `saveSessi
 
 ## Agent Teams
 
-Agent Teams enable parallel multi-agent collaboration via Claude Code's built-in TeamCreate/Agent/SendMessage tools. When `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1` is set and the "Agent Teams" checkbox is enabled at launch, a system prompt is injected (via `--append-system-prompt`) instructing Claude to act as a team leader — spawning teammates, creating tasks, and coordinating work.
+Agent Teams enable parallel multi-agent collaboration via Claude Code's built-in `Agent`/`SendMessage`/`TaskCreate` tools. When `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1` is set and the "Agent Teams" checkbox is enabled at launch, a system prompt is injected (via `--append-system-prompt`) instructing Claude to act as a team leader — spawning teammates, creating tasks, and coordinating work.
+
+> **Since Claude Code 2.1.178**, Agent Teams is *implicit*: the `TeamCreate`/`TeamDelete` tools were removed and every session is already a team. Teammates are spawned directly via the `Agent` tool's `name` parameter (the old `team_name` param is accepted but ignored). No explicit team-creation step is needed.
 
 ### Activation flow
 
@@ -602,7 +604,7 @@ Agent Teams enable parallel multi-agent collaboration via Claude Code's built-in
 2. Frontend sends enableTeams: true → POST /api/console/create
 3. console.routes.ts sets CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1 in session env
 4. console.ts detects the env var and appends team leader system prompt
-5. Claude uses TeamCreate → TaskCreate → Agent (model: sonnet) to spawn teammates
+5. Claude spawns teammates via Agent(name, subagent_type, model: sonnet) + TaskCreate for the shared task list
 6. TeammateWatcher polls for tmux panes and broadcasts events to frontend
 ```
 

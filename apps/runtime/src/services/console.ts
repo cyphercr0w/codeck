@@ -418,7 +418,6 @@ function _createConsoleSessionInner(
 	// Read user's token optimization settings
 	let tokenSettings = {
 		compactionPct: 50,
-		effortLevel: "medium",
 		mcpDeferThreshold: 5,
 		thinkingTokens: 10000,
 	};
@@ -461,8 +460,6 @@ function _createConsoleSessionInner(
 			userEnv.ENABLE_TOOL_SEARCH || `auto:${tokenSettings.mcpDeferThreshold}`,
 		MAX_THINKING_TOKENS:
 			userEnv.MAX_THINKING_TOKENS || String(tokenSettings.thinkingTokens),
-		CLAUDE_CODE_EFFORT_LEVEL:
-			userEnv.CLAUDE_CODE_EFFORT_LEVEL || tokenSettings.effortLevel,
 		CODECK_SESSION_ID: id,
 	};
 
@@ -524,21 +521,21 @@ function _createConsoleSessionInner(
 			"- If it can be parallelized, parallelize it.",
 			"",
 			"### How to coordinate",
-			"1. TeamCreate — create a team (once per task group)",
-			"2. TaskCreate — define tasks with clear descriptions",
-			"3. Agent — spawn teammates with team_name, name, and model: 'sonnet'",
+			"Every session is ALREADY an implicit team — there is no setup step. Just spawn teammates.",
+			"1. Agent — spawn a teammate with a unique `name`, a `subagent_type` specialist, and `model: 'sonnet'`.",
+			"   Example: Agent(name: 'impl-auth', subagent_type: 'implementer', model: 'sonnet', prompt: '<brief>').",
 			"   Each teammate gets an ISOLATED context. They know NOTHING about your conversation.",
 			"   You MUST give them everything they need in their prompt:",
 			"   - Exact file paths to read/edit",
 			"   - What was decided (don't make them re-research)",
 			"   - What to do, what NOT to change, what to verify",
 			"   - Think of it as a complete task brief for a new hire",
-			"4. SendMessage — talk to teammates by name",
-			"5. TaskList — check progress",
-			"6. When done: SendMessage with {type: 'shutdown_request'} to each teammate",
+			"2. TaskCreate / TaskList — define and track the shared task list.",
+			"3. SendMessage — talk to a teammate by name.",
+			"4. Teammates run in the background and stop on their own when done; you'll be notified.",
 			"",
 			"### Rules",
-			"- Teammates ALWAYS use model: 'sonnet' (never Opus — too slow/expensive)",
+			"- Teammates use model: 'sonnet' by default (Sonnet 5 — near-Opus quality, cheaper/faster than Opus).",
 			"- ALWAYS spawn a reviewer after implementation work",
 			"- After spawning teammates, tell the user what each one is doing",
 			"- When teammates report back, summarize findings to the user",

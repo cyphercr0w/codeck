@@ -722,7 +722,7 @@ CRUD for team templates. Teams define parallel agent groups (no sequential trans
 
 ## `services/tmux-bridge.ts` — Agent Teams Orchestration
 
-**Note:** The tmux-bridge was the original Agent Teams orchestration layer. It has been superseded by the native TeamCreate/Agent/SendMessage system where Claude Code itself manages teams. The tmux-bridge remains for reference but is no longer the active launch path.
+**Note:** The tmux-bridge was the original Agent Teams orchestration layer. It has been superseded by the native Agent/SendMessage system where Claude Code itself manages teams (implicit teams since 2.1.178 — `TeamCreate`/`TeamDelete` removed). The tmux-bridge remains for reference but is no longer the active launch path.
 
 The current Agent Teams flow uses `console.ts` → `--append-system-prompt` to inject team leader instructions when `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1` is set. `teammate-watcher.ts` monitors for tmux panes created by Claude's Agent tool.
 

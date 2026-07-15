@@ -13,9 +13,7 @@
 			"Grep",
 			"Read(/workspace/.codeck/**)",
 			"Edit(/workspace/.codeck/**)",
-			"Write(/workspace/.codeck/**)",
 			"Edit(/root/.claude/**)",
-			"Write(/root/.claude/**)",
 			"Read(/root/.claude/**)",
 			"mcp__playwright__browser_navigate",
 			"mcp__playwright__browser_snapshot",
@@ -78,7 +76,6 @@
 	},
 	"includeGitInstructions": false,
 	"enableAllProjectMcpServers": true,
-	"effortLevel": "high",
 	"attribution": {
 		"commit": "",
 		"pr": ""

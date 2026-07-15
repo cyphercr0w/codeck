@@ -258,7 +258,11 @@ export async function hybridSearch(
 		vectorSearch({ ...options, limit: limit * 2 }),
 	]);
 
-	// Reciprocal Rank Fusion
+	// Reciprocal Rank Fusion.
+	// Corpus is code + technical notes full of identifiers/symbols/error codes,
+	// where lexical (BM25) beats dense embeddings ("the rare term's signal gets
+	// averaged away" by vectors). So we weight BM25 >= vector (0.6 / 0.4) rather
+	// than the generic-prose default of 0.4 / 0.6.
 	const k = 60; // RRF constant
 	const scores = new Map<string, { score: number; result: SearchResult }>();
 
@@ -268,7 +272,7 @@ export async function hybridSearch(
 	for (let i = 0; i < bm25Results.length; i++) {
 		const key = makeKey(bm25Results[i]);
 		const existing = scores.get(key);
-		const bm25Score = 0.4 / (k + i + 1);
+		const bm25Score = 0.6 / (k + i + 1);
 		if (existing) {
 			existing.score += bm25Score;
 		} else {
@@ -279,7 +283,7 @@ export async function hybridSearch(
 	for (let i = 0; i < vecResults.length; i++) {
 		const key = makeKey(vecResults[i]);
 		const existing = scores.get(key);
-		const vecScore = 0.6 / (k + i + 1);
+		const vecScore = 0.4 / (k + i + 1);
 		if (existing) {
 			existing.score += vecScore;
 		} else {

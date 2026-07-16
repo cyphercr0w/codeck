@@ -1388,6 +1388,7 @@ async function applyPresetRecursive(
 			// (their dirs are skipIfExists, so a normal copy keeps the old content).
 			copyDirectoryRecursive(srcDir, destDir, manifest.id, {
 				skipIfExists: force ? false : rd.skipIfExists,
+				backup: force,
 			});
 		}
 	}
@@ -1476,7 +1477,7 @@ function copyDirectoryRecursive(
 	srcDir: string,
 	destDir: string,
 	presetId: string,
-	opts: { skipIfExists: boolean },
+	opts: { skipIfExists: boolean; backup?: boolean },
 ): void {
 	// Validate source path stays within TEMPLATES_DIR
 	const resolvedSrc = resolve(srcDir);
@@ -1520,6 +1521,12 @@ function copyDirectoryRecursive(
 			if (opts.skipIfExists && existsSync(destEntry)) {
 				console.log(`[Preset]   KEEP ${destEntry} (skipIfExists)`);
 				continue;
+			}
+
+			// On a force reset we overwrite user-customizable files here; back them
+			// up first (parity with the individual-file loop) so a reset is recoverable.
+			if (opts.backup && existsSync(destEntry)) {
+				backupFile(destEntry);
 			}
 
 			// Ensure destination parent directory exists

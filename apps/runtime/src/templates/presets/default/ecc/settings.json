@@ -173,8 +173,8 @@
 				]
 			},
 			{
-				"matcher": "Edit|Write",
-				"if": "Edit OR Write",
+				"matcher": "Edit|Write|MultiEdit",
+				"if": "Edit OR Write OR MultiEdit",
 				"hooks": [
 					{
 						"type": "command",

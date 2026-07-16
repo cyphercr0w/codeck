@@ -52,7 +52,7 @@ CONTAINER="codeck"
 COMPOSE_FILE="$REPO_ROOT/docker/compose.yml"
 ENV_FILE="$REPO_ROOT/.env"
 EXPECTED_BRANCH="feat/modernization-2026"
-TARGET_VERSION="9.1.0"
+TARGET_VERSION="9.2.0"
 TS="$(date +%Y%m%d-%H%M%S)"
 BACKUP_DIR="${CODECK_BACKUP_DIR:-$HOME/codeck-backups}/$TS"
 

@@ -20,7 +20,7 @@ let parsed;
 try { parsed = JSON.parse(input); } catch { process.exit(0); }
 
 const toolName = parsed.tool_name || '';
-if (toolName !== 'Edit' && toolName !== 'Write') process.exit(0);
+if (!/^(Edit|Write|MultiEdit)$/.test(toolName)) process.exit(0);
 
 const filePath = parsed.tool_input?.file_path || '';
 if (!filePath) process.exit(0);

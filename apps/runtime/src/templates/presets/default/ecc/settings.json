@@ -67,8 +67,10 @@
 	"includeGitInstructions": false,
 	"enableAllProjectMcpServers": true,
 	"fallbackModel": "sonnet",
+	"effortLevel": "high",
+	"autoCompactEnabled": true,
 	"env": {
-		"ENABLE_TOOL_SEARCH": "1"
+		"ENABLE_TOOL_SEARCH": "true"
 	},
 	"attribution": {
 		"commit": "",

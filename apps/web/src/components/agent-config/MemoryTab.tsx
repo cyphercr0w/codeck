@@ -63,7 +63,6 @@ interface MemoryTabProps {
 
 interface TokenSettings {
 	compactionPct: number;
-	effortLevel: "low" | "medium" | "high" | "max";
 	mcpDeferThreshold: number;
 	thinkingTokens: number;
 }
@@ -108,10 +107,71 @@ function ModelSelector() {
 	);
 }
 
+const EFFORT_OPTIONS = [
+	{ label: "Low", value: "low" },
+	{ label: "Medium", value: "medium" },
+	{ label: "High", value: "high" },
+	{ label: "xHigh", value: "xhigh" },
+	{ label: "Max", value: "max" },
+];
+
+function EffortSelector() {
+	const [effort, setEffort] = useState("high");
+
+	useEffect(() => {
+		apiFetch("/api/system/effort")
+			.then((r) => r.json())
+			.then((d) => {
+				if (d?.effort) setEffort(d.effort);
+			})
+			.catch(() => {});
+	}, []);
+
+	async function handleChange(v: string) {
+		setEffort(v);
+		try {
+			await apiFetch("/api/system/effort", {
+				method: "POST",
+				body: JSON.stringify({ effort: v }),
+			});
+		} catch {
+			/* keep local value */
+		}
+	}
+
+	return (
+		<div class="dash-card">
+			<div class="dash-card-title">Reasoning Effort</div>
+			<div
+				style={{
+					fontSize: "11px",
+					color: "var(--text-muted)",
+					margin: "0 0 8px",
+					lineHeight: "1.4",
+				}}
+			>
+				Reasoning depth on modern models (Opus 4.8 / Sonnet 5, which use adaptive
+				reasoning). Higher = more thorough, slower, costlier. This is the control
+				that replaces "max thinking tokens" on current models.
+			</div>
+			<div class="model-segmented">
+				{EFFORT_OPTIONS.map((opt) => (
+					<button
+						key={opt.value}
+						class={`model-seg${effort === opt.value ? " active" : ""}`}
+						onClick={() => handleChange(opt.value)}
+					>
+						{opt.label}
+					</button>
+				))}
+			</div>
+		</div>
+	);
+}
+
 function TokenOptimizationCard() {
 	const [settings, setSettings] = useState<TokenSettings>({
 		compactionPct: 50,
-		effortLevel: "medium",
 		mcpDeferThreshold: 5,
 		thinkingTokens: 10000,
 	});
@@ -175,13 +235,6 @@ function TokenOptimizationCard() {
 		marginTop: "2px",
 		lineHeight: "1.4",
 	};
-	const levels: Array<"low" | "medium" | "high" | "max"> = [
-		"low",
-		"medium",
-		"high",
-		"max",
-	];
-
 	return (
 		<div class="dash-card">
 			<div class="dash-card-title">
@@ -222,50 +275,6 @@ function TokenOptimizationCard() {
 			<div style={row}>
 				<div style={labelCol}>
 					<div style={{ fontWeight: 500, fontSize: "13px" }}>
-						Default effort level
-					</div>
-					<div style={desc}>
-						Low = fast & cheap. Medium = balanced. High = thorough. Max =
-						deepest reasoning.
-					</div>
-				</div>
-				<div style={ctrlCol}>
-					<div style={{ display: "flex" }}>
-						{levels.map((l, i) => (
-							<button
-								key={l}
-								onClick={() => update("effortLevel", l)}
-								style={{
-									padding: "4px 10px",
-									fontSize: "12px",
-									border: "1px solid var(--border)",
-									borderLeft: i === 0 ? "1px solid var(--border)" : "none",
-									borderRadius:
-										i === 0
-											? "4px 0 0 4px"
-											: i === levels.length - 1
-												? "0 4px 4px 0"
-												: "0",
-									background:
-										settings.effortLevel === l
-											? "var(--accent)"
-											: "transparent",
-									color:
-										settings.effortLevel === l ? "#fff" : "var(--text-muted)",
-									cursor: "pointer",
-									transition: "background 0.15s, color 0.15s",
-								}}
-							>
-								{l}
-							</button>
-						))}
-					</div>
-				</div>
-			</div>
-
-			<div style={row}>
-				<div style={labelCol}>
-					<div style={{ fontWeight: 500, fontSize: "13px" }}>
 						MCP tool defer threshold
 					</div>
 					<div style={desc}>
@@ -297,9 +306,13 @@ function TokenOptimizationCard() {
 			<div style={{ ...row, borderBottom: "none" }}>
 				<div style={labelCol}>
 					<div style={{ fontWeight: 500, fontSize: "13px" }}>
-						Max thinking tokens
+						Max thinking tokens (legacy models)
 					</div>
-					<div style={desc}>Cap extended thinking budget. Lower = cheaper.</div>
+					<div style={desc}>
+						Fixed thinking budget for older models. Modern models (Opus 4.8 /
+						Sonnet 5) use adaptive reasoning — set "Reasoning Effort" above
+						instead; this has no effect on them.
+					</div>
 				</div>
 				<div style={ctrlCol}>
 					<input
@@ -566,6 +579,9 @@ export function MemoryTab({ onNavigate }: MemoryTabProps) {
 			{/* Model + Token Optimization — always visible below shortcuts */}
 			<div class="ac-section" style={{ marginTop: "20px" }}>
 				<ModelSelector />
+				<div style={{ marginTop: "12px" }}>
+					<EffortSelector />
+				</div>
 				<div style={{ marginTop: "12px" }}>
 					<TokenOptimizationCard />
 				</div>

@@ -210,7 +210,9 @@ Currently supported services: `vercel`.
 | `POST` | `/api/system/restart` | — | `{ success, restarting? }` | Restart the container (requires compose info) |
 | `POST` | `/api/system/update-agent` | — | `{ success, version, binaryPath }` | Update Claude CLI and re-resolve binary path |
 | `GET` | `/api/system/model` | — | `{ model }` | Get current Claude model (default: sonnet) |
-| `POST` | `/api/system/model` | `{ model }` | `{ success, model }` | Set Claude model. Valid: sonnet, opus, opus[1m], haiku |
+| `POST` | `/api/system/model` | `{ model }` | `{ success, model }` | Set Claude model. Valid: sonnet, opus, opus[1m], fable, haiku |
+| `GET` | `/api/system/effort` | — | `{ effort }` | Get reasoning effort (default: high) |
+| `POST` | `/api/system/effort` | `{ effort }` | `{ success, effort }` | Set reasoning effort (settings.json `effortLevel` — the depth control for modern adaptive-reasoning models). Valid: low, medium, high, xhigh, max |
 
 **`add-port` responses:**
 - `{ "success": true, "alreadyMapped": true }` — port already exposed

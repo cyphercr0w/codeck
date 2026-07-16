@@ -187,6 +187,46 @@ router.post("/model", (req, res) => {
 	}
 });
 
+// Reasoning effort — the depth control that works on modern (adaptive-reasoning)
+// models like Opus 4.8 / Sonnet 5, which ignore MAX_THINKING_TOKENS. Persisted as
+// the settings.json `effortLevel` key (source of truth for the Claude CLI).
+const VALID_EFFORTS = ["low", "medium", "high", "xhigh", "max"];
+
+router.get("/effort", (_req, res) => {
+	try {
+		const settings = JSON.parse(
+			readFileSync(ACTIVE_AGENT.settingsFile, "utf-8"),
+		);
+		res.json({ effort: settings.effortLevel || "high" });
+	} catch {
+		res.json({ effort: "high" });
+	}
+});
+
+router.post("/effort", (req, res) => {
+	const { effort } = req.body;
+	if (!effort || !VALID_EFFORTS.includes(effort)) {
+		res
+			.status(400)
+			.json({ error: "Invalid effort. Use: low, medium, high, xhigh, max" });
+		return;
+	}
+	try {
+		let settings: Record<string, unknown> = {};
+		if (existsSync(ACTIVE_AGENT.settingsFile)) {
+			settings = JSON.parse(readFileSync(ACTIVE_AGENT.settingsFile, "utf-8"));
+		}
+		settings.effortLevel = effort;
+		writeFileSync(
+			ACTIVE_AGENT.settingsFile,
+			JSON.stringify(settings, null, "\t"),
+		);
+		res.json({ success: true, effort });
+	} catch (e) {
+		res.status(500).json({ error: (e as Error).message });
+	}
+});
+
 // GET /api/system/ui-settings — returns persisted UI settings (theme, font, sidebar)
 router.get("/ui-settings", (_req, res) => {
 	try {

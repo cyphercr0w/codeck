@@ -24,9 +24,15 @@ if (!agentName.includes('code-review')) process.exit(0);
 
 if (!existsSync(STATE_DIR)) mkdirSync(STATE_DIR, { recursive: true });
 
+// A review ran, but this hook cannot know whether findings were resolved.
+// `clean:false` means "unconfirmed" — in the autonomous harness the lead must
+// overwrite with clean:true only after re-reviewing to ZERO findings (that is
+// what forces the review loop). Legacy (non-harness) gate accepts either.
 writeFileSync(MARKER_PATH, JSON.stringify({
   timestamp: Date.now(),
   agent: agentName,
+  clean: false,
+  findings: null,
 }));
 
 process.exit(0);

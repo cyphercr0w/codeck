@@ -1,6 +1,6 @@
 # Task Playbooks
 
-The `task-classifier` hook tags each task with a type and points you here. Each playbook is a specialization of the **Autonomous Operator Protocol** (`workflow.md`) — same phases (clarify → plan → implement → review → audit → deliver, iterate), tuned per task type. For large multi-step work, run the **`autonomous-harness` skill** (`/harness`) which drives this loop with persistent, resumable state and a hard budget cap.
+The `task-classifier` hook tags each task with a type and points you here. Each playbook is a specialization of the **Autonomous Operator Protocol** (`workflow.md`) — same phases (clarify+mode → plan → **PO plan-review loop** → implement → **review→audit loop** → **PO DONE**, iterate), tuned per task type. Decisions are the **`product-owner`**'s, not the user's (autonomous mode). For large multi-step work, run the **`autonomous-harness` skill** (`/harness`) which drives this loop with persistent, resumable state, a PO decision layer, and a hard budget cap.
 
 ## When to escalate parallelism (read-parallel, write-serial)
 
@@ -12,10 +12,10 @@ Default to a **single agent**. Escalate only as the task demands, cheapest first
 
 ## feature — build something new
 1. **Clarify:** intended behavior, scope, UX, data/API contracts, and the exact acceptance criteria (definition of done).
-2. **Plan:** files to create/change, every affected path, tests, rollback. Use `architect`/`planner` for non-trivial design. Get approval.
+2. **Plan → PO verdict:** files to create/change, every affected path, tests, rollback. Use `architect`/`planner` for non-trivial design. Run the plan-review loop (`spec-reviewer`+`architect`+`grader`) to zero findings, then the `product-owner` approves — no user gate in autonomous mode.
 3. **Implement:** thin vertical slice first (make it work end-to-end), then flesh out. Write tests alongside.
-4. **Review → Audit:** `code-reviewer` → `security-reviewer` + `grader` (completeness vs criteria) → `visual-verifier` if it has a UI.
-5. **Deliver** only when every criterion has evidence.
+4. **Review → Audit (loop):** `code-reviewer` + `silent-failure-hunter` → `security-reviewer` + `grader` (completeness vs criteria) → `visual-verifier` if it has a UI; dedup findings, adversarially verify each CRITICAL/HIGH, fix and re-review until zero findings (fail-closed).
+5. **PO DONE → deliver** only when every criterion has linked evidence.
 
 ## bugfix — something is broken
 1. **Reproduce first.** Do not fix what you cannot reproduce — write a failing test that captures the bug.

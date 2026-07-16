@@ -53,19 +53,7 @@
 			"mcp__token-optimizer__smart_test",
 			"mcp__token-optimizer__smart_build",
 			"mcp__token-optimizer__smart_lint",
-			"mcp__token-optimizer__smart_status",
-			"mcp__memory__search_nodes",
-			"mcp__memory__read_graph",
-			"mcp__memory__create_entities",
-			"mcp__memory__add_observations",
-			"mcp__memory__create_relations",
-			"mcp__memory__open_nodes",
-			"mcp__memory__delete_entities",
-			"mcp__memory__delete_observations",
-			"mcp__memory__delete_relations",
-			"mcp__magic__getRegistryItem",
-			"mcp__magic__listRegistryItems",
-			"mcp__magic__searchRegistryItems"
+			"mcp__token-optimizer__smart_status"
 		],
 		"deny": [
 			"Read(.env*)",
@@ -307,6 +295,17 @@
 					}
 				],
 				"description": "Inject available MCP tools, skills, and workflow hints based on task type"
+			},
+			{
+				"matcher": "",
+				"hooks": [
+					{
+						"type": "command",
+						"command": "node /workspace/.codeck/scripts/capability-doctor.mjs --inject",
+						"timeout": 6
+					}
+				],
+				"description": "Inject an environment-capabilities preflight (only NOT-ready capabilities + fallbacks) on the first message"
 			}
 		],
 		"Stop": [
@@ -479,6 +478,18 @@
 					}
 				],
 				"description": "Register config/preferences/memory paths to watch for hot-reload changes"
+			},
+			{
+				"matcher": "*",
+				"hooks": [
+					{
+						"type": "command",
+						"command": "node /workspace/.codeck/scripts/capability-doctor.mjs --probe",
+						"async": true,
+						"timeout": 6
+					}
+				],
+				"description": "Probe external capabilities (gh auth, git remote, docker, runtimes, browser, network, disk) with real execution and cache the result for the preflight injection"
 			}
 		],
 		"FileChanged": [

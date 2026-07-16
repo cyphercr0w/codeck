@@ -53,6 +53,12 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 CONTAINER="codeck"
 COMPOSE_FILE="$REPO_ROOT/docker/compose.yml"
 ENV_FILE="$REPO_ROOT/.env"
+# On Windows/Git-Bash, docker.exe needs native Windows paths for --env-file / -f
+# (an MSYS "/c/..." path is misread as "C:\c\..."). cygpath is absent on Linux.
+if command -v cygpath >/dev/null 2>&1; then
+  COMPOSE_FILE="$(cygpath -w "$COMPOSE_FILE")"
+  ENV_FILE="$(cygpath -w "$ENV_FILE")"
+fi
 EXPECTED_BRANCH="feat/modernization-2026"
 TARGET_VERSION="9.2.0"
 TS="$(date +%Y%m%d-%H%M%S)"

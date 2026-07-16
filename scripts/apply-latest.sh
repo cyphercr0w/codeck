@@ -18,8 +18,13 @@ set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 CONTAINER="${CODECK_CONTAINER:-codeck}"
-DRY=0
-[ "${1:-}" = "--dry-run" ] && DRY=1
+DRY=0; NB=""
+for a in "$@"; do
+  case "$a" in
+    --dry-run)   DRY=1 ;;
+    --no-backup) NB="--no-backup" ;;   # backup already taken (e.g. re-run after a fix)
+  esac
+done
 
 say() { printf '\n\033[1;36m==> %s\033[0m\n' "$1"; }
 
@@ -30,7 +35,7 @@ if [ "$DRY" = 1 ]; then
   say "Dry-run complete — nothing changed. Re-run without --dry-run to apply."
   exit 0
 fi
-bash "$REPO_ROOT/scripts/update-container.sh" --apply
+bash "$REPO_ROOT/scripts/update-container.sh" --apply $NB
 
 # Wait for the container to be healthy again before touching it.
 say "Waiting for ${CONTAINER} to report healthy…"

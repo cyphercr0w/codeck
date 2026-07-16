@@ -24,6 +24,8 @@ All environment variables are for the single container runtime. Set via `.env` f
 | `SESSION_RESTORE_DELAY` | `2000` | Delay in ms before restoring PTY sessions on startup |
 | `AGENT_SIGKILL_GRACE_MS` | `15000` | Grace period (ms) between SIGTERM and SIGKILL for proactive agent timeouts. Clamped to 5000-60000. |
 | `CLAUDE_CODE_OAUTH_TOKEN` | — | Auto-set per PTY session from .credentials.json |
+| `CODECK_HARNESS_DIR` | `/workspace/.codeck/harness` | Autonomous-harness control-plane dir. Set per-run by scheduled loops to isolate their harness state; honored by budget-guard, workflow-checkpoint, no-progress-guard, harness-resume. |
+| `CODECK_STATE_DIR` | `/workspace/.codeck/state` | Hook state/markers dir. Set per-run by scheduled loops for isolation; honored by the same hooks + edit-tracker, review-marker, capability-doctor. |
 
 ### Configuration Validation
 

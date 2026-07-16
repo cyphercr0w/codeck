@@ -9,8 +9,8 @@ import { scheduleCron, stopCron, enqueueExecution, type SchedulerDeps } from './
 import { getAgentOutput as _getAgentOutput, getAgentLogs as _getAgentLogs, getAgentExecutions as _getAgentExecutions } from './proactive-agents/logs.js';
 
 // ── Re-export types ──
-export type { AgentStatus, AgentConfig, AgentState, ExecutionResult, AgentSummary, AgentDetail, CreateAgentInput, ObjectiveLintWarning, BroadcastFn } from './proactive-agents/types.js';
-import type { AgentRuntime, AgentState, AgentConfig, ExecutionResult, AgentSummary, AgentDetail, CreateAgentInput, BroadcastFn } from './proactive-agents/types.js';
+export type { AgentStatus, AgentConfig, AgentState, ExecutionResult, AgentSummary, AgentDetail, CreateAgentInput, ObjectiveLintWarning, BroadcastFn, AgentKind, LoopConfig, LoopMode, PermissionProfile, LoopAcceptance, InboxEntry } from './proactive-agents/types.js';
+import type { AgentRuntime, AgentState, AgentConfig, ExecutionResult, AgentSummary, AgentDetail, CreateAgentInput, BroadcastFn, AgentKind, LoopConfig, LoopMode, PermissionProfile, LoopAcceptance, InboxEntry } from './proactive-agents/types.js';
 
 // ── Internal runtime state ──
 
@@ -19,6 +19,55 @@ const cwdLocks = new Map<string, string>();       // cwd → agentId currently r
 const cwdQueues = new Map<string, string[]>();     // cwd → queued agentIds
 const MAX_AGENTS = 10;
 const MAX_EXECUTION_HISTORY = 100;
+
+// ── Loop (scheduled-loop) defaults & bounds ──
+// A full-harness tick (plan→implement→review→audit→DONE) needs far more wall-clock
+// than a one-shot run, so loops default to a much larger timeout.
+const LOOP_DEFAULT_TIMEOUT_MS = 30 * 60 * 1000;   // 30 min
+const LOOP_MAX_TIMEOUT_MS = 2 * 60 * 60 * 1000;   // 2 h hard ceiling
+const LOOP_DEFAULT_ITER_CAP = 200;
+const LOOP_DEFAULT_COST_CAP_USD = 5;
+const MAX_INBOX_ENTRIES = 200;
+
+function clampInt(v: unknown, lo: number, hi: number, dflt: number): number {
+  const n = typeof v === 'number' ? Math.round(v) : NaN;
+  if (!Number.isFinite(n)) return dflt;
+  return Math.max(lo, Math.min(n, hi));
+}
+
+function clampNum(v: unknown, lo: number, hi: number, dflt: number): number {
+  const n = typeof v === 'number' ? v : NaN;
+  if (!Number.isFinite(n)) return dflt;
+  return Math.max(lo, Math.min(n, hi));
+}
+
+/**
+ * Normalize + validate a loop config from user input. Throws on missing gate.
+ * A loop is only legitimate if a machine can say pass/fail — enforce goal + verifyCmd.
+ */
+function buildLoopConfig(raw: Partial<LoopConfig> | undefined): LoopConfig {
+  const l = raw || {};
+  if (!l.goal || typeof l.goal !== 'string' || !l.goal.trim()) {
+    throw new Error('Loop agents require a goal (an observable stop condition)');
+  }
+  if (!l.verifyCmd || typeof l.verifyCmd !== 'string' || !l.verifyCmd.trim()) {
+    throw new Error('Loop agents require a verifyCmd (a machine gate — tests, build, or lint that returns pass/fail)');
+  }
+  if (l.goal.length > 2000) throw new Error('Loop goal must be under 2,000 characters');
+  if (l.verifyCmd.length > 1000) throw new Error('Loop verifyCmd must be under 1,000 characters');
+  const mode: LoopMode = l.mode === 'goal-driven' ? 'goal-driven' : 'scheduled';
+  const permissionProfile: PermissionProfile =
+    l.permissionProfile === 'readonly' || l.permissionProfile === 'full' ? l.permissionProfile : 'safe-write';
+  return {
+    goal: l.goal.trim(),
+    verifyCmd: l.verifyCmd.trim(),
+    iterCap: clampInt(l.iterCap, 1, 1000, LOOP_DEFAULT_ITER_CAP),
+    costCapUsd: clampNum(l.costCapUsd, 0.5, 100, LOOP_DEFAULT_COST_CAP_USD),
+    mode,
+    permissionProfile,
+    skill: (typeof l.skill === 'string' && l.skill.trim()) ? l.skill.trim() : 'scheduled-loop',
+  };
+}
 
 const AGENTS_DIR = resolve(process.env.WORKSPACE || '/workspace', '.codeck/agents');
 const MANIFEST_PATH = join(AGENTS_DIR, 'manifest.json');
@@ -52,6 +101,22 @@ function agentDir(id: string): string {
 
 function executionsDir(id: string): string {
   return join(agentDir(id), 'executions');
+}
+
+// Per-loop isolated control-plane dirs. Passed to the headless run via
+// CODECK_HARNESS_DIR / CODECK_STATE_DIR so budget-guard, no-progress-guard,
+// workflow-checkpoint and harness-resume read/write here instead of the global
+// /workspace/.codeck/harness — no collision with an interactive harness task.
+function harnessDir(id: string): string {
+  return join(agentDir(id), 'harness');
+}
+
+function loopStateDir(id: string): string {
+  return join(agentDir(id), 'state');
+}
+
+function inboxDir(id: string): string {
+  return join(agentDir(id), 'inbox');
 }
 
 const MANIFEST_BACKUP_PATH = `${MANIFEST_PATH}.backup`;
@@ -162,6 +227,8 @@ function toSummary(runtime: AgentRuntime): AgentSummary {
     nextRunAt: runtime.state.nextRunAt,
     totalExecutions: runtime.state.totalExecutions,
     running: runtime.currentExecution !== null,
+    kind: runtime.config.kind === 'loop' ? 'loop' : 'oneshot',
+    loop: runtime.config.loop,
   };
 }
 
@@ -228,6 +295,9 @@ function getSchedulerDeps(): SchedulerDeps {
     broadcastFn: () => _broadcastFn,
     resolveAgentCwd,
     executionsDir,
+    harnessDir,
+    loopStateDir,
+    inboxDir,
     saveState,
     toSummary,
     pruneExecutions,
@@ -377,6 +447,13 @@ export function createAgent(input: CreateAgentInput): AgentDetail {
   const id = randomUUID().slice(0, 8);
   const now = Date.now();
 
+  // Loop agents: validate the machine gate, apply loop-scale timeout defaults.
+  const kind: AgentKind = input.kind === 'loop' ? 'loop' : 'oneshot';
+  const loop = kind === 'loop' ? buildLoopConfig(input.loop) : undefined;
+  const defaultTimeout = kind === 'loop' ? LOOP_DEFAULT_TIMEOUT_MS : 300000;
+  const maxTimeout = kind === 'loop' ? LOOP_MAX_TIMEOUT_MS : Infinity;
+  const timeoutMs = Math.min(input.timeoutMs || defaultTimeout, maxTimeout);
+
   const config: AgentConfig = {
     id,
     name: input.name,
@@ -384,10 +461,12 @@ export function createAgent(input: CreateAgentInput): AgentDetail {
     schedule: input.schedule,
     cwd,
     model: input.model || '',
-    timeoutMs: input.timeoutMs || 300000, // 5 minutes default
+    timeoutMs,
     maxRetries: input.maxRetries || 3,
     createdAt: now,
     updatedAt: now,
+    kind,
+    loop,
   };
 
   const state: AgentState = {
@@ -403,6 +482,9 @@ export function createAgent(input: CreateAgentInput): AgentDetail {
   const dir = agentDir(id);
   mkdirSync(dir, { recursive: true, mode: 0o700 });
   mkdirSync(executionsDir(id), { recursive: true, mode: 0o700 });
+  if (kind === 'loop') {
+    mkdirSync(inboxDir(id), { recursive: true, mode: 0o700 });
+  }
   saveConfig(config);
   saveState(id, state);
 
@@ -433,9 +515,22 @@ export function listAgents(): AgentSummary[] {
   return Array.from(agents.values()).map(toSummary);
 }
 
-export function updateAgent(id: string, updates: Partial<Pick<AgentConfig, 'name' | 'objective' | 'schedule' | 'cwd' | 'model' | 'timeoutMs' | 'maxRetries'>>): AgentDetail | null {
+export function updateAgent(id: string, updates: Partial<Pick<AgentConfig, 'name' | 'objective' | 'schedule' | 'cwd' | 'model' | 'timeoutMs' | 'maxRetries'>> & { loop?: Partial<LoopConfig> }): AgentDetail | null {
   const runtime = agents.get(id);
   if (!runtime) return null;
+
+  // Loop config can only be edited on a loop agent (kind is immutable — recreate
+  // to convert). Re-validate the gate so an update can't strip goal/verifyCmd.
+  let nextLoop: LoopConfig | undefined;
+  if (updates.loop !== undefined) {
+    if (runtime.config.kind !== 'loop') {
+      throw new Error('Cannot set loop config on a one-shot agent — recreate it as a loop');
+    }
+    nextLoop = buildLoopConfig({ ...runtime.config.loop, ...updates.loop });
+  }
+  if (updates.timeoutMs !== undefined && runtime.config.kind === 'loop') {
+    updates.timeoutMs = Math.min(updates.timeoutMs, LOOP_MAX_TIMEOUT_MS);
+  }
 
   if (updates.name && updates.name.length > 50) {
     throw new Error('Agent name must not exceed 50 characters');
@@ -470,7 +565,9 @@ export function updateAgent(id: string, updates: Partial<Pick<AgentConfig, 'name
 
   const scheduleChanged = updates.schedule && updates.schedule !== runtime.config.schedule;
 
-  Object.assign(runtime.config, updates, { updatedAt: Date.now() });
+  const { loop: _loopRaw, ...configUpdates } = updates;
+  Object.assign(runtime.config, configUpdates, { updatedAt: Date.now() });
+  if (nextLoop) runtime.config.loop = nextLoop;
   saveConfig(runtime.config);
 
   if (scheduleChanged && runtime.state.status === 'active') {
@@ -568,4 +665,70 @@ export function getAgentLogs(id: string, timestamp?: string): string | null {
 
 export function getAgentExecutions(id: string, limit = 20): ExecutionResult[] {
   return _getAgentExecutions(executionsDir, id, limit);
+}
+
+// ── Loop queries ──
+
+/**
+ * Aggregate the article's north-star metric for a loop: cost per accepted change.
+ * A tick is "accepted" when the PO set overseer.done and every criterion is
+ * done+evidence; "escalated" when the PO handed it to a human.
+ */
+export function getLoopAcceptance(id: string): LoopAcceptance | null {
+  const runtime = agents.get(id);
+  if (!runtime || runtime.config.kind !== 'loop') return null;
+
+  const execs = _getAgentExecutions(executionsDir, id, MAX_EXECUTION_HISTORY);
+  let accepted = 0, escalated = 0, failed = 0, totalCostUsd = 0;
+  for (const e of execs) {
+    if (e.result !== 'success') failed++;
+    if (e.accepted) accepted++;
+    if (e.escalated) escalated++;
+    if (typeof e.costUsd === 'number' && Number.isFinite(e.costUsd)) totalCostUsd += e.costUsd;
+  }
+  const totalTicks = execs.length;
+  const round4 = (n: number) => Math.round(n * 10000) / 10000;
+  return {
+    totalTicks,
+    accepted,
+    escalated,
+    failed,
+    acceptanceRate: totalTicks > 0 ? round4(accepted / totalTicks) : 0,
+    totalCostUsd: round4(totalCostUsd),
+    costPerAcceptedUsd: accepted > 0 ? round4(totalCostUsd / accepted) : null,
+  };
+}
+
+/** List inbox entries (escalations needing human judgment), newest first. */
+export function getLoopInbox(id: string): InboxEntry[] | null {
+  const runtime = agents.get(id);
+  if (!runtime || runtime.config.kind !== 'loop') return null;
+
+  const dir = inboxDir(id);
+  if (!existsSync(dir)) return [];
+  let files: string[];
+  try {
+    files = readdirSync(dir).filter(f => f.endsWith('.md')).sort().reverse().slice(0, MAX_INBOX_ENTRIES);
+  } catch { return []; }
+
+  const entries: InboxEntry[] = [];
+  for (const f of files) {
+    try {
+      const full = join(dir, f);
+      const st = statSync(full);
+      const content = readFileSync(full, 'utf8');
+      entries.push({ file: f, createdAt: st.mtimeMs, preview: content.slice(0, 500) });
+    } catch { /* skip unreadable */ }
+  }
+  return entries;
+}
+
+/** Read one inbox entry in full. Filename is validated to block path traversal. */
+export function getLoopInboxEntry(id: string, file: string): string | null {
+  const runtime = agents.get(id);
+  if (!runtime || runtime.config.kind !== 'loop') return null;
+  if (!/^[\w.\-]+\.md$/.test(file) || file.includes('..')) return null;
+  const full = join(inboxDir(id), file);
+  if (!existsSync(full)) return null;
+  try { return readFileSync(full, 'utf8'); } catch { return null; }
 }

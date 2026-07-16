@@ -122,4 +122,13 @@ These leverage what cloud IDEs *can't* match: a persistent container + a real br
 7. Semantic screenshot-diff verification via CDP. — P3 (differentiator)
 8. Self-hosted OTel tracing + pass^k eval harness. — P3
 
+**Scheduled Loops (shipped, `feat/modernization-2026`, preset 9.3.0).** The
+"automations" gap that Claude Cowork + the Loop Engineering article both point at:
+Proactive Agents' cron scheduler now optionally drives the full PO-driven
+autonomous-harness per tick (isolated control-plane, machine-gate-required,
+evidence-gated DONE, escalation inbox), plus a **cost-per-accepted-change**
+acceptance metric — a first cut at bet #8's measurement. See
+[`design/SCHEDULED-LOOPS.md`](design/SCHEDULED-LOOPS.md). Still open from the same
+convergence: reviving AgentShield as a mandatory security gate in the DONE step.
+
 *Sourcing note: every item traces to a dated primary source in the research pass. Items depending on Anthropic-internal eval numbers, contested benchmark leaderboards, or future-dated (2026) arXiv IDs are directionally reliable but should be re-verified before load-bearing use.*

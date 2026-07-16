@@ -3,10 +3,10 @@
 # update-container.sh — Safe update of the running `codeck` container to the
 # current git branch, preserving the ./Rep-GL3 workspace bind and all volumes.
 #
-# HOW THE DEPLOY WORKS (preset target v9.2.0):
+# HOW THE DEPLOY WORKS (preset target v9.3.0):
 #   The heavy lifting is AUTOMATIC. On rebuild, the new server runs
 #   checkPresetUpdate() at startup; it sees the deployed preset is older than the
-#   image (v9.2.0) and auto-deploys NEW files (harness/PO scripts, product-owner +
+#   image (v9.3.0) and auto-deploys NEW files (harness/PO scripts, product-owner +
 #   silent-failure-hunter agents, agent-introspection-debugging skill, capability-
 #   doctor, the modified rules, and mcp.json) and merges the new hooks into
 #   settings.json (hook-level dedup — no duplicate subagent-tracker). This script
@@ -60,7 +60,7 @@ if command -v cygpath >/dev/null 2>&1; then
   ENV_FILE="$(cygpath -w "$ENV_FILE")"
 fi
 EXPECTED_BRANCH="feat/modernization-2026"
-TARGET_VERSION="9.2.0"
+TARGET_VERSION="9.3.0"
 TS="$(date +%Y%m%d-%H%M%S)"
 BACKUP_DIR="${CODECK_BACKUP_DIR:-$HOME/codeck-backups}/$TS"
 

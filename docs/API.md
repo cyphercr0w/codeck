@@ -340,10 +340,10 @@ Sync between memory stores (markdown files, daily logs, SQLite index).
 | Method | Endpoint | Body | Response | Description |
 |--------|----------|------|----------|-------------|
 | `POST` | `/api/agents/lint` | `{ objective }` | `{ warnings }` | Lint objective for suspicious patterns |
-| `POST` | `/api/agents` | `{ name, objective, schedule, cwd?, model?, timeoutMs? }` | `AgentDetail` | Create agent (cron schedule, UTC) |
+| `POST` | `/api/agents` | `{ name, objective, schedule, cwd?, model?, timeoutMs?, kind?, loop? }` | `AgentDetail` | Create agent (cron schedule, UTC). `kind:'loop'` requires `loop:{goal,verifyCmd,...}` |
 | `GET` | `/api/agents` | — | `{ agents: AgentSummary[] }` | List all agents |
 | `GET` | `/api/agents/:id` | — | `AgentDetail` | Agent detail |
-| `PUT` | `/api/agents/:id` | Partial `AgentConfig` | `AgentDetail` | Update config |
+| `PUT` | `/api/agents/:id` | Partial `AgentConfig` (+ `loop`) | `AgentDetail` | Update config (`kind` immutable) |
 | `POST` | `/api/agents/:id/pause` | — | `AgentDetail` | Pause (stop cron) |
 | `POST` | `/api/agents/:id/resume` | — | `AgentDetail` | Resume (reset failures) |
 | `POST` | `/api/agents/:id/execute` | — | `{ executionId }` | Manual trigger |
@@ -351,6 +351,17 @@ Sync between memory stores (markdown files, daily logs, SQLite index).
 | `GET` | `/api/agents/:id/logs` | — | `text/plain` | Latest execution log |
 | `GET` | `/api/agents/:id/executions` | `?limit=20` | `{ executions }` | Execution history |
 | `GET` | `/api/agents/:id/output` | `?sanitize=true` | `text/plain` | Live output buffer |
+| `GET` | `/api/agents/:id/acceptance` | — | `LoopAcceptance` | Loop only — cost per accepted change |
+| `GET` | `/api/agents/:id/inbox` | — | `{ inbox: InboxEntry[] }` | Loop only — escalations needing a human |
+| `GET` | `/api/agents/:id/inbox/:file` | — | `text/plain` | Loop only — one escalation entry (sanitized) |
+
+**Scheduled loops.** An agent with `kind:'loop'` runs the full PO-driven
+autonomous-harness on each cron tick (plan pre-approved → implement → review →
+audit → evidence-gated DONE) in an isolated control-plane, instead of a one-shot
+run. `loop = { goal, verifyCmd, iterCap, costCapUsd, mode:'scheduled'|'goal-driven',
+permissionProfile:'readonly'|'safe-write'|'full', skill? }` — `goal` (observable
+stop condition) and `verifyCmd` (machine gate) are required. See
+[`docs/design/SCHEDULED-LOOPS.md`](design/SCHEDULED-LOOPS.md).
 
 ---
 

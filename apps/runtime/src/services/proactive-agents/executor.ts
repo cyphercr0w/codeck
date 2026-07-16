@@ -1,6 +1,6 @@
 import os from "os";
 import { spawn, type ChildProcess } from "child_process";
-import { existsSync, mkdirSync, appendFile, readFileSync } from "fs";
+import { existsSync, mkdirSync, appendFile, readFileSync, writeFileSync, rmSync } from "fs";
 import { writeFile as writeFileAsync, chmod as chmodAsync } from "fs/promises";
 import { join } from "path";
 import { randomUUID } from "crypto";
@@ -60,11 +60,177 @@ export interface ExecutorDeps {
 	broadcastFn: () => BroadcastFn;
 	resolveAgentCwd: (cwd: string) => string;
 	executionsDir: (id: string) => string;
+	harnessDir: (id: string) => string;
+	loopStateDir: (id: string) => string;
+	inboxDir: (id: string) => string;
 	saveState: (id: string, state: AgentRuntime["state"]) => void;
 	stopCron: (runtime: AgentRuntime) => void;
 	toSummary: (runtime: AgentRuntime) => object;
 	pruneExecutions: (execDir: string) => void;
 	processCwdQueue: (cwd: string) => void;
+}
+
+// ── Scheduled-loop (full-harness) run bootstrap ──
+
+function permissionProfileClause(profile: string): string {
+	switch (profile) {
+		case "readonly":
+			return "READONLY: do NOT modify files, commit, push, or run mutating commands. Investigate and write findings/recommendations to the inbox only.";
+		case "full":
+			return "FULL: you may take write actions the plan requires, including push/PR. Still ESCALATE anything ambiguous or destructive to the inbox.";
+		case "safe-write":
+		default:
+			return "SAFE-WRITE: you may edit files and commit LOCALLY. NEVER push, deploy, publish, open external PRs, upgrade dependencies with meaningful risk, or run irreversible commands — ESCALATE those to the inbox instead of doing them.";
+	}
+}
+
+interface LoopRun {
+	prompt: string;
+	extraEnv: Record<string, string>;
+	taskDir: string;
+}
+
+/**
+ * Bootstrap an isolated autonomous-harness control-plane for one loop tick and
+ * build the loop-runner prompt. The plan is pre-approved (planApproved:true) — a
+ * scheduled loop reads its fixed, vetted spec (plan.md) each tick rather than
+ * re-planning — so the PO governs REVIEW/AUDIT/DONE, not the PLAN gate.
+ * State lives under the per-agent dir and is wired to the hooks via
+ * CODECK_HARNESS_DIR / CODECK_STATE_DIR so it never collides with an interactive
+ * harness task in the web terminal.
+ */
+function buildLoopRun(
+	runtime: AgentRuntime,
+	executionId: string,
+	startedAt: number,
+	deps: ExecutorDeps,
+): LoopRun {
+	const id = runtime.config.id;
+	const loop = runtime.config.loop!;
+	const hDir = deps.harnessDir(id);
+	const sDir = deps.loopStateDir(id);
+	const inbox = deps.inboxDir(id);
+	const taskId = `loop-${executionId.slice(0, 8)}`;
+
+	// Fresh control-plane per tick — drop any prior tick's task + stale markers.
+	try { rmSync(hDir, { recursive: true, force: true }); } catch { /* ignore */ }
+	const taskDir = join(hDir, taskId);
+	mkdirSync(taskDir, { recursive: true, mode: 0o700 });
+	mkdirSync(sDir, { recursive: true, mode: 0o700 });
+	mkdirSync(inbox, { recursive: true, mode: 0o700 });
+	for (const m of ["review-marker.json", "audit-marker.json", "edit-tracker.json", "tool-signatures.json", "reprompts.json"]) {
+		try { rmSync(join(sDir, m), { force: true }); } catch { /* ignore */ }
+	}
+
+	const planMd = [
+		`# Scheduled Loop — vetted plan (do NOT re-plan)`,
+		``,
+		`This is the durable specification for a ${loop.mode} loop. Reread it each tick.`,
+		``,
+		`## Goal (observable stop condition)`,
+		loop.goal,
+		``,
+		`## Machine gate (must pass to accept the work)`,
+		"```",
+		loop.verifyCmd,
+		"```",
+		``,
+		`## Procedure`,
+		`1. Triage: discover the actionable work toward the goal. Prefer the smallest verifiable units.`,
+		`2. Implement one unit at a time; after each, run the machine gate above — it MUST return pass.`,
+		`3. Review (code-reviewer) → audit (grader) → product-owner DONE verdict. Criteria go done ONLY with evidence.`,
+		`4. Record work to memory; ESCALATE anything you cannot safely resolve to the inbox.`,
+		``,
+		`## Permission profile: ${loop.permissionProfile}`,
+		permissionProfileClause(loop.permissionProfile),
+	].join("\n");
+
+	writeFileSync(join(hDir, "current.json"), JSON.stringify({ active: true, taskId }));
+	writeFileSync(join(taskDir, "plan.md"), planMd);
+	writeFileSync(
+		join(taskDir, "progress.json"),
+		JSON.stringify(
+			{
+				criteria: [
+					{ id: "triage", desc: `Discover and resolve actionable work toward: ${loop.goal}`, status: "todo", evidence: "" },
+					{ id: "verify", desc: `Machine gate passes: ${loop.verifyCmd}`, status: "todo", evidence: "" },
+				],
+				iterations: [],
+			},
+			null,
+			2,
+		),
+	);
+	writeFileSync(
+		join(taskDir, "budget.json"),
+		JSON.stringify({ iterCap: loop.iterCap, costCapUsd: loop.costCapUsd, iterations: 0, spentUsd: 0 }),
+	);
+	writeFileSync(
+		join(taskDir, "overseer.json"),
+		JSON.stringify({
+			mode: "autonomous",
+			phase: "implement",
+			planApproved: true,
+			done: false,
+			escalated: false,
+			directive: "",
+			verdict: "APPROVE_PLAN",
+			updatedAt: startedAt,
+		}),
+	);
+
+	const prompt = [
+		`You are an UNATTENDED scheduled loop running inside a Codeck sandbox. No human is watching — NEVER ask a question. If something needs human judgment or an irreversible action, ESCALATE (write an inbox file) instead of acting or waiting.`,
+		``,
+		`TASK: ${runtime.config.objective}`,
+		`GOAL (observable stop condition): ${loop.goal}`,
+		`MACHINE GATE (must pass to accept the work): ${loop.verifyCmd}`,
+		``,
+		`You are resuming autonomous-harness task "${taskId}". Its control-plane lives in an ISOLATED directory — use THESE exact paths for ALL harness/state/marker reads and writes (NOT the default /workspace/.codeck/harness):`,
+		`  harness dir: ${hDir}`,
+		`  state dir:   ${sDir}`,
+		`  task dir:    ${taskDir}`,
+		`  inbox dir:   ${inbox}`,
+		`The plan is FIXED and already APPROVED — read ${join(taskDir, "plan.md")} and DO NOT re-plan.`,
+		``,
+		`PROCEDURE (full-harness governance):`,
+		`1. Load the "${loop.skill || "scheduled-loop"}" skill and the "autonomous-harness" skill.`,
+		`2. Triage → implement the smallest verifiable units toward the goal.`,
+		`3. After changes run the machine gate: ${loop.verifyCmd} — it MUST pass. Then spawn code-reviewer (write ${join(sDir, "review-marker.json")}) and grader for the audit (${join(sDir, "audit-marker.json")}).`,
+		`4. Spawn the product-owner for the DONE verdict (it writes ${join(taskDir, "overseer.json")}). Flip progress criteria to done ONLY with evidence in ${join(taskDir, "progress.json")}.`,
+		`5. Write significant work to memory (/workspace/.codeck/memory/daily/). For anything you could NOT safely resolve, write an ESCALATION markdown file to ${inbox}/ describing the issue and recommended action.`,
+		``,
+		`PERMISSION PROFILE — ${permissionProfileClause(loop.permissionProfile)}`,
+		``,
+		`Stop when the product-owner sets done (gate green + criteria complete) or the budget cap is hit. This is ONE bounded tick of a ${loop.mode} loop.`,
+	].join("\n");
+
+	return {
+		prompt,
+		extraEnv: { CODECK_HARNESS_DIR: hDir, CODECK_STATE_DIR: sDir },
+		taskDir,
+	};
+}
+
+/**
+ * Read the harness outcome back from the isolated state after a loop tick so the
+ * ExecutionResult carries accepted/escalated/costUsd for the acceptance metric.
+ */
+function readLoopOutcome(taskDir: string): { accepted: boolean; escalated: boolean; costUsd?: number } {
+	let accepted = false, escalated = false, costUsd: number | undefined;
+	try {
+		const ov = JSON.parse(readFileSync(join(taskDir, "overseer.json"), "utf8"));
+		const prog = JSON.parse(readFileSync(join(taskDir, "progress.json"), "utf8"));
+		const crit = Array.isArray(prog.criteria) ? prog.criteria : Array.isArray(prog) ? prog : [];
+		const allDone = crit.length > 0 && crit.every((c: any) => c.status === "done" && c.evidence);
+		accepted = ov.done === true && allDone;
+		escalated = ov.escalated === true;
+	} catch { /* no overseer/progress — treat as not accepted */ }
+	try {
+		const bg = JSON.parse(readFileSync(join(taskDir, "budget.json"), "utf8"));
+		if (typeof bg.spentUsd === "number" && Number.isFinite(bg.spentUsd)) costUsd = bg.spentUsd;
+	} catch { /* no budget file */ }
+	return { accepted, escalated, costUsd };
 }
 
 export function executeAgent(agentId: string, deps: ExecutorDeps): void {
@@ -119,9 +285,14 @@ export function executeAgent(agentId: string, deps: ExecutorDeps): void {
 		}
 	}
 
-	const finalEnv = { ...cleanEnv, ...agentUserEnv, ...oauthEnv, TERM: "dumb" };
+	// Loop agents run the full PO-driven harness on an isolated control-plane;
+	// everything else keeps the classic one-shot behaviour.
+	const isLoop = runtime.config.kind === "loop" && !!runtime.config.loop;
+	const loopRun = isLoop ? buildLoopRun(runtime, executionId, startedAt, deps) : null;
 
-	const prompt = runtime.config.objective;
+	const finalEnv = { ...cleanEnv, ...agentUserEnv, ...oauthEnv, TERM: "dumb", ...(loopRun?.extraEnv || {}) };
+
+	const prompt = loopRun ? loopRun.prompt : runtime.config.objective;
 	const cwd = deps.resolveAgentCwd(runtime.config.cwd);
 
 	const spawnArgs = [
@@ -289,6 +460,15 @@ export function executeAgent(agentId: string, deps: ExecutorDeps): void {
 			outputLines: runtime.outputBuffer.split("\n").length,
 			error: !succeeded ? `Exit code: ${exitCode}` : undefined,
 		};
+
+		// Loop tick — read the harness verdict back for the acceptance metric.
+		if (loopRun) {
+			const outcome = readLoopOutcome(loopRun.taskDir);
+			result.kind = "loop";
+			result.accepted = outcome.accepted;
+			result.escalated = outcome.escalated;
+			result.costUsd = outcome.costUsd;
+		}
 
 		// Save clean text log (sanitized, ANSI-stripped for defense-in-depth)
 		const logPath = join(execDir, `${timestamp}.log`);

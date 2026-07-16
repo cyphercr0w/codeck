@@ -663,6 +663,22 @@ Autonomous, scheduled agents using `claude -p` in non-interactive mode.
 | `pauseAgent` / `resumeAgent` | — | Lifecycle control |
 | `triggerAgent` | `(id): { executionId }` | Manual trigger |
 | `getAgentLogs` / `getAgentExecutions` | — | History and logs |
+| `getLoopAcceptance` | `(id): LoopAcceptance \| null` | Loop only — cost per accepted change |
+| `getLoopInbox` / `getLoopInboxEntry` | — | Loop only — escalations needing a human |
+
+### Scheduled loops (`kind:'loop'`)
+
+A loop agent runs the full PO-driven **autonomous-harness** on each cron tick
+(see [`docs/design/SCHEDULED-LOOPS.md`](design/SCHEDULED-LOOPS.md)) instead of a
+one-shot `claude -p`. `executor.ts`'s `buildLoopRun()` bootstraps an **isolated**
+control-plane under `<agentDir>/{harness,state}` and passes `CODECK_HARNESS_DIR`
+/ `CODECK_STATE_DIR` to the headless run so budget-guard, workflow-checkpoint,
+no-progress-guard, review-marker and harness-resume operate there — never
+colliding with an interactive harness task. The plan is pre-approved
+(`planApproved:true`); the PO governs REVIEW/AUDIT/DONE. `readLoopOutcome()` reads
+`overseer.json`/`budget.json` back after the tick for the acceptance metric.
+Escalations land in `<agentDir>/inbox/`. Loops validate a required `goal` +
+`verifyCmd` (a machine gate) and default to a 30-min (≤2h) timeout.
 
 ### Concurrency model
 

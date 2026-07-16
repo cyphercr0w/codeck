@@ -247,6 +247,14 @@ Multi-tab terminal interface:
 
 Agent list (dash-card grid), create/edit modals with directory selector, agent detail with expand/collapse, live streaming output, run now button, execution history.
 
+**Scheduled loops.** `AgentForm` has a Standard/Loop type toggle (locked after
+creation) that reveals loop fields: goal, verify command (machine gate), loop
+mode, permission profile, and iteration/cost caps. Cards show a `Loop` badge; the
+detail view adds the loop config rows, an **Acceptance** panel (rate + cost per
+accepted change, from `/api/agents/:id/acceptance`) and an **Inbox** panel of
+escalations (`/api/agents/:id/inbox`). Loop types live in `state/store.ts`
+(`AgentKind`, `LoopConfig`, `LoopAcceptance`, `InboxEntry`).
+
 ### `IntegrationsSection.tsx` — External Services
 
 - **SSH:** Generate key, copy public key, link to GitHub settings

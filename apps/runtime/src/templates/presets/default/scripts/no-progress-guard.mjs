@@ -16,7 +16,9 @@ import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'fs';
 import { join } from 'path';
 import { createHash } from 'crypto';
 
-const STATE_DIR = '/workspace/.codeck/state';
+// CODECK_STATE_DIR lets an isolated run (e.g. a scheduled loop) keep its own
+// loop-detection state instead of sharing the interactive session's.
+const STATE_DIR = process.env.CODECK_STATE_DIR || '/workspace/.codeck/state';
 const HIST = join(STATE_DIR, 'tool-signatures.json');
 const WARN_AT = 3;   // soft nudge
 const HARD_AT = 5;   // strong "you are looping" message

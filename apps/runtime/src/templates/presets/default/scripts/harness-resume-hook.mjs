@@ -11,7 +11,9 @@
 import { existsSync, readFileSync } from 'fs';
 import { join } from 'path';
 
-const HARNESS = '/workspace/.codeck/harness';
+// CODECK_HARNESS_DIR lets an isolated run (e.g. a scheduled loop) resume from its
+// own control-plane dir instead of the global /workspace/.codeck/harness.
+const HARNESS = process.env.CODECK_HARNESS_DIR || '/workspace/.codeck/harness';
 const CURRENT = join(HARNESS, 'current.json');
 
 let input = '';

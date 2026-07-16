@@ -16,7 +16,9 @@
 
 import { writeFileSync, mkdirSync, existsSync } from 'fs';
 
-const STATE_DIR = '/workspace/.codeck/state';
+// Honor CODECK_STATE_DIR so an isolated run (e.g. a scheduled loop) stamps its
+// markers where its own workflow-checkpoint Stop gate reads them.
+const STATE_DIR = process.env.CODECK_STATE_DIR || '/workspace/.codeck/state';
 
 let input = '';
 for await (const chunk of process.stdin) input += chunk;

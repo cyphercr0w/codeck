@@ -970,9 +970,24 @@ function mergePresetHooks(presetDir: string): void {
 				if (!Array.isArray(current.hooks[event])) {
 					current.hooks[event] = [];
 				}
+				// Push ONLY the hooks not already present. Deduping at the ENTRY level
+				// would re-add a whole template entry when it shares a hook with the
+				// user's config (e.g. review-marker-hook added alongside an existing
+				// subagent-tracker), DUPLICATING the shared hook on every existing install.
+				const missingHooks = rewrittenHooks.filter(
+					(h) =>
+						typeof h.command !== "string" ||
+						!existingCmds.has(h.command as string),
+				);
+				if (missingHooks.length === 0) continue;
+				(rewrittenEntry as Record<string, unknown>).hooks = missingHooks;
 				current.hooks[event].push(rewrittenEntry);
 				added++;
-				console.log(`[Preset]   MERGE hook: ${event} ← ${cmds.join(", ")}`);
+				console.log(
+					`[Preset]   MERGE hook: ${event} ← ${missingHooks
+						.map((h) => h.command)
+						.join(", ")}`,
+				);
 			}
 		}
 
@@ -1307,7 +1322,7 @@ async function applyPresetRecursive(
 			console.log(`[Preset]   KEEP ${dest} (user data exists)`);
 		} else {
 			// Backup data files before force-overwrite
-			if (force && isDataFile && existsSync(dest)) {
+			if (force && existsSync(dest) && (isDataFile || file.skipIfExists)) {
 				backupFile(dest);
 			}
 			let fileContent = readFileSync(srcPath, "utf-8");
@@ -1368,8 +1383,11 @@ async function applyPresetRecursive(
 				continue;
 			}
 
+			// On force (preset reset) override skipIfExists so MODIFIED agents/skills/
+			// commands actually re-apply — otherwise reset silently leaves them stale
+			// (their dirs are skipIfExists, so a normal copy keeps the old content).
 			copyDirectoryRecursive(srcDir, destDir, manifest.id, {
-				skipIfExists: rd.skipIfExists,
+				skipIfExists: force ? false : rd.skipIfExists,
 			});
 		}
 	}

@@ -292,8 +292,8 @@ Presets define template-based workspace configurations. The default preset (v8.2
 - Rules (common + language-specific)
 - Skills (118 skill files)
 - Sub-agents (28 agent definitions in `/root/.claude/agents/`)
-- Hooks (workflow enforcement: edit-tracker, checkpoint, context-injector)
-- MCP server configuration (`mcp.json` with 9 servers)
+- Hooks (workflow enforcement: edit-tracker, checkpoint, context-injector; environment preflight: capability-doctor)
+- MCP server configuration (`mcp.json`): 3 lean defaults (`context7`, `eslint`, `playwright`) + ~20 opt-in servers under `_disabledMcpServers`. `memory` (redundant with native FTS5 memory), `magic` (niche UI), and `sequential-thinking` (native thinking covers it) are opt-in-only — fewer default tool-schemas = less token tax and smaller prompt-injection surface (mirrors ecc v2.0's default-connector reduction, adapted: Playwright kept as the browser-verify differentiator)
 - CLAUDE.md instruction files (global + workspace layers)
 
 ### Creating custom presets

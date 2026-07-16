@@ -77,8 +77,16 @@ const cur = readJSON(CURRENT, null);
 // active:false and told the agent to report — but that also makes Regime A skip
 // (active!==true) and would drop the run into Regime B, which blocks for
 // review/audit with NO iteration cap or reprompt backstop (both Regime-A-only).
-// Approve so the run can actually end per budget-guard's message.
-if (cur && cur.active === false && cur.stoppedBy === 'budget-guard') approve();
+// Approve so the run can actually end — but ONLY if the budget is genuinely over
+// cap (guards against a lead forging stoppedBy to bypass the review gate, since
+// harness-state writes are exempt from budget-guard).
+if (cur && cur.active === false && cur.stoppedBy === 'budget-guard' && cur.taskId) {
+  const bg = readJSON(join(HARNESS_DIR, String(cur.taskId), 'budget.json'), {});
+  const overIter = Number(bg.iterations || 0) > (Number.isFinite(bg.iterCap) ? bg.iterCap : 200);
+  const overCost = Number.isFinite(bg.costCapUsd) && Number(bg.spentUsd || 0) > bg.costCapUsd;
+  if (overIter || overCost) approve();
+  // else: forged / not actually over cap → fall through to normal gating.
+}
 
 if (cur && cur.active === true && cur.taskId) {
   const taskDir = join(HARNESS_DIR, String(cur.taskId));

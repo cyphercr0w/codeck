@@ -3,14 +3,16 @@
 # update-container.sh — Safe update of the running `codeck` container to the
 # current git branch, preserving the ./Rep-GL3 workspace bind and all volumes.
 #
-# HOW THE DEPLOY WORKS (post-audit, preset v9.1.0):
-#   The heavy lifting is now AUTOMATIC. On rebuild, the new server runs
-#   checkPresetUpdate() at startup; it sees the deployed preset (v9.0.0) is older
-#   than the image (v9.1.0) and auto-deploys the new files (harness scripts,
-#   grader/visual-verifier agents, autonomous-harness skill, /harness command,
-#   playbooks) via file-level skip (never overwriting your customized files), and
-#   merges the new hooks into settings.json. This script just backs up, rebuilds,
-#   and VERIFIES the auto-update landed.
+# HOW THE DEPLOY WORKS (preset target v9.2.0):
+#   The heavy lifting is AUTOMATIC. On rebuild, the new server runs
+#   checkPresetUpdate() at startup; it sees the deployed preset is older than the
+#   image (v9.2.0) and auto-deploys NEW files (harness/PO scripts, product-owner +
+#   silent-failure-hunter agents, agent-introspection-debugging skill, capability-
+#   doctor, the modified rules, and mcp.json) and merges the new hooks into
+#   settings.json (hook-level dedup — no duplicate subagent-tracker). This script
+#   just backs up, rebuilds, and VERIFIES the auto-update landed.
+#   NOT auto-applied (need a preset RESET — see step 5): settings.json keys and
+#   MODIFIED existing agents/skills/commands.
 #
 # WHAT THIS SCRIPT DOES:
 #   0. Preflight (container, .env, branch, on-disk .codeck).
@@ -150,16 +152,17 @@ else
 fi
 echo
 
-# ── 5. Non-auto-merging settings.json values (manual, minor) ─────────────
-say "5) Manual reconcile — 2 minor settings.json values that do NOT auto-merge"
+# ── 5. Changes that need a preset RESET (not auto-merged) ────────────────
+say "5) Optional preset RESET — applies settings.json keys + modified agents/skills"
 cat <<EOF
-   settings.json is user-owned (skipIfExists) and only its HOOKS are merged on
-   update — so these two additions from the branch won't auto-apply:
-     • env.ENABLE_TOOL_SEARCH = "1"        (MCP tool-search, ~85% less schema overhead)
-     • permissions.deny += "Read(**/.credentials*)", "Read(**/*.pem)"
-   To apply them (optional), edit /root/.claude/settings.json in the container UI
-   or run (after backing it up):
-     docker exec $CONTAINER node -e 'const f="/root/.claude/settings.json",fs=require("fs");const s=JSON.parse(fs.readFileSync(f));s.env=Object.assign({ENABLE_TOOL_SEARCH:"1"},s.env||{});s.permissions=s.permissions||{};s.permissions.deny=[...new Set([...(s.permissions.deny||[]),"Read(**/.credentials*)","Read(**/*.pem)"])];fs.writeFileSync(f,JSON.stringify(s,null,"\t"))'
+   Auto-update does NOT touch settings.json (user-owned) or MODIFIED existing
+   agents/skills/commands. To apply this branch's:
+     • settings.json: effortLevel:"high", autoCompactEnabled:true,
+       env.ENABLE_TOOL_SEARCH:"auto", and the trimmed MCP allow-list
+     • modified agents/skills: spec-reviewer, autonomous-harness SKILL, /harness cmd
+   run a preset RESET from the web UI (Agent Config -> Reset). It now force-applies
+   these AND backs up settings.json + memory/preferences first (recoverable under
+   .codeck/backups/). New agents/skills and modified rules already auto-applied.
 EOF
 echo
 

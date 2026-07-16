@@ -6,7 +6,7 @@ This is how you work **by default, on every task**. You already know this — yo
 
 ## Phase 0 — Triage (pick the lane)
 
-- **Trivial & unambiguous** (read a file, answer a question, a one-line/typo fix, a lookup): do it directly. Still write memory if the result is significant. No overseer.
+- **Trivial & unambiguous** (read a file, answer a question, a lookup, a doc/comment typo): do it directly. Still write memory if the result is significant. No overseer. **Note:** a change to real CODE — even one line — still gets a quick `code-reviewer` pass before you stop (the classifier treats "fix"/"bug" as non-trivial and the Stop gate enforces review; this is intentional and fail-safe, not a bug).
 - **Everything else** (a feature, a fix touching logic, anything multi-file, or anything ambiguous): run the full protocol below.
 
 ## Phase 1 — Clarify to ZERO ambiguity + pick the mode
@@ -17,7 +17,7 @@ This is how you work **by default, on every task**. You already know this — yo
 
 ## Phase 2 — Open the overseer (real feature/fix)
 
-- Pick a `taskId`; write `.codeck/harness/current.json` `{ "active": true, "taskId": "<id>" }` and `.codeck/harness/<taskId>/overseer.json` `{ "mode": "autonomous"|"supervised", "phase": "plan", "planApproved": false, "done": false, "reprompts": 0 }`. This makes the run PO-driven, resumable, and **budget-capped** (`budget-guard`). For large/long work, drive it with the **`autonomous-harness` skill** (`/harness`).
+- Pick a `taskId`; write `.codeck/harness/current.json` `{ "active": true, "taskId": "<id>" }` and `.codeck/harness/<taskId>/overseer.json` `{ "mode": "autonomous"|"supervised", "phase": "plan", "planApproved": false, "done": false }` (the Stop-loop owns `reprompts.json` — don't write a reprompts field). This makes the run PO-driven, resumable, and **budget-capped** (`budget-guard`). For large/long work, drive it with the **`autonomous-harness` skill** (`/harness`).
 
 ## Phase 3 — Scope + surgical plan
 

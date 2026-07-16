@@ -67,6 +67,22 @@
 			"dest": "/workspace/.codeck/scripts/capability-doctor.mjs"
 		},
 		{
+			"src": "scripts/agent-auto-brief.mjs",
+			"dest": "/workspace/.codeck/scripts/agent-auto-brief.mjs"
+		},
+		{
+			"src": "scripts/teams-reminder-hook.mjs",
+			"dest": "/workspace/.codeck/scripts/teams-reminder-hook.mjs"
+		},
+		{
+			"src": "scripts/mcp-auto-config.mjs",
+			"dest": "/workspace/.codeck/scripts/mcp-auto-config.mjs"
+		},
+		{
+			"src": "scripts/team-events.mjs",
+			"dest": "/workspace/.codeck/scripts/team-events.mjs"
+		},
+		{
 			"src": "scripts/post-compact-hook.mjs",
 			"dest": "/workspace/.codeck/scripts/post-compact-hook.mjs"
 		},

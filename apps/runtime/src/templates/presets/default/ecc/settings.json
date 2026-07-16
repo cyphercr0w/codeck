@@ -39,21 +39,7 @@
 			"mcp__playwright__browser_network_requests",
 			"mcp__context7__resolve-library-id",
 			"mcp__context7__query-docs",
-			"mcp__sequential-thinking__sequentialthinking",
-			"mcp__eslint__lint-files",
-			"mcp__token-optimizer__count_tokens",
-			"mcp__token-optimizer__optimize_text",
-			"mcp__token-optimizer__compress_text",
-			"mcp__token-optimizer__smart_grep",
-			"mcp__token-optimizer__smart_read",
-			"mcp__token-optimizer__smart_edit",
-			"mcp__token-optimizer__smart_write",
-			"mcp__token-optimizer__smart_glob",
-			"mcp__token-optimizer__smart_diff",
-			"mcp__token-optimizer__smart_test",
-			"mcp__token-optimizer__smart_build",
-			"mcp__token-optimizer__smart_lint",
-			"mcp__token-optimizer__smart_status"
+			"mcp__eslint__lint-files"
 		],
 		"deny": [
 			"Read(.env*)",
@@ -70,7 +56,7 @@
 	"effortLevel": "high",
 	"autoCompactEnabled": true,
 	"env": {
-		"ENABLE_TOOL_SEARCH": "true"
+		"ENABLE_TOOL_SEARCH": "auto"
 	},
 	"attribution": {
 		"commit": "",
@@ -175,8 +161,8 @@
 				]
 			},
 			{
-				"matcher": "Edit|Write|MultiEdit",
-				"if": "Edit OR Write OR MultiEdit",
+				"matcher": "Edit|Write|MultiEdit|Bash",
+				"if": "Edit OR Write OR MultiEdit OR Bash",
 				"hooks": [
 					{
 						"type": "command",
@@ -184,7 +170,7 @@
 						"timeout": 3
 					}
 				],
-				"description": "Track file edits for workflow-checkpoint review enforcement"
+				"description": "Track file edits (incl. Bash writes to source) for workflow-checkpoint review enforcement"
 			},
 			{
 				"matcher": "Edit|Write",

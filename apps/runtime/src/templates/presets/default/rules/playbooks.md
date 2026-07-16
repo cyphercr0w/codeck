@@ -54,4 +54,4 @@ Default to a **single agent**. Escalate only as the task demands, cheapest first
 3. Once root cause is proven, hand off to the **bugfix** playbook.
 
 ## trivial — small & unambiguous
-Read/answer/one-line fix: do it directly. Still write memory if the result matters. No plan gate needed.
+Read / answer / lookup / doc-typo: do it directly, no plan gate. Still write memory if the result matters. A real CODE change (even one line) skips the plan gate but still gets a quick `code-reviewer` pass before you stop — fail-safe, by design.

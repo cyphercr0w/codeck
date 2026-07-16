@@ -456,8 +456,10 @@ function _createConsoleSessionInner(
 		TERM: "xterm-256color",
 		CLAUDE_AUTOCOMPACT_PCT_OVERRIDE:
 			userEnv.CLAUDE_AUTOCOMPACT_PCT_OVERRIDE || compactPct,
-		ENABLE_TOOL_SEARCH:
-			userEnv.ENABLE_TOOL_SEARCH || `auto:${tokenSettings.mcpDeferThreshold}`,
+		// Valid values are true|false|auto only ("auto:N" is not a documented form
+		// and silently defeats the setting). "auto" = load MCP schemas upfront when
+		// they fit the context budget, defer otherwise.
+		ENABLE_TOOL_SEARCH: userEnv.ENABLE_TOOL_SEARCH || "auto",
 		MAX_THINKING_TOKENS:
 			userEnv.MAX_THINKING_TOKENS || String(tokenSettings.thinkingTokens),
 		CODECK_SESSION_ID: id,

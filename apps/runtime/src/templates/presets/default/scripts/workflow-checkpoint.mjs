@@ -72,6 +72,14 @@ function subagentsActive() {
 
 // ── Regime A: autonomous overseer (PO) self-reprompt loop ────────────────────
 const cur = readJSON(CURRENT, null);
+
+// A budget-stopped task MUST be allowed to stop. budget-guard already flipped
+// active:false and told the agent to report — but that also makes Regime A skip
+// (active!==true) and would drop the run into Regime B, which blocks for
+// review/audit with NO iteration cap or reprompt backstop (both Regime-A-only).
+// Approve so the run can actually end per budget-guard's message.
+if (cur && cur.active === false && cur.stoppedBy === 'budget-guard') approve();
+
 if (cur && cur.active === true && cur.taskId) {
   const taskDir = join(HARNESS_DIR, String(cur.taskId));
   const overseer = readJSON(join(taskDir, 'overseer.json'), {});

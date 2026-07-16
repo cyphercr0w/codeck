@@ -40,10 +40,13 @@ if (!/^(Bash|Edit|Write|MultiEdit|Agent)$/.test(tool)) process.exit(0);
 // Without this, a capped run cannot record progress, ESCALATE, or set
 // active:false — every recovery tool is exactly what the cap would deny (deadlock).
 const HARNESS_STATE_RE = /\.codeck[\/\\]harness[\/\\]/;
+// Bash: only exempt an actual WRITE to harness state (redirection / tee / cp / mv),
+// not any command that merely mentions the path — otherwise the counter is dodgeable.
+const HARNESS_WRITE_RE = /(>>?|\btee\b|\bcp\b|\bmv\b)\s+[^|;&]*\.codeck[\/\\]harness[\/\\]/;
 const filePath = String(data.tool_input?.file_path || '');
 const bashCmd = String(data.tool_input?.command || '');
 if ((tool === 'Edit' || tool === 'Write' || tool === 'MultiEdit') && HARNESS_STATE_RE.test(filePath)) process.exit(0);
-if (tool === 'Bash' && HARNESS_STATE_RE.test(bashCmd)) process.exit(0);
+if (tool === 'Bash' && HARNESS_WRITE_RE.test(bashCmd)) process.exit(0);
 
 // Only active during a harness run.
 if (!existsSync(CURRENT)) process.exit(0);

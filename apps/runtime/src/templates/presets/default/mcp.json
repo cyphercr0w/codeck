@@ -17,19 +17,19 @@
 				"--cdp-endpoint",
 				"http://localhost:9222"
 			]
-		},
+		}
+	},
+	"_disabledMcpServers": {
 		"memory": {
 			"command": "npx",
 			"args": ["-y", "@modelcontextprotocol/server-memory"],
-			"description": "Persistent memory across sessions"
+			"description": "Disabled 2026-07: REDUNDANT with Codeck's native memory (SQLite FTS5 + /api/memory + .codeck/memory). No agent/skill calls mcp__memory__*; a second memory system only adds ~9 tool-schemas of token tax per session and risks confusion. Re-enable by moving back to mcpServers."
 		},
 		"magic": {
 			"command": "npx",
 			"args": ["-y", "@magicuidesign/mcp@latest"],
-			"description": "Magic UI components"
-		}
-	},
-	"_disabledMcpServers": {
+			"description": "Disabled 2026-07: niche Magic UI component generator with no active consumer; ~3 tool-schemas of token tax every session. Opt-in for UI-heavy work by moving back to mcpServers."
+		},
 		"sequential-thinking": {
 			"command": "npx",
 			"args": ["-y", "@modelcontextprotocol/server-sequential-thinking"],

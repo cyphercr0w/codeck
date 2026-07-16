@@ -40,7 +40,7 @@ If `current.json` exists and `active:true`, read that task's `plan.md` + `progre
 ### 2. Iterate (the loop)
 Repeat until every criterion is `done` or the budget-guard stops you:
 1. Read `progress.json`; pick the next `todo`/`doing` criterion. Mark it `doing`.
-2. Do **ONE** coherent unit of work toward it (thin slice; small verifiable change). Spawn subagents freely for isolated pieces (route: haiku=read/test, sonnet=build, opus=review). Route by playbook (`rules/base/playbooks.md`).
+2. Do **ONE** coherent unit of work toward it (thin slice; small verifiable change). Spawn subagents freely for isolated pieces (route: haiku=read/test, sonnet=build, opus=review). **Independent** criteria (different files/modules) may be worked in parallel by `implementer` subagents (they isolate in a git worktree) and merged+verified independently; keep coupled changes serial. Route by playbook (`rules/base/playbooks.md`).
 3. **Verify end-to-end** — build + tests, and for anything user-facing run `visual-verifier`; grade with `grader` where the criterion is subtle. A criterion flips to `done` ONLY with a linked evidence artifact (test output, diff, screenshot). Criteria start false.
 4. Write memory (daily log) + update `progress.json` (status + evidence + a one-line iteration note), and update `spentUsd` in `budget.json` from the session cost so far (so the cost cap can engage — the iteration cap fires automatically regardless). `git commit` the increment.
 5. If stuck (same failure ~3×, or the no-progress guard fires): stop guessing, re-plan that criterion or ask the user. Never loop blindly.

@@ -28,9 +28,10 @@ This is how you work **by default, on every task**. You already know this — yo
 - **Loop:** spawn independent reviewers of the *plan* — `spec-reviewer` (scope: no under/over-build), `architect`/`planner` (soundness), `grader` (completeness vs the definition of done). Fix the plan and **re-review until ZERO findings**.
 - Then consult the **`product-owner`** for the **PLAN verdict**. In autonomous mode the PO approves — **no user approval gate**. Implementation begins only after the PO returns `APPROVE_PLAN` (sets `overseer.planApproved=true`). In supervised mode, present the vetted plan to the user instead.
 
-## Phase 5 — Implement (serial writer + parallel reviewers)
+## Phase 5 — Implement (serial within a slice, parallel across independent slices)
 
-- **Writing is serial** (one implementer path — parallel writers make conflicting decisions). **Reading/reviewing is parallel** — use subagents freely: `Explore` for research, specialists by area. **Route by cost:** `haiku`=read/search/test/lint, `sonnet`=implementation, `opus`=review/architecture/security.
+- **Subdivide the plan granularly** into slices. **Coupled writes stay serial** (one path — parallel writers on the same code make conflicting decisions). **Independent slices (different files/modules) may run in parallel** via `implementer` subagents that already isolate in a git worktree (`isolation: worktree`) — partition by file/module, then merge + verify each independently. This is the "team of employees" model: parallel where it's safe, serial where it's coupled.
+- **Reading/reviewing is always parallel** — use subagents freely: `Explore` for research, specialists by area. **Route by cost:** `haiku`=read/search/test/lint, `sonnet`=implementation, `opus`=review/architecture/security.
 - Small, verifiable increments; build/test after each. **Persist memory continuously** (decisions, discoveries, blockers), not only at the end.
 
 ## Phase 6 — REVIEW→AUDIT LOOP → PO ship verdict
@@ -47,6 +48,7 @@ This is how you work **by default, on every task**. You already know this — yo
 
 ## Always-on rules
 
+- **Never drop a request — queue everything.** If the user sends more requests while you're working, do NOT lose the current task or any new one. Immediately capture EVERY request in the task list (`TaskCreate`), split into reasonable, granular tasks, and work them **one at a time**, marking each `completed` (`TaskUpdate`) as you finish. Read the list back (`TaskList`) before you consider stopping — you are not done while any requested item is still pending. A new request is **appended**, never a reason to abandon the one in flight.
 - **Subagents by default** for anything non-trivial — don't do everything in one context window.
 - **Memory at every phase** (daily log + path memory). The `memory-nudge` hook will remind you if you forget.
 - **Don't thrash — introspect.** On the **2nd** identical failure (not the 3rd), stop and load `agent-introspection-debugging`: capture the real error → classify (logic/state/environment/policy) → one contained fix → decide continue / re-plan / ESCALATE. 3 retries max on the same approach; better context beats more retries.

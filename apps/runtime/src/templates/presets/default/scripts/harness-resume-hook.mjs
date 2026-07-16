@@ -39,9 +39,18 @@ try {
   summary = ` ${done}/${crit.length} criteria done.` + (next ? ` Next: "${next.desc || next.id}".` : '');
 } catch { /* progress not readable yet */ }
 
+// Surface the gate the run was at so the agent doesn't re-plan an already-approved
+// plan or lose the PO's pending directive after a compaction.
+let gate = '';
+try {
+  const ov = JSON.parse(readFileSync(join(dir, 'overseer.json'), 'utf-8'));
+  const phase = ov.planApproved ? 'implementation (plan already APPROVED — do NOT re-plan)' : 'planning (plan NOT yet approved)';
+  gate = ` Phase: ${phase}.` + (ov.directive ? ` Pending directive: ${String(ov.directive).trim()}` : '');
+} catch { /* no overseer yet */ }
+
 console.log(JSON.stringify({
   hookSpecificOutput: {
     hookEventName: eventName,
-    additionalContext: `RESUMING HARNESS TASK "${cur.taskId}".${summary} Load the autonomous-harness skill, read .codeck/harness/${cur.taskId}/plan.md + progress.json, and CONTINUE from the first not-done criterion — do not restart or re-plan.`,
+    additionalContext: `RESUMING HARNESS TASK "${cur.taskId}".${summary}${gate} Load the autonomous-harness skill, read .codeck/harness/${cur.taskId}/plan.md + progress.json, and CONTINUE from the first not-done criterion — do not restart or re-plan.`,
   },
 }));

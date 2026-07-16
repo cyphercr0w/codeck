@@ -5,8 +5,12 @@
  * Tags the task with a type (feature/bugfix/refactor/research/migration/ops/
  * debug/trivial) by deterministic keyword heuristic and points the agent at the
  * matching playbook in rules/base/playbooks.md. Makes the always-on protocol
- * ADAPTIVE without a model call. Message-layer only (cache-safe).
+ * ADAPTIVE without a model call. Also persists the type to state so the
+ * workflow-checkpoint Stop gate can require review for real feature/fix work
+ * (not just 5+-file changes). Message-layer only (cache-safe).
  */
+
+import { writeFileSync, mkdirSync, existsSync } from 'fs';
 
 let input = '';
 for await (const chunk of process.stdin) input += chunk;
@@ -35,6 +39,16 @@ const rules = [
 
 let type = 'feature';
 for (const [name, re] of rules) { if (re.test(prompt)) { type = name; break; } }
+
+// Persist the classification so the Stop gate can enforce review on real code
+// work. Non-trivial = types that produce code needing the full review/audit gate
+// (research = no code; debug leads into bugfix; ops has its own blast-radius rules).
+try {
+  const STATE_DIR = '/workspace/.codeck/state';
+  if (!existsSync(STATE_DIR)) mkdirSync(STATE_DIR, { recursive: true });
+  const nonTrivial = ['feature', 'bugfix', 'refactor', 'migration'].includes(type);
+  writeFileSync(`${STATE_DIR}/task-class.json`, JSON.stringify({ type, nonTrivial, at: Date.now() }));
+} catch { /* non-fatal */ }
 
 // Short one-line reminder per type (full steps live in playbooks.md).
 const oneLiners = {

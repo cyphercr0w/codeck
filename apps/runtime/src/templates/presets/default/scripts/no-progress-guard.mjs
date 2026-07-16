@@ -37,19 +37,27 @@ const sig = createHash('sha1').update(sigSrc).digest('hex').slice(0, 16);
 
 if (!existsSync(STATE_DIR)) mkdirSync(STATE_DIR, { recursive: true });
 
-let state = { last: '', streak: 0 };
-try { if (existsSync(HIST)) state = JSON.parse(readFileSync(HIST, 'utf-8')); } catch { /* reset */ }
+const WINDOW = 8; // rolling window to catch A,B,A,B oscillations, not just A,A,A
+let state = { last: '', streak: 0, window: [] };
+try { if (existsSync(HIST)) state = { window: [], ...JSON.parse(readFileSync(HIST, 'utf-8')) }; } catch { /* reset */ }
 
+// Consecutive-repeat streak…
 state.streak = (sig === state.last) ? (state.streak + 1) : 1;
 state.last = sig;
+// …and a windowed occurrence count so a two-step failing cycle (edit→test→edit→
+// test, both failing) is caught even though no two consecutive calls are identical.
+state.window = [...(Array.isArray(state.window) ? state.window : []), sig].slice(-WINDOW);
+const occ = state.window.filter((s) => s === sig).length;
+const repeat = Math.max(state.streak, occ);
 
 try { writeFileSync(HIST, JSON.stringify(state)); } catch { /* best effort */ }
 
-if (state.streak < WARN_AT) process.exit(0);
+if (repeat < WARN_AT) process.exit(0);
 
-const message = state.streak >= HARD_AT
-  ? `LOOP DETECTED: you have made the same ${tool} call ${state.streak} times with no change. STOP repeating. Re-read the last error, change the approach, or ask the user — do not retry the same call again (3-retries rule). If you are stuck, surface it instead of looping.`
-  : `No-progress warning: same ${tool} call repeated ${state.streak}×. If it keeps failing, change the approach rather than retrying — you have ${HARD_AT - state.streak} repeats before this is treated as a stuck loop.`;
+const how = state.streak >= occ ? `${repeat} times in a row` : `${repeat} times in the last ${WINDOW} calls (a repeating cycle)`;
+const message = repeat >= HARD_AT
+  ? `LOOP DETECTED: the same ${tool} call has occurred ${how} with no change. STOP repeating. Re-read the last error, change the approach, or ESCALATE — do not retry the same call again (3-retries rule). If you are stuck, surface it instead of looping.`
+  : `No-progress warning: ${tool} call repeated ${how}. If it keeps failing, change the approach rather than retrying — you have ${HARD_AT - repeat} before this is treated as a stuck loop.`;
 
 console.log(JSON.stringify({
   hookSpecificOutput: {

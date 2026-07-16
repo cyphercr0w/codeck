@@ -23,7 +23,7 @@
 import { existsSync, readFileSync, writeFileSync } from 'fs';
 import { join } from 'path';
 
-const HARNESS = '/workspace/.codeck/harness';
+const HARNESS = process.env.CODECK_HARNESS_DIR || '/workspace/.codeck/harness';
 const CURRENT = join(HARNESS, 'current.json');
 
 let input = '';
@@ -36,6 +36,15 @@ try { data = JSON.parse(input); } catch { process.exit(0); }
 const tool = data.tool_name || '';
 if (!/^(Bash|Edit|Write|MultiEdit|Agent)$/.test(tool)) process.exit(0);
 
+// ALWAYS allow writes/commands that checkpoint or close the harness itself.
+// Without this, a capped run cannot record progress, ESCALATE, or set
+// active:false — every recovery tool is exactly what the cap would deny (deadlock).
+const HARNESS_STATE_RE = /\.codeck[\/\\]harness[\/\\]/;
+const filePath = String(data.tool_input?.file_path || '');
+const bashCmd = String(data.tool_input?.command || '');
+if ((tool === 'Edit' || tool === 'Write' || tool === 'MultiEdit') && HARNESS_STATE_RE.test(filePath)) process.exit(0);
+if (tool === 'Bash' && HARNESS_STATE_RE.test(bashCmd)) process.exit(0);
+
 // Only active during a harness run.
 if (!existsSync(CURRENT)) process.exit(0);
 let cur;
@@ -43,10 +52,11 @@ try { cur = JSON.parse(readFileSync(CURRENT, 'utf-8')); } catch { process.exit(0
 if (!cur || cur.active !== true || !cur.taskId) process.exit(0);
 
 const budgetPath = join(HARNESS, String(cur.taskId), 'budget.json');
-if (!existsSync(budgetPath)) process.exit(0);
-
+// Fail CLOSED: a missing/corrupt budget.json must NOT silently disable the only
+// hard cap. Seed a default and start counting.
 let b;
-try { b = JSON.parse(readFileSync(budgetPath, 'utf-8')); } catch { process.exit(0); }
+try { b = JSON.parse(readFileSync(budgetPath, 'utf-8')); } catch { b = null; }
+if (!b || typeof b !== 'object' || Array.isArray(b)) b = { iterCap: 200, costCapUsd: 10, iterations: 0, spentUsd: 0 };
 
 const iterCap = Number.isFinite(b.iterCap) ? b.iterCap : 200;
 const costCap = Number.isFinite(b.costCapUsd) ? b.costCapUsd : Infinity;
@@ -60,6 +70,11 @@ const overIter = b.iterations > iterCap;
 const overCost = spent > costCap;
 
 if (overIter || overCost) {
+  // SELF-HEAL: deterministically end the task (active:false) so the lockout can
+  // never persist into future sessions, and so the next tool call passes this
+  // guard (active:false → early exit) — the agent can then checkpoint + report.
+  // Harness-state writes above stay allowed regardless.
+  try { writeFileSync(CURRENT, JSON.stringify({ ...cur, active: false, stoppedBy: 'budget-guard', stoppedAt: Date.now() }, null, 2)); } catch { /* best effort */ }
   const why = overCost
     ? `cost cap reached ($${spent.toFixed(2)} > $${costCap})`
     : `iteration cap reached (${b.iterations} > ${iterCap})`;
@@ -67,7 +82,7 @@ if (overIter || overCost) {
     hookSpecificOutput: {
       hookEventName: 'PreToolUse',
       permissionDecision: 'deny',
-      permissionDecisionReason: `HARNESS BUDGET STOP: ${why}. Do NOT continue automatically. Stop, write the current progress to .codeck/harness/${cur.taskId}/progress.json, and report to the user what is done, what remains, and whether to raise the cap. Raising the cap requires the user's explicit go-ahead.`,
+      permissionDecisionReason: `HARNESS BUDGET STOP: ${why}. The task has been stopped (current.json active:false) so tools are usable again on your next call. Write final progress to .codeck/harness/${cur.taskId}/progress.json and report to the user what is done, what remains, and whether to raise the cap (raising it needs the user's explicit go-ahead).`,
     },
   }));
   process.exit(0);

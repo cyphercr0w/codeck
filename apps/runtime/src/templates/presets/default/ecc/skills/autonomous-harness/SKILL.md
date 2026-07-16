@@ -15,15 +15,15 @@ This is the long-running arm of the Autonomous Operator Protocol. It turns a **P
 ```
 /workspace/.codeck/harness/current.json          { "active": true, "taskId": "<id>" }
 /workspace/.codeck/harness/<taskId>/plan.md        the vetted surgical plan
-/workspace/.codeck/harness/<taskId>/requirements.json  acceptance criteria (definition of done)
-/workspace/.codeck/harness/<taskId>/progress.json  criteria status + evidence + iteration log
+/workspace/.codeck/harness/<taskId>/progress.json  acceptance criteria + status + evidence + iteration log (SINGLE source of truth)
 /workspace/.codeck/harness/<taskId>/budget.json    { iterCap, costCapUsd, iterations, spentUsd }
 /workspace/.codeck/harness/<taskId>/overseer.json  Product-Owner state (drives the Stop-loop)
+/workspace/.codeck/harness/<taskId>/reprompts.json { count } — Stop-loop backstop counter (never write this yourself)
 ```
 
-`requirements.json`: `[{ "id": "c1", "desc": "...", "status": "todo|doing|done", "evidence": "" }]`.
+`progress.json`: `{ "criteria": [{ "id": "c1", "desc": "...", "status": "todo|doing|done", "evidence": "" }], "iterations": [] }`. This is the ONE file both the loop and the DONE gate read — there is no separate `requirements.json`. The DONE gate passes only when every criterion is `status:"done"` with non-empty `evidence`.
 `overseer.json`: `{ "mode": "autonomous|supervised", "phase": "plan|implement|review|audit|done", "planApproved": <bool>, "done": <bool>, "escalated": <bool>, "directive": "<next step>", "reprompts": <int>, "updatedAt": <ms> }` — written by the `product-owner` agent at each verdict. The `workflow-checkpoint` Stop hook reads it: while `active` and not `done`/`escalated`, a premature stop is **blocked and auto-reprompted** with the pending directive (the keep-alive), until the PO declares DONE or the budget cap hits.
-`budget.json` defaults: `{ "iterCap": 200, "costCapUsd": 10, "iterations": 0, "spentUsd": 0 }` — adjust to the task, confirm with the user if raising. The `budget-guard` hook hard-stops you at the cap.
+`budget.json` defaults: `{ "iterCap": 200, "costCapUsd": 10, "iterations": 0, "spentUsd": 0 }` — adjust to the task, confirm with the user if raising. The `budget-guard` hook hard-stops at the **iteration cap** (the deterministic ceiling, incremented per expensive tool call) and self-heals `current.json` to `active:false` when it fires. The **cost cap is best-effort** — it only engages if you keep `spentUsd` current each iteration; if you don't, only the iteration cap protects you.
 
 ## Procedure
 
@@ -34,7 +34,7 @@ If `current.json` exists and `active:true`, read that task's `plan.md` + `progre
 - **Capability preflight.** Run `node /workspace/.codeck/scripts/capability-doctor.mjs --json` and confirm every capability this task depends on (git remote/push, `gh`, Docker, headless browser, network, disk) is ready. `which` ≠ ready. If a required one is NOT ready, resolve it, take its documented fallback, or surface it to the user **before** committing to a long unattended run — do not start a run that will stall on a missing capability.
 - **Clarify + mode:** clarify to zero ambiguity (Protocol Phase 1), and ask ONCE — autonomous (PO decides) or supervised (user decides)? Default autonomous.
 - Pick a `taskId` (kebab slug). Write `current.json` (`active:true`), `overseer.json` (`mode`, `phase:"plan"`, `planApproved:false`, `done:false`, `reprompts:0`), and `budget.json`. **Clear stale gate state from any prior task** so old markers can't satisfy this task's gates: `rm -f /workspace/.codeck/state/review-marker.json /workspace/.codeck/state/audit-marker.json /workspace/.codeck/state/edit-tracker.json`.
-- **Plan + plan-review loop:** produce the surgical plan → `plan.md`; derive **acceptance criteria** → `requirements.json` (every criterion `status:"todo"`). Then run the **plan-review loop** (`spec-reviewer` + `architect` + `grader`), fix and re-review until ZERO findings, and consult the **`product-owner`** for the PLAN verdict. Implement only after `APPROVE_PLAN` (PO sets `planApproved:true`). In supervised mode, present the vetted plan to the user instead.
+- **Plan + plan-review loop:** produce the surgical plan → `plan.md`; derive **acceptance criteria** → `progress.json` as `{criteria:[{id,desc,status:"todo",evidence:""}], iterations:[]}`. Then run the **plan-review loop** (`spec-reviewer` + `architect` + `grader`), fix and re-review until ZERO findings, and consult the **`product-owner`** for the PLAN verdict. Implement only after `APPROVE_PLAN` (PO sets `planApproved:true`). In supervised mode, present the vetted plan to the user instead.
 - `git add -A && git commit` an initial checkpoint (anchor state in git, not just conversation).
 
 ### 2. Iterate (the loop)

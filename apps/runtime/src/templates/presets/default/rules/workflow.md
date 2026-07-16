@@ -21,7 +21,7 @@ This is how you work **by default, on every task**. You already know this — yo
 
 ## Phase 3 — Scope + surgical plan
 
-- Produce a precise plan: **exact files**, **every code path / variant**, **data / schema / API / contract** impacts, **tests**, and the **rollback**. Derive the **acceptance criteria** (definition of done) → `requirements.json` (each `status:"todo"`, criteria start false). Use `architect`/`planner` for non-trivial design. Validate against `constitution.md`.
+- Produce a precise plan: **exact files**, **every code path / variant**, **data / schema / API / contract** impacts, **tests**, and the **rollback**. Derive the **acceptance criteria** (definition of done) → `progress.json` `{criteria:[…]}` (each `status:"todo"`, criteria start false — this is the single file the loop and the DONE gate both read). Use `architect`/`planner` for non-trivial design. Validate against `constitution.md`.
 
 ## Phase 4 — PLAN-REVIEW LOOP → PO plan verdict (before any implementation)
 

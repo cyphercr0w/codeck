@@ -4,9 +4,10 @@
  *
  * Injects a compact, always-on reminder of the default operating protocol so
  * the agent works the same way on every task without the user repeating it:
- *   clarify (0 ambiguity) -> surgical plan (+approval) -> implement -> review
- *   -> audit -> fix -> evidence-gated delivery, iterating until done, using
- *   subagents freely and persisting memory throughout.
+ *   clarify (0 ambiguity) -> surgical plan -> PO plan verdict -> implement ->
+ *   review -> audit -> PO DONE (evidence-gated), iterating until done, using
+ *   subagents freely and persisting memory throughout. In autonomous mode the
+ *   product-owner renders verdicts — there is no user approval gate.
  *
  * Full protocol lives in rules/base/workflow.md. This is the enforcement nudge
  * that keeps it in the model's recency window (message layer — does NOT touch

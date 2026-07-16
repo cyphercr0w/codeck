@@ -30,10 +30,13 @@ if (!filePath) process.exit(0);
 const sessionCwd = parsed.cwd || process.cwd();
 if (!filePath.startsWith(sessionCwd)) process.exit(0);
 
-// Skip non-code files (docs, config, memory, state)
+// Never-track: pure docs, secrets, VCS meta, dependency lockfiles, and our own
+// internal state. Config/schema files (.json/.yaml/.yml/.sql/.toml) ARE tracked —
+// a config/pipeline-driven feature is still a real change that needs review.
 const name = basename(filePath).toLowerCase();
-const skipPatterns = ['.md', '.json', '.yml', '.yaml', '.txt', '.env', '.gitignore'];
-if (skipPatterns.some(p => name.endsWith(p))) process.exit(0);
+const skipExt = ['.md', '.txt', '.env'];
+const skipExact = ['.gitignore', 'package-lock.json', 'pnpm-lock.yaml', 'yarn.lock', 'bun.lockb'];
+if (skipExt.some(p => name.endsWith(p)) || skipExact.includes(name)) process.exit(0);
 if (filePath.includes('.codeck/') || filePath.includes('.claude/')) process.exit(0);
 
 if (!existsSync(STATE_DIR)) mkdirSync(STATE_DIR, { recursive: true });
@@ -52,6 +55,9 @@ if (!state.files.includes(shortPath)) {
   state.count = state.files.length;
   if (!state.since) state.since = Date.now();
 }
+// Advance lastEdit on EVERY edit (even re-edits of a tracked file) so a stale
+// clean marker can't cover code changed after it — markers must post-date the diff.
+state.lastEdit = Date.now();
 
 writeFileSync(EDIT_TRACKER, JSON.stringify(state));
 process.exit(0);

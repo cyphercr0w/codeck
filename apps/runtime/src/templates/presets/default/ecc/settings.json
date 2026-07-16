@@ -548,9 +548,13 @@
 					{
 						"type": "command",
 						"command": "node /workspace/.codeck/scripts/subagent-tracker.mjs"
+					},
+					{
+						"type": "command",
+						"command": "node /workspace/.codeck/scripts/review-marker-hook.mjs"
 					}
 				],
-				"description": "Track subagent completion for real-time UI panel"
+				"description": "Track subagent completion for the UI panel and machine-stamp review/audit markers when a reviewer finishes"
 			}
 		],
 		"CwdChanged": [

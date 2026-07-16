@@ -51,13 +51,16 @@ function approve() { console.log(JSON.stringify({ result: 'approve' })); process
 function block(reason, message) { console.log(JSON.stringify({ result: 'block', reason, message })); process.exit(0); }
 
 const edits = readJSON(EDIT_TRACKER, { files: [], count: 0, since: 0 });
-const since = Number(edits.since || 0);
+// Freshness floor = the LATEST edit, not the first. Otherwise an early clean
+// review marker satisfies the gate for every later criterion's code too — the
+// review/audit loop must re-run against the CURRENT diff.
+const editFloor = Number(edits.lastEdit || edits.since || 0);
 
-// A marker "satisfies" a gate only if it is newer than the edits AND (in the
-// strict harness regime) was written clean (findings resolved / re-reviewed).
+// A marker "satisfies" a gate only if it is newer than the latest edit AND (in
+// the strict harness regime) was written clean (findings resolved / re-reviewed).
 function markerOk(path, requireClean) {
   const m = readJSON(path, null);
-  if (!m || !m.timestamp || m.timestamp <= since) return false;
+  if (!m || !m.timestamp || m.timestamp <= editFloor) return false;
   return requireClean ? m.clean === true : true;
 }
 
@@ -72,7 +75,12 @@ const cur = readJSON(CURRENT, null);
 if (cur && cur.active === true && cur.taskId) {
   const taskDir = join(HARNESS_DIR, String(cur.taskId));
   const overseer = readJSON(join(taskDir, 'overseer.json'), {});
-  const reqs = readJSON(join(taskDir, 'requirements.json'), []);
+  // Single source of truth for acceptance criteria + status + evidence:
+  // progress.json (the file the loop writes and harness-resume-hook reads).
+  // Accept both shapes: { criteria: [...] } or a bare [...] array.
+  const progress = readJSON(join(taskDir, 'progress.json'), {});
+  const reqs = Array.isArray(progress) ? progress
+    : (Array.isArray(progress.criteria) ? progress.criteria : []);
 
   // Supervised mode → hand delivery to the user via the legacy gate below.
   if (overseer.mode && overseer.mode !== 'autonomous') {
@@ -92,8 +100,11 @@ if (cur && cur.active === true && cur.taskId) {
     // ESCALATE is the only *deliberate* path that returns control to a human.
     if (overseer.escalated === true) approve();
 
-    // Reprompt backstop (secondary safety, below the budget cap).
-    const reprompts = Number(overseer.reprompts || 0);
+    // Reprompt backstop (secondary safety, below the budget cap). Counter lives
+    // in its OWN file that the PO never rewrites — storing it in overseer.json let
+    // every PO verdict reset it to 0, so it never reached the cap.
+    const REPROMPTS_FILE = join(taskDir, 'reprompts.json');
+    const reprompts = Number(readJSON(REPROMPTS_FILE, {}).count || 0);
     if (reprompts >= MAX_REPROMPTS) approve();
 
     const reviewClean = markerOk(REVIEW_MARKER, true);
@@ -121,15 +132,20 @@ if (cur && cur.active === true && cur.taskId) {
     } else if (hasEdits && reviewClean && !auditClean) {
       directive = 'AUDIT LOOP — spawn `security-reviewer` AND `grader` (completeness vs the definition of done). Every criterion needs linked evidence (criteria start false). Fix everything found and re-audit until clean. Then write the marker:\n  echo \'{"timestamp":\'$(date +%s%3N)\',"agent":"grader","findings":0,"clean":true}\' > /workspace/.codeck/state/audit-marker.json';
     } else if (!criteriaComplete) {
-      directive = 'DONE GATE — checks are clean but the acceptance criteria are not fully evidenced. Ensure `.codeck/harness/' + String(cur.taskId) + '/requirements.json` is a non-empty list and every criterion is status:"done" with a linked evidence artifact (test output, diff, screenshot). Then consult the `product-owner` for the DONE verdict.';
+      directive = 'DONE GATE — checks are clean but the acceptance criteria are not fully evidenced. Ensure `.codeck/harness/' + String(cur.taskId) + '/progress.json` has a non-empty `criteria` list and every criterion is status:"done" with a linked evidence artifact (test output, diff, screenshot). Then consult the `product-owner` for the DONE verdict.';
     } else {
       directive = 'DONE GATE — review and audit are clean and criteria are evidenced. Consult the `product-owner` agent for the final DONE verdict. If it returns DONE it sets overseer.done=true and the run finalizes; otherwise fix what it flags and continue. If genuinely blocked, the PO returns ESCALATE.';
     }
+    // The PO's own next-step (if it wrote one) is appended so it survives a
+    // compaction — the computed gate above is always regenerated from state.
+    if (overseer.directive && String(overseer.directive).trim()) {
+      directive += `\n\nPO note: ${String(overseer.directive).trim()}`;
+    }
 
-    // Persist the reprompt count so the backstop and budget cap can engage.
+    // Persist the reprompt counter in its dedicated file (never overseer.json).
     try {
       if (!existsSync(taskDir)) mkdirSync(taskDir, { recursive: true });
-      writeFileSync(join(taskDir, 'overseer.json'), JSON.stringify({ ...overseer, reprompts: reprompts + 1, updatedAt: Date.now() }, null, 2));
+      writeFileSync(REPROMPTS_FILE, JSON.stringify({ count: reprompts + 1, updatedAt: Date.now() }));
     } catch { /* best effort */ }
 
     block(
@@ -142,8 +158,12 @@ if (cur && cur.active === true && cur.taskId) {
 // ── Regime B: legacy review/audit gate (no active harness task) ──────────────
 if (!edits.count || edits.count === 0) approve();
 
-// Small changes (1-4 files) → approve without review.
-if (edits.count <= 4) {
+// A real feature/fix (classified non-trivial by the task-classifier) must be
+// reviewed even for a single file — the ≤4-file fast path is only for
+// trivial/unclassified work, so a small-but-real code change can't skip the gate.
+const taskClass = readJSON(join(STATE_DIR, 'task-class.json'), {});
+const nonTrivialTask = taskClass.nonTrivial === true;
+if (!nonTrivialTask && edits.count <= 4) {
   writeFileSync(EDIT_TRACKER, JSON.stringify({ files: [], count: 0, since: 0 }));
   approve();
 }

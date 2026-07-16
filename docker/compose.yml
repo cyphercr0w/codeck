@@ -19,7 +19,7 @@ services:
       - path: ../.env
         required: false
     ports:
-      - "127.0.0.1:8080:80"
+      - "${CODECK_BIND_IP:-127.0.0.1}:${CODECK_HOST_PORT:-8200}:80"
     environment:
       - CODECK_PORT=80
       - CODECK_NETWORK_MODE=bridge
@@ -71,6 +71,14 @@ services:
 
 volumes:
   codeck-workspace:
+    external: true
+    name: codeck-workspace
   codeck-claude:
+    external: true
+    name: codeck-claude
   codeck-ssh:
+    external: true
+    name: codeck-ssh
   codeck-gh:
+    external: true
+    name: codeck-gh

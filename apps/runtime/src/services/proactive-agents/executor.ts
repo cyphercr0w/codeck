@@ -512,6 +512,13 @@ export function executeAgent(agentId: string, deps: ExecutorDeps): void {
 			}
 		}
 
+		// Goal-driven loop: once the gate passes (accepted), stop firing — it reached
+		// its objective. Scheduled loops keep their cadence.
+		if (loopRun && runtime.config.loop?.mode === "goal-driven" && result.accepted) {
+			runtime.state.status = "paused";
+			deps.stopCron(runtime);
+		}
+
 		deps.saveState(agentId, runtime.state);
 
 		deps.broadcastFn()({

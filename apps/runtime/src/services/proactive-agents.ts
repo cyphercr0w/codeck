@@ -706,18 +706,22 @@ export function getLoopInbox(id: string): InboxEntry[] | null {
 
   const dir = inboxDir(id);
   if (!existsSync(dir)) return [];
-  let files: string[];
+  let names: string[];
   try {
-    files = readdirSync(dir).filter(f => f.endsWith('.md')).sort().reverse().slice(0, MAX_INBOX_ENTRIES);
+    names = readdirSync(dir).filter(f => f.endsWith('.md'));
   } catch { return []; }
 
+  // Sort by real mtime (newest first) — filenames aren't guaranteed timestamp-ordered.
+  const stated: { f: string; m: number }[] = [];
+  for (const f of names) {
+    try { stated.push({ f, m: statSync(join(dir, f)).mtimeMs }); } catch { /* skip */ }
+  }
+  stated.sort((a, b) => b.m - a.m);
+
   const entries: InboxEntry[] = [];
-  for (const f of files) {
+  for (const { f, m } of stated.slice(0, MAX_INBOX_ENTRIES)) {
     try {
-      const full = join(dir, f);
-      const st = statSync(full);
-      const content = readFileSync(full, 'utf8');
-      entries.push({ file: f, createdAt: st.mtimeMs, preview: content.slice(0, 500) });
+      entries.push({ file: f, createdAt: m, preview: readFileSync(join(dir, f), 'utf8').slice(0, 500) });
     } catch { /* skip unreadable */ }
   }
   return entries;

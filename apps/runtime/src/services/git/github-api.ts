@@ -42,7 +42,9 @@ export interface IssueItem {
 
 type GhResult<T> = { ok: true; data: T } | { ok: false; error: string };
 
-const isSlug = (s: string): boolean => /^[\w.-]{1,100}$/.test(s);
+// Must start with an alphanumeric and contain no `..` — blocks path traversal in
+// the constructed `gh api repos/<owner>/<repo>/…` path.
+const isSlug = (s: string): boolean => /^[A-Za-z0-9][\w.-]{0,99}$/.test(s) && !s.includes("..");
 const normState = (s: unknown): 'open' | 'closed' | 'all' =>
   s === 'closed' || s === 'all' ? s : 'open';
 

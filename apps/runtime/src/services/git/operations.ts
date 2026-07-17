@@ -134,9 +134,15 @@ export function getGitDiff(cwd: string, opts: { staged?: boolean; base?: string 
   if (!resolved) return { diff: '', error: 'Directory must be within the workspace' };
   const args = ['-C', resolved, 'diff', '--no-color'];
   if (opts.staged) args.push('--staged');
-  if (opts.base && /^[\w./-]{1,100}$/.test(opts.base)) args.push(opts.base);
+  // Must start with a word char or dot — blocks a leading-dash `base` from being
+  // parsed as a git option (flag injection).
+  if (opts.base && /^[\w.][\w./-]{0,99}$/.test(opts.base)) args.push(opts.base);
   const res = spawnSync('git', args, { stdio: 'pipe', timeout: 10_000, maxBuffer: MAX_DIFF_BYTES, encoding: 'utf8' });
-  if (res.error) return { diff: '', error: 'Failed to run git diff' };
+  if (res.error) {
+    const code = (res.error as NodeJS.ErrnoException).code;
+    if (code === 'ENOBUFS') return { diff: '', error: 'Diff too large to display (over 5 MB). Commit or narrow the changes.' };
+    return { diff: '', error: 'Failed to run git diff' };
+  }
   if (res.status !== 0) return { diff: '', error: (res.stderr || 'git diff failed').toString().slice(0, 300) };
   return { diff: (res.stdout || '').slice(0, MAX_DIFF_BYTES) };
 }

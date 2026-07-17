@@ -789,7 +789,10 @@ export function App() {
 							<HomeSection onRelogin={startLogin} onLogout={handleLogout} />
 						)}
 						{section === "chat" && <ChatSection />}
-						{section === "filesystem" && <EditorSection />}
+						{/* EditorSection always mounted — preserves open tabs + unsaved buffers across nav */}
+						<div style={section !== "filesystem" ? { display: "none" } : { display: "contents" }}>
+							<EditorSection />
+						</div>
 						{/* ClaudeSection always mounted — preview is integrated within it */}
 						<div
 							style={

@@ -144,9 +144,9 @@ if (cur && cur.active === true && cur.taskId) {
     if (!overseer.planApproved) {
       directive = 'PLAN GATE — do not implement yet. Run the plan-review loop (spawn `spec-reviewer` + `architect`/`planner` + `grader` against the definition of done); fix the plan and re-review until ZERO findings. Then consult the `product-owner` agent for the PLAN verdict. Implementation may begin only after the PO returns APPROVE_PLAN and sets overseer.planApproved=true.';
     } else if (hasEdits && !reviewClean) {
-      directive = 'REVIEW LOOP — spawn `code-reviewer`, fix every finding, and re-review until clean. Then write the marker with the outcome:\n  echo \'{"timestamp":\'$(date +%s%3N)\',"agent":"code-reviewer","findings":0,"clean":true}\' > /workspace/.codeck/state/review-marker.json';
+      directive = 'REVIEW LOOP — spawn `code-reviewer`, fix every finding, and re-review until clean. Then write the marker with the outcome:\n  echo \'{"timestamp":\'$(date +%s%3N)\',"agent":"code-reviewer","findings":0,"clean":true}\' > ' + STATE_DIR + '/review-marker.json';
     } else if (hasEdits && reviewClean && !auditClean) {
-      directive = 'AUDIT LOOP — spawn `security-reviewer` AND `grader` (completeness vs the definition of done). Every criterion needs linked evidence (criteria start false). Fix everything found and re-audit until clean. Then write the marker:\n  echo \'{"timestamp":\'$(date +%s%3N)\',"agent":"grader","findings":0,"clean":true}\' > /workspace/.codeck/state/audit-marker.json';
+      directive = 'AUDIT LOOP — spawn `security-reviewer` AND `grader` (completeness vs the definition of done). Every criterion needs linked evidence (criteria start false). Fix everything found and re-audit until clean. Then write the marker:\n  echo \'{"timestamp":\'$(date +%s%3N)\',"agent":"grader","findings":0,"clean":true}\' > ' + STATE_DIR + '/audit-marker.json';
     } else if (!criteriaComplete) {
       directive = 'DONE GATE — checks are clean but the acceptance criteria are not fully evidenced. Ensure `.codeck/harness/' + String(cur.taskId) + '/progress.json` has a non-empty `criteria` list and every criterion is status:"done" with a linked evidence artifact (test output, diff, screenshot). Then consult the `product-owner` for the DONE verdict.';
     } else {
@@ -200,11 +200,11 @@ if (reviewRecent && auditRecent) {
 if (!reviewRecent) {
   block(
     `You modified ${edits.count} files (${msg}) but haven't run code-reviewer yet.`,
-    `Workflow gate (review):\nYou modified ${edits.count} files (${msg}) but haven't run code-reviewer.\nSpawn a code-reviewer sub-agent, fix what it finds, then write the marker:\n  echo '{"timestamp":'$(date +%s%3N)',"agent":"code-reviewer"}' > /workspace/.codeck/state/review-marker.json`
+    `Workflow gate (review):\nYou modified ${edits.count} files (${msg}) but haven't run code-reviewer.\nSpawn a code-reviewer sub-agent, fix what it finds, then write the marker:\n  echo '{"timestamp":'$(date +%s%3N)',"agent":"code-reviewer"}' > ${STATE_DIR}/review-marker.json`
   );
 }
 
 block(
   `Review is done but the audit gate hasn't run for ${edits.count} changed files.`,
-  `Workflow gate (audit):\nCode review passed, but before delivery you must AUDIT: spawn security-reviewer AND grade completeness against the definition of done (the \`grader\` agent). Every acceptance criterion needs linked evidence (criteria start false). Fix anything found, then write the marker:\n  echo '{"timestamp":'$(date +%s%3N)',"agent":"grader"}' > /workspace/.codeck/state/audit-marker.json`
+  `Workflow gate (audit):\nCode review passed, but before delivery you must AUDIT: spawn security-reviewer AND grade completeness against the definition of done (the \`grader\` agent). Every acceptance criterion needs linked evidence (criteria start false). Fix anything found, then write the marker:\n  echo '{"timestamp":'$(date +%s%3N)',"agent":"grader"}' > ${STATE_DIR}/audit-marker.json`
 );

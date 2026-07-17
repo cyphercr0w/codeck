@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { cloneRepository, getGitDiff, WORKSPACE } from "../services/git.js";
+import { sanitizeSecrets } from "../services/session-writer.js";
 import { broadcastStatus } from "../web/websocket.js";
 import { asyncHandler } from "../utils/async-handler.js";
 
@@ -16,7 +17,8 @@ router.get("/diff", (req, res) => {
 		res.status(400).json({ error: result.error });
 		return;
 	}
-	res.json({ diff: result.diff });
+	// A diff can contain secrets (e.g. a modified .env) — sanitize before it hits the UI.
+	res.json({ diff: sanitizeSecrets(result.diff) });
 });
 
 // Clone repository

@@ -18,6 +18,7 @@ export function PlaywrightPreview() {
 	const [designMode, setDesignMode] = useState(false);
 	const [pin, setPin] = useState<Pin | null>(null);
 	const imgRef = useRef<HTMLImageElement>(null);
+	const inspectGenRef = useRef(0);
 	const url = playwrightUrl.value;
 
 	useEffect(() => {
@@ -47,6 +48,9 @@ export function PlaywrightPreview() {
 		// Map the on-screen click into the frame's natural (page) pixel space.
 		const nx = (xPct / 100) * (img.naturalWidth || rect.width);
 		const ny = (yPct / 100) * (img.naturalHeight || rect.height);
+		// Generation guard: a slow inspect for an earlier click must not overwrite the
+		// element of a newer pin (rapid clicks resolve out of order).
+		const gen = ++inspectGenRef.current;
 		setPin({ xPct, yPct, el: null, note: "", loading: true });
 		try {
 			const res = await apiFetch("/api/preview/playwright/inspect", {
@@ -54,9 +58,10 @@ export function PlaywrightPreview() {
 				body: JSON.stringify({ x: nx, y: ny }),
 			});
 			const el = res.ok ? ((await res.json()) as InspectedEl) : null;
+			if (inspectGenRef.current !== gen) return; // superseded by a newer click
 			setPin((p) => (p ? { ...p, el, loading: false } : p));
 		} catch {
-			setPin((p) => (p ? { ...p, loading: false } : p));
+			if (inspectGenRef.current === gen) setPin((p) => (p ? { ...p, loading: false } : p));
 		}
 	}
 
@@ -67,9 +72,9 @@ export function PlaywrightPreview() {
 		if (!sid) { showToast("Open a Terminal (agent) session first", "error"); return; }
 		if (!pin.note.trim()) { showToast("Add a note first", "error"); return; }
 		const el = pin.el;
-		const target = el ? (el.selector || el.tag) : `page location ${Math.round(pin.xPct)}%,${Math.round(pin.yPct)}%`;
+		const target = clean(el ? (el.selector || el.tag) : `page location ${Math.round(pin.xPct)}%,${Math.round(pin.yPct)}%`);
 		const snippet = el?.outerHTML ? ` (element: ${clean(el.outerHTML).slice(0, 200)})` : "";
-		const prompt = `[Design feedback] On ${el?.url || url || "the current page"}, the element ${target} — ${clean(pin.note)}. Locate this element in the code and update its HTML/CSS accordingly.${snippet}`;
+		const prompt = `[Design feedback] On ${clean(el?.url || url || "the current page")}, the element ${target} — ${clean(pin.note)}. Locate this element in the code and update its HTML/CSS accordingly.${snippet}`;
 		wsSend({ type: "console:input", sessionId: sid, data: prompt + "\r" });
 		showToast("Design feedback sent to the agent", "success");
 		setPin(null);

@@ -23,12 +23,16 @@ function parseDiff(raw: string): DiffFile[] {
       cur = { file: '', lines: [] };
       files.push(cur);
       inHunk = false;
+      // Provisional name from the "b/<path>" side — survives deletions
+      // (+++ /dev/null), pure renames, and binary changes (no +++/--- hunk).
+      const m = line.match(/ b\/(.+)$/);
+      if (m) cur.file = m[1];
       continue;
     }
     if (!cur) continue;
     if (line.startsWith('+++ ')) {
       const f = line.slice(4).replace(/^b\//, '');
-      if (f !== '/dev/null') cur.file = f;
+      if (f && f !== '/dev/null') cur.file = f;
       cur.lines.push({ kind: 'meta', text: line, newNo: null });
       continue;
     }
@@ -40,6 +44,11 @@ function parseDiff(raw: string): DiffFile[] {
       continue;
     }
     if (!inHunk) {
+      cur.lines.push({ kind: 'meta', text: line, newNo: null });
+      continue;
+    }
+    // "\ No newline at end of file" is a marker, not a code line — don't count it.
+    if (line.startsWith('\\')) {
       cur.lines.push({ kind: 'meta', text: line, newNo: null });
       continue;
     }
@@ -69,6 +78,10 @@ function ChangesTab() {
   async function load() {
     setLoading(true);
     setError('');
+    // Line-index keys (fi:li) reindex when the diff reloads — drop stale annotations
+    // so a comment can never attach to the wrong line after a scope switch/refresh.
+    setAnnotations({});
+    setEditing(null);
     try {
       const params = new URLSearchParams({ cwd: workspacePath.value });
       if (base === 'staged') params.set('staged', 'true');
@@ -83,18 +96,24 @@ function ChangesTab() {
 
   useEffect(() => { load(); }, [base]);
 
+  // Keep the session selection valid as sessions hydrate/appear after mount.
+  useEffect(() => {
+    if (!sessionId && agentSessions.length) setSessionId(agentSessions[0].id);
+  }, [agentSessions.length]);
+
   const files = useMemo(() => parseDiff(raw || ''), [raw]);
   const pending = Object.values(annotations).filter(a => a.text.trim());
 
   function sendToAgent() {
-    if (!sessionId) { showToast('Open a Terminal (agent) session first', 'error'); return; }
+    const sid = sessionId || agentSessions.find(s => s.id === activeSessionId.value)?.id || agentSessions[0]?.id;
+    if (!sid) { showToast('Open a Terminal (agent) session first', 'error'); return; }
     if (pending.length === 0) return;
     const body = pending
-      .map(a => `${a.file}${a.no ? `:${a.no}` : ''} — ${a.text.trim()}`)
+      // Collapse embedded newlines — a PTY submits on newline, so the reprompt must be one line.
+      .map(a => `${a.file}${a.no ? `:${a.no}` : ''} — ${a.text.replace(/\s+/g, ' ').trim()}`)
       .join('; ');
-    // Single line + CR: a PTY submits on newline, so the whole reprompt must be one line.
     const prompt = `Please address these code-review comments on the current uncommitted changes: ${body}. Apply the fixes, then re-run verification.`;
-    wsSend({ type: 'console:input', sessionId, data: prompt + '\r' });
+    wsSend({ type: 'console:input', sessionId: sid, data: prompt + '\r' });
     showToast(`Sent ${pending.length} comment(s) to the agent`, 'success');
     setAnnotations({});
     setEditing(null);

@@ -106,11 +106,17 @@
 }
 .editor-tab-close:hover { background: rgba(255, 255, 255, 0.1); color: var(--text-primary); }
 
-.editor-monaco {
+.editor-monaco-wrap {
 	flex: 1;
 	position: relative;
 	min-height: 0;
 	overflow: hidden;
+}
+
+/* Dedicated Monaco mount node — no Preact-managed children live inside it. */
+.editor-monaco {
+	position: absolute;
+	inset: 0;
 }
 
 .editor-placeholder {

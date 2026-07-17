@@ -3,10 +3,10 @@
 # update-container.sh — Safe update of the running `codeck` container to the
 # current git branch, preserving the ./Rep-GL3 workspace bind and all volumes.
 #
-# HOW THE DEPLOY WORKS (preset target v9.3.0):
+# HOW THE DEPLOY WORKS (preset target v9.3.1):
 #   The heavy lifting is AUTOMATIC. On rebuild, the new server runs
 #   checkPresetUpdate() at startup; it sees the deployed preset is older than the
-#   image (v9.3.0) and auto-deploys NEW files (harness/PO scripts, product-owner +
+#   image (v9.3.1) and auto-deploys NEW files (harness/PO scripts, product-owner +
 #   silent-failure-hunter agents, agent-introspection-debugging skill, capability-
 #   doctor, the modified rules, and mcp.json) and merges the new hooks into
 #   settings.json (hook-level dedup — no duplicate subagent-tracker). This script
@@ -19,7 +19,7 @@
 #   1. Backup: named volumes (codeck-claude/ssh/gh) + on-disk .codeck; tag the
 #      current image for rollback.
 #   2. Rebuild the app image + recreate the container with the SAME mounts.
-#   3. Wait for health + for the preset auto-update to reach v9.1.0.
+#   3. Wait for health + for the preset auto-update to reach v9.3.1.
 #   4. Verify the new agents/skills/scripts/hooks actually deployed.
 #   5. Report the two settings.json values that DON'T auto-merge (see below).
 #
@@ -60,7 +60,7 @@ if command -v cygpath >/dev/null 2>&1; then
   ENV_FILE="$(cygpath -w "$ENV_FILE")"
 fi
 EXPECTED_BRANCH="feat/modernization-2026"
-TARGET_VERSION="9.3.0"
+TARGET_VERSION="9.3.1"
 TS="$(date +%Y%m%d-%H%M%S)"
 BACKUP_DIR="${CODECK_BACKUP_DIR:-$HOME/codeck-backups}/$TS"
 
@@ -143,9 +143,10 @@ if [ "$APPLY" = 1 ]; then
   chk "grader agent"          "docker exec $CONTAINER test -f /root/.claude/agents/grader.md"
   chk "visual-verifier agent" "docker exec $CONTAINER test -f /root/.claude/agents/visual-verifier.md"
   chk "autonomous-harness skill" "docker exec $CONTAINER test -f /root/.claude/skills/autonomous-harness/SKILL.md"
+  chk "scheduled-loop skill"   "docker exec $CONTAINER test -f /root/.claude/skills/scheduled-loop/SKILL.md"
   chk "/harness command"      "docker exec $CONTAINER test -f /root/.claude/commands/harness.md"
   echo "   hook scripts (on the ./Rep-GL3 bind):"
-  for f in autonomous-protocol-hook task-classifier-hook budget-guard no-progress-guard harness-resume-hook; do
+  for f in autonomous-protocol-hook task-classifier-hook budget-guard no-progress-guard harness-resume-hook review-marker-hook; do
     chk "$f.mjs" "test -f \"$WORKSPACE_BIND/.codeck/scripts/$f.mjs\""
   done
   echo "   rules:"

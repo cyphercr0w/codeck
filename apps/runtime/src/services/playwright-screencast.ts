@@ -454,7 +454,10 @@ export async function inspectElementAt(
 				(cls ? `.${cls.trim().split(/\s+/).filter(Boolean).join(".")}` : "");
 		} catch { /* optional */ }
 
-		return { tag, selector: selector || tag, outerHTML, url: currentUrl };
+		// Strip whitespace/newlines: an element id/class from an attacker-influenced
+		// page must not inject a newline into the single-line agent reprompt.
+		selector = (selector || tag).replace(/\s+/g, "");
+		return { tag, selector, outerHTML, url: currentUrl.replace(/[\r\n]+/g, " ") };
 	} catch {
 		return null;
 	}

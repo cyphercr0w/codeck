@@ -83,11 +83,20 @@ viewport (true for the current launch flags).
   `components/MobileMenu.tsx` (scm icon), `state/store.ts` (`scm` section),
   `components/nav-items.ts`, `router.ts`, `app.tsx`.
 
+## Monaco IDE (shipped)
+
+`EditorSection` replaces the plain-textarea file browser in the `filesystem`
+section (now reachable in nav as "Editor"): a lazy file tree + tab bar + Monaco
+editor (one model per file, dirty state, Ctrl+S → `PUT /api/files/write`).
+`monaco-editor` is loaded via a dynamic `import("../monaco-setup")` so it and its
+`?worker` chunks are on-demand — the main bundle is unchanged; the Monaco chunk
+(~3.3 MB, 857 KB gz) and language workers load only when the Editor is opened.
+`src/vite-env.d.ts` provides the `?worker` types.
+
 ## Not done (deliberately)
 
 - **A — worktree-parallel agents** (Orca's core): the biggest lift, on the
   roadmap; codeck stays read-parallel/write-serial for now.
-- **Full VSCode-grade editor** (Monaco, tabs, tree): a dedicated follow-up — a
-  half-swap would regress the current file editor. `ScmSection` is the first step
-  toward an IDE-like surface.
 - Creating PRs/issues, GitHub Projects boards (Projects v2 GraphQL): phase 2.
+- Editor niceties still open: search-in-files, split view, per-tab language
+  override, format-on-save.

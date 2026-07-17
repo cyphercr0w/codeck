@@ -43,7 +43,7 @@ import { AuthView } from "./components/AuthView";
 import { SetupView } from "./components/SetupView";
 import { Sidebar } from "./components/Sidebar";
 import { HomeSection } from "./components/HomeSection";
-import { FilesSection } from "./components/FilesSection";
+import { EditorSection } from "./components/EditorSection";
 import {
 	ClaudeSection,
 	mountTerminalForSession,
@@ -789,7 +789,7 @@ export function App() {
 							<HomeSection onRelogin={startLogin} onLogout={handleLogout} />
 						)}
 						{section === "chat" && <ChatSection />}
-						{section === "filesystem" && <FilesSection />}
+						{section === "filesystem" && <EditorSection />}
 						{/* ClaudeSection always mounted — preview is integrated within it */}
 						<div
 							style={

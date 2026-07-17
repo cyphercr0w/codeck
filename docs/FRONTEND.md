@@ -255,6 +255,15 @@ accepted change, from `/api/agents/:id/acceptance`) and an **Inbox** panel of
 escalations (`/api/agents/:id/inbox`). Loop types live in `state/store.ts`
 (`AgentKind`, `LoopConfig`, `LoopAcceptance`, `InboxEntry`).
 
+### `EditorSection.tsx` — Monaco IDE (nav `filesystem` → "Editor", `/files`)
+
+VSCode-like editor: a lazy file tree (per-dir `/api/files`), a tab bar, and a
+Monaco editor with one model per open file, dirty tracking, and Ctrl+S save
+(`PUT /api/files/write`). Monaco is loaded via `import("../monaco-setup")` so it
+lands in its own on-demand chunk (main bundle unaffected); `monaco-setup.ts`
+wires the Vite `?worker` workers and maps filename→language. Replaces the old
+plain-textarea `FilesSection` in the `filesystem` slot. Styles: `styles/editor.css`.
+
 ### `ScmSection.tsx` — Source Control (nav `scm`, `/source-control`)
 
 VSCode-like source-control panel with two tabs. **Changes:** loads `GET

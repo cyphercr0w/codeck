@@ -110,6 +110,7 @@ const SECTION_ICONS: Record<Section, () => preact.JSX.Element> = {
 	claude: () => <IconTerminal size={18} />,
 	subagents: () => <IconFlow size={18} />,
 	agents: () => <IconBot size={18} />,
+	scm: () => <IconFlow size={18} />,
 	integrations: () => <IconPlug size={18} />,
 	config: () => <IconBrain size={18} />,
 	settings: () => <IconSettings size={18} />,
@@ -215,6 +216,7 @@ export function Sidebar({
 					))}
 				</nav>
 				<div class="sidebar-footer">
+					<UsageBars collapsed={collapsed} />
 					{!collapsed && (
 						<div class="sidebar-footer-row">
 							<button

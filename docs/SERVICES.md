@@ -649,6 +649,18 @@ Dedicated per-session PTY WebSocket connections at `/internal/pty/:id`.
 
 ---
 
+## `services/git/*` — Source Control & GitHub
+
+`operations.ts` adds `getGitDiff(cwd, {staged,base})` (unified diff for the review
+loop, cwd validated within the workspace) and `getRepoRemote(cwd)` (`git remote
+get-url origin` → `{owner,repo}`). New `git/github-api.ts` shells `gh api` (reuses
+the keyring credential — no octokit): `listGitHubRepos()`, `listPullRequests()`,
+`listIssues()`. All re-exported through the `services/git.ts` facade. See
+[`docs/design/ORCA-PARITY.md`](design/ORCA-PARITY.md).
+
+`playwright-screencast.ts` adds `inspectElementAt(x,y)` — Design Mode's CDP
+`DOM.getNodeForLocation` → `{tag,selector,outerHTML,url}`.
+
 ## `services/proactive-agents.ts` — Proactive Agents
 
 Autonomous, scheduled agents using `claude -p` in non-interactive mode.

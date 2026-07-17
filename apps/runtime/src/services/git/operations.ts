@@ -3,7 +3,7 @@
  */
 import { spawn, spawnSync } from 'child_process';
 import { existsSync, readdirSync, writeFileSync, unlinkSync, statfsSync } from 'fs';
-import { join } from 'path';
+import { join, resolve } from 'path';
 import { tmpdir } from 'os';
 import { randomBytes } from 'crypto';
 import { ACTIVE_AGENT } from '../agent.js';
@@ -112,6 +112,47 @@ export function isWorkspaceEmpty(): boolean {
   const empty = realFiles.length === 0;
   emptyCache = { data: empty, fetchedAt: Date.now() };
   return empty;
+}
+
+// ── Diff & remote (for the review loop + GitHub views) ───────────────
+const MAX_DIFF_BYTES = 5 * 1024 * 1024; // 5MB cap on a diff payload
+
+function withinWorkspace(path: string): string | null {
+  if (!path || typeof path !== 'string' || path.includes('\0')) return null;
+  const resolved = resolve(path);
+  if (resolved === WORKSPACE || resolved.startsWith(WORKSPACE + '/')) return resolved;
+  return null;
+}
+
+/**
+ * Return the unified `git diff` for a workspace directory. `staged` toggles
+ * `--staged`; `base` (e.g. 'HEAD') diffs against a ref (staged+unstaged). Used by
+ * the interactive diff-review loop. cwd is validated to be inside the workspace.
+ */
+export function getGitDiff(cwd: string, opts: { staged?: boolean; base?: string } = {}): { diff: string; error?: string } {
+  const resolved = withinWorkspace(cwd);
+  if (!resolved) return { diff: '', error: 'Directory must be within the workspace' };
+  const args = ['-C', resolved, 'diff', '--no-color'];
+  if (opts.staged) args.push('--staged');
+  if (opts.base && /^[\w./-]{1,100}$/.test(opts.base)) args.push(opts.base);
+  const res = spawnSync('git', args, { stdio: 'pipe', timeout: 10_000, maxBuffer: MAX_DIFF_BYTES, encoding: 'utf8' });
+  if (res.error) return { diff: '', error: 'Failed to run git diff' };
+  if (res.status !== 0) return { diff: '', error: (res.stderr || 'git diff failed').toString().slice(0, 300) };
+  return { diff: (res.stdout || '').slice(0, MAX_DIFF_BYTES) };
+}
+
+/**
+ * Parse `git remote get-url origin` into a GitHub `{ owner, repo }`, or null.
+ * cwd is validated to be inside the workspace.
+ */
+export function getRepoRemote(cwd: string): { owner: string; repo: string } | null {
+  const resolved = withinWorkspace(cwd);
+  if (!resolved) return null;
+  const res = spawnSync('git', ['-C', resolved, 'remote', 'get-url', 'origin'], { stdio: 'pipe', timeout: 5_000, encoding: 'utf8' });
+  if (res.status !== 0) return null;
+  const url = (res.stdout || '').trim();
+  const m = url.match(/github\.com[/:]([^/]+)\/([^/]+?)(?:\.git)?$/);
+  return m ? { owner: m[1], repo: m[2] } : null;
 }
 
 // ── URL helpers ──────────────────────────────────────────────────────

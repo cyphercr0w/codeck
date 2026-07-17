@@ -25,6 +25,7 @@ const SECTION_ICONS: Record<Section, () => preact.JSX.Element> = {
 	claude: () => <IconTerminal size={22} />,
 	subagents: () => <IconFlow size={22} />,
 	agents: () => <IconBot size={22} />,
+	scm: () => <IconFlow size={22} />,
 	integrations: () => <IconPlug size={22} />,
 	config: () => <IconBrain size={22} />,
 	settings: () => <IconSettings size={22} />,

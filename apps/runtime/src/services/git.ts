@@ -50,6 +50,8 @@ export {
   isWorkspaceEmpty,
   invalidateRepoCache,
   createAskpassScript,
+  getGitDiff,
+  getRepoRemote,
 } from './git/operations.js';
 
 export type { RepoInfo, CloneResult } from './git/operations.js';

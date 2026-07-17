@@ -59,6 +59,7 @@ import { AgentConfigSection } from "./components/AgentConfigSection";
 import { ToastContainer } from "./components/ToastContainer";
 
 import { AgentsSection } from "./components/AgentsSection";
+import { ScmSection } from "./components/ScmSection";
 import { SubAgentsSection } from "./components/SubAgentsSection";
 import { ChatSection } from "./components/ChatSection";
 import { SettingsSection } from "./components/SettingsSection";
@@ -806,6 +807,7 @@ export function App() {
 
 						{section === "subagents" && <SubAgentsSection />}
 						{section === "agents" && <AgentsSection />}
+						{section === "scm" && <ScmSection />}
 						{section === "integrations" && <IntegrationsSection />}
 						{section === "config" && <AgentConfigSection />}
 						{section === "settings" && <SettingsSection />}

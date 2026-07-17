@@ -58,6 +58,7 @@ export type Section =
 	| "claude"
 	| "subagents"
 	| "agents"
+	| "scm"
 	| "integrations"
 	| "config"
 	| "settings";

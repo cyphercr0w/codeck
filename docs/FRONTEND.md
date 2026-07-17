@@ -255,6 +255,27 @@ accepted change, from `/api/agents/:id/acceptance`) and an **Inbox** panel of
 escalations (`/api/agents/:id/inbox`). Loop types live in `state/store.ts`
 (`AgentKind`, `LoopConfig`, `LoopAcceptance`, `InboxEntry`).
 
+### `ScmSection.tsx` — Source Control (nav `scm`, `/source-control`)
+
+VSCode-like source-control panel with two tabs. **Changes:** loads `GET
+/api/git/diff`, parses the unified diff, lets the user click a changed line to
+attach a markdown comment, then **Send to agent** compiles the comments into a
+single-line prompt injected into the chosen agent PTY via `wsSend({ type:
+"console:input" })` — the interactive review loop. **GitHub:** repo picker +
+PR/issue toggle + state filter over `/api/github/*`, link-out to GitHub.
+
+### `PlaywrightPreview.tsx` — Agent Browser + Design Mode
+
+Renders the CDP screencast (`playwright:frame`). A **Design** toggle turns on
+Design Mode: clicking a rendered element POSTs `/api/preview/playwright/inspect`
+to resolve its selector/outerHTML, drops a pin, and sends design feedback
+(selector + note) to the active agent via `console:input`.
+
+### `Sidebar.tsx` — usage widget
+
+The footer renders `UsageBars` (5h/7d Claude limits from the `claudeUsage`
+signal / `/api/dashboard`), collapsed to colored dots in the narrow sidebar.
+
 ### `IntegrationsSection.tsx` — External Services
 
 - **SSH:** Generate key, copy public key, link to GitHub settings

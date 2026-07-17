@@ -7,6 +7,7 @@ const SECTION_ROUTES: Record<Section, string> = {
 	claude: "/terminal",
 	subagents: "/sub-agents",
 	agents: "/agents",
+	scm: "/source-control",
 	integrations: "/integrations",
 	config: "/memory",
 	settings: "/settings",

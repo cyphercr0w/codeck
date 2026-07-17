@@ -355,6 +355,20 @@ Sync between memory stores (markdown files, daily logs, SQLite index).
 | `GET` | `/api/agents/:id/inbox` | — | `{ inbox: InboxEntry[] }` | Loop only — escalations needing a human |
 | `GET` | `/api/agents/:id/inbox/:file` | — | `text/plain` | Loop only — one escalation entry (sanitized) |
 
+### Source Control & GitHub
+
+| Method | Endpoint | Body / Query | Response | Description |
+|--------|----------|--------------|----------|-------------|
+| `GET` | `/api/git/diff` | `?cwd=&staged=&base=HEAD` | `{ diff }` | Unified `git diff` for the review loop (cwd validated in workspace) |
+| `GET` | `/api/github/repos` | — | `{ repos: RepoRef[] }` | Workspace repos with a GitHub `origin` remote (owner/repo resolved) |
+| `GET` | `/api/github/:owner/:repo/pulls` | `?state=open\|closed\|all` | `{ pulls }` | Pull requests (via `gh api`) |
+| `GET` | `/api/github/:owner/:repo/issues` | `?state=open\|closed\|all` | `{ issues }` | Issues, PRs filtered out |
+| `POST` | `/api/preview/playwright/inspect` | `{ x, y }` | `{ tag, selector, outerHTML, url }` | Design Mode — resolve a click to the DOM element (CDP `getNodeForLocation`) |
+
+The interactive review loop and Design Mode send feedback to a running agent by
+writing into its PTY over the existing WebSocket (`console:input` + `\r`) — no
+dedicated reprompt endpoint. See [`docs/design/ORCA-PARITY.md`](design/ORCA-PARITY.md).
+
 **Scheduled loops.** An agent with `kind:'loop'` runs the full PO-driven
 autonomous-harness on each cron tick (plan pre-approved → implement → review →
 audit → evidence-gated DONE) in an isolated control-plane, instead of a one-shot

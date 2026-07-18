@@ -224,7 +224,9 @@ Currently supported services: `vercel`.
 | `POST` | `/api/system/restart` | — | `{ success, restarting? }` | Restart the container (requires compose info) |
 | `POST` | `/api/system/update-agent` | — | `{ success, version, binaryPath }` | Update Claude CLI and re-resolve binary path |
 | `GET` | `/api/system/model` | — | `{ model }` | Get current Claude model (default: sonnet) |
-| `POST` | `/api/system/model` | `{ model }` | `{ success, model }` | Set Claude model. Valid: sonnet, opus, opus[1m], haiku |
+| `POST` | `/api/system/model` | `{ model }` | `{ success, model }` | Set Claude model. Valid: sonnet, opus, opus[1m], fable, haiku |
+| `GET` | `/api/system/effort` | — | `{ effort }` | Get reasoning effort (default: high) |
+| `POST` | `/api/system/effort` | `{ effort }` | `{ success, effort }` | Set reasoning effort (settings.json `effortLevel` — the depth control for modern adaptive-reasoning models). Valid: low, medium, high, xhigh, max |
 
 **`add-port` responses:**
 - `{ "success": true, "alreadyMapped": true }` — port already exposed
@@ -352,10 +354,10 @@ Sync between memory stores (markdown files, daily logs, SQLite index).
 | Method | Endpoint | Body | Response | Description |
 |--------|----------|------|----------|-------------|
 | `POST` | `/api/agents/lint` | `{ objective }` | `{ warnings }` | Lint objective for suspicious patterns |
-| `POST` | `/api/agents` | `{ name, objective, schedule, cwd?, model?, timeoutMs? }` | `AgentDetail` | Create agent (cron schedule, UTC) |
+| `POST` | `/api/agents` | `{ name, objective, schedule, cwd?, model?, timeoutMs?, kind?, loop? }` | `AgentDetail` | Create agent (cron schedule, UTC). `kind:'loop'` requires `loop:{goal,verifyCmd,...}` |
 | `GET` | `/api/agents` | — | `{ agents: AgentSummary[] }` | List all agents |
 | `GET` | `/api/agents/:id` | — | `AgentDetail` | Agent detail |
-| `PUT` | `/api/agents/:id` | Partial `AgentConfig` | `AgentDetail` | Update config |
+| `PUT` | `/api/agents/:id` | Partial `AgentConfig` (+ `loop`) | `AgentDetail` | Update config (`kind` immutable) |
 | `POST` | `/api/agents/:id/pause` | — | `AgentDetail` | Pause (stop cron) |
 | `POST` | `/api/agents/:id/resume` | — | `AgentDetail` | Resume (reset failures) |
 | `POST` | `/api/agents/:id/execute` | — | `{ executionId }` | Manual trigger |
@@ -363,6 +365,32 @@ Sync between memory stores (markdown files, daily logs, SQLite index).
 | `GET` | `/api/agents/:id/logs` | — | `text/plain` | Latest execution log |
 | `GET` | `/api/agents/:id/executions` | `?limit=20` | `{ executions }` | Execution history |
 | `GET` | `/api/agents/:id/output` | `?sanitize=true` | `text/plain` | Live output buffer |
+| `GET` | `/api/agents/:id/acceptance` | — | `LoopAcceptance` | Loop only — cost per accepted change |
+| `GET` | `/api/agents/:id/inbox` | — | `{ inbox: InboxEntry[] }` | Loop only — escalations needing a human |
+| `GET` | `/api/agents/:id/inbox/:file` | — | `text/plain` | Loop only — one escalation entry (sanitized) |
+
+### Source Control & GitHub
+
+| Method | Endpoint | Body / Query | Response | Description |
+|--------|----------|--------------|----------|-------------|
+| `GET` | `/api/git/repos` | — | `{ repos: RepoInfo[] }` | Git repos in the workspace (recursive scan, depth ≤ 4). `RepoInfo = { name, path }`; nested repos named by workspace-relative path. Feeds the SCM Changes repo picker |
+| `GET` | `/api/git/diff` | `?cwd=&staged=&base=HEAD` | `{ diff }` | Unified `git diff` for the review loop (cwd validated in workspace) |
+| `GET` | `/api/github/repos` | — | `{ repos: RepoRef[] }` | Workspace repos with a GitHub `origin` remote (owner/repo resolved) |
+| `GET` | `/api/github/:owner/:repo/pulls` | `?state=open\|closed\|all` | `{ pulls }` | Pull requests (via `gh api`) |
+| `GET` | `/api/github/:owner/:repo/issues` | `?state=open\|closed\|all` | `{ issues }` | Issues, PRs filtered out |
+| `POST` | `/api/preview/playwright/inspect` | `{ x, y }` | `{ tag, selector, outerHTML, url }` | Design Mode — resolve a click to the DOM element (CDP `getNodeForLocation`) |
+
+The interactive review loop and Design Mode send feedback to a running agent by
+writing into its PTY over the existing WebSocket (`console:input` + `\r`) — no
+dedicated reprompt endpoint. See [`docs/design/ORCA-PARITY.md`](design/ORCA-PARITY.md).
+
+**Scheduled loops.** An agent with `kind:'loop'` runs the full PO-driven
+autonomous-harness on each cron tick (plan pre-approved → implement → review →
+audit → evidence-gated DONE) in an isolated control-plane, instead of a one-shot
+run. `loop = { goal, verifyCmd, iterCap, costCapUsd, mode:'scheduled'|'goal-driven',
+permissionProfile:'readonly'|'safe-write'|'full', skill? }` — `goal` (observable
+stop condition) and `verifyCmd` (machine gate) are required. See
+[`docs/design/SCHEDULED-LOOPS.md`](design/SCHEDULED-LOOPS.md).
 
 ---
 

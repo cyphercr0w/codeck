@@ -43,7 +43,7 @@ import { AuthView } from "./components/AuthView";
 import { SetupView } from "./components/SetupView";
 import { Sidebar } from "./components/Sidebar";
 import { HomeSection } from "./components/HomeSection";
-import { FilesSection } from "./components/FilesSection";
+import { EditorSection } from "./components/EditorSection";
 import {
 	ClaudeSection,
 	mountTerminalForSession,
@@ -59,7 +59,7 @@ import { AgentConfigSection } from "./components/AgentConfigSection";
 import { ToastContainer } from "./components/ToastContainer";
 
 import { AgentsSection } from "./components/AgentsSection";
-import { SubAgentsSection } from "./components/SubAgentsSection";
+import { ScmSection } from "./components/ScmSection";
 import { ChatSection } from "./components/ChatSection";
 import { SettingsSection } from "./components/SettingsSection";
 import { MobileMenu } from "./components/MobileMenu";
@@ -794,7 +794,10 @@ export function App() {
 							<HomeSection onRelogin={startLogin} onLogout={handleLogout} />
 						)}
 						{section === "chat" && <ChatSection />}
-						{section === "filesystem" && <FilesSection />}
+						{/* EditorSection always mounted — preserves open tabs + unsaved buffers across nav */}
+						<div style={section !== "filesystem" ? { display: "none" } : { display: "contents" }}>
+							<EditorSection />
+						</div>
 						{/* ClaudeSection always mounted — preview is integrated within it */}
 						<div
 							style={
@@ -810,8 +813,8 @@ export function App() {
 							/>
 						</div>
 
-						{section === "subagents" && <SubAgentsSection />}
 						{section === "agents" && <AgentsSection />}
+						{section === "scm" && <ScmSection />}
 						{section === "integrations" && <IntegrationsSection />}
 						{section === "config" && <AgentConfigSection />}
 						{section === "settings" && <SettingsSection />}

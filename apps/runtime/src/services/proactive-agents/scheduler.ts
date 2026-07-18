@@ -77,6 +77,9 @@ export interface SchedulerDeps {
   broadcastFn: () => BroadcastFn;
   resolveAgentCwd: (cwd: string) => string;
   executionsDir: (id: string) => string;
+  harnessDir: (id: string) => string;
+  loopStateDir: (id: string) => string;
+  inboxDir: (id: string) => string;
   saveState: (id: string, state: AgentState) => void;
   toSummary: (runtime: AgentRuntime) => object;
   pruneExecutions: (execDir: string) => void;
@@ -89,6 +92,9 @@ function getExecutorDeps(deps: SchedulerDeps): ExecutorDeps {
     broadcastFn: deps.broadcastFn,
     resolveAgentCwd: deps.resolveAgentCwd,
     executionsDir: deps.executionsDir,
+    harnessDir: deps.harnessDir,
+    loopStateDir: deps.loopStateDir,
+    inboxDir: deps.inboxDir,
     saveState: deps.saveState,
     stopCron: (runtime: AgentRuntime) => stopCron(runtime),
     toSummary: deps.toSummary,

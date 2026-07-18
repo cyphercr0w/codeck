@@ -142,10 +142,13 @@ import { readFileSync, writeFileSync, existsSync } from "fs";
 import { join } from "path";
 import { ACTIVE_AGENT } from "../services/agent.js";
 
+// Aliases auto-resolve to the latest release of each tier (forward-compatible).
+// opus -> Opus 4.8, sonnet -> Sonnet 5, fable -> Fable 5, haiku -> Haiku 4.5.
 const VALID_MODELS: Record<string, string> = {
 	sonnet: "sonnet",
 	opus: "opus",
 	"opus[1m]": "opus[1m]",
+	fable: "fable",
 	haiku: "haiku",
 };
 
@@ -165,7 +168,7 @@ router.post("/model", (req, res) => {
 	if (!model || !VALID_MODELS[model]) {
 		res
 			.status(400)
-			.json({ error: "Invalid model. Use: sonnet, opus, opus[1m], haiku" });
+			.json({ error: "Invalid model. Use: sonnet, opus, opus[1m], fable, haiku" });
 		return;
 	}
 	try {
@@ -179,6 +182,46 @@ router.post("/model", (req, res) => {
 			JSON.stringify(settings, null, "\t"),
 		);
 		res.json({ success: true, model: settings.model });
+	} catch (e) {
+		res.status(500).json({ error: (e as Error).message });
+	}
+});
+
+// Reasoning effort — the depth control that works on modern (adaptive-reasoning)
+// models like Opus 4.8 / Sonnet 5, which ignore MAX_THINKING_TOKENS. Persisted as
+// the settings.json `effortLevel` key (source of truth for the Claude CLI).
+const VALID_EFFORTS = ["low", "medium", "high", "xhigh", "max"];
+
+router.get("/effort", (_req, res) => {
+	try {
+		const settings = JSON.parse(
+			readFileSync(ACTIVE_AGENT.settingsFile, "utf-8"),
+		);
+		res.json({ effort: settings.effortLevel || "high" });
+	} catch {
+		res.json({ effort: "high" });
+	}
+});
+
+router.post("/effort", (req, res) => {
+	const { effort } = req.body;
+	if (!effort || !VALID_EFFORTS.includes(effort)) {
+		res
+			.status(400)
+			.json({ error: "Invalid effort. Use: low, medium, high, xhigh, max" });
+		return;
+	}
+	try {
+		let settings: Record<string, unknown> = {};
+		if (existsSync(ACTIVE_AGENT.settingsFile)) {
+			settings = JSON.parse(readFileSync(ACTIVE_AGENT.settingsFile, "utf-8"));
+		}
+		settings.effortLevel = effort;
+		writeFileSync(
+			ACTIVE_AGENT.settingsFile,
+			JSON.stringify(settings, null, "\t"),
+		);
+		res.json({ success: true, effort });
 	} catch (e) {
 		res.status(500).json({ error: (e as Error).message });
 	}
@@ -242,7 +285,6 @@ router.get("/token-settings", (req, res) => {
 		}
 		const defaults = {
 			compactionPct: 50,
-			effortLevel: "medium",
 			mcpDeferThreshold: 5,
 			thinkingTokens: 10000,
 		};
@@ -270,9 +312,6 @@ router.post("/token-settings", (req, res) => {
 				10,
 				Math.min(90, Number(body.compactionPct) || 50),
 			),
-			effortLevel: ["low", "medium", "high", "max"].includes(body.effortLevel)
-				? body.effortLevel
-				: "medium",
 			mcpDeferThreshold: Math.max(
 				1,
 				Math.min(20, Number(body.mcpDeferThreshold) || 5),

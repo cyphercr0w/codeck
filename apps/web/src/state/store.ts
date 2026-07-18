@@ -56,8 +56,8 @@ export type Section =
 	| "chat"
 	| "filesystem"
 	| "claude"
-	| "subagents"
 	| "agents"
+	| "scm"
 	| "integrations"
 	| "config"
 	| "settings";
@@ -397,6 +397,36 @@ export function removeSession(id: string): void {
 
 // ── Proactive Agents ──
 
+export type AgentKind = "oneshot" | "loop";
+export type LoopMode = "scheduled" | "goal-driven";
+export type PermissionProfile = "readonly" | "safe-write" | "full";
+
+export interface LoopConfig {
+	goal: string;
+	verifyCmd: string;
+	iterCap: number;
+	costCapUsd: number;
+	mode: LoopMode;
+	permissionProfile: PermissionProfile;
+	skill?: string;
+}
+
+export interface LoopAcceptance {
+	totalTicks: number;
+	accepted: number;
+	escalated: number;
+	failed: number;
+	acceptanceRate: number;
+	totalCostUsd: number;
+	costPerAcceptedUsd: number | null;
+}
+
+export interface InboxEntry {
+	file: string;
+	createdAt: number;
+	preview: string;
+}
+
 export interface ProactiveAgent {
 	id: string;
 	name: string;
@@ -415,6 +445,8 @@ export interface ProactiveAgent {
 	running: boolean;
 	createdAt?: number;
 	updatedAt?: number;
+	kind?: AgentKind;
+	loop?: LoopConfig;
 }
 
 export const proactiveAgents = signal<ProactiveAgent[]>([]);

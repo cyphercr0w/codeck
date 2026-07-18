@@ -20,6 +20,7 @@ import {
 	stopPlaywrightScreencast,
 	getPlaywrightScreencastState,
 	capturePlaywrightFrame,
+	inspectElementAt,
 } from "../services/playwright-screencast.js";
 import { DENIED_PORTS } from "./preview-proxy.js";
 import { asyncHandler } from "../utils/async-handler.js";
@@ -217,6 +218,21 @@ router.get(
 	asyncHandler(async (_req, res) => {
 		const frame = await capturePlaywrightFrame();
 		res.json({ data: frame });
+	}),
+);
+
+// Design Mode — resolve a click to the DOM element there (selector + outerHTML)
+router.post(
+	"/playwright/inspect",
+	asyncHandler(async (req, res) => {
+		const { x, y } = req.body || {};
+		if (typeof x !== "number" || typeof y !== "number" || !Number.isFinite(x) || !Number.isFinite(y)) {
+			res.status(400).json({ error: "x and y must be finite numbers" });
+			return;
+		}
+		const el = await inspectElementAt(clampCoord(x, 4096), clampCoord(y, 4096));
+		if (!el) { res.status(404).json({ error: "No element at that location" }); return; }
+		res.json(el);
 	}),
 );
 

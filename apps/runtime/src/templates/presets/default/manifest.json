@@ -1,8 +1,8 @@
 {
 	"id": "default",
 	"name": "Default (Recommended)",
-	"description": "Persistent memory system, rules, sandbox skills, plus 66 sub-agents, 59 slash commands, 116 skills, 65 rules, and dev hooks from everything-claude-code v1.9.0.",
-	"version": "9.0.0",
+	"description": "Persistent memory system, rules, sandbox skills, plus 73 sub-agents, 60 slash commands, 130 skills, 65 rules, and dev hooks from everything-claude-code (v1.9.0 base + selected v2.0 performance skills).",
+	"version": "9.3.1",
 	"author": "codeck",
 	"icon": "⚡",
 	"tags": ["general", "recommended"],
@@ -21,6 +21,10 @@
 			"src": "rules/workflow.md",
 			"dest": "/workspace/.codeck/rules/base/workflow.md"
 		},
+			{
+				"src": "rules/playbooks.md",
+				"dest": "/workspace/.codeck/rules/base/playbooks.md"
+			},
 		{
 			"src": "rules/communication.md",
 			"dest": "/workspace/.codeck/rules/user/communication.md",
@@ -57,6 +61,26 @@
 		{
 			"src": "scripts/skill-reminder-hook.mjs",
 			"dest": "/workspace/.codeck/scripts/skill-reminder-hook.mjs"
+		},
+		{
+			"src": "scripts/capability-doctor.mjs",
+			"dest": "/workspace/.codeck/scripts/capability-doctor.mjs"
+		},
+		{
+			"src": "scripts/agent-auto-brief.mjs",
+			"dest": "/workspace/.codeck/scripts/agent-auto-brief.mjs"
+		},
+		{
+			"src": "scripts/teams-reminder-hook.mjs",
+			"dest": "/workspace/.codeck/scripts/teams-reminder-hook.mjs"
+		},
+		{
+			"src": "scripts/mcp-auto-config.mjs",
+			"dest": "/workspace/.codeck/scripts/mcp-auto-config.mjs"
+		},
+		{
+			"src": "scripts/team-events.mjs",
+			"dest": "/workspace/.codeck/scripts/team-events.mjs"
 		},
 		{
 			"src": "scripts/post-compact-hook.mjs",
@@ -127,6 +151,26 @@
 			"dest": "/workspace/.codeck/scripts/workflow-checkpoint.mjs"
 		},
 		{
+				"src": "scripts/autonomous-protocol-hook.mjs",
+				"dest": "/workspace/.codeck/scripts/autonomous-protocol-hook.mjs"
+			},
+			{
+				"src": "scripts/no-progress-guard.mjs",
+				"dest": "/workspace/.codeck/scripts/no-progress-guard.mjs"
+			},
+			{
+				"src": "scripts/task-classifier-hook.mjs",
+				"dest": "/workspace/.codeck/scripts/task-classifier-hook.mjs"
+			},
+			{
+				"src": "scripts/budget-guard.mjs",
+				"dest": "/workspace/.codeck/scripts/budget-guard.mjs"
+			},
+			{
+				"src": "scripts/harness-resume-hook.mjs",
+				"dest": "/workspace/.codeck/scripts/harness-resume-hook.mjs"
+			},
+			{
 			"src": "scripts/context-injector.mjs",
 			"dest": "/workspace/.codeck/scripts/context-injector.mjs"
 		},
@@ -242,6 +286,7 @@
 		"/workspace/.codeck/sessions",
 		"/workspace/.codeck/index",
 		"/workspace/.codeck/state",
+		"/workspace/.codeck/harness",
 		"/workspace/.codeck/rules/base",
 		"/workspace/.codeck/rules/user",
 		"/workspace/.codeck/skills",

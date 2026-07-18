@@ -770,66 +770,6 @@ export function NewProjectModal({
 								</>
 							)}
 
-							<div
-								class="npm-launch-subtitle"
-								style="margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border-color, #333)"
-							>
-								Mode
-							</div>
-							<label class="npm-checkbox">
-								<input
-									type="checkbox"
-									checked={teamsEnabled}
-									onChange={(e) =>
-										setTeamsEnabled((e.target as HTMLInputElement).checked)
-									}
-								/>
-								<span>Agent Teams</span>
-								<span
-									class="npm-flag"
-									style={{ opacity: 0.6, fontSize: "11px" }}
-								>
-									leader + sub-agents
-								</span>
-							</label>
-							{teamsEnabled && (
-								<div
-									style={{
-										marginTop: "6px",
-										marginLeft: "24px",
-										display: "flex",
-										alignItems: "center",
-										gap: "8px",
-									}}
-								>
-									<span style={{ fontSize: "12px", opacity: 0.6 }}>
-										Max teammates:
-									</span>
-									<input
-										type="number"
-										min={1}
-										max={10}
-										value={maxTeammates}
-										onInput={(e) =>
-											setMaxTeammates(
-												Math.max(
-													1,
-													Math.min(
-														10,
-														parseInt((e.target as HTMLInputElement).value) || 3,
-													),
-												),
-											)
-										}
-										class="input"
-										style={{
-											width: "52px",
-											padding: "4px 6px",
-											fontSize: "12px",
-										}}
-									/>
-								</div>
-							)}
 						</div>
 
 						{/* Command input with locked "claude" prefix */}

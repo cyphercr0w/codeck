@@ -55,7 +55,7 @@ RUN install -m 0755 -d /etc/apt/keyrings \
 # Currently only Claude Code. Add other agent CLIs here as needed.
 # Pinned version for supply chain safety. Update explicitly after testing.
 # Server can auto-update at runtime via POST /api/system/update-agent.
-RUN npm install -g pnpm @anthropic-ai/claude-code@2.1.39
+RUN npm install -g pnpm @anthropic-ai/claude-code@2.1.211
 
 # ─── Code formatters + LSP servers (for hooks and code intelligence) ───
 # Biome: 10-25x faster than Prettier for TS/JS formatting

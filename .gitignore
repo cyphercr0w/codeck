@@ -89,3 +89,6 @@ coverage/
 RESEARCH-*.md
 AUDIT-*.md
 CHANGELOG.md
+
+# Stray pnpm lockfile — this repo builds with npm (npm ci in Dockerfile).
+pnpm-lock.yaml

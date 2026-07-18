@@ -24,6 +24,8 @@ All environment variables are for the single container runtime. Set via `.env` f
 | `SESSION_RESTORE_DELAY` | `2000` | Delay in ms before restoring PTY sessions on startup |
 | `AGENT_SIGKILL_GRACE_MS` | `15000` | Grace period (ms) between SIGTERM and SIGKILL for proactive agent timeouts. Clamped to 5000-60000. |
 | `CLAUDE_CODE_OAUTH_TOKEN` | — | Auto-set per PTY session from .credentials.json |
+| `CODECK_HARNESS_DIR` | `/workspace/.codeck/harness` | Autonomous-harness control-plane dir. Set per-run by scheduled loops to isolate their harness state; honored by budget-guard, workflow-checkpoint, no-progress-guard, harness-resume. |
+| `CODECK_STATE_DIR` | `/workspace/.codeck/state` | Hook state/markers dir. Set per-run by scheduled loops for isolation; honored by the same hooks + edit-tracker, review-marker, capability-doctor. |
 
 ### Configuration Validation
 
@@ -294,8 +296,8 @@ Presets define template-based workspace configurations. The default preset (v8.2
 - Rules (common + language-specific)
 - Skills (118 skill files)
 - Sub-agents (28 agent definitions in `/root/.claude/agents/`)
-- Hooks (workflow enforcement: edit-tracker, checkpoint, context-injector)
-- MCP server configuration (`mcp.json` with 9 servers)
+- Hooks (workflow enforcement: edit-tracker, checkpoint, context-injector; environment preflight: capability-doctor)
+- MCP server configuration (`mcp.json`): 3 lean defaults (`context7`, `eslint`, `playwright`) + ~20 opt-in servers under `_disabledMcpServers`. `memory` (redundant with native FTS5 memory), `magic` (niche UI), and `sequential-thinking` (native thinking covers it) are opt-in-only — fewer default tool-schemas = less token tax and smaller prompt-injection surface (mirrors ecc v2.0's default-connector reduction, adapted: Playwright kept as the browser-verify differentiator)
 - CLAUDE.md instruction files (global + workspace layers)
 
 ### Creating custom presets
@@ -341,7 +343,9 @@ Language-specific rules (rust, java, kotlin, csharp, php, perl, swift, cpp, pyth
 
 MCP (Model Context Protocol) servers are configured in `/root/.claude/mcp.json` and registered in `/root/.claude.json` at startup.
 
-The default preset installs 9 MCP servers that provide additional tools to Claude Code (Playwright browser automation, ESLint linting, etc.).
+The default preset enables 5 MCP servers by default (context7, eslint, playwright, memory, magic) plus a catalogue of opt-in servers under `_disabledMcpServers`.
+
+> **2026-07 hygiene note:** `sequential-thinking` was moved to `_disabledMcpServers` — Claude's native extended thinking covers the same use case, and keeping the server loaded costs tool-schema tokens on every session start. Re-enable it by moving its block back into `mcpServers`. `context7` is intentionally left unpinned (`npx -y @upstash/context7-mcp`) so it always resolves the patched latest (the Feb-2026 "ContextCrush" fix). `playwright` stays enabled — it powers the live browser preview via the CDP endpoint.
 
 ### Configuration file
 

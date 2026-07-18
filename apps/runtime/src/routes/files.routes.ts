@@ -12,6 +12,7 @@ import {
 	realpath,
 } from "fs/promises";
 import { existsSync } from "fs";
+import { spawnSync } from "child_process";
 import { join, resolve, sep } from "path";
 import { broadcastStatus } from "../web/websocket.js";
 import { asyncHandler } from "../utils/async-handler.js";
@@ -222,6 +223,54 @@ router.get(
 		} catch {
 			res.status(404).json({ error: "File not found" });
 		}
+	}),
+);
+
+// Search file contents across the workspace (fixed-string, case-insensitive).
+// grep is invoked with array args (no shell) and a literal pattern via `-e`, so a
+// leading-dash query can't inject flags. Skips node_modules/.git/dist/.codeck.
+const SEARCH_MAX_MATCHES = 200;
+router.get(
+	"/search",
+	asyncHandler(async (req, res) => {
+		const q = ((req.query.q as string) || "").slice(0, 200);
+		if (!q || q.trim().length < 2) {
+			res.json({ success: true, matches: [] });
+			return;
+		}
+		const result = spawnSync(
+			"grep",
+			[
+				"-rInFi",
+				"--exclude-dir=node_modules",
+				"--exclude-dir=.git",
+				"--exclude-dir=dist",
+				"--exclude-dir=.codeck",
+				"-e",
+				q,
+				".",
+			],
+			{ cwd: WORKSPACE, timeout: 8000, maxBuffer: 4 * 1024 * 1024, encoding: "utf8" },
+		);
+		// grep exits 1 when there are no matches — not an error.
+		if (result.status !== 0 && result.status !== 1) {
+			res.json({ success: true, matches: [] });
+			return;
+		}
+		const matches: { file: string; line: number; text: string }[] = [];
+		for (const raw of (result.stdout || "").split("\n")) {
+			if (matches.length >= SEARCH_MAX_MATCHES) break;
+			if (!raw) continue;
+			// "./relpath:lineno:content"
+			const first = raw.indexOf(":");
+			const second = raw.indexOf(":", first + 1);
+			if (first < 0 || second < 0) continue;
+			const file = raw.slice(0, first).replace(/^\.\//, "");
+			const line = parseInt(raw.slice(first + 1, second), 10);
+			if (!Number.isFinite(line)) continue;
+			matches.push({ file, line, text: raw.slice(second + 1).slice(0, 300) });
+		}
+		res.json({ success: true, matches, truncated: matches.length >= SEARCH_MAX_MATCHES });
 	}),
 );
 

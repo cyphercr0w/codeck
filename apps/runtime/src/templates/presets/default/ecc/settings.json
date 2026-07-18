@@ -13,9 +13,7 @@
 			"Grep",
 			"Read(/workspace/.codeck/**)",
 			"Edit(/workspace/.codeck/**)",
-			"Write(/workspace/.codeck/**)",
 			"Edit(/root/.claude/**)",
-			"Write(/root/.claude/**)",
 			"Read(/root/.claude/**)",
 			"mcp__playwright__browser_navigate",
 			"mcp__playwright__browser_snapshot",
@@ -41,44 +39,25 @@
 			"mcp__playwright__browser_network_requests",
 			"mcp__context7__resolve-library-id",
 			"mcp__context7__query-docs",
-			"mcp__sequential-thinking__sequentialthinking",
-			"mcp__eslint__lint-files",
-			"mcp__token-optimizer__count_tokens",
-			"mcp__token-optimizer__optimize_text",
-			"mcp__token-optimizer__compress_text",
-			"mcp__token-optimizer__smart_grep",
-			"mcp__token-optimizer__smart_read",
-			"mcp__token-optimizer__smart_edit",
-			"mcp__token-optimizer__smart_write",
-			"mcp__token-optimizer__smart_glob",
-			"mcp__token-optimizer__smart_diff",
-			"mcp__token-optimizer__smart_test",
-			"mcp__token-optimizer__smart_build",
-			"mcp__token-optimizer__smart_lint",
-			"mcp__token-optimizer__smart_status",
-			"mcp__memory__search_nodes",
-			"mcp__memory__read_graph",
-			"mcp__memory__create_entities",
-			"mcp__memory__add_observations",
-			"mcp__memory__create_relations",
-			"mcp__memory__open_nodes",
-			"mcp__memory__delete_entities",
-			"mcp__memory__delete_observations",
-			"mcp__memory__delete_relations",
-			"mcp__magic__getRegistryItem",
-			"mcp__magic__listRegistryItems",
-			"mcp__magic__searchRegistryItems"
+			"mcp__eslint__lint-files"
 		],
 		"deny": [
 			"Read(.env*)",
 			"Read(**/credentials*)",
+			"Read(**/.credentials*)",
 			"Read(**/.ssh/*)",
+			"Read(**/*.pem)",
 			"Read(**/secrets/**)"
 		]
 	},
 	"includeGitInstructions": false,
 	"enableAllProjectMcpServers": true,
+	"fallbackModel": "sonnet",
 	"effortLevel": "high",
+	"autoCompactEnabled": true,
+	"env": {
+		"ENABLE_TOOL_SEARCH": "auto"
+	},
 	"attribution": {
 		"commit": "",
 		"pr": ""
@@ -89,6 +68,16 @@
 	},
 	"hooks": {
 		"PreToolUse": [
+			{
+				"matcher": "Bash|Edit|Write|MultiEdit|Agent",
+				"hooks": [
+					{
+						"type": "command",
+						"command": "node /workspace/.codeck/scripts/budget-guard.mjs"
+					}
+				],
+				"description": "Hard budget/iteration kill switch while an autonomous-harness task is active"
+			},
 			{
 				"matcher": "Agent",
 				"hooks": [
@@ -137,6 +126,16 @@
 		],
 		"PostToolUse": [
 			{
+				"matcher": "Bash|Edit|Write|Read|Grep|Glob|WebFetch|WebSearch",
+				"hooks": [
+					{
+						"type": "command",
+						"command": "node /workspace/.codeck/scripts/no-progress-guard.mjs"
+					}
+				],
+				"description": "Detect stuck loops (identical tool call repeated) and nudge a re-plan"
+			},
+			{
 				"matcher": "Edit|Write",
 				"if": "Edit OR Write",
 				"hooks": [
@@ -162,8 +161,8 @@
 				]
 			},
 			{
-				"matcher": "Edit|Write",
-				"if": "Edit OR Write",
+				"matcher": "Edit|Write|MultiEdit|Bash",
+				"if": "Edit OR Write OR MultiEdit OR Bash",
 				"hooks": [
 					{
 						"type": "command",
@@ -171,7 +170,7 @@
 						"timeout": 3
 					}
 				],
-				"description": "Track file edits for workflow-checkpoint review enforcement"
+				"description": "Track file edits (incl. Bash writes to source) for workflow-checkpoint review enforcement"
 			},
 			{
 				"matcher": "Edit|Write",
@@ -218,9 +217,42 @@
 						"command": "node /workspace/.codeck/scripts/post-compact-hook.mjs"
 					}
 				]
+			},
+			{
+				"matcher": "",
+				"hooks": [
+					{
+						"type": "command",
+						"command": "node /workspace/.codeck/scripts/harness-resume-hook.mjs",
+						"timeout": 3
+					}
+				],
+				"description": "Re-inject active harness state after compaction so the task resumes exactly"
 			}
 		],
 		"UserPromptSubmit": [
+			{
+				"matcher": "",
+				"hooks": [
+					{
+						"type": "command",
+						"command": "node /workspace/.codeck/scripts/autonomous-protocol-hook.mjs",
+						"timeout": 3
+					}
+				],
+				"description": "Inject the Autonomous Operator Protocol each task (message layer \u2014 keeps the cached prefix stable)"
+			},
+			{
+				"matcher": "",
+				"hooks": [
+					{
+						"type": "command",
+						"command": "node /workspace/.codeck/scripts/task-classifier-hook.mjs",
+						"timeout": 3
+					}
+				],
+				"description": "Classify the task type and point at the matching playbook (adaptive protocol)"
+			},
 			{
 				"matcher": "",
 				"hooks": [
@@ -251,6 +283,17 @@
 					}
 				],
 				"description": "Inject available MCP tools, skills, and workflow hints based on task type"
+			},
+			{
+				"matcher": "",
+				"hooks": [
+					{
+						"type": "command",
+						"command": "node /workspace/.codeck/scripts/capability-doctor.mjs --inject",
+						"timeout": 6
+					}
+				],
+				"description": "Inject an environment-capabilities preflight (only NOT-ready capabilities + fallbacks) on the first message"
 			}
 		],
 		"Stop": [
@@ -375,6 +418,17 @@
 				"hooks": [
 					{
 						"type": "command",
+						"command": "node /workspace/.codeck/scripts/harness-resume-hook.mjs",
+						"timeout": 3
+					}
+				],
+				"description": "Resume an active autonomous-harness task after restart/rebuild"
+			},
+			{
+				"matcher": "*",
+				"hooks": [
+					{
+						"type": "command",
 						"command": "node /workspace/.codeck/scripts/credential-persist.mjs",
 						"timeout": 5
 					}
@@ -412,6 +466,18 @@
 					}
 				],
 				"description": "Register config/preferences/memory paths to watch for hot-reload changes"
+			},
+			{
+				"matcher": "*",
+				"hooks": [
+					{
+						"type": "command",
+						"command": "node /workspace/.codeck/scripts/capability-doctor.mjs --probe",
+						"async": true,
+						"timeout": 6
+					}
+				],
+				"description": "Probe external capabilities (gh auth, git remote, docker, runtimes, browser, network, disk) with real execution and cache the result for the preflight injection"
 			}
 		],
 		"FileChanged": [
@@ -470,9 +536,13 @@
 					{
 						"type": "command",
 						"command": "node /workspace/.codeck/scripts/subagent-tracker.mjs"
+					},
+					{
+						"type": "command",
+						"command": "node /workspace/.codeck/scripts/review-marker-hook.mjs"
 					}
 				],
-				"description": "Track subagent completion for real-time UI panel"
+				"description": "Track subagent completion for the UI panel and machine-stamp review/audit markers when a reviewer finishes"
 			}
 		],
 		"CwdChanged": [

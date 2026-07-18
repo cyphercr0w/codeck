@@ -1,16 +1,20 @@
 #!/usr/bin/env node
 /**
- * PreToolUse Hook — Teams Enforcement
+ * PreToolUse Hook — Teams Reminder
  *
  * When Agent Teams is enabled (CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1):
  * 1. On Edit/Write/MultiEdit by the leader → soft remind to delegate
- * 2. On Agent spawn WITHOUT team_name → BLOCK and force using TeamCreate first
+ * 2. On Agent spawn → soft remind to give a complete brief and a `name`
+ *
+ * Since Claude Code 2.1.178, Agent Teams is IMPLICIT: TeamCreate/TeamDelete
+ * were removed and every session is already a team. Teammates are spawned via
+ * the Agent tool's `name` param (the old `team_name` param is accepted but
+ * ignored). This hook therefore only reminds — it never blocks on team_name.
  *
  * Does NOT fire for teammates (they have CLAUDE_CODE_TEAM_NAME set).
  */
 
 // Only active when teams is enabled.
-// Native Agent Teams (TeamCreate/Agent/SendMessage) — no longer requires tmux.
 if (!process.env.CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS) {
   process.exit(0);
 }
@@ -27,20 +31,16 @@ try {
   const data = JSON.parse(input);
   const tool = data.tool_name || '';
 
-  // === BLOCK: Agent spawn without team_name ===
+  // === REMIND: Agent spawn without a name ===
+  // Implicit teams (2.1.178+): a named Agent becomes a persistent teammate.
+  // Never block — only nudge the leader to name teammates and brief them fully.
   if (tool === 'Agent') {
-    const hasTeamName = data.tool_input?.team_name;
-    if (!hasTeamName) {
+    const hasName = data.tool_input?.name;
+    if (!hasName) {
       console.log(JSON.stringify({
-        hookSpecificOutput: {
-          hookEventName: 'PreToolUse',
-          permissionDecision: 'deny',
-          permissionDecisionReason: 'TEAMS REQUIRED: You have Agent Teams enabled. Do NOT spawn agents without a team. First use TeamCreate to create a team, then TaskCreate to define tasks, then Agent with team_name parameter. Lone agents are not allowed when teams mode is active.',
-        },
+        message: 'TEAMS TIP: Give this teammate a unique `name` so you can track and SendMessage it. Include a complete brief (exact file paths, decisions, what to verify) — teammates start with an isolated context.',
       }));
-      process.exit(0);
     }
-    // Has team_name — allow
     process.exit(0);
   }
 
@@ -60,7 +60,7 @@ try {
     }
 
     console.log(JSON.stringify({
-      message: 'TEAMS REMINDER: You have Agent Teams enabled. For multi-file changes, consider delegating to teammates via TeamCreate + Agent(model: "sonnet"). Quick fixes are OK to do directly.',
+      message: 'TEAMS REMINDER: You have Agent Teams enabled. For multi-file changes, consider delegating to a teammate via Agent(name: "...", model: "sonnet"). Quick fixes are OK to do directly.',
     }));
     process.exit(0);
   }

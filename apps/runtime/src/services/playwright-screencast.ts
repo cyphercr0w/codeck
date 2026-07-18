@@ -407,6 +407,62 @@ export async function capturePlaywrightFrame(): Promise<string | null> {
 	}
 }
 
+/**
+ * Design Mode — resolve a viewport coordinate to the DOM element there, via CDP
+ * DOM.getNodeForLocation. Returns a rough CSS selector + a truncated outerHTML
+ * snippet so the agent can locate and edit the element. Coordinates are in
+ * page/frame pixels (the client maps its click into the frame's natural size).
+ */
+export async function inspectElementAt(
+	x: number,
+	y: number,
+): Promise<{ tag: string; selector: string; outerHTML: string; url: string } | null> {
+	try {
+		if (!cdpWs || cdpWs.readyState !== WebSocket.OPEN) await ensurePlaywrightChrome();
+		await cdpSend("DOM.enable").catch(() => {});
+		const loc = (await cdpSend("DOM.getNodeForLocation", {
+			x: Math.max(0, Math.round(x)),
+			y: Math.max(0, Math.round(y)),
+			includeUserAgentShadowDOM: false,
+		})) as { backendNodeId?: number } | null;
+		const backendNodeId = loc?.backendNodeId;
+		if (!backendNodeId) return null;
+
+		let outerHTML = "";
+		try {
+			const oh = (await cdpSend("DOM.getOuterHTML", { backendNodeId })) as { outerHTML?: string };
+			// Single-line + truncated: this ends up in a PTY reprompt.
+			outerHTML = (oh?.outerHTML || "").replace(/\s+/g, " ").trim().slice(0, 400);
+		} catch { /* optional */ }
+
+		let tag = "";
+		let selector = "";
+		try {
+			const desc = (await cdpSend("DOM.describeNode", { backendNodeId })) as { node?: { localName?: string; nodeName?: string; attributes?: string[] } };
+			const node = desc?.node;
+			tag = (node?.localName || node?.nodeName || "").toLowerCase();
+			const attrs = node?.attributes || [];
+			let id = "";
+			let cls = "";
+			for (let i = 0; i < attrs.length; i += 2) {
+				if (attrs[i] === "id") id = attrs[i + 1];
+				if (attrs[i] === "class") cls = attrs[i + 1];
+			}
+			selector =
+				tag +
+				(id ? `#${id}` : "") +
+				(cls ? `.${cls.trim().split(/\s+/).filter(Boolean).join(".")}` : "");
+		} catch { /* optional */ }
+
+		// Strip whitespace/newlines: an element id/class from an attacker-influenced
+		// page must not inject a newline into the single-line agent reprompt.
+		selector = (selector || tag).replace(/\s+/g, "");
+		return { tag, selector, outerHTML, url: currentUrl.replace(/[\r\n]+/g, " ") };
+	} catch {
+		return null;
+	}
+}
+
 export async function closePlaywrightBrowser(): Promise<void> {
 	stopTargetPolling();
 	streaming = false;

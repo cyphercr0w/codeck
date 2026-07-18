@@ -3,7 +3,7 @@ import { apiFetch } from '../api';
 import {
   proactiveAgents, agentOutputs, workspacePath, setProactiveAgents,
   removeProactiveAgent, clearAgentOutput, appendAgentOutput,
-  type ProactiveAgent,
+  type ProactiveAgent, type LoopAcceptance, type InboxEntry,
 } from '../state/store';
 import {
   IconPlus, IconBot, IconChevronLeft, IconChevronDown, IconChevronUp,
@@ -15,7 +15,7 @@ import { DirSelector } from './agents/DirSelector';
 import { AgentForm } from './agents/AgentForm';
 
 const MODEL_LABELS: Record<string, string> = {
-  '': 'Default (system)', opus: 'Opus 4.6', sonnet: 'Sonnet 4.5', haiku: 'Haiku 4.5',
+  '': 'Default (system)', opus: 'Opus 4.8', sonnet: 'Sonnet 5', fable: 'Fable 5', haiku: 'Haiku 4.5',
 };
 
 // ── Helpers ──
@@ -113,7 +113,10 @@ function AgentCard({ agent, onSelect, onAction, onEdit }: {
     <>
       <div class="dash-card agent-card" onClick={onSelect}>
         <div class="agent-card-header">
-          <div class="agent-card-title">{agent.name}</div>
+          <div class="agent-card-title">
+            {agent.name}
+            {agent.kind === 'loop' && <span class="badge badge-info" style="margin-left: 6px">Loop</span>}
+          </div>
           <StatusBadge status={agent.status} running={agent.running} />
         </div>
         <div class="agent-card-objective">{agent.objective}</div>
@@ -265,17 +268,46 @@ function AgentDetailView({ agent, onBack, onEdit }: {
   const [executions, setExecutions] = useState<ExecutionResult[]>([]);
   const [logContent, setLogContent] = useState<string | null>(null);
   const [objectiveExpanded, setObjectiveExpanded] = useState(false);
+  const [acceptance, setAcceptance] = useState<LoopAcceptance | null>(null);
+  const [inbox, setInbox] = useState<InboxEntry[]>([]);
+  const [inboxContent, setInboxContent] = useState<string | null>(null);
   const outputRef = useRef<HTMLPreElement>(null);
   useNow();
 
+  const isLoop = agent.kind === 'loop';
   const liveOutput = agentOutputs.value[agent.id] || '';
 
   useEffect(() => {
     loadExecutions();
+    if (isLoop) {
+      loadAcceptance();
+      loadInbox();
+    }
     if (agent.running && !agentOutputs.value[agent.id]) {
       loadLiveOutput();
     }
   }, [agent.id]);
+
+  async function loadAcceptance() {
+    try {
+      const res = await apiFetch(`/api/agents/${agent.id}/acceptance`);
+      if (res.ok) setAcceptance(await res.json());
+    } catch { /* ignore */ }
+  }
+
+  async function loadInbox() {
+    try {
+      const res = await apiFetch(`/api/agents/${agent.id}/inbox`);
+      if (res.ok) { const d = await res.json(); setInbox(d.inbox || []); }
+    } catch { /* ignore */ }
+  }
+
+  async function loadInboxEntry(file: string) {
+    try {
+      const res = await apiFetch(`/api/agents/${agent.id}/inbox/${encodeURIComponent(file)}`);
+      if (res.ok) setInboxContent(await res.text());
+    } catch { /* ignore */ }
+  }
 
   useEffect(() => {
     if (outputRef.current) {
@@ -386,6 +418,26 @@ function AgentDetailView({ agent, onBack, onEdit }: {
             <span class="detail-label">Model</span>
             <span>{MODEL_LABELS[agent.model] || agent.model || 'Default' || 'Default (system)'}</span>
           </div>
+          {isLoop && agent.loop && (
+            <>
+              <div class="detail-row">
+                <span class="detail-label">Goal</span>
+                <span>{agent.loop.goal}</span>
+              </div>
+              <div class="detail-row">
+                <span class="detail-label">Verify</span>
+                <code>{agent.loop.verifyCmd}</code>
+              </div>
+              <div class="detail-row">
+                <span class="detail-label">Loop</span>
+                <span>
+                  <span class="badge badge-muted">{agent.loop.mode}</span>{' '}
+                  <span class="badge badge-muted">{agent.loop.permissionProfile}</span>{' '}
+                  <span style="opacity: 0.6">cap {agent.loop.iterCap} iters / ${agent.loop.costCapUsd}</span>
+                </span>
+              </div>
+            </>
+          )}
           <div class="detail-row">
             <span class="detail-label">Total Executions</span>
             <span>{agent.totalExecutions}</span>
@@ -408,6 +460,65 @@ function AgentDetailView({ agent, onBack, onEdit }: {
           )}
         </div>
       </div>
+
+      {/* Loop acceptance — cost per accepted change */}
+      {isLoop && acceptance && acceptance.totalTicks > 0 && (
+        <div class="dash-card" style="margin-bottom: 20px">
+          <div class="dash-card-title">Acceptance</div>
+          <div class="detail-rows">
+            <div class="detail-row">
+              <span class="detail-label">Acceptance rate</span>
+              <span>{Math.round(acceptance.acceptanceRate * 100)}% ({acceptance.accepted}/{acceptance.totalTicks} ticks)</span>
+            </div>
+            <div class="detail-row">
+              <span class="detail-label">Escalated / Failed</span>
+              <span>{acceptance.escalated} escalated &middot; {acceptance.failed} failed</span>
+            </div>
+            <div class="detail-row">
+              <span class="detail-label">Cost per accepted</span>
+              <span>{acceptance.costPerAcceptedUsd !== null ? `$${acceptance.costPerAcceptedUsd}` : '—'} <span style="opacity: 0.5">(${acceptance.totalCostUsd} total)</span></span>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Loop inbox — escalations needing human judgment */}
+      {isLoop && (
+        <div style="margin-bottom: 20px">
+          <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px">
+            <div class="dash-card-title" style="margin-bottom: 0">Inbox {inbox.length > 0 && <span class="badge badge-warning">{inbox.length}</span>}</div>
+            <button class="btn btn-xs btn-ghost" onClick={loadInbox}><IconRefresh size={14} /></button>
+          </div>
+          {inbox.length === 0 ? (
+            <div class="dash-meta" style="border-top: none; margin-top: 0; padding-top: 0; text-align: center; padding: 24px">
+              Nothing escalated
+            </div>
+          ) : (
+            <div class="dash-card" style="padding: 0; overflow: hidden">
+              {inbox.map((entry, i) => (
+                <div
+                  key={entry.file}
+                  class="execution-item"
+                  onClick={() => loadInboxEntry(entry.file)}
+                  style={i > 0 ? 'border-top: 1px solid var(--border)' : ''}
+                >
+                  <span style="color: var(--text-secondary); font-size: 13px">{entry.file}</span>
+                  <span style="color: var(--text-muted); font-size: 12px; margin-left: auto">{formatRelativeTime(entry.createdAt)}</span>
+                </div>
+              ))}
+            </div>
+          )}
+          {inboxContent !== null && (
+            <div style="margin-top: 8px">
+              <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px">
+                <div class="dash-card-title" style="margin-bottom: 0">Escalation</div>
+                <button class="btn btn-xs btn-ghost" onClick={() => setInboxContent(null)}><IconX size={14} /></button>
+              </div>
+              <pre class="output-block">{inboxContent}</pre>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Live output */}
       {(agent.running || liveOutput) && (

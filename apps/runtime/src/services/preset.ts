@@ -742,12 +742,12 @@ export function checkPresetUpdate(): void {
 		}
 	}
 
-	// Copy all recursive dirs with skipIfExists=false — skipIfExists protects user dirs
-	// Note: rules-library is preset-managed (overwritten on update). Users customize
-	// rules in ~/.claude/rules/ or /workspace/.codeck/rules/user/, not the library.
+	// Copy all recursive dirs. Non-skip dirs (e.g. rules-library) are preset-managed
+	// and fully overwritten. skipIfExists dirs (agents/skills/commands/rules) are
+	// user-customizable: we deploy NEW files (so updates ship new agents/skills/
+	// commands) but never overwrite files the user may have tweaked.
 	if (manifest.recursive_dirs) {
 		for (const rd of manifest.recursive_dirs) {
-			if (rd.skipIfExists) continue; // only auto-update non-user dirs
 			const destDir = rewritePath(rd.dest);
 			if (!isAllowedDestPath(destDir)) continue;
 
@@ -760,7 +760,7 @@ export function checkPresetUpdate(): void {
 				continue;
 			if (!existsSync(srcDir)) continue;
 
-			copied += copyScriptDirRecursive(srcDir, destDir);
+			copied += copyScriptDirRecursive(srcDir, destDir, rd.skipIfExists === true);
 		}
 	}
 
@@ -803,7 +803,11 @@ export function checkPresetUpdate(): void {
 }
 
 /** Copy script files from srcDir to destDir recursively. Returns count of files copied. */
-function copyScriptDirRecursive(srcDir: string, destDir: string): number {
+function copyScriptDirRecursive(
+	srcDir: string,
+	destDir: string,
+	skipExisting = false,
+): number {
 	if (!existsSync(destDir)) mkdirSync(destDir, { recursive: true });
 	let count = 0;
 	for (const entry of readdirSync(srcDir)) {
@@ -811,8 +815,12 @@ function copyScriptDirRecursive(srcDir: string, destDir: string): number {
 		const destEntry = join(destDir, entry);
 		const stat = statSync(srcEntry);
 		if (stat.isDirectory()) {
-			count += copyScriptDirRecursive(srcEntry, destEntry);
+			count += copyScriptDirRecursive(srcEntry, destEntry, skipExisting);
 		} else {
+			// skipExisting: deploy NEW files only, never overwrite a user-customized
+			// existing file. Lets updates add new agents/skills/commands into
+			// skipIfExists dirs without clobbering the user's tweaks.
+			if (skipExisting && existsSync(destEntry)) continue;
 			const destEntryDir = dirname(destEntry);
 			if (!existsSync(destEntryDir))
 				mkdirSync(destEntryDir, { recursive: true });
@@ -962,9 +970,24 @@ function mergePresetHooks(presetDir: string): void {
 				if (!Array.isArray(current.hooks[event])) {
 					current.hooks[event] = [];
 				}
+				// Push ONLY the hooks not already present. Deduping at the ENTRY level
+				// would re-add a whole template entry when it shares a hook with the
+				// user's config (e.g. review-marker-hook added alongside an existing
+				// subagent-tracker), DUPLICATING the shared hook on every existing install.
+				const missingHooks = rewrittenHooks.filter(
+					(h) =>
+						typeof h.command !== "string" ||
+						!existingCmds.has(h.command as string),
+				);
+				if (missingHooks.length === 0) continue;
+				(rewrittenEntry as Record<string, unknown>).hooks = missingHooks;
 				current.hooks[event].push(rewrittenEntry);
 				added++;
-				console.log(`[Preset]   MERGE hook: ${event} ← ${cmds.join(", ")}`);
+				console.log(
+					`[Preset]   MERGE hook: ${event} ← ${missingHooks
+						.map((h) => h.command)
+						.join(", ")}`,
+				);
 			}
 		}
 
@@ -1299,7 +1322,7 @@ async function applyPresetRecursive(
 			console.log(`[Preset]   KEEP ${dest} (user data exists)`);
 		} else {
 			// Backup data files before force-overwrite
-			if (force && isDataFile && existsSync(dest)) {
+			if (force && existsSync(dest) && (isDataFile || file.skipIfExists)) {
 				backupFile(dest);
 			}
 			let fileContent = readFileSync(srcPath, "utf-8");
@@ -1360,8 +1383,12 @@ async function applyPresetRecursive(
 				continue;
 			}
 
+			// On force (preset reset) override skipIfExists so MODIFIED agents/skills/
+			// commands actually re-apply — otherwise reset silently leaves them stale
+			// (their dirs are skipIfExists, so a normal copy keeps the old content).
 			copyDirectoryRecursive(srcDir, destDir, manifest.id, {
-				skipIfExists: rd.skipIfExists,
+				skipIfExists: force ? false : rd.skipIfExists,
+				backup: force,
 			});
 		}
 	}
@@ -1450,7 +1477,7 @@ function copyDirectoryRecursive(
 	srcDir: string,
 	destDir: string,
 	presetId: string,
-	opts: { skipIfExists: boolean },
+	opts: { skipIfExists: boolean; backup?: boolean },
 ): void {
 	// Validate source path stays within TEMPLATES_DIR
 	const resolvedSrc = resolve(srcDir);
@@ -1494,6 +1521,12 @@ function copyDirectoryRecursive(
 			if (opts.skipIfExists && existsSync(destEntry)) {
 				console.log(`[Preset]   KEEP ${destEntry} (skipIfExists)`);
 				continue;
+			}
+
+			// On a force reset we overwrite user-customizable files here; back them
+			// up first (parity with the individual-file loop) so a reset is recoverable.
+			if (opts.backup && existsSync(destEntry)) {
+				backupFile(destEntry);
 			}
 
 			// Ensure destination parent directory exists

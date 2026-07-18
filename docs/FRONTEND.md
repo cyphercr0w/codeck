@@ -222,7 +222,7 @@ Step-by-step: calls login → polls status every 1.5s → user copies code → s
 
 ### `Sidebar.tsx` — Navigation
 
-7 nav items: Home, Chat, Terminal, Agent Teams, Automated Agents, Integrations, Agent Config. SVG icons, green/red status dot, version footer. Desktop: collapse/expand (56px / 260px). Mobile: overlay with backdrop.
+9 nav items (source of truth: `nav-items.ts`): Home, Chat, Editor, Terminal, Automated Agents, Source Control, Integrations, Agent Config, Settings. Sub-Agents is **not** a top-level nav item — it lives as a tab inside Agent Config (see `AgentConfigSection.tsx`). SVG icons, green/red status dot, version footer. Desktop: collapse/expand (56px / 260px). Mobile: overlay with backdrop.
 
 ### `HomeSection.tsx` — Dashboard
 
@@ -255,6 +255,48 @@ Multi-tab terminal interface:
 
 Agent list (dash-card grid), create/edit modals with directory selector, agent detail with expand/collapse, live streaming output, run now button, execution history.
 
+**Scheduled loops.** `AgentForm` has a Standard/Loop type toggle (locked after
+creation) that reveals loop fields: goal, verify command (machine gate), loop
+mode, permission profile, and iteration/cost caps. Cards show a `Loop` badge; the
+detail view adds the loop config rows, an **Acceptance** panel (rate + cost per
+accepted change, from `/api/agents/:id/acceptance`) and an **Inbox** panel of
+escalations (`/api/agents/:id/inbox`). Loop types live in `state/store.ts`
+(`AgentKind`, `LoopConfig`, `LoopAcceptance`, `InboxEntry`).
+
+### `EditorSection.tsx` — Monaco IDE (nav `filesystem` → "Editor", `/files`)
+
+VSCode-like editor: a lazy file tree (per-dir `/api/files`), a tab bar, and a
+Monaco editor with one model per open file, dirty tracking, and Ctrl+S save
+(`PUT /api/files/write`). Monaco is loaded via `import("../monaco-setup")` so it
+lands in its own on-demand chunk (main bundle unaffected); `monaco-setup.ts`
+wires the Vite `?worker` workers and maps filename→language. Replaces the old
+plain-textarea `FilesSection` in the `filesystem` slot. Styles: `styles/editor.css`.
+
+### `ScmSection.tsx` — Source Control (nav `scm`, `/source-control`)
+
+VSCode-like source-control panel with two tabs. **Changes:** first loads `GET
+/api/git/repos` and shows a **repository picker** (the workspace root is usually
+not a git repo — projects live in subdirectories, so the diff must target a
+concrete repo, not the workspace root). It then loads `GET /api/git/diff?cwd=<repo>`
+for the selected repo, parses the unified diff, lets the user click a changed
+line to attach a markdown comment, then **Send to agent** compiles the comments
+into a single-line prompt injected into the chosen agent PTY via `wsSend({ type:
+"console:input" })` — the interactive review loop. When no repo is found it shows
+a "No git repositories" empty state with a refresh. **GitHub:** repo picker +
+PR/issue toggle + state filter over `/api/github/*`, link-out to GitHub.
+
+### `PlaywrightPreview.tsx` — Agent Browser + Design Mode
+
+Renders the CDP screencast (`playwright:frame`). A **Design** toggle turns on
+Design Mode: clicking a rendered element POSTs `/api/preview/playwright/inspect`
+to resolve its selector/outerHTML, drops a pin, and sends design feedback
+(selector + note) to the active agent via `console:input`.
+
+### `Sidebar.tsx` — usage widget
+
+The footer renders `UsageBars` (5h/7d Claude limits from the `claudeUsage`
+signal / `/api/dashboard`), collapsed to colored dots in the narrow sidebar.
+
 ### `IntegrationsSection.tsx` — External Services
 
 - **SSH:** Generate key, copy public key, link to GitHub settings
@@ -272,7 +314,12 @@ Replaces the old separate ConfigSection concerns. Contains multiple cards:
 
 ### `AgentConfigSection.tsx` — Config Editor
 
-File browser for `.codeck/` directory with breadcrumbs, read/edit mode, save, reset to defaults with confirmation.
+Tabbed editor for the agent's `.codeck/` configuration. Tabs: **Memory, Skills,
+Sub-Agents, MCP Servers, Rules, Hooks, Permissions, Environment**. Sub-Agents was
+promoted from a top-level sidebar entry into a tab here (to declutter the
+sidebar); it renders `<SubAgentsSection embedded />`, which drops its own
+full-height `content-section` wrapper so it nests inside the shared `.ac-body`
+scroll container. The remaining tabs live under `components/agent-config/`.
 
 ### `ToastContainer.tsx` — Toast Notifications
 
@@ -331,7 +378,7 @@ Reusable modal for destructive actions.
 
 ### `MobileMenu.tsx` — Mobile Navigation
 
-Slide-down overlay with 7 nav items and connection status.
+Slide-down overlay with the same nav items as `Sidebar` (shared `nav-items.ts`) and connection status.
 
 ---
 

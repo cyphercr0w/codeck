@@ -312,7 +312,7 @@ Handles git operations, GitHub CLI auth, SSH key management, and workspace CLAUD
 | `isGhAuthenticated` | `(): boolean` | Runs `gh auth status` (not cached) |
 | `hasGitHubToken` | `(): boolean` | Checks `GITHUB_TOKEN` env var |
 | `hasRepository` | `(): boolean` | Checks for `.git/` in workspace |
-| `listRepositories` | `(): RepoInfo[]` | Lists repos in workspace |
+| `listRepositories` | `(): RepoInfo[]` | Lists git repos in workspace — recursive scan (depth ≤ 4), skips heavy/generated dirs (`node_modules`, `dist`, `.venv`, …) and doesn't descend into a repo's own tree. Nested repos named by workspace-relative path. Cached 15s |
 | `isWorkspaceEmpty` | `(): boolean` | No real project directories |
 | `startGitHubFullLogin` | `(callbacks): Promise<boolean>` | Device code login via `gh` |
 | `toSSHUrl` | `(url): string` | HTTPS to SSH URL |
@@ -693,6 +693,18 @@ Dedicated per-session PTY WebSocket connections at `/internal/pty/:id`.
 
 ---
 
+## `services/git/*` — Source Control & GitHub
+
+`operations.ts` adds `getGitDiff(cwd, {staged,base})` (unified diff for the review
+loop, cwd validated within the workspace) and `getRepoRemote(cwd)` (`git remote
+get-url origin` → `{owner,repo}`). New `git/github-api.ts` shells `gh api` (reuses
+the keyring credential — no octokit): `listGitHubRepos()`, `listPullRequests()`,
+`listIssues()`. All re-exported through the `services/git.ts` facade. See
+[`docs/design/ORCA-PARITY.md`](design/ORCA-PARITY.md).
+
+`playwright-screencast.ts` adds `inspectElementAt(x,y)` — Design Mode's CDP
+`DOM.getNodeForLocation` → `{tag,selector,outerHTML,url}`.
+
 ## `services/proactive-agents.ts` — Proactive Agents
 
 Autonomous, scheduled agents using `claude -p` in non-interactive mode.
@@ -707,6 +719,22 @@ Autonomous, scheduled agents using `claude -p` in non-interactive mode.
 | `pauseAgent` / `resumeAgent` | — | Lifecycle control |
 | `triggerAgent` | `(id): { executionId }` | Manual trigger |
 | `getAgentLogs` / `getAgentExecutions` | — | History and logs |
+| `getLoopAcceptance` | `(id): LoopAcceptance \| null` | Loop only — cost per accepted change |
+| `getLoopInbox` / `getLoopInboxEntry` | — | Loop only — escalations needing a human |
+
+### Scheduled loops (`kind:'loop'`)
+
+A loop agent runs the full PO-driven **autonomous-harness** on each cron tick
+(see [`docs/design/SCHEDULED-LOOPS.md`](design/SCHEDULED-LOOPS.md)) instead of a
+one-shot `claude -p`. `executor.ts`'s `buildLoopRun()` bootstraps an **isolated**
+control-plane under `<agentDir>/{harness,state}` and passes `CODECK_HARNESS_DIR`
+/ `CODECK_STATE_DIR` to the headless run so budget-guard, workflow-checkpoint,
+no-progress-guard, review-marker and harness-resume operate there — never
+colliding with an interactive harness task. The plan is pre-approved
+(`planApproved:true`); the PO governs REVIEW/AUDIT/DONE. `readLoopOutcome()` reads
+`overseer.json`/`budget.json` back after the tick for the acceptance metric.
+Escalations land in `<agentDir>/inbox/`. Loops validate a required `goal` +
+`verifyCmd` (a machine gate) and default to a 30-min (≤2h) timeout.
 
 ### Concurrency model
 
@@ -766,7 +794,7 @@ CRUD for team templates. Teams define parallel agent groups (no sequential trans
 
 ## `services/tmux-bridge.ts` — Agent Teams Orchestration
 
-**Note:** The tmux-bridge was the original Agent Teams orchestration layer. It has been superseded by the native TeamCreate/Agent/SendMessage system where Claude Code itself manages teams. The tmux-bridge remains for reference but is no longer the active launch path.
+**Note:** The tmux-bridge was the original Agent Teams orchestration layer. It has been superseded by the native Agent/SendMessage system where Claude Code itself manages teams (implicit teams since 2.1.178 — `TeamCreate`/`TeamDelete` removed). The tmux-bridge remains for reference but is no longer the active launch path.
 
 The current Agent Teams flow uses `console.ts` → `--append-system-prompt` to inject team leader instructions when `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1` is set. `teammate-watcher.ts` monitors for tmux panes created by Claude's Agent tool.
 

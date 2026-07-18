@@ -3,6 +3,7 @@ import { asyncHandler } from "../utils/async-handler.js";
 import { spawnSync } from "child_process";
 import { getGitStatus, startGitHubFullLogin } from "../services/git.js";
 import { invalidateGhAuthCache } from "../services/git/github-auth.js";
+import { listGitHubRepos, listPullRequests, listIssues } from "../services/git/github-api.js";
 import { broadcastStatus } from "../web/websocket.js";
 
 const router = Router();
@@ -70,6 +71,25 @@ router.get("/login-status", (_req, res) => {
 		email: gitStatus.github.email,
 		avatarUrl: gitStatus.github.avatarUrl,
 	});
+});
+
+// Workspace repos that have a GitHub origin remote (owner/repo resolved)
+router.get("/repos", (_req, res) => {
+	res.json({ repos: listGitHubRepos() });
+});
+
+// Pull requests for a repo. ?state=open|closed|all
+router.get("/:owner/:repo/pulls", (req, res) => {
+	const r = listPullRequests(req.params.owner, req.params.repo, req.query.state);
+	if (!r.ok) { res.status(400).json({ error: r.error }); return; }
+	res.json({ pulls: r.data });
+});
+
+// Issues for a repo (PRs filtered out). ?state=open|closed|all
+router.get("/:owner/:repo/issues", (req, res) => {
+	const r = listIssues(req.params.owner, req.params.repo, req.query.state);
+	if (!r.ok) { res.status(400).json({ error: r.error }); return; }
+	res.json({ issues: r.data });
 });
 
 // GitHub logout (gh auth logout)

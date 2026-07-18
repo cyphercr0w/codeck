@@ -12,6 +12,9 @@ import {
   getAgentOutput,
   getAgentLogs,
   getAgentExecutions,
+  getLoopAcceptance,
+  getLoopInbox,
+  getLoopInboxEntry,
   lintAgentObjective,
 } from '../services/proactive-agents.js';
 import { sanitizeSecrets } from '../services/session-writer.js';
@@ -44,13 +47,13 @@ router.post('/lint', (req, res) => {
 // Create agent
 router.post('/', (req, res) => {
   try {
-    const { name, objective, schedule, cwd, model, timeoutMs, maxRetries } = req.body || {};
+    const { name, objective, schedule, cwd, model, timeoutMs, maxRetries, kind, loop } = req.body || {};
     if (cwd && !isValidCwd(cwd)) {
       res.status(400).json({ error: `Working directory must be within ${WORKSPACE}` });
       return;
     }
     const warnings = objective ? lintAgentObjective(objective) : [];
-    const agent = createAgent({ name, objective, schedule, cwd, model, timeoutMs, maxRetries });
+    const agent = createAgent({ name, objective, schedule, cwd, model, timeoutMs, maxRetries, kind, loop });
     res.json({ ...agent, lintWarnings: warnings.length > 0 ? warnings : undefined });
   } catch (e) {
     const detail = e instanceof Error ? e.message : 'Failed to create agent';
@@ -79,7 +82,13 @@ router.put('/:id', (req, res) => {
       res.status(400).json({ error: `Working directory must be within ${WORKSPACE}` });
       return;
     }
-    const agent = updateAgent(req.params.id, body);
+    // Whitelist updatable fields (kind is immutable — recreate to convert) and
+    // pass only the ones actually sent, so a partial update can't null out others.
+    const updates: Record<string, unknown> = {};
+    for (const k of ['name', 'objective', 'schedule', 'cwd', 'model', 'timeoutMs', 'maxRetries', 'loop'] as const) {
+      if (body[k] !== undefined) updates[k] = body[k];
+    }
+    const agent = updateAgent(req.params.id, updates as Parameters<typeof updateAgent>[1]);
     if (!agent) { res.status(404).json({ error: 'Agent not found' }); return; }
     const warnings = body.objective ? lintAgentObjective(body.objective) : [];
     res.json({ ...agent, lintWarnings: warnings.length > 0 ? warnings : undefined });
@@ -147,6 +156,27 @@ router.get('/:id/executions', (req, res) => {
   const limit = Number.isFinite(parsed) && parsed > 0 ? Math.min(parsed, 1000) : 20;
   const executions = getAgentExecutions(req.params.id, limit);
   res.json({ executions });
+});
+
+// Loop acceptance metrics — cost per accepted change (loop agents only)
+router.get('/:id/acceptance', (req, res) => {
+  const acceptance = getLoopAcceptance(req.params.id);
+  if (!acceptance) { res.status(404).json({ error: 'Not a loop agent or agent not found' }); return; }
+  res.json(acceptance);
+});
+
+// Loop inbox — escalations needing human judgment (loop agents only)
+router.get('/:id/inbox', (req, res) => {
+  const inbox = getLoopInbox(req.params.id);
+  if (inbox === null) { res.status(404).json({ error: 'Not a loop agent or agent not found' }); return; }
+  res.json({ inbox });
+});
+
+// Read one inbox entry in full
+router.get('/:id/inbox/:file', (req, res) => {
+  const content = getLoopInboxEntry(req.params.id, req.params.file);
+  if (content === null) { res.status(404).json({ error: 'Inbox entry not found' }); return; }
+  res.type('text/plain').send(sanitizeSecrets(content));
 });
 
 export default router;

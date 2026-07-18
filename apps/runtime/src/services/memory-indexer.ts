@@ -87,6 +87,10 @@ export async function initializeIndexer(): Promise<boolean> {
 		db = new BetterSqlite3(DB_PATH);
 		db.pragma("journal_mode = WAL");
 		db.pragma("foreign_keys = ON");
+		// Concurrency: wait up to 5s for the write lock instead of throwing
+		// SQLITE_BUSY immediately when a concurrent reader/writer holds it.
+		db.pragma("busy_timeout = 5000");
+		db.pragma("synchronous = NORMAL");
 		db.exec(SCHEMA);
 		available = true;
 		console.log("[Indexer] SQLite FTS5 initialized at", DB_PATH);

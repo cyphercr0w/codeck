@@ -1,19 +1,25 @@
 #!/usr/bin/env node
 /**
- * Stop Hook — Workflow Checkpoint
+ * Stop Hook — Workflow Checkpoint + Autonomous Overseer gate.
  *
- * When Claude wants to stop after making code changes, this hook checks:
- * 1. Were files edited/written? (tracked by PostToolUse via edit-tracker state)
- * 2. Was a code-reviewer sub-agent spawned since those edits?
- * 3. Was the build verified?
+ * Two regimes:
  *
- * If significant edits happened without review → BLOCKS the stop and tells
- * Claude to run code-reviewer before presenting results.
+ * A) An autonomous harness task is active (`.codeck/harness/current.json`
+ *    active=true) — the **Product Owner (PO) self-reprompt loop**. The run does
+ *    not stop for a human; it stops only when the PO has declared the feature
+ *    DONE (with evidence), or ESCALATED, or the budget/reprompt cap is hit. On
+ *    any premature stop this hook BLOCKS and injects the pending directive
+ *    (compute-from-state if the PO hasn't written one) — that block IS the
+ *    auto-prompt that keeps the orchestra alive and on track. Enforces the two
+ *    loops: plan-review (PO must APPROVE_PLAN before implementation) and
+ *    review→audit (clean markers before the DONE verdict).
  *
- * This makes the implement→review→present flow mechanical, not aspirational.
+ * B) No harness task — the legacy review/audit gate: significant edits (5+
+ *    files) must see a code-reviewer, then an audit, before the lead may stop.
+ *    Unchanged, so ordinary quick tasks are not over-blocked.
  *
- * Output format (Claude Code Stop hook contract):
- *   { "result": "approve" }                    — let Claude stop
+ * Output (Claude Code Stop hook contract):
+ *   { "result": "approve" }                                  — let Claude stop
  *   { "result": "block", "reason": "...", "message": "..." } — force continue
  */
 
@@ -23,79 +29,182 @@ if (process.env.CLAUDE_CODE_TEAM_NAME) process.exit(0);
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'fs';
 import { join } from 'path';
 
-const STATE_DIR = '/workspace/.codeck/state';
+const STATE_DIR = process.env.CODECK_STATE_DIR || '/workspace/.codeck/state';
+const HARNESS_DIR = process.env.CODECK_HARNESS_DIR || '/workspace/.codeck/harness';
+const CURRENT = join(HARNESS_DIR, 'current.json');
 const EDIT_TRACKER = join(STATE_DIR, 'edit-tracker.json');
 const REVIEW_MARKER = join(STATE_DIR, 'review-marker.json');
+const AUDIT_MARKER = join(STATE_DIR, 'audit-marker.json');
+const MAX_REPROMPTS = 60; // backstop above budget-guard's iteration cap
 
-// Read stdin (Stop hook payload)
+// Read stdin (Stop hook payload) — drained, not otherwise needed.
 let input = '';
 for await (const chunk of process.stdin) input += chunk;
 
 if (!existsSync(STATE_DIR)) mkdirSync(STATE_DIR, { recursive: true });
 
-// Read edit tracker state
-let edits = { files: [], count: 0, since: 0 };
-try {
-  if (existsSync(EDIT_TRACKER)) {
-    edits = JSON.parse(readFileSync(EDIT_TRACKER, 'utf-8'));
-  }
-} catch { /* start fresh */ }
+function readJSON(path, fallback) {
+  try { return existsSync(path) ? JSON.parse(readFileSync(path, 'utf-8')) : fallback; }
+  catch { return fallback; }
+}
+function approve() { console.log(JSON.stringify({ result: 'approve' })); process.exit(0); }
+function block(reason, message) { console.log(JSON.stringify({ result: 'block', reason, message })); process.exit(0); }
 
-// No edits tracked → approve stop (nothing to review)
-if (!edits.count || edits.count === 0) {
-  console.log(JSON.stringify({ result: 'approve' }));
-  process.exit(0);
+const edits = readJSON(EDIT_TRACKER, { files: [], count: 0, since: 0 });
+// Freshness floor = the LATEST edit, not the first. Otherwise an early clean
+// review marker satisfies the gate for every later criterion's code too — the
+// review/audit loop must re-run against the CURRENT diff.
+const editFloor = Number(edits.lastEdit || edits.since || 0);
+
+// A marker "satisfies" a gate only if it is newer than the latest edit AND (in
+// the strict harness regime) was written clean (findings resolved / re-reviewed).
+function markerOk(path, requireClean) {
+  const m = readJSON(path, null);
+  if (!m || !m.timestamp || m.timestamp <= editFloor) return false;
+  return requireClean ? m.clean === true : true;
 }
 
-// Small changes (1-4 files) → approve without review
-// Review is for meaningful implementation work (5+ files), not every small fix
-if (edits.count <= 4) {
-  // Clear tracker so next stop doesn't re-check these
-  writeFileSync(EDIT_TRACKER, JSON.stringify({ files: [], count: 0, since: 0 }));
-  console.log(JSON.stringify({ result: 'approve' }));
-  process.exit(0);
+// If sub-agents are genuinely still working (async/team), don't block yet.
+function subagentsActive() {
+  const subs = readJSON(join(STATE_DIR, 'active-subagents.json'), null);
+  return !!(subs && subs.count > 0 && (Date.now() - subs.lastUpdate) < 600000);
 }
 
-// If sub-agents are actively working, don't block — review comes after they finish
-try {
-  const subagentFile = join(STATE_DIR, 'active-subagents.json');
-  if (existsSync(subagentFile)) {
-    const subs = JSON.parse(readFileSync(subagentFile, 'utf-8'));
-    if (subs.count > 0 && (Date.now() - subs.lastUpdate) < 600000) {
-      // Sub-agents active within last 10 minutes — approve silently
-      console.log(JSON.stringify({ result: 'approve' }));
-      process.exit(0);
+// ── Regime A: autonomous overseer (PO) self-reprompt loop ────────────────────
+const cur = readJSON(CURRENT, null);
+
+// A budget-stopped task MUST be allowed to stop. budget-guard already flipped
+// active:false and told the agent to report — but that also makes Regime A skip
+// (active!==true) and would drop the run into Regime B, which blocks for
+// review/audit with NO iteration cap or reprompt backstop (both Regime-A-only).
+// Approve so the run can actually end — but ONLY if the budget is genuinely over
+// cap (guards against a lead forging stoppedBy to bypass the review gate, since
+// harness-state writes are exempt from budget-guard).
+if (cur && cur.active === false && cur.stoppedBy === 'budget-guard' && cur.taskId) {
+  const bg = readJSON(join(HARNESS_DIR, String(cur.taskId), 'budget.json'), {});
+  const overIter = Number(bg.iterations || 0) > (Number.isFinite(bg.iterCap) ? bg.iterCap : 200);
+  const overCost = Number.isFinite(bg.costCapUsd) && Number(bg.spentUsd || 0) > bg.costCapUsd;
+  if (overIter || overCost) approve();
+  // else: forged / not actually over cap → fall through to normal gating.
+}
+
+if (cur && cur.active === true && cur.taskId) {
+  const taskDir = join(HARNESS_DIR, String(cur.taskId));
+  const overseer = readJSON(join(taskDir, 'overseer.json'), {});
+  // Single source of truth for acceptance criteria + status + evidence:
+  // progress.json (the file the loop writes and harness-resume-hook reads).
+  // Accept both shapes: { criteria: [...] } or a bare [...] array.
+  const progress = readJSON(join(taskDir, 'progress.json'), {});
+  const reqs = Array.isArray(progress) ? progress
+    : (Array.isArray(progress.criteria) ? progress.criteria : []);
+
+  // Supervised mode → hand delivery to the user via the legacy gate below.
+  if (overseer.mode && overseer.mode !== 'autonomous') {
+    // fall through to Regime B
+  } else {
+    // Budget cap is the PRIMARY hard stop — mirror budget-guard here so the Stop
+    // loop doesn't ping-pong against a PreToolUse that is already denying every
+    // action (including the PO's own writes). If the cap is hit, let it stop; the
+    // lead surfaces "done vs remaining" to the user per budget-guard's message.
+    const budget = readJSON(join(taskDir, 'budget.json'), {});
+    const iterCap = Number.isFinite(budget.iterCap) ? budget.iterCap : 200;
+    const costCap = Number.isFinite(budget.costCapUsd) ? budget.costCapUsd : Infinity;
+    const iterations = Number.isFinite(budget.iterations) ? budget.iterations : 0;
+    const spentUsd = Number.isFinite(budget.spentUsd) ? budget.spentUsd : 0;
+    if (iterations > iterCap || spentUsd > costCap) approve();
+
+    // ESCALATE is the only *deliberate* path that returns control to a human.
+    if (overseer.escalated === true) approve();
+
+    // Reprompt backstop (secondary safety, below the budget cap). Counter lives
+    // in its OWN file that the PO never rewrites — storing it in overseer.json let
+    // every PO verdict reset it to 0, so it never reached the cap.
+    const REPROMPTS_FILE = join(taskDir, 'reprompts.json');
+    const reprompts = Number(readJSON(REPROMPTS_FILE, {}).count || 0);
+    if (reprompts >= MAX_REPROMPTS) approve();
+
+    const reviewClean = markerOk(REVIEW_MARKER, true);
+    const auditClean = markerOk(AUDIT_MARKER, true);
+    const hasEdits = Number(edits.count || 0) > 0;
+
+    // DONE requires ALL of: PO verdict, a NON-EMPTY requirements list with every
+    // criterion done+evidence (an empty/missing/corrupt file is NOT "complete"),
+    // and — if code changed — clean review AND audit markers. Defense-in-depth so
+    // a lenient/buggy PO or corrupt overseer.json can't ship unverified work.
+    const criteriaComplete = Array.isArray(reqs) && reqs.length > 0
+      && reqs.every(c => c && c.status === 'done' && c.evidence);
+    const changesVerified = !hasEdits || (reviewClean && auditClean);
+    if (overseer.done === true && criteriaComplete && changesVerified) approve();
+
+    // NOTE: no subagentsActive() early-approve in Regime A. A synchronous Agent
+    // call has already returned by the time Stop fires; trusting a possibly-stuck
+    // active-subagents counter could strand the run before DONE. Keep alive instead.
+
+    let directive;
+    if (!overseer.planApproved) {
+      directive = 'PLAN GATE — do not implement yet. Run the plan-review loop (spawn `spec-reviewer` + `architect`/`planner` + `grader` against the definition of done); fix the plan and re-review until ZERO findings. Then consult the `product-owner` agent for the PLAN verdict. Implementation may begin only after the PO returns APPROVE_PLAN and sets overseer.planApproved=true.';
+    } else if (hasEdits && !reviewClean) {
+      directive = 'REVIEW LOOP — spawn `code-reviewer`, fix every finding, and re-review until clean. Then write the marker with the outcome:\n  echo \'{"timestamp":\'$(date +%s%3N)\',"agent":"code-reviewer","findings":0,"clean":true}\' > ' + STATE_DIR + '/review-marker.json';
+    } else if (hasEdits && reviewClean && !auditClean) {
+      directive = 'AUDIT LOOP — spawn `security-reviewer` AND `grader` (completeness vs the definition of done). Every criterion needs linked evidence (criteria start false). Fix everything found and re-audit until clean. Then write the marker:\n  echo \'{"timestamp":\'$(date +%s%3N)\',"agent":"grader","findings":0,"clean":true}\' > ' + STATE_DIR + '/audit-marker.json';
+    } else if (!criteriaComplete) {
+      directive = 'DONE GATE — checks are clean but the acceptance criteria are not fully evidenced. Ensure `.codeck/harness/' + String(cur.taskId) + '/progress.json` has a non-empty `criteria` list and every criterion is status:"done" with a linked evidence artifact (test output, diff, screenshot). Then consult the `product-owner` for the DONE verdict.';
+    } else {
+      directive = 'DONE GATE — review and audit are clean and criteria are evidenced. Consult the `product-owner` agent for the final DONE verdict. If it returns DONE it sets overseer.done=true and the run finalizes; otherwise fix what it flags and continue. If genuinely blocked, the PO returns ESCALATE.';
     }
-  }
-} catch { /* no subagent tracking */ }
-
-// Significant edits (5+ files) — check if review happened
-let reviewRecent = false;
-try {
-  if (existsSync(REVIEW_MARKER)) {
-    const marker = JSON.parse(readFileSync(REVIEW_MARKER, 'utf-8'));
-    // Review must be AFTER the edits started
-    if (marker.timestamp && marker.timestamp > edits.since) {
-      reviewRecent = true;
+    // The PO's own next-step (if it wrote one) is appended so it survives a
+    // compaction — the computed gate above is always regenerated from state.
+    if (overseer.directive && String(overseer.directive).trim()) {
+      directive += `\n\nPO note: ${String(overseer.directive).trim()}`;
     }
-  }
-} catch { /* no valid marker */ }
 
-if (reviewRecent) {
-  // Review was done — approve and clear tracker
-  writeFileSync(EDIT_TRACKER, JSON.stringify({ files: [], count: 0, since: 0 }));
-  console.log(JSON.stringify({ result: 'approve' }));
-  process.exit(0);
+    // Persist the reprompt counter in its dedicated file (never overseer.json).
+    try {
+      if (!existsSync(taskDir)) mkdirSync(taskDir, { recursive: true });
+      writeFileSync(REPROMPTS_FILE, JSON.stringify({ count: reprompts + 1, updatedAt: Date.now() }));
+    } catch { /* best effort */ }
+
+    block(
+      `Autonomous task "${cur.taskId}" is not complete (PO has not declared DONE).`,
+      `Autonomous harness (Product Owner loop):\n${directive}\n\n(This run continues without user sign-off — the PO renders the verdicts. It stops only on the PO's DONE/ESCALATE verdict or the budget cap.)`
+    );
+  }
 }
 
-// Significant edits WITHOUT review → block
+// ── Regime B: legacy review/audit gate (no active harness task) ──────────────
+if (!edits.count || edits.count === 0) approve();
+
+// A real feature/fix (classified non-trivial by the task-classifier) must be
+// reviewed even for a single file — the ≤4-file fast path is only for
+// trivial/unclassified work, so a small-but-real code change can't skip the gate.
+const taskClass = readJSON(join(STATE_DIR, 'task-class.json'), {});
+const nonTrivialTask = taskClass.nonTrivial === true;
+if (!nonTrivialTask && edits.count <= 4) {
+  writeFileSync(EDIT_TRACKER, JSON.stringify({ files: [], count: 0, since: 0 }));
+  approve();
+}
+
+if (subagentsActive()) approve();
+
+const reviewRecent = markerOk(REVIEW_MARKER, false);
+const auditRecent = markerOk(AUDIT_MARKER, false);
+
 const fileList = edits.files.slice(0, 8).join(', ');
-const msg = edits.count > 8
-  ? `${fileList}, and ${edits.count - 8} more`
-  : fileList;
+const msg = edits.count > 8 ? `${fileList}, and ${edits.count - 8} more` : fileList;
 
-console.log(JSON.stringify({
-  result: 'block',
-  reason: `You modified ${edits.count} files (${msg}) but haven't run code-reviewer yet.`,
-  message: `Stop hook feedback:\nYou modified ${edits.count} files (${msg}) but haven't run code-reviewer yet.\nSpawn a code-reviewer sub-agent before presenting results. After review, write marker: echo '{"timestamp":'$(date +%s%3N)',"agent":"code-reviewer"}' > /workspace/.codeck/state/review-marker.json`,
-}));
+if (reviewRecent && auditRecent) {
+  writeFileSync(EDIT_TRACKER, JSON.stringify({ files: [], count: 0, since: 0 }));
+  approve();
+}
+
+if (!reviewRecent) {
+  block(
+    `You modified ${edits.count} files (${msg}) but haven't run code-reviewer yet.`,
+    `Workflow gate (review):\nYou modified ${edits.count} files (${msg}) but haven't run code-reviewer.\nSpawn a code-reviewer sub-agent, fix what it finds, then write the marker:\n  echo '{"timestamp":'$(date +%s%3N)',"agent":"code-reviewer"}' > ${STATE_DIR}/review-marker.json`
+  );
+}
+
+block(
+  `Review is done but the audit gate hasn't run for ${edits.count} changed files.`,
+  `Workflow gate (audit):\nCode review passed, but before delivery you must AUDIT: spawn security-reviewer AND grade completeness against the definition of done (the \`grader\` agent). Every acceptance criterion needs linked evidence (criteria start false). Fix anything found, then write the marker:\n  echo '{"timestamp":'$(date +%s%3N)',"agent":"grader"}' > ${STATE_DIR}/audit-marker.json`
+);

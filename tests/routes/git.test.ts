@@ -11,14 +11,21 @@ import request from 'supertest';
 // Hoist mock functions
 const {
   mockCloneRepository,
+  mockListRepositories,
+  mockGetGitDiff,
   mockBroadcastStatus,
 } = vi.hoisted(() => ({
   mockCloneRepository: vi.fn(),
+  mockListRepositories: vi.fn(),
+  mockGetGitDiff: vi.fn(),
   mockBroadcastStatus: vi.fn(),
 }));
 
 vi.mock('../../apps/runtime/src/services/git.js', () => ({
   cloneRepository: mockCloneRepository,
+  listRepositories: mockListRepositories,
+  getGitDiff: mockGetGitDiff,
+  WORKSPACE: '/workspace',
 }));
 
 vi.mock('../../apps/runtime/src/web/websocket.js', () => ({
@@ -46,7 +53,31 @@ describe('Git API', () => {
 
     // Default behaviors
     mockCloneRepository.mockResolvedValue(SAMPLE_CLONE_RESULT);
+    mockListRepositories.mockReturnValue([]);
+    mockGetGitDiff.mockReturnValue({ diff: '' });
     mockBroadcastStatus.mockReturnValue(undefined);
+  });
+
+  // ── GET /api/git/repos ──
+
+  describe('GET /api/git/repos', () => {
+    it('returns the workspace repositories', async () => {
+      const repos = [
+        { name: 'proj-a', path: '/workspace/proj-a' },
+        { name: 'group/proj-b', path: '/workspace/group/proj-b' },
+      ];
+      mockListRepositories.mockReturnValue(repos);
+      const res = await request(app).get('/api/git/repos');
+      expect(res.status).toBe(200);
+      expect(res.body).toEqual({ repos });
+    });
+
+    it('returns an empty list when no repos exist', async () => {
+      mockListRepositories.mockReturnValue([]);
+      const res = await request(app).get('/api/git/repos');
+      expect(res.status).toBe(200);
+      expect(res.body).toEqual({ repos: [] });
+    });
   });
 
   // ── POST /api/git/clone ──

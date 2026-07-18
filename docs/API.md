@@ -359,6 +359,7 @@ Sync between memory stores (markdown files, daily logs, SQLite index).
 
 | Method | Endpoint | Body / Query | Response | Description |
 |--------|----------|--------------|----------|-------------|
+| `GET` | `/api/git/repos` | — | `{ repos: RepoInfo[] }` | Git repos in the workspace (recursive scan, depth ≤ 4). `RepoInfo = { name, path }`; nested repos named by workspace-relative path. Feeds the SCM Changes repo picker |
 | `GET` | `/api/git/diff` | `?cwd=&staged=&base=HEAD` | `{ diff }` | Unified `git diff` for the review loop (cwd validated in workspace) |
 | `GET` | `/api/github/repos` | — | `{ repos: RepoRef[] }` | Workspace repos with a GitHub `origin` remote (owner/repo resolved) |
 | `GET` | `/api/github/:owner/:repo/pulls` | `?state=open\|closed\|all` | `{ pulls }` | Pull requests (via `gh api`) |

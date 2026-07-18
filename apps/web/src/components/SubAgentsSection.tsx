@@ -1,3 +1,4 @@
+import type { ComponentChildren } from "preact";
 import { useState, useEffect } from "preact/hooks";
 import { apiFetch } from "../api";
 import { IconPlus, IconChevronLeft, IconTrash, IconBot, IconX } from "./Icons";
@@ -367,7 +368,19 @@ function AgentDefEditor({
 
 // ── Main Component ──
 
-export function SubAgentsSection() {
+export function SubAgentsSection({ embedded = false }: { embedded?: boolean } = {}) {
+	// `embedded` renders inside the Agent Config tab shell (which already
+	// provides the scroll container), so the outer full-height section wrapper
+	// is dropped in that mode.
+	const Shell = ({ children }: { children: ComponentChildren }) =>
+		embedded ? (
+			<div class="home-content">{children}</div>
+		) : (
+			<div class="content-section">
+				<div class="home-content">{children}</div>
+			</div>
+		);
+
 	const [agents, setAgents] = useState<AgentDef[]>([]);
 	const [loading, setLoading] = useState(true);
 	const [loadError, setLoadError] = useState<string | null>(null);
@@ -426,26 +439,23 @@ export function SubAgentsSection() {
 	// Edit / create view
 	if (editing !== null) {
 		return (
-			<div class="content-section">
-				<div class="home-content">
-					<AgentDefEditor
-						initial={editing === "new" ? null : editing}
-						isNew={editing === "new"}
-						onBack={() => setEditing(null)}
-						onSaved={() => {
-							setEditing(null);
-							loadAgents();
-						}}
-					/>
-				</div>
-			</div>
+			<Shell>
+				<AgentDefEditor
+					initial={editing === "new" ? null : editing}
+					isNew={editing === "new"}
+					onBack={() => setEditing(null)}
+					onSaved={() => {
+						setEditing(null);
+						loadAgents();
+					}}
+				/>
+			</Shell>
 		);
 	}
 
 	// List view
 	return (
-		<div class="content-section">
-			<div class="home-content">
+		<Shell>
 				<div class="home-header">
 					<div>
 						<div class="home-title">
@@ -517,7 +527,6 @@ export function SubAgentsSection() {
 						))}
 					</div>
 				)}
-			</div>
-		</div>
+			</Shell>
 	);
 }

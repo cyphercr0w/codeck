@@ -268,7 +268,7 @@ Handles git operations, GitHub CLI auth, SSH key management, and workspace CLAUD
 | `isGhAuthenticated` | `(): boolean` | Runs `gh auth status` (not cached) |
 | `hasGitHubToken` | `(): boolean` | Checks `GITHUB_TOKEN` env var |
 | `hasRepository` | `(): boolean` | Checks for `.git/` in workspace |
-| `listRepositories` | `(): RepoInfo[]` | Lists repos in workspace |
+| `listRepositories` | `(): RepoInfo[]` | Lists git repos in workspace — recursive scan (depth ≤ 4), skips heavy/generated dirs (`node_modules`, `dist`, `.venv`, …) and doesn't descend into a repo's own tree. Nested repos named by workspace-relative path. Cached 15s |
 | `isWorkspaceEmpty` | `(): boolean` | No real project directories |
 | `startGitHubFullLogin` | `(callbacks): Promise<boolean>` | Device code login via `gh` |
 | `toSSHUrl` | `(url): string` | HTTPS to SSH URL |

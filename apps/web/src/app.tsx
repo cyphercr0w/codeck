@@ -60,7 +60,6 @@ import { ToastContainer } from "./components/ToastContainer";
 
 import { AgentsSection } from "./components/AgentsSection";
 import { ScmSection } from "./components/ScmSection";
-import { SubAgentsSection } from "./components/SubAgentsSection";
 import { ChatSection } from "./components/ChatSection";
 import { SettingsSection } from "./components/SettingsSection";
 import { MobileMenu } from "./components/MobileMenu";
@@ -808,7 +807,6 @@ export function App() {
 							/>
 						</div>
 
-						{section === "subagents" && <SubAgentsSection />}
 						{section === "agents" && <AgentsSection />}
 						{section === "scm" && <ScmSection />}
 						{section === "integrations" && <IntegrationsSection />}

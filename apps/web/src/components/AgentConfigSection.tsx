@@ -6,12 +6,14 @@ import { HooksTab } from './agent-config/HooksTab';
 import { MemoryTab } from './agent-config/MemoryTab';
 import { PermissionsTab } from './agent-config/PermissionsTab';
 import { EnvironmentTab } from './agent-config/EnvironmentTab';
+import { SubAgentsSection } from './SubAgentsSection';
 
-type Tab = 'memory' | 'skills' | 'mcp' | 'rules' | 'hooks' | 'permissions' | 'env';
+type Tab = 'memory' | 'skills' | 'subagents' | 'mcp' | 'rules' | 'hooks' | 'permissions' | 'env';
 
 const TABS: { id: Tab; label: string }[] = [
   { id: 'memory', label: 'Memory' },
   { id: 'skills', label: 'Skills' },
+  { id: 'subagents', label: 'Sub-Agents' },
   { id: 'mcp', label: 'MCP Servers' },
   { id: 'rules', label: 'Rules' },
   { id: 'hooks', label: 'Hooks' },
@@ -39,6 +41,7 @@ export function AgentConfigSection() {
         <div class="ac-body">
           {activeTab === 'memory' && <MemoryTab onNavigate={setActiveTab} />}
           {activeTab === 'skills' && <SkillsTab />}
+          {activeTab === 'subagents' && <SubAgentsSection embedded />}
           {activeTab === 'mcp' && <McpServersTab />}
           {activeTab === 'rules' && <RulesTab />}
           {activeTab === 'hooks' && <HooksTab />}

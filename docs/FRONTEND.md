@@ -214,7 +214,7 @@ Step-by-step: calls login → polls status every 1.5s → user copies code → s
 
 ### `Sidebar.tsx` — Navigation
 
-7 nav items: Home, Chat, Terminal, Agent Teams, Automated Agents, Integrations, Agent Config. SVG icons, green/red status dot, version footer. Desktop: collapse/expand (56px / 260px). Mobile: overlay with backdrop.
+9 nav items (source of truth: `nav-items.ts`): Home, Chat, Editor, Terminal, Automated Agents, Source Control, Integrations, Agent Config, Settings. Sub-Agents is **not** a top-level nav item — it lives as a tab inside Agent Config (see `AgentConfigSection.tsx`). SVG icons, green/red status dot, version footer. Desktop: collapse/expand (56px / 260px). Mobile: overlay with backdrop.
 
 ### `HomeSection.tsx` — Dashboard
 
@@ -266,11 +266,15 @@ plain-textarea `FilesSection` in the `filesystem` slot. Styles: `styles/editor.c
 
 ### `ScmSection.tsx` — Source Control (nav `scm`, `/source-control`)
 
-VSCode-like source-control panel with two tabs. **Changes:** loads `GET
-/api/git/diff`, parses the unified diff, lets the user click a changed line to
-attach a markdown comment, then **Send to agent** compiles the comments into a
-single-line prompt injected into the chosen agent PTY via `wsSend({ type:
-"console:input" })` — the interactive review loop. **GitHub:** repo picker +
+VSCode-like source-control panel with two tabs. **Changes:** first loads `GET
+/api/git/repos` and shows a **repository picker** (the workspace root is usually
+not a git repo — projects live in subdirectories, so the diff must target a
+concrete repo, not the workspace root). It then loads `GET /api/git/diff?cwd=<repo>`
+for the selected repo, parses the unified diff, lets the user click a changed
+line to attach a markdown comment, then **Send to agent** compiles the comments
+into a single-line prompt injected into the chosen agent PTY via `wsSend({ type:
+"console:input" })` — the interactive review loop. When no repo is found it shows
+a "No git repositories" empty state with a refresh. **GitHub:** repo picker +
 PR/issue toggle + state filter over `/api/github/*`, link-out to GitHub.
 
 ### `PlaywrightPreview.tsx` — Agent Browser + Design Mode
@@ -302,7 +306,12 @@ Replaces the old separate ConfigSection concerns. Contains multiple cards:
 
 ### `AgentConfigSection.tsx` — Config Editor
 
-File browser for `.codeck/` directory with breadcrumbs, read/edit mode, save, reset to defaults with confirmation.
+Tabbed editor for the agent's `.codeck/` configuration. Tabs: **Memory, Skills,
+Sub-Agents, MCP Servers, Rules, Hooks, Permissions, Environment**. Sub-Agents was
+promoted from a top-level sidebar entry into a tab here (to declutter the
+sidebar); it renders `<SubAgentsSection embedded />`, which drops its own
+full-height `content-section` wrapper so it nests inside the shared `.ac-body`
+scroll container. The remaining tabs live under `components/agent-config/`.
 
 ### `ToastContainer.tsx` — Toast Notifications
 
@@ -361,7 +370,7 @@ Reusable modal for destructive actions.
 
 ### `MobileMenu.tsx` — Mobile Navigation
 
-Slide-down overlay with 7 nav items and connection status.
+Slide-down overlay with the same nav items as `Sidebar` (shared `nav-items.ts`) and connection status.
 
 ---
 

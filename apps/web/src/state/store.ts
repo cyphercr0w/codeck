@@ -56,7 +56,6 @@ export type Section =
 	| "chat"
 	| "filesystem"
 	| "claude"
-	| "subagents"
 	| "agents"
 	| "scm"
 	| "integrations"

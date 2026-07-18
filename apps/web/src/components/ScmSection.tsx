@@ -63,6 +63,8 @@ function parseDiff(raw: string): DiffFile[] {
 
 interface Annotation { file: string; no: number | null; text: string; }
 
+interface RepoOption { name: string; path: string; }
+
 function ChangesTab() {
   const [raw, setRaw] = useState<string | null>(null);
   const [error, setError] = useState('');
@@ -71,11 +73,31 @@ function ChangesTab() {
   const [annotations, setAnnotations] = useState<Record<string, Annotation>>({});
   const [editing, setEditing] = useState<string | null>(null);
 
+  // The workspace root usually isn't a git repo — repos live in subdirectories.
+  // Pick a concrete repo to diff against instead of the (non-repo) workspace root.
+  const [repos, setRepos] = useState<RepoOption[]>([]);
+  const [reposLoaded, setReposLoaded] = useState(false);
+  const [repoPath, setRepoPath] = useState('');
+
   const agentSessions = sessions.value.filter((s: TerminalSession) => s.type === 'agent');
   const defaultSession = agentSessions.find(s => s.id === activeSessionId.value) || agentSessions[0];
   const [sessionId, setSessionId] = useState<string>(defaultSession?.id || '');
 
+  const repoName = repos.find(r => r.path === repoPath)?.name || '';
+
+  async function loadRepos() {
+    try {
+      const res = await apiFetch('/api/git/repos');
+      const data = await res.json();
+      const list: RepoOption[] = data.repos || [];
+      setRepos(list);
+      if (list.length && !repoPath) setRepoPath(list[0].path);
+    } catch { /* ignore — empty state handles it */ }
+    setReposLoaded(true);
+  }
+
   async function load() {
+    if (!repoPath) { setRaw(null); return; }
     setLoading(true);
     setError('');
     // Line-index keys (fi:li) reindex when the diff reloads — drop stale annotations
@@ -83,7 +105,7 @@ function ChangesTab() {
     setAnnotations({});
     setEditing(null);
     try {
-      const params = new URLSearchParams({ cwd: workspacePath.value });
+      const params = new URLSearchParams({ cwd: repoPath });
       if (base === 'staged') params.set('staged', 'true');
       else if (base === 'HEAD') params.set('base', 'HEAD');
       const res = await apiFetch(`/api/git/diff?${params.toString()}`);
@@ -94,7 +116,8 @@ function ChangesTab() {
     setLoading(false);
   }
 
-  useEffect(() => { load(); }, [base]);
+  useEffect(() => { loadRepos(); }, []);
+  useEffect(() => { load(); }, [base, repoPath]);
 
   // Keep the session selection valid as sessions hydrate/appear after mount.
   useEffect(() => {
@@ -119,9 +142,29 @@ function ChangesTab() {
     setEditing(null);
   }
 
+  if (!reposLoaded) {
+    return <div class="dash-meta" style="text-align: center; padding: 24px">Loading repositories…</div>;
+  }
+
+  if (repos.length === 0) {
+    return (
+      <div class="empty-state">
+        <IconFlow size={36} style="color: var(--text-muted); margin-bottom: 12px" />
+        <h3>No git repositories</h3>
+        <p>No git repository was found in <code>{workspacePath.value}</code>. Clone a repo or run <code>git init</code> in a project folder, then refresh.</p>
+        <button class="btn btn-sm btn-secondary" style="margin-top: 12px" onClick={loadRepos}><IconRefresh size={14} /> Refresh</button>
+      </div>
+    );
+  }
+
   return (
     <div>
       <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 12px; flex-wrap: wrap">
+        {repos.length > 1 && (
+          <select class="input" style="width: auto; padding: 4px 8px" value={repoPath} onChange={e => setRepoPath((e.target as HTMLSelectElement).value)} title="Repository">
+            {repos.map(r => <option key={r.path} value={r.path}>{r.name === '.' ? 'workspace (root)' : r.name}</option>)}
+          </select>
+        )}
         <div class="schedule-presets">
           {(['HEAD', 'staged', 'working'] as const).map(b => (
             <button key={b} type="button" class={`btn btn-xs ${base === b ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setBase(b)}>
@@ -145,7 +188,7 @@ function ChangesTab() {
       {error && <div class="alert alert-error" style="margin-bottom: 12px">{error}</div>}
       {loading && <div class="dash-meta" style="text-align: center; padding: 24px">Loading diff…</div>}
       {!loading && !error && files.length === 0 && (
-        <div class="empty-state"><IconFlow size={36} style="color: var(--text-muted); margin-bottom: 12px" /><h3>No changes</h3><p>Nothing to review in {workspacePath.value}. Make some edits (or switch scope above).</p></div>
+        <div class="empty-state"><IconFlow size={36} style="color: var(--text-muted); margin-bottom: 12px" /><h3>No changes</h3><p>Nothing to review in <code>{repoName === '.' ? 'workspace (root)' : repoName || 'this repository'}</code>. Make some edits (or switch scope above).</p></div>
       )}
 
       {files.map((f, fi) => (

@@ -1,10 +1,17 @@
 import { Router } from "express";
-import { cloneRepository, getGitDiff, WORKSPACE } from "../services/git.js";
+import { cloneRepository, getGitDiff, listRepositories, WORKSPACE } from "../services/git.js";
 import { sanitizeSecrets } from "../services/session-writer.js";
 import { broadcastStatus } from "../web/websocket.js";
 import { asyncHandler } from "../utils/async-handler.js";
 
 const router = Router();
+
+// Git repositories in the workspace. Codeck's workspace root holds multiple
+// projects as subdirectories (and is usually not a repo itself), so the SCM
+// UI needs the concrete repo paths to run `git diff` against.
+router.get("/repos", (_req, res) => {
+	res.json({ repos: listRepositories() });
+});
 
 // Unified git diff for the interactive review loop.
 // ?cwd=<dir> (default workspace) &staged=true|false &base=HEAD

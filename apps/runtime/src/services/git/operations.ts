@@ -58,8 +58,22 @@ export function hasRepository(): boolean {
   return listRepositories().length > 0;
 }
 
+// How deep to recurse when hunting for nested repos, and folders never worth
+// descending into (heavy/generated trees that never hold a project's own repo).
+const MAX_SCAN_DEPTH = 4;
+const SKIP_DIRS = new Set([
+  'node_modules', '.git', 'vendor', 'dist', 'build', 'out',
+  '.next', '.nuxt', 'target', '__pycache__', '.venv', 'venv', '.codeck',
+]);
+
 /**
- * List all repositories in the workspace (cached, 15s TTL)
+ * List all repositories in the workspace (cached, 15s TTL).
+ *
+ * Scans recursively up to MAX_SCAN_DEPTH so repos nested inside grouping
+ * folders (e.g. `<workspace>/group/repo`) are found — not just direct
+ * children. A directory that is itself a repo is not descended into, so
+ * a repo's own working tree never produces phantom sub-entries. Nested
+ * repos are named by their workspace-relative path (e.g. `group/repo`).
  */
 export function listRepositories(): RepoInfo[] {
   if (repoCache && (Date.now() - repoCache.fetchedAt) < REPO_CACHE_TTL) {
@@ -68,24 +82,39 @@ export function listRepositories(): RepoInfo[] {
 
   const repos: RepoInfo[] = [];
 
-  // Check root level
+  // Check root level (workspace itself is a repo)
   if (existsSync(`${WORKSPACE}/.git`)) {
     repos.push({ name: '.', path: WORKSPACE });
   }
 
-  // Check subdirectories
-  try {
-    const dirs = readdirSync(WORKSPACE);
-    for (const dir of dirs) {
-      // Skip hidden folders, invalid names (Windows paths, etc.)
-      if (dir.startsWith('.')) continue;
-      if (dir.includes(':') || dir.includes('\\')) continue;
-
-      const gitPath = `${WORKSPACE}/${dir}/.git`;
-      if (existsSync(gitPath)) {
-        repos.push({ name: dir, path: `${WORKSPACE}/${dir}` });
-      }
+  const scan = (dir: string, rel: string, depth: number): void => {
+    if (depth > MAX_SCAN_DEPTH) return;
+    let entries: import('fs').Dirent[];
+    try {
+      entries = readdirSync(dir, { withFileTypes: true });
+    } catch {
+      return; // unreadable dir — skip, don't abort the whole scan
     }
+    for (const ent of entries) {
+      if (!ent.isDirectory()) continue;
+      const name = ent.name;
+      // Skip hidden folders, invalid names (Windows paths, etc.), heavy trees
+      if (name.startsWith('.')) continue;
+      if (name.includes(':') || name.includes('\\')) continue;
+      if (SKIP_DIRS.has(name)) continue;
+
+      const full = `${dir}/${name}`;
+      const relPath = rel ? `${rel}/${name}` : name;
+      if (existsSync(`${full}/.git`)) {
+        repos.push({ name: relPath, path: full });
+        continue; // don't recurse into a repo's working tree
+      }
+      scan(full, relPath, depth + 1);
+    }
+  };
+
+  try {
+    scan(WORKSPACE, '', 1);
   } catch (e) {
     console.warn('[Git] Error listing repos:', (e as Error).message);
   }

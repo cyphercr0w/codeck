@@ -49,6 +49,11 @@ ENV CLAUDE_AUTOCOMPACT_PCT_OVERRIDE=50
 ENV CLAUDE_CODE_SUBPROCESS_ENV_SCRUB=0
 ENV ENABLE_TOOL_SEARCH=auto:5
 ENV MAX_THINKING_TOKENS=10000
+# The CLI's own updater installs @latest unguarded, which breaks the container
+# whenever a wrapper release ships without its platform-native package. Codeck
+# updates the CLI itself on startup (updateAgentBinary), verifying the binary
+# runs and rolling back if it does not.
+ENV DISABLE_AUTOUPDATER=1
 
 ENTRYPOINT ["/usr/local/bin/init-keyring.sh", "env", "NODE_ENV=production", "node", "apps/runtime/dist/index.js"]
 CMD ["--web"]

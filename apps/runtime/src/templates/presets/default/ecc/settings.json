@@ -1,6 +1,8 @@
 {
 	"_attribution": "Source: affaan-m/everything-claude-code (MIT License) + Codeck hooks. Integrated into Codeck preset.",
 	"plansDirectory": "./reports",
+	"//autoUpdates": "Codeck updates the CLI itself on startup (updateAgentBinary), which verifies the binary runs and rolls back on failure. The CLI's own updater installs @latest unguarded and breaks the container when a wrapper release ships without its platform-native package (e.g. 2.1.237 had no linux-x64 build).",
+	"autoUpdates": false,
 	"permissions": {
 		"allow": [
 			"Read",

@@ -25,6 +25,7 @@ All environment variables are for the single container runtime. Set via `.env` f
 | `AGENT_SIGKILL_GRACE_MS` | `15000` | Grace period (ms) between SIGTERM and SIGKILL for proactive agent timeouts. Clamped to 5000-60000. |
 | `CLAUDE_CODE_OAUTH_TOKEN` | — | Auto-set per PTY session from .credentials.json |
 | `CODECK_HARNESS_DIR` | `/workspace/.codeck/harness` | Autonomous-harness control-plane dir. Set per-run by scheduled loops to isolate their harness state; honored by budget-guard, workflow-checkpoint, no-progress-guard, harness-resume. |
+| `DISABLE_AUTOUPDATER` | `1` | Set in Dockerfile. Turns off the Claude CLI's own self-updater — Codeck updates the CLI itself on startup (`updateAgentBinary`), which verifies the binary runs and rolls back on failure. See [Agent CLI updates](#agent-cli-updates). |
 | `CODECK_STATE_DIR` | `/workspace/.codeck/state` | Hook state/markers dir. Set per-run by scheduled loops for isolation; honored by the same hooks + edit-tracker, review-marker, capability-doctor. |
 
 ### Configuration Validation
@@ -36,6 +37,49 @@ Codeck does not currently enforce schema validation for environment variables at
 3. **Encryption Key**: Set `CODECK_ENCRYPTION_KEY` to a random 32+ character string for production.
 
 ---
+
+## Agent CLI Updates
+
+Codeck installs `@anthropic-ai/claude-code` globally (pinned in `docker/Dockerfile.base`) and
+re-checks it on every startup via `updateAgentBinary()` in `services/console.ts`.
+
+**Why the update path is guarded.** Upstream ships the CLI as a thin wrapper package whose real
+binary comes from a platform-native `optionalDependency`
+(`@anthropic-ai/claude-code-linux-x64` on this image). A wrapper release is sometimes tagged
+`latest` before every native package is published — `2.1.237` shipped with no `linux-x64` build.
+npm ignores failed *optional* installs, so `npm install -g @anthropic-ai/claude-code@latest`
+exits 0 while leaving a stub at `bin/claude.exe` that aborts with:
+
+```
+Error: claude native binary not installed.
+```
+
+Every PTY spawns that binary, so the whole container loses its terminals.
+
+Codeck's guards against this:
+
+1. **Version selection** — `updateAgentBinary()` installs the version reported by
+   `npm view @anthropic-ai/claude-code-<platform> version`, not the wrapper's `latest`.
+   Wrapper-only releases are skipped entirely.
+2. **Verification** — after installing, the binary is run with `--version`. A stub fails here.
+3. **Postinstall retry** — if the binary does not run, the package's shipped `install.cjs` is
+   re-run (recovers a native package that landed on disk but was never copied over the stub).
+4. **Rollback** — if it still does not run, the previously working version is reinstalled and the
+   update reports failure. A stale-but-working CLI always beats a fresh stub.
+5. **Build-time check** — `docker/Dockerfile.base` runs `claude --version` right after the pinned
+   install, so a bad pin fails the image build instead of shipping.
+6. **`DISABLE_AUTOUPDATER=1`** — the CLI's own updater installs `@latest` unguarded, bypassing all
+   of the above. It is off, and `autoUpdates: false` is set in the preset's `settings.json`
+   (which also takes effect on already-running containers, where the env var cannot be changed).
+
+**Manual recovery** if a container is already stuck on a broken version:
+
+```bash
+docker exec <container> npm install -g @anthropic-ai/claude-code@$(
+  docker exec <container> npm view @anthropic-ai/claude-code-linux-x64 version)
+docker exec <container> claude --version
+```
+
 
 ## Security: Encryption
 

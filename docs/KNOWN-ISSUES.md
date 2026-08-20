@@ -1,6 +1,6 @@
 # Known Issues & Technical Debt — Codeck
 
-Last updated: 2026-07-15 (Q3 2026 modernization — see `MODERNIZATION-2026.md`).
+Last updated: 2026-08-19 (agent CLI update hardening — see item 26).
 
 ---
 
@@ -177,6 +177,14 @@ When using `SendMessage` to a completed/idle agent, the system resumes it in bac
 When Agent Teams spawned multiple Claude CLI sub-processes, PID exhaustion (Docker limit: 1024), CPU saturation, and memory pressure caused silent crashes with no diagnostic logs.
 
 **Fix:** Added `resource-watchdog.ts` service that monitors PIDs, CPU, and memory every 5 seconds while teams are active. Logs warnings at 78% PID usage, critical alerts at 93% with full process tree dump. Persistent log file at `/workspace/.codeck/logs/watchdog.log`.
+
+### 26. Unguarded `@latest` agent CLI update kills all terminals (FIXED)
+
+**Files:** `services/console.ts`, `docker/Dockerfile`, `docker/Dockerfile.base`, `templates/presets/default/ecc/settings.json`
+
+`updateAgentBinary()` ran `npm install -g @anthropic-ai/claude-code@latest` on every startup. The CLI is a thin wrapper whose real binary ships as a platform-native `optionalDependency`, and upstream tagged `2.1.237` as `latest` without publishing `@anthropic-ai/claude-code-linux-x64@2.1.237` (native builds stopped at `2.1.236`). npm ignores failed *optional* installs, so the install exited 0 and left the stub `bin/claude.exe`, which aborts with `Error: claude native binary not installed.` — every PTY spawns that binary, so no terminal could open. The CLI's own auto-updater had the same unguarded `@latest` behavior.
+
+**Fix:** `updateAgentBinary()` now installs the version reported by `npm view @anthropic-ai/claude-code-<platform> version` instead of the wrapper's `latest`, verifies the installed binary actually runs, re-runs the package's `install.cjs` if it does not, and rolls back to the previously working version on failure. `Dockerfile.base` pins `2.1.236` and asserts `claude --version` at build time; `DISABLE_AUTOUPDATER=1` plus `autoUpdates: false` in the preset settings stop the CLI from updating itself around those guards. Full write-up: [CONFIGURATION.md § Agent CLI Updates](CONFIGURATION.md#agent-cli-updates).
 
 ---
 

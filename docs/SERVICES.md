@@ -196,7 +196,7 @@ Manages Claude CLI interactive pseudo-terminal sessions via node-pty.
 | `hasSavedSessions` | `(): boolean` | Check saved sessions exist |
 | `restoreSavedSessions` | `(): SessionInfo[]` | Restore from disk |
 | `flushAllSessions` | `(timeout?): Promise<void>` | Write `/compact` to all agent PTYs |
-| `updateAgentBinary` | `(): { version, binaryPath }` | Update Claude CLI |
+| `updateAgentBinary` | `(): Promise<{ version, binaryPath }>` | Update Claude CLI. Installs the version matching the published platform-native package (not the wrapper's `latest`), verifies the binary runs, retries its postinstall, and rolls back to the previous version if it still fails. See [CONFIGURATION.md § Agent CLI Updates](CONFIGURATION.md#agent-cli-updates). |
 | `clearPendingRestore` | `(): void` | Clear pending restore state |
 
 ### Session creation flow

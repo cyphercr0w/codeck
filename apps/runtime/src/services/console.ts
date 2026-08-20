@@ -1331,45 +1331,168 @@ export function buildBareArgs(prompt: string, _cwd: string): string[] {
 	return ["--bare", "-p", prompt, "--output-format", "stream-json"];
 }
 
+const AGENT_NPM_PKG = "@anthropic-ai/claude-code";
+
+/**
+ * Name of the platform-native optional dependency the CLI wrapper needs.
+ * Returns null on platforms upstream does not publish a binary for.
+ */
+function nativePkgForPlatform(): string | null {
+	const arch = process.arch;
+	if (arch !== "x64" && arch !== "arm64") return null;
+	switch (process.platform) {
+		case "linux": {
+			// glibcVersionRuntime is absent on musl builds of Node.
+			const report =
+				typeof process.report?.getReport === "function"
+					? (process.report.getReport() as {
+							header?: { glibcVersionRuntime?: string };
+						})
+					: null;
+			const musl = report != null && report.header?.glibcVersionRuntime === undefined;
+			return `${AGENT_NPM_PKG}-linux-${arch}${musl ? "-musl" : ""}`;
+		}
+		case "darwin":
+			return `${AGENT_NPM_PKG}-darwin-${arch}`;
+		case "win32":
+			return `${AGENT_NPM_PKG}-win32-${arch}`;
+		default:
+			return null;
+	}
+}
+
+/**
+ * Pick the version to install.
+ *
+ * Upstream sometimes tags a wrapper release `latest` before every platform-native
+ * optional dependency is published (2.1.237 shipped with no linux-x64 build).
+ * npm swallows failed *optional* installs, so `install -g <pkg>@latest` succeeds
+ * while leaving a stub at bin/claude.exe that aborts with
+ * "claude native binary not installed" — which takes every PTY down with it.
+ *
+ * Installing the wrapper at the native package's own `latest` keeps the two in
+ * lockstep and skips wrapper-only releases entirely.
+ */
+async function resolveInstallableVersion(): Promise<string> {
+	const nativePkg = nativePkgForPlatform();
+	if (!nativePkg) return "latest";
+	try {
+		const { stdout } = await execFile("npm", ["view", nativePkg, "version"], {
+			encoding: "utf8",
+			timeout: 30000,
+		});
+		const version = stdout.trim();
+		if (!/^\d+\.\d+\.\d+/.test(version)) return "latest";
+		console.log(`[Console] Native ${nativePkg} latest is ${version}`);
+		return version;
+	} catch (e) {
+		console.warn(
+			`[Console] Could not resolve ${nativePkg} version, falling back to @latest:`,
+			(e as Error).message,
+		);
+		return "latest";
+	}
+}
+
+/** Run the binary's version flag. Returns null if it is missing or a broken stub. */
+async function probeAgentVersion(binPath: string): Promise<string | null> {
+	try {
+		const { stdout } = await execFile(binPath, [ACTIVE_AGENT.flags.version], {
+			encoding: "utf8",
+			timeout: 15000,
+		});
+		const version = stdout.trim();
+		return version.length > 0 ? version : null;
+	} catch {
+		return null;
+	}
+}
+
+async function npmInstallGlobal(spec: string): Promise<void> {
+	await execFile("npm", ["install", "-g", spec], {
+		encoding: "utf8",
+		timeout: 300000,
+	});
+}
+
 /**
  * Safely update the agent CLI binary and re-resolve the path.
  * Returns the new version string or throws on failure.
- * Async to avoid blocking the event loop during npm install (5-30s).
+ *
+ * Verifies the binary actually runs after installing and rolls back to the
+ * previously installed version if it does not — a broken agent CLI means no
+ * terminals at all, so a stale-but-working version always beats a fresh stub.
  */
 export async function updateAgentBinary(): Promise<{
 	version: string;
 	binaryPath: string;
 }> {
-	const pkg = "@anthropic-ai/claude-code";
+	const previousPath = getAgentBinaryPath();
+	const previousVersion = await probeAgentVersion(previousPath);
 
-	// Run npm update (async — does not block event loop)
-	console.log(`[Console] Updating ${pkg}...`);
+	const target = await resolveInstallableVersion();
+	console.log(`[Console] Updating ${AGENT_NPM_PKG} to ${target}...`);
 	try {
-		await execFile("npm", ["install", "-g", `${pkg}@latest`], {
-			encoding: "utf8",
-			timeout: 120000,
-		});
+		await npmInstallGlobal(`${AGENT_NPM_PKG}@${target}`);
 	} catch (e) {
 		const msg = e instanceof Error ? e.message : String(e);
 		throw new Error(`Update failed: ${msg}`);
 	}
 
 	// Re-resolve binary path
-	const oldPath = getAgentBinaryPath();
 	const newPath = resolveAgentBinary();
 	setAgentBinaryPath(newPath);
-	console.log(`[Console] Binary re-resolved: ${oldPath} → ${newPath}`);
+	console.log(`[Console] Binary re-resolved: ${previousPath} → ${newPath}`);
 
-	// Validate the new binary works
-	let version = "unknown";
-	try {
-		const result = await execFile(newPath, [ACTIVE_AGENT.flags.version], {
-			encoding: "utf8",
-			timeout: 10000,
-		});
-		version = result.stdout.trim();
-	} catch {
-		console.warn("[Console] Could not get version after update");
+	let version = await probeAgentVersion(newPath);
+
+	// The wrapper installs fine even when its native optional dep is missing.
+	// Re-running the shipped postinstall recovers the case where the native
+	// package is on disk but was never copied over the stub.
+	if (!version) {
+		console.warn("[Console] Agent binary does not run — retrying postinstall");
+		try {
+			const { stdout } = await execFile(
+				"npm",
+				["root", "-g"],
+				{ encoding: "utf8", timeout: 15000 },
+			);
+			await execFile(
+				process.execPath,
+				[join(stdout.trim(), AGENT_NPM_PKG, "install.cjs")],
+				{ encoding: "utf8", timeout: 120000 },
+			);
+			version = await probeAgentVersion(newPath);
+		} catch (e) {
+			console.warn("[Console] Postinstall retry failed:", (e as Error).message);
+		}
+	}
+
+	// Still broken — put the working version back rather than leave a dead CLI.
+	if (!version) {
+		if (previousVersion) {
+			const pinned = previousVersion.split(/\s+/)[0];
+			console.error(
+				`[Console] Update produced a non-working binary, rolling back to ${pinned}`,
+			);
+			try {
+				await npmInstallGlobal(`${AGENT_NPM_PKG}@${pinned}`);
+				const restoredPath = resolveAgentBinary();
+				setAgentBinaryPath(restoredPath);
+				const restored = await probeAgentVersion(restoredPath);
+				if (restored) {
+					throw new Error(
+						`${AGENT_NPM_PKG}@${target} has no native binary for this platform; rolled back to ${restored}`,
+					);
+				}
+			} catch (e) {
+				if ((e as Error).message.includes("rolled back to")) throw e;
+				console.error("[Console] Rollback failed:", (e as Error).message);
+			}
+		}
+		throw new Error(
+			`${AGENT_NPM_PKG}@${target} installed but the binary does not run (missing platform-native package)`,
+		);
 	}
 
 	console.log(`[Console] Update complete: ${version} at ${newPath}`);

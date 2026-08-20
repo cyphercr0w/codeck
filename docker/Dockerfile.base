@@ -55,7 +55,15 @@ RUN install -m 0755 -d /etc/apt/keyrings \
 # Currently only Claude Code. Add other agent CLIs here as needed.
 # Pinned version for supply chain safety. Update explicitly after testing.
 # Server can auto-update at runtime via POST /api/system/update-agent.
-RUN npm install -g pnpm @anthropic-ai/claude-code@2.1.211
+#
+# Pin to a version whose platform-native package is published too:
+#   npm view @anthropic-ai/claude-code-linux-x64 version
+# The wrapper is sometimes tagged `latest` before its native optional deps ship
+# (2.1.237 had no linux-x64 build). npm ignores failed *optional* installs, so
+# the wrapper lands with a stub at bin/claude.exe that aborts with
+# "claude native binary not installed" — and no terminal can start.
+# `claude --version` below turns that into a build failure instead.
+RUN npm install -g pnpm @anthropic-ai/claude-code@2.1.236 && claude --version
 
 # ─── Code formatters + LSP servers (for hooks and code intelligence) ───
 # Biome: 10-25x faster than Prettier for TS/JS formatting

@@ -1,7 +1,7 @@
 ---
 name: accessibility-expert
 description: Expert accessibility specialist ensuring WCAG compliance, inclusive design, and assistive technology compatibility. Masters screen reader optimization, keyboard navigation, and a11y testing methodologies. Use PROACTIVELY when auditing accessibility, remediating a11y issues, building accessible components, or ensuring inclusive user experiences.
-model: inherit
+model: sonnet
 color: green
 maxTurns: 10
 ---

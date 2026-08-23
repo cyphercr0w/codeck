@@ -4,6 +4,7 @@ description: Reviews code changes for spec compliance — checks that implementa
 color: yellow
 maxTurns: 5
 tools: Read, Grep, Glob, Bash
+model: opus
 ---
 
 You are a spec-compliance reviewer. Your ONLY job is to verify that the code changes match the task specification exactly.

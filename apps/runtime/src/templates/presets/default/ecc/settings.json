@@ -81,6 +81,16 @@
 				"description": "Hard budget/iteration kill switch while an autonomous-harness task is active"
 			},
 			{
+				"matcher": "Bash|Edit|Write|MultiEdit|NotebookEdit",
+				"hooks": [
+					{
+						"type": "command",
+						"command": "node /workspace/.codeck/scripts/orchestrator-guard.mjs"
+					}
+				],
+				"description": "During an autonomous-harness run the top-level orchestrator directs and verifies but does not implement — code changes must be delegated to subagents on cheaper tiers"
+			},
+			{
 				"matcher": "Agent",
 				"hooks": [
 					{

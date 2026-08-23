@@ -21,7 +21,8 @@
  */
 
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'fs';
-import { join } from 'path';
+import { join, dirname } from 'path';
+import { computeSpend } from './lib/cost-meter.mjs';
 
 const HARNESS = process.env.CODECK_HARNESS_DIR || '/workspace/.codeck/harness';
 const CURRENT = join(HARNESS, 'current.json');
@@ -62,7 +63,23 @@ if (!b || typeof b !== 'object' || Array.isArray(b)) b = { iterCap: 200, costCap
 
 const iterCap = Number.isFinite(b.iterCap) ? b.iterCap : 200;
 const costCap = Number.isFinite(b.costCapUsd) ? b.costCapUsd : Infinity;
-const spent = Number.isFinite(b.spentUsd) ? b.spentUsd : 0;
+// MEASURED spend beats self-reported. `spentUsd` only moved if the loop
+// remembered to update it, so the cost cap used to be advisory. cost-meter reads
+// the transcripts the CLI already writes — including the per-subagent files,
+// which is where a delegating orchestrator's spend actually lands.
+const reportedSpent = Number.isFinite(b.spentUsd) ? b.spentUsd : 0;
+let measured = null;
+try {
+  measured = computeSpend(data.transcript_path, dirname(HARNESS));
+} catch { /* meter must never break the guard */ }
+const spent = measured ? Math.max(reportedSpent, measured.totalUsd) : reportedSpent;
+if (measured) {
+  b.spentUsd = spent;
+  b.measuredUsd = measured.totalUsd;
+  b.orchestratorUsd = measured.orchestratorUsd;
+  b.subagentUsd = measured.subagentUsd;
+  b.delegationShare = measured.delegationShare;
+}
 
 // COUNT every guarded action — INCLUDING harness writes. mkdir first so a partial/
 // manually-seeded state can't make the write throw and silently reset the counter.
@@ -81,7 +98,7 @@ if (overCap) {
   // Harness-state write: allow it (checkpoint/close) — it was already counted.
   if (isHarnessWrite) process.exit(0);
   const why = spent > costCap
-    ? `cost cap reached ($${spent.toFixed(2)} > $${costCap})`
+    ? `cost cap reached ($${spent.toFixed(2)} > $${costCap}${measured ? `, measured from transcripts: $${measured.orchestratorUsd.toFixed(2)} orchestrator + $${measured.subagentUsd.toFixed(2)} subagents` : ''})`
     : `iteration cap reached (${b.iterations} > ${iterCap})`;
   console.log(JSON.stringify({
     hookSpecificOutput: {
@@ -96,12 +113,26 @@ if (overCap) {
 // Under cap: harness writes pass silently (already counted).
 if (isHarnessWrite) process.exit(0);
 
-// Warn as we approach the ceiling.
+// Warn as we approach either ceiling.
+const notes = [];
 if (b.iterations > iterCap * 0.8) {
+  notes.push(`${b.iterations}/${iterCap} iterations used`);
+}
+if (measured && spent > costCap * 0.7 && Number.isFinite(costCap)) {
+  notes.push(`$${spent.toFixed(2)}/$${costCap} spent`);
+}
+// A low delegation share on an autonomous run means the orchestrator is doing
+// the work itself — the dominant cost failure. Surface it while it's still fixable.
+if (measured && measured.totalUsd > 1 && measured.delegationShare < 0.4) {
+  notes.push(
+    `only ${(measured.delegationShare * 100).toFixed(0)}% of spend was delegated ($${measured.orchestratorUsd.toFixed(2)} orchestrator vs $${measured.subagentUsd.toFixed(2)} subagents) — hand implementation to subagents on cheaper tiers`
+  );
+}
+if (notes.length) {
   console.log(JSON.stringify({
     hookSpecificOutput: {
       hookEventName: 'PreToolUse',
-      additionalContext: `Harness budget: ${b.iterations}/${iterCap} iterations used. Prioritize finishing the remaining criteria; you will be hard-stopped at the cap.`,
+      additionalContext: `Harness budget: ${notes.join('; ')}. You will be hard-stopped at the cap.`,
     },
   }));
 }

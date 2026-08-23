@@ -98,7 +98,7 @@ hooks to its own isolated dir.
 |---|---|
 | A machine can reject bad output | `verifyCmd` **required** at create; loop rejected without it |
 | Hard iteration/cost/time cap | `budget-guard` (self-heal) + `timeoutMs` + cron cadence |
-| The author isn't the judge | read-only `product-owner`/`grader` (no Write/Edit/Bash) = the "fresh model" |
+| The author isn't the judge | `product-owner`/`grader` have **no Write/Edit** and never built the work = the "fresh model". Both keep `Bash`, deliberately: the grader must run build/test/lint to verify evidence rather than trust the builder, and the PO writes its verdict to `overseer.json`. Their read-only discipline is enforced by instruction, not by the tool list — so a prompt-injected judge could in principle mutate state. |
 | Irreversible actions need a human | `permissionProfile` denies deploy/push/publish/dep-upgrade unless `full`; ESCALATE instead |
 | Unhandled work → triage inbox | `inbox/` + `GET /:id/inbox` |
 | The repo remembers | `progress.json` + FTS5 memory + resume-hook (survives compaction/restart) |

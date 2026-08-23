@@ -24,6 +24,7 @@ import {
 	decryptValue,
 	type EncryptedCredentials,
 	type PlaintextCredentials,
+	OAUTH_SCOPES,
 	type AccountInfo,
 } from "./encryption.js";
 
@@ -144,6 +145,7 @@ export function writeAccountCredentials(
 			accessToken: token,
 			...(refreshToken ? { refreshToken } : {}),
 			expiresAt,
+			scopes: OAUTH_SCOPES,
 		},
 		...(accountInfo ? { accountInfo } : {}),
 	};

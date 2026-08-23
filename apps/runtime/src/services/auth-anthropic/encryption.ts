@@ -37,9 +37,18 @@ export interface PlaintextCredentials {
     accessToken?: string;
     refreshToken?: string;
     expiresAt?: number;
+    scopes?: string[];
+    subscriptionType?: string;
   };
   accountInfo?: AccountInfo;
 }
+
+/**
+ * Scopes granted by the OAuth PKCE flow. Claude CLI >= 2.1.241 rejects a
+ * .credentials.json without this field ("Not logged in"), so every write must
+ * include it. Mirrors OAUTH_SCOPE in auth-anthropic.ts.
+ */
+export const OAUTH_SCOPES = ['user:inference', 'user:profile'];
 
 export interface AccountInfo {
   email: string | null;

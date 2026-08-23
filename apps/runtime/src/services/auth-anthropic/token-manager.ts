@@ -20,6 +20,7 @@ import {
 	decryptValue,
 	type EncryptedCredentials,
 	type PlaintextCredentials,
+	OAUTH_SCOPES,
 	type AccountInfo,
 } from "./encryption.js";
 import {
@@ -223,6 +224,7 @@ function restoreCredentials(): boolean {
 					accessToken: token,
 					...(refreshToken ? { refreshToken } : {}),
 					expiresAt: raw.claudeAiOauth.expiresAt,
+					scopes: OAUTH_SCOPES,
 				},
 				...(raw.accountInfo ? { accountInfo: raw.accountInfo } : {}),
 			};
@@ -250,6 +252,31 @@ function restoreCredentials(): boolean {
 			(e as Error).message,
 		);
 		return false;
+	}
+}
+
+/**
+ * Backfill claudeAiOauth.scopes on credentials written before Claude CLI 2.1.241
+ * made the field mandatory. Without it the CLI reports "Not logged in" even
+ * though the tokens are valid. Rewrites in place, best-effort.
+ */
+function healMissingScopes(raw: PlaintextCredentials): void {
+	const oauth = raw?.claudeAiOauth;
+	if (!oauth?.accessToken) return;
+	if (Array.isArray(oauth.scopes) && oauth.scopes.length > 0) return;
+	oauth.scopes = OAUTH_SCOPES;
+	try {
+		atomicWriteFileSync(
+			CLAUDE_CREDENTIALS_PATH,
+			JSON.stringify(raw, null, 2),
+			{ mode: 0o600 },
+		);
+		console.log("[Claude] Backfilled missing OAuth scopes in .credentials.json");
+	} catch (e) {
+		console.warn(
+			"[Claude] Could not backfill OAuth scopes:",
+			(e as Error).message,
+		);
 	}
 }
 
@@ -309,6 +336,7 @@ export function readCredentials(): PlaintextCredentials | null {
 		}
 
 		// Plaintext format (our new primary format, also CLI-native)
+		healMissingScopes(raw);
 		return raw as PlaintextCredentials;
 	} catch (e) {
 		console.log(
@@ -358,6 +386,7 @@ export function saveOAuthToken(
 			accessToken: token,
 			...(refreshToken ? { refreshToken } : {}),
 			expiresAt,
+			scopes: OAUTH_SCOPES,
 		},
 		...(accountInfo ? { accountInfo } : {}),
 	};

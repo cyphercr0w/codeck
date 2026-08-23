@@ -1,6 +1,6 @@
 # Known Issues & Technical Debt — Codeck
 
-Last updated: 2026-08-19 (agent CLI update hardening — see item 26).
+Last updated: 2026-08-23 (mandatory OAuth `scopes` — see item 27).
 
 ---
 
@@ -185,6 +185,24 @@ When Agent Teams spawned multiple Claude CLI sub-processes, PID exhaustion (Dock
 `updateAgentBinary()` ran `npm install -g @anthropic-ai/claude-code@latest` on every startup. The CLI is a thin wrapper whose real binary ships as a platform-native `optionalDependency`, and upstream tagged `2.1.237` as `latest` without publishing `@anthropic-ai/claude-code-linux-x64@2.1.237` (native builds stopped at `2.1.236`). npm ignores failed *optional* installs, so the install exited 0 and left the stub `bin/claude.exe`, which aborts with `Error: claude native binary not installed.` — every PTY spawns that binary, so no terminal could open. The CLI's own auto-updater had the same unguarded `@latest` behavior.
 
 **Fix:** `updateAgentBinary()` now installs the version reported by `npm view @anthropic-ai/claude-code-<platform> version` instead of the wrapper's `latest`, verifies the installed binary actually runs, re-runs the package's `install.cjs` if it does not, and rolls back to the previously working version on failure. `Dockerfile.base` pins `2.1.236` and asserts `claude --version` at build time; `DISABLE_AUTOUPDATER=1` plus `autoUpdates: false` in the preset settings stop the CLI from updating itself around those guards. Full write-up: [CONFIGURATION.md § Agent CLI Updates](CONFIGURATION.md#agent-cli-updates).
+
+---
+
+### 27. `.credentials.json` without `scopes` reads as logged out (FIXED)
+
+**Files:** `services/auth-anthropic/encryption.ts`, `services/auth-anthropic/token-manager.ts`, `services/auth-anthropic/account-store.ts`
+
+Claude CLI >= 2.1.241 requires `claudeAiOauth.scopes` in `.credentials.json`. Codeck never wrote the field, so after the CLI reached that version every session died with `Not logged in - Please run /login` and `claude auth status` returned `loggedIn: false` — despite valid, unexpired tokens on disk. Symptom is indistinguishable from an expired token, so the obvious (wrong) fix is a re-login, which rewrites the same scope-less file.
+
+**Fix:** `OAUTH_SCOPES` (`['user:inference', 'user:profile']`) is exported from `encryption.ts` and written by `saveOAuthToken()`, `restoreCredentials()` and `writeAccountCredentials()`. `readCredentials()` backfills it in place via `healMissingScopes()`, so already-provisioned containers self-heal on next read without a re-login. `subscriptionType` is deliberately not written — the CLI resolves it server-side, and a guessed value makes it report a null email/org.
+
+### 28. Corrupt npm cache can produce a truncated agent binary
+
+**Files:** `services/console.ts`
+
+Observed 2026-08-23: an interrupted `2.1.241` install left `@anthropic-ai/claude-code-linux-x64/` with the 248 MB binary but no `package.json`. `install.cjs` resolves the native package via `require.resolve(pkg + '/package.json')`, so postinstall silently skipped the copy and left the stub; the extracted binary was itself truncated (342 MB expected) and segfaulted (`panic(main thread): Bus error`) when linked manually. `updateAgentBinary()`'s probe/rollback path does not distinguish this from a missing native package, and npm serves the same corrupt tarball from cache on retry.
+
+**Recovery:** `npm cache clean --force`, `rm -rf /usr/local/lib/node_modules/@anthropic-ai/claude-code*`, reinstall. **Possible hardening:** verify the native package's `package.json` exists and the placed binary's size matches before declaring the update healthy; clean the cache entry and retry once when it does not.
 
 ---
 

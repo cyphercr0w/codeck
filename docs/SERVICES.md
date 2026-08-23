@@ -74,6 +74,20 @@ Manages Claude CLI authentication via manual OAuth PKCE flow.
 2. `/root/.claude/.credentials.json` file (`claudeAiOauth.accessToken`)
 3. Legacy `/root/.claude.json` (`oauthAccount`)
 
+### `claudeAiOauth.scopes` is mandatory
+
+Claude CLI >= 2.1.241 rejects a `.credentials.json` whose `claudeAiOauth` has no
+`scopes` array — `claude auth status` reports `loggedIn: false` and every session
+dies with `Not logged in - Please run /login`, even though the tokens are valid
+and unexpired. Every write path therefore emits `scopes: OAUTH_SCOPES`
+(`['user:inference', 'user:profile']`, exported from `auth-anthropic/encryption.ts`
+and mirroring `OAUTH_SCOPE` in `auth-anthropic.ts`): `saveOAuthToken()`,
+`restoreCredentials()` and `writeAccountCredentials()`. `readCredentials()` also
+backfills the field in place (`healMissingScopes`) so containers provisioned
+before this requirement recover without a re-login. Do not write
+`subscriptionType` — the CLI resolves it server-side, and a guessed value blanks
+out the reported email/org.
+
 ### Code format parsing
 
 `sendLoginCode()` accepts:
@@ -115,7 +129,8 @@ dir (see `auth-anthropic/account-store.ts`).
 
 Reads/writes/refreshes the CLI-compatible plaintext `.credentials.json`
 (+ encrypted backup) for an arbitrary `CLAUDE_CONFIG_DIR`, reusing the shared
-AES-256-GCM helpers. Keeps the single-account `token-manager.ts` flow untouched.
+AES-256-GCM helpers (including the mandatory `claudeAiOauth.scopes` field — see
+above). Keeps the single-account `token-manager.ts` flow untouched.
 Key exports: `readAccountCredentials`, `writeAccountCredentials`,
 `getAccountToken`, `accountHasUsableToken`, `refreshAccountToken`,
 `accountTokenTimeUntilExpiry`, `readAccountInfo`.
